@@ -1,0 +1,30 @@
+# Git-clone-Max 打包与运行配置
+
+```
+Git-clone-Max/
+├── gcm/
+│   ├── __init__.py      版本与应用名
+│   ├── __main__.py      入口（python -m gcm）
+│   ├── models.py        数据模型
+│   ├── app/
+│   │   ├── url_lib.py   GitHub 地址解析 / 目录命名（作者__仓库）
+│   │   └── worker.py    QThreadPool 并行 worker + 断点续传 progress.json
+│   ├── db/
+│   │   └── repo_db.py   SQLite：repos + sync_history；断点续传进度
+│   ├── git/
+│   │   └── service.py   git clone / fetch / ff-only / rebase / 冲突检测
+│   └── ui/
+│       ├── theme.py     配色 + 日志模型 + 控制台高亮
+│       └── main_window.py  三个 Tab 主窗口
+├── scripts/
+├── tests/
+├── requirements.txt
+└── pyproject.toml
+```
+
+## 运行
+
+```bash
+python -m pip install -r requirements.txt
+python -m gcm
+```
