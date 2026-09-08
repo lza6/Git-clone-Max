@@ -291,6 +291,9 @@ class GitService:
 
     # ------------------------------------------------------------ 工具
     def _repo_dir(self, spec: RepoSpec) -> Path:
+        # 导入仓库优先用其真实本地路径
+        if spec.local_path:
+            return Path(spec.local_path)
         return self.root / spec.folder_name
 
     def _emit(self, text: str, level: str = "info"):

@@ -35,6 +35,7 @@ class RepoSpec:
     display: str = ""
     folder_name: str = ""
     is_local: bool = False      # 仅本地仓库（无远端），同步时跳过 fetch 依赖 clone
+    local_path: str = ""        # 实际本地路径（导入仓库用；空则按 root/folder_name 推导）
 
     def __post_init__(self):
         if not self.display:

@@ -180,16 +180,18 @@ def to_spec(info: RepoInfo) -> RepoSpec:
 
     folder_name 保留实际目录名——GitService 按 folder_name 定位目录，
     从而对非规范命名的已有仓库也能正确增量更新。
+    本地路径远端（file:// / C:/x）同样能 git fetch 增量更新——只有完全无远端
+    URL 才是 is_local（纯本地，不 fetch/merge）。
     """
-    # 本地路径远端（file:// / C:/x）无法 clone：is_local=True，同步只做本地检查
     url = info.url_https or info.remote_url
-    is_local = remote_is_local(url) if url else True
+    is_local = not url
     spec = RepoSpec(owner=info.owner or info.folder_name,
                     repo=info.repo or info.folder_name,
                     url_https=url or info.path,
                     display=info.display,
                     folder_name=info.folder_name,
-                    is_local=is_local)
+                    is_local=is_local,
+                    local_path=info.path)
     return spec
 
 
