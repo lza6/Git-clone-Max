@@ -34,6 +34,7 @@ class RepoSpec:
     url_https: str
     display: str = ""
     folder_name: str = ""
+    is_local: bool = False      # 仅本地仓库（无远端），同步时跳过 fetch 依赖 clone
 
     def __post_init__(self):
         if not self.display:

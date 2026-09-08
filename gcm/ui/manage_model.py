@@ -1,0 +1,107 @@
+# -*- coding: utf-8 -*-
+"""仓库管理表模型：数据与视图解耦，支持大批量行的高性能展示与过滤。"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import List, Optional
+
+from PyQt6.QtCore import QAbstractItemModel, QModelIndex, Qt, pyqtSignal
+
+
+@dataclass
+class ManageRow:
+    """管理页单行数据。"""
+    folder_name: str
+    owner: str
+    repo: str
+    local_path: str
+    last_sync_at: str
+    head_sha: str
+    host: str = "github.com"
+    url: str = ""
+    repo_id: int = 0
+    default_branch: str = ""
+
+
+class ManageModel(QAbstractItemModel):
+    """内存行 + 懒加载渲染：支持数万行而不卡。
+
+    数据行预取一次存内存，视图只请求可见区域，避免 setCellWidget 逐行开销。
+    """
+
+    rowsChanged = pyqtSignal()
+
+    def __init__(self, rows: Optional[List[dict]] = None, parent=None):
+        super().__init__(parent)
+        self._rows: List[ManageRow] = []
+        if rows:
+            self.set_rows(rows)
+
+    # ------------------------------------------------------------ 数据接入
+    def set_rows(self, rows: List[dict]):
+        """从 db.list_repos() 的行列表重建。"""
+        self.beginResetModel()
+        self._rows = []
+        for r in rows:
+            self._rows.append(ManageRow(
+                folder_name=str(r.get("folder_name") or ""),
+                owner=str(r.get("owner") or ""),
+                repo=str(r.get("repo") or ""),
+                local_path=str(r.get("local_path") or ""),
+                last_sync_at=str(r.get("last_sync_at") or "")[:19],
+                head_sha=str(r.get("head_sha") or "")[:8],
+                host=str(r.get("host") or "github.com"),
+                url=str(r.get("url") or ""),
+                repo_id=int(r.get("id") or 0),
+                default_branch=str(r.get("default_branch") or ""),
+            ))
+        self.endResetModel()
+        self.rowsChanged.emit()
+
+    def row_at(self, row: int) -> Optional[ManageRow]:
+        if 0 <= row < len(self._rows):
+            return self._rows[row]
+        return None
+
+    def remove_rows_at(self, indexes: List[int]) -> int:
+        """删除指定行（倒序），返回删除数量。"""
+        idxs = sorted(set(indexes), reverse=True)
+        for i in idxs:
+            if 0 <= i < len(self._rows):
+                self.beginRemoveRows(QModelIndex(), i, i)
+                del self._rows[i]
+                self.endRemoveRows()
+        return len(idxs)
+
+    def __len__(self) -> int:
+        return len(self._rows)
+
+    # ------------------------------------------------------------ Qt 模型接口
+    def index(self, row: int, column: int, parent: QModelIndex = QModelIndex()) -> QModelIndex:
+        if parent.isValid() or not (0 <= row < len(self._rows)) or not (0 <= column < 6):
+            return QModelIndex()
+        return self.createIndex(row, column)
+
+    def parent(self, child: QModelIndex = QModelIndex()) -> QModelIndex:
+        return QModelIndex()
+
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        return 0 if parent.isValid() else len(self._rows)
+
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        return 6
+
+    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):
+        if not index.isValid() or not (0 <= index.row() < len(self._rows)):
+            return None
+        r = self._rows[index.row()]
+        col = index.column()
+        if role == Qt.ItemDataRole.DisplayRole:
+            return (r.folder_name if col == 0 else
+                    (f"{r.owner}/{r.repo}" if col == 1 else
+                     (r.local_path if col == 2 else
+                      (r.last_sync_at if col == 3 else
+                       (r.head_sha if col == 4 else "")))))
+        if role == Qt.ItemDataRole.ToolTipRole and col == 0:
+            return r.url or r.local_path
+        return None

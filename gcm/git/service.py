@@ -319,6 +319,14 @@ class GitService:
 
         try:
             if repo_dir.exists() and (repo_dir / ".git").exists():
+                # 纯本地仓库（无远端）：不做 fetch/merge，仅记录已是最新
+                if spec.is_local:
+                    res.status = SyncStatus.SUCCESS
+                    res.action = SyncAction.FETCHED
+                    res.message = "本地仓库（无远端）"
+                    res.head_sha = self._head_sha(repo_dir)
+                    res.remote_sha = ""
+                    return res
                 return self._update(spec, res)
             # 半成品目录（断点残留）
             if repo_dir.exists():

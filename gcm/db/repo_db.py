@@ -128,19 +128,30 @@ class Database:
             self._conn.commit()
 
     # ------------------------------------------------------------------ 读
-    def get_repo(self, owner: str, repo: str, host: str = "github.com") -> Optional[Dict[str, Any]]:
+    def get_repo(self, owner: str, repo: str, host: str | None = "github.com") -> Optional[Dict[str, Any]]:
         with self._lock:
-            row = self._conn.execute(
-                "SELECT * FROM repos WHERE owner=? AND repo=? AND host=?",
-                (owner, repo, host),
-            ).fetchone()
+            if host is None:
+                row = self._conn.execute(
+                    "SELECT * FROM repos WHERE owner=? AND repo=?",
+                    (owner, repo),
+                ).fetchone()
+            else:
+                row = self._conn.execute(
+                    "SELECT * FROM repos WHERE owner=? AND repo=? AND host=?",
+                    (owner, repo, host),
+                ).fetchone()
             return dict(row) if row else None
 
-    def list_repos(self, host: str = "github.com") -> List[Dict[str, Any]]:
+    def list_repos(self, host: str | None = None) -> List[Dict[str, Any]]:
+        """列出仓库；host 为 None 时返回全部（含本地导入的仓库）。"""
         with self._lock:
-            rows = self._conn.execute(
-                "SELECT * FROM repos WHERE host=? ORDER BY owner, repo", (host,)
-            ).fetchall()
+            if host is None:
+                rows = self._conn.execute(
+                    "SELECT * FROM repos ORDER BY owner, repo").fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT * FROM repos WHERE host=? ORDER BY owner, repo", (host,)
+                ).fetchall()
             return [dict(r) for r in rows]
 
     def history(self, repo_id: int, limit: int = 20) -> List[Dict[str, Any]]:

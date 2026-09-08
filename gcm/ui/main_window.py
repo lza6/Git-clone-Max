@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import (
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
+    QTableView,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -249,32 +250,59 @@ class MainWindow(QMainWindow):
         self.btn_cancel_manage.setEnabled(False)
         self.btn_cancel_manage.clicked.connect(self.cancel_all)
         self.btn_refresh = QPushButton("刷新列表")
-        self.btn_refresh.clicked.connect(self._load_db_into_grid)
+        self.btn_refresh.clicked.connect(self._refresh_manage)
+        self.btn_import_local = QPushButton("📥 导入本地已有仓库")
+        self.btn_import_local.clicked.connect(self.import_local_repos)
         self.btn_delete = QPushButton("🗑 删除选中记录")
         self.btn_delete.clicked.connect(self.delete_selected)
+        top.addWidget(self.btn_import_local)
         top.addWidget(self.btn_update_all)
         top.addWidget(self.btn_cancel_manage)
         top.addWidget(self.btn_refresh)
         top.addWidget(self.btn_delete)
         v.addLayout(top)
 
-        self.manage_table = QTableWidget(0, 6)
-        self.manage_table.setHorizontalHeaderLabels(
-            ["文件夹", "仓库", "路径", "最近同步", "HEAD", "历史"])
-        for col in range(6):
-            self.manage_table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.Stretch)
+        # 模型化视图：数据与视图解耦，大批量行不卡（共享按钮 + 懒加载）
+        from .manage_model import ManageModel
+        self.manage_model = ManageModel(parent=self)
+        self.manage_table = QTableView()
+        self.manage_table.setModel(self.manage_model)
+        labels = ["文件夹", "仓库", "路径", "最近同步", "HEAD", "历史"]
+        self.manage_table.horizontalHeader().setDefaultAlignment(
+            Qt.AlignmentFlag.AlignLeft)
+        self.manage_table.horizontalHeader().setStretchLastSection(True)
+        self.manage_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch)
         self.manage_table.verticalHeader().setVisible(False)
-        self.manage_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.manage_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.manage_table.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
+        self.manage_table.setSelectionBehavior(
+            QTableView.SelectionBehavior.SelectRows)
+        self.manage_table.setSelectionMode(
+            QTableView.SelectionMode.ExtendedSelection)
+        self.manage_table.setAlternatingRowColors(False)
         self.manage_table.setMinimumHeight(260)
+        self.manage_table.setContextMenuPolicy(Qt.ContextMenuPolicy.DefaultContextMenu)
+        self.manage_table.doubleClicked.connect(self._on_manage_double_clicked)
+        # 每行共享的"查看历史"按钮（避免每行 setCellWidget 占用）
+        self._hist_btn = QPushButton("查看")
+        self._hist_btn.setStyleSheet(
+            "QPushButton { padding: 2px 8px; font-size: 12px; }")
+        self._hist_btn.clicked.connect(self._on_hist_btn)
         v.addWidget(self.manage_table, 3)
 
         self.manage_desc = QLabel(
             "「一键更新全部」会按 作者__仓库 命名找到每个仓库目录，"
-            "已存在则 git fetch 增量更新；本地有改动冲突时保留本地、标记冲突，绝不覆盖。")
+            "已存在则 git fetch 增量更新；本地有改动冲突时保留本地、标记冲突，绝不覆盖。\n"
+            "「导入本地已有仓库」能扫描任意目录下已存在的 git 仓库，一并纳入管理。")
         self.manage_desc.setObjectName("muted")
         self.manage_desc.setWordWrap(True)
+
+        self.manage_table.verticalHeader().setDefaultSectionSize(34)
         v.addWidget(self.manage_desc)
+
+        # 保持状态栏"历史"列宽固定
+        self.manage_table.setColumnWidth(5, 70)
+        v.addWidget(self.manage_table)
 
     # ---------------- 设置与日志
     def _build_settings_tab(self):
@@ -481,7 +509,7 @@ class MainWindow(QMainWindow):
         if self.busy:
             QMessageBox.information(self, "提示", "有任务正在运行，请先取消或等待完成。")
             return
-        rows = self.db.list_repos(DOMAIN)
+        rows = self.db.list_repos()  # 全 host（含本地导入仓库）
         if not rows:
             QMessageBox.information(self, "提示", "数据库中没有已记录的仓库，请先到「下载中心」添加。")
             return
@@ -705,23 +733,52 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------ 管理页
     def _load_db_into_grid(self):
-        rows = self.db.list_repos(DOMAIN)
-        self.manage_table.setRowCount(len(rows))
-        for i, r in enumerate(rows):
-            vals = [r["folder_name"], f"{r['owner']}/{r['repo']}", r["local_path"],
-                    (r["last_sync_at"] or "")[:19], (r["head_sha"] or "")[:8], ""]
-            for c, v in enumerate(vals):
-                item = QTableWidgetItem(v)
-                if c == 0:
-                    item.setToolTip(r["url"])
-                self.manage_table.setItem(i, c, item)
-            # 历史链接按钮
-            btn = QPushButton("查看")
-            btn.setStyleSheet("padding: 2px 8px; font-size: 12px;")
-            rid = r["id"]
-            btn.clicked.connect(lambda _=False, rid=rid: self.show_history(rid))
-            self.manage_table.setCellWidget(i, 5, btn)
-        self.manage_stats.setText(f"共 {len(rows)} 个仓库")
+        """从 DB 加载仓库列表到模型（全 host，含本地导入仓库；批量懒渲染）。"""
+        self.manage_model.set_rows(self.db.list_repos())
+        self.manage_stats.setText(f"共 {self.manage_model.rowCount()} 个仓库")
+
+    def _refresh_manage(self):
+        self._load_db_into_grid()
+
+    def _on_manage_double_clicked(self, index):
+        row = index.row()
+        r = self.manage_model.row_at(row)
+        if r is not None:
+            self.show_history(r.repo_id)
+
+    def _on_hist_btn(self):
+        """共享按钮：对当前选中的行打开历史。"""
+        idx = self.manage_table.selectionModel().selectedRows()
+        if not idx:
+            return
+        for i in idx:
+            r = self.manage_model.row_at(i.row())
+            if r is not None:
+                self.show_history(r.repo_id)
+
+    def import_local_repos(self):
+        """打开「导入本地已有仓库」对话框。"""
+        if self.busy:
+            QMessageBox.information(self, "提示", "有任务正在运行，请稍后再导入。")
+            return
+        from .local_repos_dialog import LocalReposDialog
+        # 默认扫描范围：当前克隆根目录 + 管理页已有仓库的父目录
+        root = self.target_edit.text().strip()
+        roots = [root] if root else []
+        try:
+            for r in self.manage_model._rows:
+                p = Path(r.local_path).parent
+                if p.is_dir() and str(p) not in roots:
+                    roots.append(str(p))
+        except Exception:
+            pass
+        dlg = LocalReposDialog(parent=self, root_paths=roots, db=self.db)
+        dlg.exec()
+        if dlg.selected:
+            n = dlg.import_selected()
+            self._load_db_into_grid()
+            self.log.append(_fmt_dt(), LogLevel.INFO, f"已导入 {n} 个本地仓库")
+            self.statusBar().showMessage(f"已导入 {n} 个本地仓库")
 
     def show_history(self, repo_id: int):
         hist = self.db.history(repo_id, 20)
@@ -733,7 +790,7 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "同步历史", "\n".join(lines) or "暂无记录")
 
     def delete_selected(self):
-        rows = sorted({i.row() for i in self.manage_table.selectedItems()})
+        rows = sorted({i.row() for i in self.manage_table.selectedIndexes()})
         if not rows:
             QMessageBox.information(self, "提示", "请先选择要删除的记录。")
             return
@@ -742,11 +799,9 @@ class MainWindow(QMainWindow):
             return
         repo_ids = set()
         for r in rows:
-            item = self.manage_table.item(r, 1)
-            if item:
-                owner_repo = item.text()
-                o, _, rr = owner_repo.partition("/")
-                rec = self.db.get_repo(o, rr)
+            row = self.manage_model.row_at(r)
+            if row is not None:
+                rec = self.db.get_repo(row.owner, row.repo, row.host)
                 if rec:
                     repo_ids.add(rec["id"])
         for rid in repo_ids:
