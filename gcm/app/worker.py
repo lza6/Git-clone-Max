@@ -58,7 +58,7 @@ class CloneWorker(QRunnable):
         res = SyncResult(spec=spec, status=SyncStatus.RUNNING)
         try:
             res = self.service.sync(spec)
-            # 记录数据库
+            # 记录数据库（空仓库 head_sha 为空也照常入库，action=empty）
             if self.db is not None:
                 repo_id = self.db.upsert_repo(spec, res.path, host="github.com",
                                               default_branch=None, head_sha=res.head_sha)

@@ -1,0 +1,4 @@
+[run]
+source = gcm
+branch = true
+omit = gcm/ui/theme.py

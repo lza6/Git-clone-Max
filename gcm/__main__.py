@@ -32,11 +32,13 @@ def main() -> int:
     app.setApplicationName("Git-clone-Max")
 
     from gcm.db.repo_db import Database
+    from gcm.db.settings import SettingsStore
     from gcm.ui.main_window import MainWindow
 
     data_dir = get_data_dir()
     db = Database(data_dir / "repos.db")
-    win = MainWindow(data_dir=data_dir, db=db)
+    settings = SettingsStore(data_dir / "settings.json")
+    win = MainWindow(data_dir=data_dir, db=db, settings=settings)
     win.show()
     return app.exec()
 

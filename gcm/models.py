@@ -19,6 +19,7 @@ class SyncAction(str, Enum):
     CLONED = "cloned"          # 新建克隆
     UPDATED = "updated"        # 增量 fetch + merge/fast-forward
     FETCHED = "fetched"        # 远端无新提交，已 fetch 检查
+    EMPTY = "empty"            # 空仓库（远端无提交）
     SKIPPED = "skipped"        # 已存在且配置为跳过
     CONFLICT = "conflict"      # 检测到冲突，未覆盖本地
     CANCELLED = "cancelled"    # 用户取消

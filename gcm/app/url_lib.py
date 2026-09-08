@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import List, Tuple
 from urllib.parse import urlparse
 
 from ..models import RepoSpec
@@ -18,8 +19,9 @@ _SSH_RE = re.compile(
     r"([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?(?:/.*)?$",
     re.IGNORECASE,
 )
+# 短格式仅接受 作者/仓库，作者/仓库 都不能含点段作为域名分隔（如 gitlab.com/a/b 应判无效）
 _SHORT_RE = re.compile(
-    r"^([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?(?:/.*)?$"
+    r"^([A-Za-z0-9_][A-Za-z0-9_.-]{0,38})/([A-Za-z0-9_][A-Za-z0-9_.-]{0,38}?)(?:\.git)?(?:/.*)?$"
 )
 
 _INVALID_DIR_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
@@ -46,7 +48,28 @@ def parse_repo_url(raw: str) -> RepoSpec | None:
     repo = sanitize_name(m.group(2))
     if not owner or not repo:
         return None
+    # 短格式里 owner 若形如 gitlab.com / gitee.com（含域名点段）→ 视为非 GitHub 仓库，拒绝
+    if "." in owner and owner.lower() not in ("github.com",):
+        return None
     return RepoSpec(owner=owner, repo=repo, url_https=f"https://github.com/{owner}/{repo}.git")
+
+
+def parse_urls(text: str) -> Tuple[List[RepoSpec], List[str]]:
+    """批量解析多行文本（每行一个地址）。
+
+    返回 (有效规格列表, 无效行列表)。空行与纯空白行不算无效。
+    """
+    valid: List[RepoSpec] = []
+    invalid: List[str] = []
+    for raw in (text or "").splitlines():
+        if not raw.strip():
+            continue
+        spec = parse_repo_url(raw)
+        if spec:
+            valid.append(spec)
+        else:
+            invalid.append(raw.strip())
+    return valid, invalid
 
 
 def normalize_url(raw: str) -> str | None:

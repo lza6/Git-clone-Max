@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, Optional, Tuple
 
 from ..models import RepoSpec, StreamChunk, SyncAction, SyncResult, SyncStatus
 
@@ -17,63 +19,75 @@ LineCallback = Callable[[StreamChunk], None]
 # 常见默认分支，用于冲突时提示
 _COMMON_BRANCHES = ("main", "master", "develop", "dev")
 
+# Windows 下禁用子进程弹窗；独立进程组便于整树终止
+_CREATE_FLAGS = 0
+if os.name == "nt":
+    _CREATE_FLAGS = (
+        getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    )
 
-def _git_exec(env: Optional[Dict[str, str]] = None) -> List[str]:
-    return ["git", "-c", "core.quotepath=false"]
+
+@dataclass
+class _Backoff:
+    """重试退避调度：dirty 非零时导致立即成功，见 run_git_ui 说明。"""
+
+    delays: Tuple[float, ...] = (1.0, 3.0, 8.0)
+    max_attempts: int = 3
 
 
-def _merge_base(git_dir: str) -> Optional[str]:
-    """返回 HEAD 与远端跟踪分支的 merge-base；无则 None。"""
-    try:
-        r = subprocess.run(
-            ["git", "-C", git_dir, "merge-base", "HEAD", "@{upstream}"],
-            capture_output=True, text=True, timeout=30,
-        )
-        if r.returncode == 0:
-            return r.stdout.strip() or None
-    except Exception:
-        pass
-    return None
+def _retry_delays(retries: int) -> Tuple[float, ...]:
+    """按配置的重试次数生成退避间隔。retries=2 → (1.0, 3.0)。"""
+    base = (1.0, 3.0, 8.0)
+    return base[:max(0, retries)]
 
 
 def _is_dirty(git_dir: str) -> bool:
-    """是否存在未提交的本地改动（含未跟踪文件）。"""
+    """是否存在未提交的本地改动（含未跟踪文件）。
+
+    目录不存在 / git 失败（rc!=0）视为脏（True）——保守起见，宁可判冲突
+    也不冒险覆盖用户可能尚未保存的工作。
+    """
     try:
         r = subprocess.run(
-            ["git", "-C", git_dir, "status", "--porcelain"],
+            ["git", "-C", str(git_dir), "status", "--porcelain"],
             capture_output=True, text=True, timeout=30,
         )
+        if r.returncode != 0:
+            return True
         return bool(r.stdout.strip())
     except Exception:
         return True
 
 
-def _branch_ahead(git_dir: str) -> int:
-    """HEAD 领先 upstream 的提交数。"""
-    try:
-        r = subprocess.run(
-            ["git", "-C", git_dir, "rev-list", "--count", "HEAD..@{upstream}"],
-            capture_output=True, text=True, timeout=30,
-        )
+def _divergence_info(git_dir: str) -> Tuple[int, int]:
+    """返回本地与上游的分叉信息 (ahead, behind)。
+
+    ahead  = 本地领先上游的提交数（@{upstream}..HEAD）
+    behind = 上游领先本地的提交数（HEAD..@{upstream}）
+    任何一步失败均当作 (0, 0) 安全值，不阻塞后续流程。
+    """
+    def _count(spec: str) -> int:
+        try:
+            r = subprocess.run(
+                ["git", "-C", git_dir, "rev-list", "--count", spec],
+                capture_output=True, text=True, timeout=30,
+            )
+            if r.returncode == 0:
+                return int(r.stdout.strip() or 0)
+        except Exception:
+            pass
         return 0
-    except Exception:
-        return 0
+
+    return _count("@{upstream}..HEAD"), _count("HEAD..@{upstream}")
 
 
 def _detect_conflict(git_dir: str) -> Tuple[bool, str]:
     """检测本地是否有会阻止 fast-forward 的改动。返回 (is_conflict, reason)。"""
     if not _is_dirty(git_dir):
         return False, ""
-    # 有未提交改动：若本地领先上游或与上游分叉，则 pull 可能冲突
-    ahead = 0
-    try:
-        r = subprocess.run(
-            ["git", "-C", git_dir, "rev-list", "--count", "@{upstream}..HEAD"],
-            capture_output=True, text=True, timeout=30,
-        )
-        ahead = int(r.stdout.strip()) if r.returncode == 0 else 0
-    except Exception:
-        ahead = 0
+    # 有未提交改动：若本地领先上游，则 pull 必然受阻
+    ahead, _ = _divergence_info(git_dir)
     if ahead > 0:
         return True, f"本地领先上游 {ahead} 个提交且存在未提交改动"
     return False, ""
@@ -85,62 +99,195 @@ def _progress_from_line(line: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
+def _is_networkish_error(text: str) -> bool:
+    """粗略区分『网络类』错误（值得重试）与『仓库类』错误（重试无效）。
+
+    网络/远端临时故障：Connection / stream ended / RPC failed / 超时 / reset / 远端挂断 等。
+    仓库本身问题：Repository not found（404）、Authentication failed（认证）等。
+    """
+    t = text.lower()
+    net = (
+        "connection", "timed out", "timeout", "rpc failed", "stream ended",
+        "early eof", "read error", "reset by peer", "unable to resolve",
+        "could not resolve", "network is unreachable", "getaddrinfo",
+        "ssl", "tls", "fatal: unable to access", "remote end hung up",
+    )
+    repo = (
+        "repository not found", "authentication failed",
+        "invalid username or password", "could not read username",
+        "access denied", "permission denied",
+        "could not read from remote",      # clone 本地路径不存在 / 无权限 → 仓库类
+        "does not appear to be a git repository",
+        "please make sure you have the correct access rights",
+    )
+    # 先命中『仓库类』再命中『网络类』；网络类优先判断避免被通用串覆盖
+    if any(k in t for k in repo):
+        return False
+    return any(k in t for k in net)
+
+
+def _kill_tree(proc: subprocess.Popen) -> None:
+    """尽量终止 git 整棵进程树（Windows 用 taskkill /T /F）。"""
+    if proc is None or proc.poll() is not None:
+        return
+    if os.name == "nt" and proc.pid:
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                capture_output=True, timeout=15,
+            )
+            return
+        except Exception:
+            pass
+    try:
+        proc.kill()
+    except Exception:
+        pass
+
+
 def run_git_ui(cmd: List[str], cwd: str, on_line: LineCallback,
                env: Optional[Dict[str, str]] = None,
                label: str = "git", cancelled: Callable[[], bool] = lambda: False,
-               timeout: float | None = None) -> Tuple[int, str]:
-    """运行 git 命令并实时转发输出。返回 (returncode, 最后进度)。"""
-    creationflags = 0
-    if os.name == "nt":
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    proc = subprocess.Popen(
-        cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, encoding="utf-8", errors="replace", bufsize=1,
-        creationflags=creationflags, env=env,
-    )
+               timeout: float | None = None,
+               retries: int = 0, backoff: Tuple[float, ...] = (1.0, 3.0, 8.0)) -> Tuple[int, str]:
+    """运行 git 命令并实时转发输出，带超时与整树终止。
+
+    返回 (returncode, 最后进度)。`retries` > 0 时，网络类失败自动重试。
+
+    实现要点：
+    - 读线程持续泵 stdout，主线程用 proc.wait(timeout) 兜底，静默挂死也能按时触发超时。
+    - 成功（rc==0）立即 break，绝不重复启动子进程。
+    """
     last_progress = ""
-    start = time.time()
-    try:
-        for raw in proc.stdout:
-            if cancelled():
-                proc.terminate()
-                break
-            line = raw.rstrip("\r\n")
-            if line:
-                on_line(StreamChunk(index=0, text=line, level="info"))
-                p = _progress_from_line(line)
-                if p:
-                    last_progress = p
-            if timeout and time.time() - start > timeout:
-                proc.terminate()
-                break
-    except Exception:
-        pass
-    finally:
+    attempts = 0
+    max_attempts = max(1, retries + 1)
+    rc = -1
+    while attempts < max_attempts:
+        proc = subprocess.Popen(
+            cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding="utf-8", errors="replace", bufsize=1,
+            creationflags=_CREATE_FLAGS, env=env,
+        )
+        start = time.time()
+        log: List[str] = []
+        timed_out = False
+        cancelled_flag = False
+
+        def _pump():
+            """读线程：持续读行、转发、记录；超时/取消时终止进程树。"""
+            nonlocal timed_out, cancelled_flag, last_progress
+            try:
+                for raw in proc.stdout:
+                    if cancelled():
+                        cancelled_flag = True
+                        _kill_tree(proc)
+                        break
+                    if timeout and time.time() - start > timeout:
+                        timed_out = True
+                        _kill_tree(proc)
+                        break
+                    line = raw.rstrip("\r\n")
+                    if line:
+                        on_line(StreamChunk(index=0, text=line, level="info"))
+                        log.append(line)
+                        p = _progress_from_line(line)
+                        if p:
+                            last_progress = p
+            except Exception:
+                pass
+            finally:
+                try:
+                    proc.stdout.close()
+                except Exception:
+                    pass
+
+        import threading as _threading
+        pump = _threading.Thread(target=_pump, daemon=True)
+        pump.start()
+        # 主线程阻塞等待，超时则整树终止（读线程内也有超时检查，双保险）
+        wait_limit = (timeout or 0) + 5 if timeout else None
         try:
-            proc.stdout.close()
+            proc.wait(timeout=wait_limit)
+        except Exception:
+            timed_out = True
+            _kill_tree(proc)
+            # 终止后必须再次 wait 回收子进程对象，避免 ResourceWarning 与僵尸
+            try:
+                proc.wait(timeout=15)
+            except Exception:
+                pass
+        try:
+            pump.join(timeout=5)
         except Exception:
             pass
-    try:
-        proc.wait(timeout=15)
-    except Exception:
-        proc.kill()
+        # 确保读线程已退出（其 finally 已关闭 stdout），兜底再关一次防 ResourceWarning
         try:
-            proc.wait()
+            if proc.stdout:
+                proc.stdout.close()
         except Exception:
             pass
-    return (proc.returncode if proc.returncode is not None else -1), last_progress
+        rc = proc.returncode if proc.returncode is not None else -1
+
+        # 成功：立即收尾，绝不重复启动
+        if rc == 0 and not cancelled_flag and not timed_out:
+            break
+
+        if cancelled_flag:
+            rc = -1  # 取消统一按非 0 处理
+            break
+
+        if timed_out:
+            if attempts < max_attempts - 1 and not cancelled():
+                on_line(StreamChunk(index=0, text="操作超时，自动重试…", level="warn"))
+                time.sleep(backoff[attempts] if attempts < len(backoff) else backoff[-1])
+                attempts += 1
+                continue
+            break
+
+        if rc != 0 and not cancelled():
+            tail = "\n".join(log[-8:]) if log else ""
+            if _is_networkish_error(tail) and attempts < max_attempts - 1:
+                delay = backoff[attempts] if attempts < len(backoff) else backoff[-1]
+                on_line(StreamChunk(
+                    index=0,
+                    text=f"网络抖动，{delay:.0f}s 后自动重试（{attempts + 1}/{max_attempts - 1}）…",
+                    level="warn",
+                ))
+                time.sleep(delay)
+            else:
+                break  # 仓库类错误 / 已达上限：直接返回
+        attempts += 1
+    return rc, last_progress
 
 
 class GitService:
     """封装 git 操作，提供 clone / 增量同步 / 分支信息。"""
 
     def __init__(self, root_dir: str | Path, on_line: Optional[LineCallback] = None,
-                 cancelled: Optional[Callable[[], bool]] = None):
+                 cancelled: Optional[Callable[[], bool]] = None,
+                 fetch_timeout: float = 300, clone_timeout: float = 600,
+                 retries: int = 0, backoff: Tuple[float, ...] = (1.0, 3.0, 8.0),
+                 proxy: str = ""):
         self.root = Path(root_dir)
         self.root.mkdir(parents=True, exist_ok=True)
         self.on_line = on_line or (lambda c: None)
         self.cancelled = cancelled or (lambda: False)
+        self.fetch_timeout = fetch_timeout
+        self.clone_timeout = clone_timeout
+        self.retries = max(0, retries)
+        self._backoff = backoff
+        self.proxy = proxy.strip()
+
+    def _env(self, extra: Optional[Dict[str, str]] = None) -> Optional[Dict[str, str]]:
+        """构造 subprocess 环境：未设置代理时注入 http_proxy/https_proxy。"""
+        if not self.proxy:
+            return extra
+        env = dict(os.environ)
+        if extra:
+            env.update(extra)
+        env.setdefault("http_proxy", self.proxy)
+        env.setdefault("https_proxy", self.proxy)
+        return env
 
     # ------------------------------------------------------------ 工具
     def _repo_dir(self, spec: RepoSpec) -> Path:
@@ -167,24 +314,30 @@ class GitService:
         res = SyncResult(spec=spec, status=SyncStatus.RUNNING)
         repo_dir = self._repo_dir(spec)
         res.path = str(repo_dir)
+        res.started = time.time()
         t0 = time.time()
 
-        if repo_dir.exists() and (repo_dir / ".git").exists():
-            return self._update(spec, res)
-        # 半成品目录（断点残留）
-        if repo_dir.exists():
-            self._emit(f"[警告] 发现不完整目录 {repo_dir.name}，尝试清理后重新克隆", "warn")
-            try:
-                import shutil
-                shutil.rmtree(repo_dir)
-            except Exception as e:
-                res.status = SyncStatus.FAILED
-                res.action = SyncAction.FAILED
-                res.message = "无法清理残留目录"
-                res.detail = str(e)
+        try:
+            if repo_dir.exists() and (repo_dir / ".git").exists():
+                return self._update(spec, res)
+            # 半成品目录（断点残留）
+            if repo_dir.exists():
+                self._emit(f"[警告] 发现不完整目录 {repo_dir.name}，尝试清理后重新克隆", "warn")
+                try:
+                    shutil.rmtree(repo_dir)
+                except Exception as e:
+                    res.status = SyncStatus.FAILED
+                    res.action = SyncAction.FAILED
+                    res.message = "无法清理残留目录"
+                    res.detail = str(e)
+                    res.ended = time.time()
+                    return res
+            return self._clone(spec, res)
+        finally:
+            # 统一兜底：任何路径都必须有结束时间，否则 duration 会为 0
+            if res.ended == 0.0:
                 res.ended = time.time()
-                return res
-        return self._clone(spec, res)
+            res.duration_ms = int((res.ended - res.started) * 1000)
 
     # ------------------------------------------------------------ clone
     def _clone(self, spec: RepoSpec, res: SyncResult) -> SyncResult:
@@ -192,15 +345,21 @@ class GitService:
         self._emit(f"开始克隆 {spec.display} …")
         cmd = ["git", "clone", "--progress", spec.url_https, str(repo_dir)]
         rc, prog = run_git_ui(cmd, str(self.root), self.on_line,
-                              cancelled=self.cancelled)
-        res.ended = time.time()
-        res.duration_ms = int((res.ended - res.started) * 1000)
+                              cancelled=self.cancelled, env=self._env(),
+                              timeout=self.clone_timeout, retries=self.retries,
+                              backoff=self._backoff)
         if self.cancelled():
             res.status = SyncStatus.CANCELLED
             res.action = SyncAction.CANCELLED
             res.message = "已取消"
             return res
         if rc != 0:
+            # 克隆失败：清理残留半成品目录，避免下次 sync 反复 删→建→删
+            self._emit(f"克隆失败，清理残留目录 {repo_dir.name}", "warn")
+            try:
+                shutil.rmtree(repo_dir, ignore_errors=True)
+            except Exception:
+                pass
             res.status = SyncStatus.FAILED
             res.action = SyncAction.FAILED
             res.message = "克隆失败"
@@ -210,6 +369,11 @@ class GitService:
         res.head_sha = head
         res.remote_sha = head
         res.status = SyncStatus.SUCCESS
+        if not head:
+            # 空仓库：无人提交，clone 成功但无 HEAD
+            res.action = SyncAction.EMPTY
+            res.message = "空仓库（暂无提交）"
+            return res
         res.action = SyncAction.CLONED
         res.message = "克隆完成"
         res.commits = 0
@@ -218,7 +382,6 @@ class GitService:
     # ------------------------------------------------------------ update
     def _update(self, spec: RepoSpec, res: SyncResult) -> SyncResult:
         repo_dir = self._repo_dir(spec)
-        res.started = time.time()
         before = self._head_sha(repo_dir)
         res.head_sha = before
 
@@ -226,7 +389,8 @@ class GitService:
         self._emit(f"检查 {spec.display} 远端更新 …")
         rc, _ = run_git_ui(
             ["git", "fetch", "--progress", "--prune", "origin"],
-            str(repo_dir), self.on_line, cancelled=self.cancelled, timeout=180,
+            str(repo_dir), self.on_line, cancelled=self.cancelled, env=self._env(),
+            timeout=self.fetch_timeout, retries=self.retries, backoff=self._backoff,
         )
         if self.cancelled():
             res.status = SyncStatus.CANCELLED
@@ -254,7 +418,6 @@ class GitService:
             res.detail = reason
             res.remote_sha = self._remote_head(repo_dir)
             res.commits = commits_new
-            res.ended = time.time()
             return res
 
         # 4) merge --ff-only（或 rebase）
@@ -284,7 +447,6 @@ class GitService:
                     res.detail = "本地与远端分叉且存在冲突，已回滚，保留本地改动"
                     res.commits = commits_new
                     res.remote_sha = self._remote_head(repo_dir)
-                    res.ended = time.time()
                     return res
         else:
             self._emit(f"{spec.display} 已是最新。")
@@ -296,8 +458,6 @@ class GitService:
         res.status = SyncStatus.SUCCESS
         res.action = SyncAction.UPDATED if commits_new > 0 else SyncAction.FETCHED
         res.message = f"更新完成（+{commits_new} 提交）" if commits_new > 0 else "已是最新"
-        res.ended = time.time()
-        res.duration_ms = int((res.ended - res.started) * 1000)
         return res
 
     # ------------------------------------------------------------ helpers

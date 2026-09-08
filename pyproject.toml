@@ -1,6 +1,6 @@
 # Git-clone-Max 打包与运行配置
 
-```
+```text
 Git-clone-Max/
 ├── gcm/
 │   ├── __init__.py      版本与应用名
@@ -8,17 +8,21 @@ Git-clone-Max/
 │   ├── models.py        数据模型
 │   ├── app/
 │   │   ├── url_lib.py   GitHub 地址解析 / 目录命名（作者__仓库）
+│   │   ├── updater.py   自更新（检查 GitHub Releases）
 │   │   └── worker.py    QThreadPool 并行 worker + 断点续传 progress.json
 │   ├── db/
-│   │   └── repo_db.py   SQLite：repos + sync_history；断点续传进度
+│   │   ├── repo_db.py   SQLite：repos + sync_history；断点续传进度
+│   │   └── settings.py  设置持久化（settings.json）
 │   ├── git/
 │   │   └── service.py   git clone / fetch / ff-only / rebase / 冲突检测
 │   └── ui/
 │       ├── theme.py     配色 + 日志模型 + 控制台高亮
+│       ├── tray.py      系统托盘
 │       └── main_window.py  三个 Tab 主窗口
-├── scripts/
-├── tests/
-├── requirements.txt
+├── scripts/             发布脚本 + bat/ps1 启动器
+├── tests/               单元测试 + UI 集成 + 真实 git E2E
+├── requirements.txt     PyQt6（运行时）
+├── requirements-build.txt  PyInstaller + PyGithub（构建/发布）
 └── pyproject.toml
 ```
 
@@ -27,4 +31,21 @@ Git-clone-Max/
 ```bash
 python -m pip install -r requirements.txt
 python -m gcm
+```
+
+## 测试
+
+```bash
+python -m pip install coverage
+python -m coverage run --source=gcm -m unittest discover -s tests
+python -m coverage report
+```
+
+## 打包 / 发布
+
+```bash
+python -m pip install -r requirements-build.txt
+python -m PyInstaller Git-clone-Max.spec
+python scripts/publish_release.py --dry-run   # 校验
+python scripts/publish_release.py             # 上传 Release
 ```

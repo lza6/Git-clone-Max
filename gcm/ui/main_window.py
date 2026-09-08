@@ -7,13 +7,14 @@ import sys
 import time
 from pathlib import Path
 
-from PyQt6.QtCore import QThreadPool, Qt, pyqtSlot
+from PyQt6.QtCore import QThreadPool, QTimer, Qt, pyqtSlot
 from PyQt6.QtGui import QCloseEvent, QColor, QFont, QTextCursor
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
     QFileDialog,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -33,9 +34,10 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..app.url_lib import parse_repo_url
+from ..app.url_lib import parse_repo_url, parse_urls
 from ..app.worker import CancelFlag, CloneWorker, TaskPayload, WorkerSignals
 from ..db.repo_db import Database, load_progress
+from ..db.settings import Settings, SettingsStore
 from ..git.service import GitService
 from ..models import RepoSpec, SyncResult, SyncStatus
 from .theme import LogEvent, LogLevel, LogModel, PALETTE, QSS, make_highlighter
@@ -59,15 +61,19 @@ def _dur(ms: int) -> str:
 class MainWindow(QMainWindow):
     """Git-clone-Max 主窗口。"""
 
-    def __init__(self, data_dir: str | Path, db: Database | None = None):
+    def __init__(self, data_dir: str | Path, db: Database | None = None,
+                 settings: SettingsStore | None = None):
         super().__init__()
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.db = db or Database(self.data_dir / "repos.db")
+        self.settings_store = settings or SettingsStore(self.data_dir / "settings.json")
+        self.settings = self.settings_store.load()
         self.progress_path = self.data_dir / "progress.json"
 
-        self.pool = QThreadPool.globalInstance()
-        self.pool.setMaxThreadCount(max(1, min(8, os.cpu_count() or 4)))
+        # 自建线程池，不碰全局实例；并发数来自持久化设置
+        self.pool = QThreadPool(self)
+        self.pool.setMaxThreadCount(max(1, min(16, int(self.settings.concurrency))))
 
         self.tasks: list = []               # list[CancelFlag]
         self.flags: dict = {}               # index -> CancelFlag
@@ -79,11 +85,15 @@ class MainWindow(QMainWindow):
         self.log = LogModel(max_entries=3000)
         self.log.appended.connect(self._on_log_appended)
 
-        # git 服务（回调直接转发到 log）
+        # git 服务（回调直接转发到 log；超时/重试/代理来自设置）
         self.service = GitService(
             self.data_dir / "clones",
             on_line=lambda c: self.log.append(_fmt_dt(), LogLevel.INFO, f"[{c.text}]"),
             cancelled=lambda: self._any_cancel(),
+            fetch_timeout=self.settings.fetch_timeout,
+            clone_timeout=self.settings.clone_timeout,
+            retries=self.settings.retries,
+            proxy=self.settings.proxy,
         )
 
         self._build_ui()
@@ -91,6 +101,12 @@ class MainWindow(QMainWindow):
         self.log.append(_fmt_dt(), LogLevel.SYSTEM, f"Git-clone-Max 启动，数据目录：{self.data_dir}")
         self.log.append(_fmt_dt(), LogLevel.SYSTEM, f"并行线程：{self.pool.maxThreadCount()}")
         self._load_db_into_grid()
+
+        # 系统托盘（失败静默降级，不影响主流程）
+        from .tray import TrayController
+        self.tray = TrayController(parent=self)
+        if self.settings.minimize_to_tray:
+            self.tray.install()
 
     # ------------------------------------------------------------ UI
     def _build_ui(self):
@@ -265,12 +281,47 @@ class MainWindow(QMainWindow):
         v = QVBoxLayout(self.tab_settings)
         v.setSpacing(10)
 
+        # 设置与日志
         g1 = QGroupBox("启动与后台运行")
         l1 = QHBoxLayout(g1)
         self.ck_autostart = QCheckBox("开机自启（写入任务计划：登录时启动一次）")
         l1.addWidget(self.ck_autostart)
+        self.btn_check_update = QPushButton("检查更新")
+        self.btn_check_update.clicked.connect(self.check_update_now)
+        l1.addWidget(self.btn_check_update)
         l1.addStretch()
         v.addWidget(g1)
+
+        # 并行 / 网络设置（持久化到 settings.json）
+        g3 = QGroupBox("并行与网络")
+        l3 = QGridLayout(g3)
+        l3.setContentsMargins(10, 10, 10, 10)
+        l3.setHorizontalSpacing(12)
+        l3.setVerticalSpacing(8)
+        l3.addWidget(QLabel("并发数（1–16）："), 0, 0)
+        self.spin_concurrency = QSpinBox()
+        self.spin_concurrency.setRange(1, 16)
+        self.spin_concurrency.setValue(int(self.settings.concurrency))
+        self.spin_concurrency.valueChanged.connect(self._save_concurrency)
+        l3.addWidget(self.spin_concurrency, 0, 1)
+        l3.addWidget(QLabel("fetch 超时（秒）："), 0, 2)
+        self.spin_fetch_timeout = QSpinBox()
+        self.spin_fetch_timeout.setRange(10, 3600)
+        self.spin_fetch_timeout.setValue(int(self.settings.fetch_timeout))
+        self.spin_fetch_timeout.valueChanged.connect(self._save_fetch_timeout)
+        l3.addWidget(self.spin_fetch_timeout, 0, 3)
+        l3.addWidget(QLabel("自动重试（次）："), 1, 0)
+        self.spin_retries = QSpinBox()
+        self.spin_retries.setRange(0, 5)
+        self.spin_retries.setValue(int(self.settings.retries))
+        self.spin_retries.valueChanged.connect(self._save_retries)
+        l3.addWidget(self.spin_retries, 1, 1)
+        l3.addWidget(QLabel("HTTP 代理："), 1, 2)
+        self.edit_proxy = QLineEdit(self.settings.proxy)
+        self.edit_proxy.setPlaceholderText("http://127.0.0.1:7890（留空不代理）")
+        self.edit_proxy.editingFinished.connect(self._save_proxy)
+        l3.addWidget(self.edit_proxy, 1, 3)
+        v.addWidget(g3)
 
         g2 = QGroupBox("黑匣子日志（实时）")
         l2 = QVBoxLayout(g2)
@@ -299,7 +350,7 @@ class MainWindow(QMainWindow):
     @pyqtSlot(int)
     def _on_log_appended(self, count):
         self.log_count.setText(f"{count} 条")
-        if hasattr(self, "log_view") and self.log_view:
+        if hasattr(self, "log_view") and self.log_view and self.log._entries:
             ev = self.log._entries[-1]
             prefix = {
                 LogLevel.WARN: "[警告] ",
@@ -316,6 +367,47 @@ class MainWindow(QMainWindow):
     def clear_log(self):
         self.log.clear()
         self.log_view.clear()
+
+    # ------------------------------------------------------------ 设置持久化
+    def _save_concurrency(self, value):
+        self.settings.concurrency = int(value)
+        if self.pool is not None:
+            self.pool.setMaxThreadCount(int(value))
+        self.thread_lbl.setText(f"并行线程 {self.pool.maxThreadCount()}")
+        self.settings_store.save(self.settings)
+
+    def _save_fetch_timeout(self, value):
+        self.settings.fetch_timeout = int(value)
+        self.settings_store.save(self.settings)
+
+    def _save_retries(self, value):
+        self.settings.retries = int(value)
+        self.settings_store.save(self.settings)
+
+    def _save_proxy(self):
+        self.settings.proxy = self.edit_proxy.text().strip()
+        self.settings_store.save(self.settings)
+
+    # ------------------------------------------------------------ 更新检查
+    def check_update_now(self):
+        try:
+            from ..app.updater import check_latest
+            from .. import __version__
+            has_new, ver, url, err = check_latest()
+            if err:
+                QMessageBox.information(self, "检查更新", err)
+            elif has_new:
+                ret = QMessageBox.question(
+                    self, "发现新版本",
+                    f"当前版本 {__version__}，最新版本 {ver}。\n是否打开下载页面？",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                if ret == QMessageBox.StandardButton.Yes and url:
+                    import webbrowser
+                    webbrowser.open(url)
+            else:
+                QMessageBox.information(self, "检查更新", f"已是最新版本（{__version__}）")
+        except Exception as e:
+            QMessageBox.information(self, "检查更新", f"检查更新失败：{e}")
 
     def save_log(self):
         path, _ = QFileDialog.getSaveFileName(
@@ -353,14 +445,26 @@ class MainWindow(QMainWindow):
     def start_all(self):
         if self.busy:
             return
-        specs = []
-        for raw in self.repo_input.toPlainText().splitlines():
-            spec = parse_repo_url(raw)
-            if spec:
-                specs.append(spec)
+        text = self.repo_input.toPlainText()
+        specs, invalid = parse_urls(text)
         if not specs:
-            QMessageBox.information(self, "提示", "请输入至少一个有效的 GitHub 地址。")
+            QMessageBox.information(
+                self, "提示",
+                "没有可用的 GitHub 地址。\n\n有效示例：\n"
+                "https://github.com/vercel-labs/skills\ngit@github.com:microsoft/azure-skills.git\n"
+                "vercel-labs/agent-skills")
             return
+        if invalid:
+            shown = "\n".join(f"  ✗ {line}" for line in invalid)
+            ret = QMessageBox.question(
+                self, "无效地址（忽略并继续？）",
+                f"{len(invalid)} 行不是有效的 GitHub 仓库地址：\n{shown}\n\n"
+                "继续将只同步有效行，是否忽略无效行？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if ret != QMessageBox.StandardButton.Yes:
+                return
+            self.log.append(_fmt_dt(), LogLevel.WARN,
+                            f"已忽略 {len(invalid)} 行无效地址：{', '.join(invalid)}")
         target = self.target_edit.text().strip()
         if not target:
             QMessageBox.warning(self, "提示", "请先选择下载目录。")
@@ -381,16 +485,38 @@ class MainWindow(QMainWindow):
         if not rows:
             QMessageBox.information(self, "提示", "数据库中没有已记录的仓库，请先到「下载中心」添加。")
             return
+        # 按 local_path 反推根目录集合：仓库可能分散在多个下载目录
+        from collections import OrderedDict
+        groups: "OrderedDict[str, list]" = OrderedDict()
+        for r in rows:
+            root = str(Path(r["local_path"]).parent)
+            groups.setdefault(root, []).append(r)
+        if len(groups) == 1:
+            root = next(iter(groups))
+            specs = [RepoSpec(owner=r["owner"], repo=r["repo"],
+                              url_https=r["url"], folder_name=r["folder_name"])
+                     for r in groups[root]]
+            self._launch(specs, target_root=Path(root), shallow=False, depth=1)
+            return
+        # 多根目录逐组串行启动（每组内部并行）
+        self._multi_root_update = list(groups.items())
+        self._update_next_root()
+
+    def _update_next_root(self):
+        if not getattr(self, "_multi_root_update", None):
+            return
+        root, rows = self._multi_root_update.pop(0)
+        if self.busy:
+            return  # 当前组仍在运行，等 finished 槽再拉下一组
         specs = [RepoSpec(owner=r["owner"], repo=r["repo"],
                           url_https=r["url"], folder_name=r["folder_name"])
                  for r in rows]
-        target = Path(self.db.list_repos(DOMAIN)[0]["local_path"]).parent if rows else \
-            self.data_dir / "clones"
-        # local_path 形如 clones/author__repo → 取其父目录为 root
-        root = Path(rows[0]["local_path"]).parent
-        self._launch(specs, target_root=root, shallow=False, depth=1)
+        self.log.append(_fmt_dt(), LogLevel.SYSTEM, f"一键更新：处理根目录 {root}（{len(specs)} 个仓库）")
+        self._launch(specs, target_root=Path(root), shallow=False, depth=1,
+                     multi_root_relay=True)
 
-    def _launch(self, specs, target_root, shallow, depth, clear_input=False):
+    def _launch(self, specs, target_root, shallow, depth, clear_input=False,
+                multi_root_relay=False):
         self.busy = True
         self.btn_start.setEnabled(False)
         self.btn_cancel.setEnabled(True)
@@ -405,15 +531,21 @@ class MainWindow(QMainWindow):
         self.log.append(_fmt_dt(), LogLevel.SYSTEM, f"根目录：{target_root}")
 
         # 下载完成后自动清空输入框（默认开启）
-        self._clear_after_finish = clear_input
+        self._clear_after_finish = clear_input and not multi_root_relay
+        self._multi_root_relay = multi_root_relay
 
-        # 重建 service（根目录可变）
+        # 重建 service（根目录可变；超时/重试/代理来自设置）
         self.service = GitService(
             target_root,
             on_line=lambda c: self.log.append(_fmt_dt(), LogLevel.INFO, f"[{c.text}]"),
             cancelled=lambda: self._any_cancel(),
+            fetch_timeout=self.settings.fetch_timeout,
+            clone_timeout=self.settings.clone_timeout,
+            retries=self.settings.retries,
+            proxy=self.settings.proxy,
         )
         self._prepare_table(len(specs))
+        self._pending_count = len(specs)
         for i, spec in enumerate(specs):
             flag = CancelFlag()
             self.flags[i] = flag
@@ -493,6 +625,7 @@ class MainWindow(QMainWindow):
             "cloned": "新建克隆",
             "updated": f"增量 +{res.commits}",
             "fetched": "已最新",
+            "empty": "空仓库",
             "skipped": "跳过",
             "conflict": "冲突保留",
             "cancelled": "取消",
@@ -511,6 +644,10 @@ class MainWindow(QMainWindow):
     def _on_worker_finished(self):
         if not self.busy:
             return
+        # 显式完成计数（不依赖表格状态文本）：每来一个 finished 信号减一
+        self._pending_count = max(0, getattr(self, "_pending_count", 0) - 1)
+        if self._pending_count > 0:
+            return  # 还有 worker 在跑，不提前复位
         done = 0
         ok = fail = conflict = 0
         for i in range(self.table.rowCount()):
@@ -537,13 +674,24 @@ class MainWindow(QMainWindow):
             self.depth_spin.setEnabled(self.mode_combo.currentIndex() == 1)
             self.statusBar().showMessage(
                 f"完成：成功 {ok} · 冲突 {conflict} · 失败 {fail}")
-            self.log.append(_fmt_dt(), LogLevel.SYSTEM,
-                            f"全部任务结束：成功 {ok} · 冲突 {conflict} · 失败 {fail}")
+            completed = f"成功 {ok} · 冲突 {conflict} · 失败 {fail}"
+            self.log.append(_fmt_dt(), LogLevel.SYSTEM, f"全部任务结束：{completed}")
             # 下载完成自动清空输入框
             if getattr(self, "_clear_after_finish", False):
                 self.repo_input.clear()
                 self.log.append(_fmt_dt(), LogLevel.SYSTEM, "下载完成，已自动清空输入框。")
             self._load_db_into_grid()
+            # 全部完成系统通知（托盘存在时）
+            try:
+                if getattr(self, "tray", None) is not None:
+                    self.tray.notify(
+                        "全部任务完成",
+                        f"成功 {ok} · 冲突 {conflict} · 失败 {fail}")
+            except Exception:
+                pass
+            # 多根目录继任：还有下一组则继续（QTimer 调度避免嵌套重入）
+            if getattr(self, "_multi_root_relay", False) and self._multi_root_update:
+                QTimer.singleShot(0, self._update_next_root)
 
     def cancel_all(self):
         for flag in self.flags.values():
@@ -619,8 +767,22 @@ class MainWindow(QMainWindow):
             for flag in self.flags.values():
                 flag.cancel()
         self._close_requested = True
+        # 取消剩余任务并清空未启动队列，避免退出后留下孤儿 git 进程
+        for flag in self.flags.values():
+            flag.cancel()
         try:
+            if self.pool is not None:
+                self.pool.clear()
+        except Exception:
+            pass
+        try:
+            self.settings_store.save(self.settings)
             self.db.close()
+        except Exception:
+            pass
+        try:
+            if getattr(self, "tray", None) is not None and self.tray.tray is not None:
+                self.tray.tray.hide()
         except Exception:
             pass
         e.accept()

@@ -12,4 +12,5 @@ data/
 build/
 dist/
 *.spec
+.coverage
 _archive_v1/

@@ -1,0 +1,137 @@
+# -*- coding: utf-8 -*-
+"""UI 集成测试（离屏 QtTest）：主窗口关键交互路径。"""
+from __future__ import annotations
+
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from PyQt6.QtWidgets import QApplication, QMessageBox
+
+from gcm.db.repo_db import Database
+from gcm.db.settings import SettingsStore
+from gcm.models import RepoSpec, SyncAction, SyncResult, SyncStatus
+
+_app = QApplication.instance() or QApplication(sys.argv)
+
+
+class MainWindowHarness:
+    """轻量桩：等价于 MainWindow 的可测交互，但隔离 Qt 弹窗。"""
+
+    def __init__(self, window):
+        self.w = window
+        self.asked = []          # [(title, shown)]
+        self.informed = []       # [(title, text)]
+
+    def patch_dialogs(self):
+        self._orig_question = QMessageBox.question
+        self._orig_information = QMessageBox.information
+        QMessageBox.question = self._fake_question
+        QMessageBox.information = self._fake_information
+
+    def _fake_question(self, parent, title, text, buttons=QMessageBox.StandardButton.Yes,
+                       defaultButton=QMessageBox.StandardButton.No):
+        self.asked.append((title, text))
+        # 默认返回 No：模拟用户拒绝（不真实启动任务，避免污染后续测试状态）
+        return QMessageBox.StandardButton.No
+
+    def _fake_information(self, parent, title, text, *args, **kwargs):
+        self.informed.append((title, text))
+
+    def restore_dialogs(self):
+        QMessageBox.question = self._orig_question
+        QMessageBox.information = self._orig_information
+
+
+def _make_window():
+    d = Path(tempfile.mkdtemp())
+    db = Database(d / "t.db")
+    ss = SettingsStore(d / "settings.json")
+    from gcm.ui.main_window import MainWindow
+    win = MainWindow(data_dir=d, db=db, settings=ss)
+    return win, d
+
+
+class TestMainWindow(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls._w, cls._d = _make_window()
+        cls.h = MainWindowHarness(cls._w)
+        cls.h.patch_dialogs()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.h.restore_dialogs()
+        cls._w.close()
+
+    def test_invalid_lines_prompts(self):
+        w = self._w
+        w.repo_input.setPlainText("https://github.com/a/b\nnot a url")
+        w.start_all()
+        # 应弹窗问忽略无效行
+        self.assertTrue(any("无效地址" in t for t, _ in self.h.asked),
+                        "无效地址应触发确认弹窗")
+        # 用户点「否」→ 不应启动任务
+        self.assertFalse(w.busy, "用户拒绝忽略无效行时不应启动任务")
+
+    def test_no_specs_informs(self):
+        w = self._w
+        w.repo_input.setPlainText("")
+        w.start_all()
+        # 空输入应弹出"没有可用的 GitHub 地址"（含"可用"字样）
+        self.assertTrue(
+            any(("没有可用的 GitHub 地址" in text) for _, text in self.h.informed),
+            "空输入应提示无有效地址")
+
+    def test_valid_only_starts_and_clears(self):
+        w = self._w
+        w.repo_input.setPlainText("https://github.com/a/b\nhttps://github.com/c/d")
+        # 直接调用 _launch 简化（避开真实网络）：验证按钮状态与输入框复位
+        specs = [RepoSpec("a", "b", "https://github.com/a/b.git"),
+                 RepoSpec("c", "d", "https://github.com/c/d.git")]
+        target = self._d / "clones"
+        w._launch(specs, target_root=target, shallow=False, depth=1, clear_input=True)
+        self.assertTrue(w.busy)
+        self.assertFalse(w.btn_start.isEnabled())
+        # 模拟所有任务完成（_pending_count 与行数一致；finished 信号逐次递减）
+        w._pending_count = w.table.rowCount()
+        for i in range(w.table.rowCount()):
+            it = w.table.item(i, 2)
+            it.setText("成功")
+        # 逐次触发 finished 槽，模拟每个 worker 的 finished 信号
+        for i in range(w.table.rowCount()):
+            w._on_worker_finished()
+        self.assertFalse(w.busy)
+        self.assertTrue(w.btn_start.isEnabled())
+        self.assertEqual(w.repo_input.toPlainText(), "")
+
+    def test_settings_persist_concurrency(self):
+        w = self._w
+        w.spin_concurrency.setValue(3)
+        w._save_concurrency(3)
+        self.assertEqual(w.settings.concurrency, 3)
+        self.assertEqual(w.pool.maxThreadCount(), 3)
+        # 新窗口读同一 settings.json 应恢复
+        from gcm.ui.main_window import MainWindow
+        w2 = MainWindow(data_dir=self._d, db=Database(self._d / "t2.db"),
+                        settings=SettingsStore(self._d / "settings.json"))
+        self.assertEqual(w2.pool.maxThreadCount(), 3)
+        w2.close()
+
+    def test_empty_action_label(self):
+        w = self._w
+        res = SyncResult(spec=RepoSpec("x", "y", "u"), status=SyncStatus.SUCCESS)
+        res.action = SyncAction.EMPTY
+        w._prepare_table(1)
+        w._add_table_row(0, res.spec)
+        w._on_worker_result(0, res)
+        self.assertEqual(w.table.item(0, 3).text(), "空仓库")
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
