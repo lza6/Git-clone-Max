@@ -9,3 +9,7 @@ data/
 .idea/
 .vscode/
 *.log
+build/
+dist/
+*.spec
+_archive_v1/

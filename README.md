@@ -1,13 +1,17 @@
 # Git-clone-Max
 
-git仓库的软件工具，支持批量git你想要的目标仓库和自动更新你git下来的仓库
-
----
-
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
 > 克隆目录一律 `作者__仓库`，本地改动永不覆盖。
 
-## 快速开始（Windows）
+## 🚀 懒人小白一键使用
+
+**双击 `dist\Git-clone-Max.exe`** 即可 —— 无需安装 Python、无需配置环境、无需手动安装依赖。
+
+> ⚠️ 说明：exe 为 **单文件自包含** 打包（含 Python 运行时 + PyQt6 + 全部代码）。
+> 首次双击 Windows SmartScreen 可能提示「未知发布者」，点 **更多信息 → 仍要运行** 即可。
+> 软件运行时会调用系统已安装的 `git`（若未安装，请在 https://git-scm.com/download/win 安装一次）。
+
+## 快速开始（源码运行）
 
 双击 **`scripts\启动Git-clone-Max.bat`**（或右键 PowerShell 运行同目录 `.ps1`）。
 启动器会自动：
@@ -29,12 +33,13 @@ git仓库的软件工具，支持批量git你想要的目标仓库和自动更�
 | 一键更新 | 「仓库管理 → ⟳ 一键更新全部」对库中所有仓库增量同步 |
 | 作者__仓库命名 | 同名仓库不冲突（如 `lza6__Git-clone-Max`） |
 | 黑匣子日志 | 实时 git 原生输出 + 关键字高亮 + 导出 txt |
-| 后台常驻 | 见下方「后台挂机」 |
+| 下载完自动清空 | 所有仓库同步完成后自动清空输入框 |
 
 ## 目录结构
 
 ```
 Git-clone-Max/
+├── dist/Git-clone-Max.exe   成品可执行文件（双击即用）
 ├── gcm/                    主包
 │   ├── __main__.py         入口（python -m gcm）
 │   ├── models.py           数据模型
@@ -48,6 +53,14 @@ Git-clone-Max/
 ├── tests/                  单元测试（含 git 真实 E2E）
 ├── requirements.txt
 └── pyproject.toml
+```
+
+## 重新打包 exe
+
+```bash
+python -m pip install pyinstaller
+python -m PyInstaller --noconfirm --clean --onefile --windowed --name "Git-clone-Max" \
+  --add-data "gcm;gcm" --collect-all "PyQt6" gcm/__main__.py
 ```
 
 ## 测试
@@ -67,7 +80,7 @@ python -m unittest discover -s tests -v
 ## 发布
 
 ```bash
-git tag v1.0.0
+git tag v1.1.0
 git push origin main --tags
 ```
 
