@@ -16,6 +16,23 @@ _URI = "https://api.github.com/repos/lza6/Git-clone-Max/releases/latest"
 _TIMEOUT = 15
 
 
+def _gh_token() -> str:
+    """从 git credential manager 取 GitHub token（未登录时返回空串 → 走匿名限流）。"""
+    import subprocess
+    try:
+        r = subprocess.run(
+            ["git", "credential", "fill"],
+            input="protocol=https\nhost=github.com\n\n",
+            capture_output=True, text=True, timeout=10,
+        )
+        for line in (r.stdout or "").splitlines():
+            if line.startswith("password="):
+                return line[len("password="):].strip()
+    except Exception:
+        pass
+    return ""
+
+
 def _parse_version(v: str) -> tuple:
     """把 "v2.0.0-beta.1" 拆成可比较元组 (2, 0, 0, 4)。段不足补 0。"""
     m = re.match(r"v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:[-.](.+))?$", (v or "").strip())
@@ -41,9 +58,12 @@ def check_latest(fetcher=None, timeout: int = _TIMEOUT) -> tuple:
         import urllib.request
 
         def _default():
-            req = urllib.request.Request(
-                _URI, headers={"Accept": "application/vnd.github+json",
-                               "User-Agent": "Git-clone-Max"})
+            token = _gh_token()
+            headers = {"Accept": "application/vnd.github+json",
+                       "User-Agent": "Git-clone-Max"}
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            req = urllib.request.Request(_URI, headers=headers)
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return resp.read().decode("utf-8", "replace")
         fetcher = _default
