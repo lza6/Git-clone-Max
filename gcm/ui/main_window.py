@@ -369,7 +369,9 @@ class MainWindow(QMainWindow):
 
         shallow = self.mode_combo.currentIndex() == 1
         depth = self.depth_spin.value()
-        self._launch(specs, target_root=Path(target), shallow=shallow, depth=depth)
+        # 下载完成后自动清空输入框（用户要求）
+        self._launch(specs, target_root=Path(target), shallow=shallow, depth=depth,
+                     clear_input=True)
 
     def update_all(self):
         if self.busy:
@@ -388,7 +390,7 @@ class MainWindow(QMainWindow):
         root = Path(rows[0]["local_path"]).parent
         self._launch(specs, target_root=root, shallow=False, depth=1)
 
-    def _launch(self, specs, target_root, shallow, depth):
+    def _launch(self, specs, target_root, shallow, depth, clear_input=False):
         self.busy = True
         self.btn_start.setEnabled(False)
         self.btn_cancel.setEnabled(True)
@@ -401,6 +403,9 @@ class MainWindow(QMainWindow):
         self.log.append(_fmt_dt(), LogLevel.SYSTEM,
                         f"开始并行同步 {len(specs)} 个仓库（{'浅克隆 depth=' + str(depth) if shallow else '满量'}）")
         self.log.append(_fmt_dt(), LogLevel.SYSTEM, f"根目录：{target_root}")
+
+        # 下载完成后自动清空输入框（默认开启）
+        self._clear_after_finish = clear_input
 
         # 重建 service（根目录可变）
         self.service = GitService(
@@ -534,6 +539,10 @@ class MainWindow(QMainWindow):
                 f"完成：成功 {ok} · 冲突 {conflict} · 失败 {fail}")
             self.log.append(_fmt_dt(), LogLevel.SYSTEM,
                             f"全部任务结束：成功 {ok} · 冲突 {conflict} · 失败 {fail}")
+            # 下载完成自动清空输入框
+            if getattr(self, "_clear_after_finish", False):
+                self.repo_input.clear()
+                self.log.append(_fmt_dt(), LogLevel.SYSTEM, "下载完成，已自动清空输入框。")
             self._load_db_into_grid()
 
     def cancel_all(self):
