@@ -69,68 +69,92 @@ class TestMainWindow(unittest.TestCase):
         cls.h.restore_dialogs()
         cls._w.close()
 
-    def test_invalid_lines_prompts(self):
+    def _drain_log_timer(self):
+        """结束测试前清空日志节流定时器积压，避免窗口销毁时 QTimer 引用跨线程告警/挂起。"""
         w = self._w
-        w.repo_input.setPlainText("https://github.com/a/b\nnot a url")
-        w.start_all()
-        # 应弹窗问忽略无效行
-        self.assertTrue(any("无效地址" in t for t, _ in self.h.asked),
-                        "无效地址应触发确认弹窗")
-        # 用户点「否」→ 不应启动任务
-        self.assertFalse(w.busy, "用户拒绝忽略无效行时不应启动任务")
+        if hasattr(w, "_log_batch_timer") and w._log_batch_timer.isActive():
+            w._log_batch_timer.stop()
+        if hasattr(w, "_log_batch"):
+            w._log_batch.clear()
+            w._flush_log_batch()
+
+    def test_invalid_lines_prompts(self):
+        try:
+            w = self._w
+            w.repo_input.setPlainText("https://github.com/a/b\nnot a url")
+            w.start_all()
+            # 应弹窗问忽略无效行
+            self.assertTrue(any("无效地址" in t for t, _ in self.h.asked),
+                            "无效地址应触发确认弹窗")
+            # 用户点「否」→ 不应启动任务
+            self.assertFalse(w.busy, "用户拒绝忽略无效行时不应启动任务")
+        finally:
+            self._drain_log_timer()
 
     def test_no_specs_informs(self):
-        w = self._w
-        w.repo_input.setPlainText("")
-        w.start_all()
-        # 空输入应弹出"没有可用的 GitHub 地址"（含"可用"字样）
-        self.assertTrue(
-            any(("没有可用的 GitHub 地址" in text) for _, text in self.h.informed),
-            "空输入应提示无有效地址")
+        try:
+            w = self._w
+            w.repo_input.setPlainText("")
+            w.start_all()
+            # 空输入应弹出"没有可用的 GitHub 地址"（含"可用"字样）
+            self.assertTrue(
+                any(("没有可用的 GitHub 地址" in text) for _, text in self.h.informed),
+                "空输入应提示无有效地址")
+        finally:
+            self._drain_log_timer()
 
     def test_valid_only_starts_and_clears(self):
-        w = self._w
-        w.repo_input.setPlainText("https://github.com/a/b\nhttps://github.com/c/d")
-        # 直接调用 _launch 简化（避开真实网络）：验证按钮状态与输入框复位
-        specs = [RepoSpec("a", "b", "https://github.com/a/b.git"),
-                 RepoSpec("c", "d", "https://github.com/c/d.git")]
-        target = self._d / "clones"
-        w._launch(specs, target_root=target, shallow=False, depth=1, clear_input=True)
-        self.assertTrue(w.busy)
-        self.assertFalse(w.btn_start.isEnabled())
-        # 模拟所有任务完成（_pending_count 与行数一致；finished 信号逐次递减）
-        w._pending_count = w.table.rowCount()
-        for i in range(w.table.rowCount()):
-            it = w.table.item(i, 2)
-            it.setText("成功")
-        # 逐次触发 finished 槽，模拟每个 worker 的 finished 信号
-        for i in range(w.table.rowCount()):
-            w._on_worker_finished()
-        self.assertFalse(w.busy)
-        self.assertTrue(w.btn_start.isEnabled())
-        self.assertEqual(w.repo_input.toPlainText(), "")
+        try:
+            w = self._w
+            w.repo_input.setPlainText("https://github.com/a/b\nhttps://github.com/c/d")
+            # 直接调用 _launch 简化（避开真实网络）：验证按钮状态与输入框复位
+            specs = [RepoSpec("a", "b", "https://github.com/a/b.git"),
+                     RepoSpec("c", "d", "https://github.com/c/d.git")]
+            target = self._d / "clones"
+            w._launch(specs, target_root=target, shallow=False, depth=1, clear_input=True)
+            self.assertTrue(w.busy)
+            self.assertFalse(w.btn_start.isEnabled())
+            # 模拟所有任务完成（_pending_count 与行数一致；finished 信号逐次递减）
+            w._pending_count = w.table.rowCount()
+            for i in range(w.table.rowCount()):
+                it = w.table.item(i, 2)
+                it.setText("成功")
+            # 逐次触发 finished 槽，模拟每个 worker 的 finished 信号
+            for i in range(w.table.rowCount()):
+                w._on_worker_finished()
+            self.assertFalse(w.busy)
+            self.assertTrue(w.btn_start.isEnabled())
+            self.assertEqual(w.repo_input.toPlainText(), "")
+        finally:
+            self._drain_log_timer()
 
     def test_settings_persist_concurrency(self):
-        w = self._w
-        w.spin_concurrency.setValue(3)
-        w._save_concurrency(3)
-        self.assertEqual(w.settings.concurrency, 3)
-        self.assertEqual(w.pool.maxThreadCount(), 3)
-        # 新窗口读同一 settings.json 应恢复
-        from gcm.ui.main_window import MainWindow
-        w2 = MainWindow(data_dir=self._d, db=Database(self._d / "t2.db"),
-                        settings=SettingsStore(self._d / "settings.json"))
-        self.assertEqual(w2.pool.maxThreadCount(), 3)
-        w2.close()
+        try:
+            w = self._w
+            w.spin_concurrency.setValue(3)
+            w._save_concurrency(3)
+            self.assertEqual(w.settings.concurrency, 3)
+            self.assertEqual(w.pool.maxThreadCount(), 3)
+            # 新窗口读同一 settings.json 应恢复
+            from gcm.ui.main_window import MainWindow
+            w2 = MainWindow(data_dir=self._d, db=Database(self._d / "t2.db"),
+                            settings=SettingsStore(self._d / "settings.json"))
+            self.assertEqual(w2.pool.maxThreadCount(), 3)
+            w2.close()
+        finally:
+            self._drain_log_timer()
 
     def test_empty_action_label(self):
-        w = self._w
-        res = SyncResult(spec=RepoSpec("x", "y", "u"), status=SyncStatus.SUCCESS)
-        res.action = SyncAction.EMPTY
-        w._prepare_table(1)
-        w._add_table_row(0, res.spec)
-        w._on_worker_result(0, res)
-        self.assertEqual(w.table.item(0, 3).text(), "空仓库")
+        try:
+            w = self._w
+            res = SyncResult(spec=RepoSpec("x", "y", "u"), status=SyncStatus.SUCCESS)
+            res.action = SyncAction.EMPTY
+            w._prepare_table(1)
+            w._add_table_row(0, res.spec)
+            w._on_worker_result(0, res)
+            self.assertEqual(w.table.item(0, 3).text(), "空仓库")
+        finally:
+            self._drain_log_timer()
 
 
 if __name__ == "__main__":

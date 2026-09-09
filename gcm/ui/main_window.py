@@ -639,7 +639,7 @@ class MainWindow(QMainWindow):
                                  on_line=lambda c, i=i: self._emit_log(
                                      _fmt_dt(), LogLevel.INFO, f"[{i}] {c.text}"),
                                  fetch_depth=depth if shallow else 0,
-                                 unshallow=self.settings.get("fetch_unshallow", False))
+                                 unshallow=getattr(self.settings, "fetch_unshallow", False))
             worker.signals.line.connect(self._on_worker_line)
             worker.signals.progress.connect(self._on_worker_progress)
             worker.signals.result.connect(self._on_worker_result)
