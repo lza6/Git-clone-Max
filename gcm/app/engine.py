@@ -144,6 +144,32 @@ class SyncEngine(QObject):
         for flag in self.flags.values():
             flag.cancel()
 
+    def pause_task(self, index: int) -> bool:
+        """暂停单个任务：只取消目标 worker 的 flag，其余任务继续（G02-3）。
+
+        返回是否成功定位到该任务。
+        """
+        flag = self.flags.get(index)
+        if flag is not None:
+            try:
+                flag.cancel()
+                # 同步：若该任务对应 worker 的取消回调绑定的是全局状态，
+                # 这里直接把目标 worker 的 payload.flag 置为已取消即可被 worker 感知
+                for w in self.tasks:
+                    if w.index == index:
+                        w.payload.flag.cancel()
+                return True
+            except Exception:
+                pass
+        # 兼容：index 可能对应 tasks 中的位置
+        try:
+            if 0 <= index < len(self.tasks):
+                self.tasks[index].payload.flag.cancel()
+                return True
+        except Exception:
+            pass
+        return False
+
     def is_cancelled(self, key: str = "") -> bool:
         """全局取消状态。key 未用（当前为全量取消语义），保留参数便于后续逐仓库取消。"""
         return self._cancelled
@@ -175,6 +201,17 @@ class SyncEngine(QObject):
         )
         # 进度附加文本（速率/对象数）注入点：解析 git 行并统一经引擎信号转发到 UI
         svc.send_progress_detail = self._emit_progress_detail
+        return svc
+
+    def _worker_service(self, flag: CancelFlag) -> GitService:
+        """为单个 worker 构造带「单任务取消」回调的 service（G02-3）。
+
+        每个 worker 独占一个 service 实例，cancelled 同时反映「全局取消」与
+        该 worker 的 flag——避免共享同一 service 时并发改 cancelled 的竞态。
+        """
+        svc = self._service()
+        global_cancelled = self.is_cancelled
+        svc.cancelled = lambda: global_cancelled() or flag()
         return svc
 
     def _precheck_skip(self, spec: RepoSpec) -> Optional[tuple]:
@@ -247,7 +284,6 @@ class SyncEngine(QObject):
         self._emit_line(0, f"开始并行同步 {len(unique_specs)} 个仓库"
                            f"（{'浅克隆 depth=' + str(fetch_depth) if fetch_depth else '满量'}）", "system")
 
-        service = self._service()
         for i, spec in enumerate(unique_specs):
             flag = CancelFlag()
             self.flags[i] = flag
@@ -255,6 +291,9 @@ class SyncEngine(QObject):
             key = f"{spec.owner}/{spec.repo}"
             host = self._host_by_key.get(key) or "github.com"
             payload = TaskPayload(spec=spec, flag=flag, host=host)
+            # G02-3: 每个 worker 独占一个 service（带自身 flag 的取消回调），
+            # 支持单任务暂停，其余 worker 互不影响
+            service = self._worker_service(flag)
             # worker 只负责 git 同步与结果回传；DB 写入与 progress 落盘统一由引擎
             # 在 _on_result / flush 处理，避免多 worker 并发写同一 SQLite 连接与进度文件
             worker = CloneWorker(i, payload, service, None, None,

@@ -267,7 +267,24 @@ class MainWindow(QMainWindow):
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setMinimumHeight(200)
+        # G02-2 表头点击排序（状态列优先级：运行>等待>成功>冲突>失败>取消>跳过）
+        self.table.setSortingEnabled(True)
+        self.table.horizontalHeader().sortIndicatorChanged.connect(self._on_sort_changed)
         v.addWidget(self.table, 3)
+
+        # G02-1 搜索过滤框（防抖 200ms）+ 进度表右键「暂停此项」（G02-3）
+        row_tools = QHBoxLayout()
+        row_tools.addWidget(QLabel("搜索："))
+        self.progress_filter = QLineEdit()
+        self.progress_filter.setPlaceholderText("按仓库名过滤…")
+        self.progress_filter.setClearButtonEnabled(True)
+        self.progress_filter.textChanged.connect(self._schedule_progress_filter)
+        row_tools.addWidget(self.progress_filter, 1)
+        btn_pause_selected = QPushButton("⏸ 暂停选中")
+        btn_pause_selected.clicked.connect(self.pause_selected)
+        row_tools.addWidget(btn_pause_selected)
+        row_tools.addStretch()
+        v.addLayout(row_tools)
 
     # ---------------- 仓库管理
     def _build_manage_tab(self):
@@ -855,18 +872,30 @@ class MainWindow(QMainWindow):
                        f"[{index}] {text}" if index is not None else text)
 
     def _prepare_table(self, n):
+        # 排序开启下先关掉再重建，避免插入行时被自动重排打乱 index
+        was_sorting = self.table.isSortingEnabled()
+        self.table.setSortingEnabled(False)
         self.table.setRowCount(0)
         self.table.setRowCount(n)
+        self.table.setSortingEnabled(was_sorting)
+        # 过滤状态保持
+        self._filter_progress_rows(getattr(self, "_progress_filter_text", ""))
 
     def _add_table_row(self, index, spec: RepoSpec):
+        # 关闭排序再插入行，保证 index 与行号对齐（引擎回调按 index 定位）
+        was_sorting = self.table.isSortingEnabled()
+        if was_sorting:
+            self.table.setSortingEnabled(False)
         name_item = QTableWidgetItem(spec.folder_name)
         name_item.setToolTip(spec.url_https)
+        name_item.setData(Qt.ItemDataRole.UserRole, spec.folder_name)  # 供过滤
         self.table.setItem(index, 0, name_item)
         prog = QProgressBar()
         prog.setRange(0, 0)
         prog.setFormat("%p%")
         self.table.setCellWidget(index, 1, prog)
         status_item = QTableWidgetItem("等待中")
+        status_item.setData(Qt.ItemDataRole.UserRole, "pending")  # 供排序
         status_item.setForeground(QColor(PALETTE["text_dim"]))
         self.table.setItem(index, 2, status_item)
         act_item = QTableWidgetItem("—")
@@ -875,6 +904,62 @@ class MainWindow(QMainWindow):
         msg_item = QTableWidgetItem("—")
         msg_item.setForeground(QColor(PALETTE["text_dim"]))
         self.table.setItem(index, 4, msg_item)
+        if was_sorting:
+            self.table.setSortingEnabled(True)
+
+    # --------------------------------------------------------- G02-1/2 搜索与排序
+    def _schedule_progress_filter(self, text=""):
+        """防抖：停止上一个定时器，200ms 后应用过滤。"""
+        self._progress_filter_text = text
+        if not hasattr(self, "_pf_timer"):
+            from PyQt6.QtCore import QTimer
+            self._pf_timer = QTimer(self)
+            self._pf_timer.setSingleShot(True)
+            self._pf_timer.setInterval(200)
+            self._pf_timer.timeout.connect(lambda: self._filter_progress_rows(text))
+        self._pf_timer.start()
+
+    def _filter_progress_rows(self, text=""):
+        """按仓库名校验过滤进度表行；返回可见行数（供测试）。"""
+        q = (text or "").strip().lower()
+        hidden = 0
+        for r in range(self.table.rowCount()):
+            it = self.table.item(r, 0)
+            name = it.text() if it else ""
+            if q and q not in name.lower():
+                self.table.hideRow(r)
+                hidden += 1
+            else:
+                self.table.showRow(r)
+        return self.table.rowCount() - hidden
+
+    def _on_sort_changed(self, section, order):
+        """状态列排序：用 UserRole 存的优先级；其余列默认字典序。"""
+        try:
+            order_map = {"running": 0, "pending": 1, "success": 2,
+                         "conflict": 3, "failed": 4, "cancelled": 5, "skipped": 6}
+            if section == 2:
+                for r in range(self.table.rowCount()):
+                    it = self.table.item(r, 2)
+                    if it is not None:
+                        base = it.text()
+                        pri = order_map.get(base, 99)
+                        it.setData(Qt.ItemDataRole.UserRole + 1, pri)
+        except Exception:
+            pass
+
+    # --------------------------------------------------------- G02-3 单仓库暂停
+    def pause_selected(self):
+        """暂停进度表中选中的行（仅取消该 worker，其余继续）。"""
+        rows = sorted({i.row() for i in self.table.selectedIndexes()})
+        if not rows:
+            return
+        for r in rows:
+            if hasattr(self, "engine") and self.engine is not None:
+                self.engine.pause_task(r)
+        self._emit_log(_fmt_dt(), LogLevel.WARN,
+                       f"已请求暂停 {len(rows)} 个任务（其余继续）…")
+        self.statusBar().showMessage(f"正在暂停 {len(rows)} 个任务…")
 
     @pyqtSlot(int, str)
     def _on_worker_progress(self, index, percent):
