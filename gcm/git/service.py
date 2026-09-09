@@ -125,6 +125,35 @@ def _progress_from_line(line: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
+_RATE_RE = re.compile(r"\b([\d.]+)\s*(KiB|MiB|MB|KB)/s\b")
+_TOTAL_RE = re.compile(r"(\d+)/(\d+)")
+
+
+def parse_progress_meta(line: str) -> tuple:
+    """从 git 进度行提取 (percent, rate, files) 元数据。
+
+    - percent: 百分比字符串，如 "45"；无则 None
+    - rate:    实时速率原始串，如 "732.00 KiB/s"、"7.03 MiB/s"；无则 None
+    - files:   对象/文件总数（x/y 中的 y），如 "7124"；无则 None
+    任何异常都返回 (None, None, None)，绝不向上抛出。
+    """
+    try:
+        percent = _progress_from_line(line)
+        rate = None
+        files = None
+        m = _RATE_RE.search(line)
+        if m:
+            rate = f"{m.group(1)} {m.group(2)}/s"
+        m2 = _TOTAL_RE.search(line)
+        if m2:
+            files = m2.group(2)
+        if rate is None and files is None:
+            return (percent, None, None)
+        return (percent, rate, files)
+    except Exception:
+        return (None, None, None)
+
+
 def _is_networkish_error(text: str) -> bool:
     """粗略区分『网络类』错误（值得重试）与『仓库类』错误（重试无效）。
 
@@ -184,10 +213,12 @@ def run_git_ui(cmd: List[str], cwd: str, on_line: LineCallback,
                env: Optional[Dict[str, str]] = None,
                label: str = "git", cancelled: Callable[[], bool] = lambda: False,
                timeout: float | None = None,
-               retries: int = 0, backoff: Tuple[float, ...] = (1.0, 3.0, 8.0)) -> Tuple[int, str]:
+               retries: int = 0, backoff: Tuple[float, ...] = (1.0, 3.0, 8.0),
+               progress_detail: Optional[Callable[[str], None]] = None) -> Tuple[int, str]:
     """运行 git 命令并实时转发输出，带超时与整树终止。
 
     返回 (returncode, 最后进度)。`retries` > 0 时，网络类失败自动重试。
+    `progress_detail`：可选回调，收到速率/对象数等附加进度文本（如 "7.03 MiB/s 7124"）。
 
     实现要点：
     - 读线程持续泵 stdout，主线程用 proc.wait(timeout) 兜底，静默挂死也能按时触发超时。
@@ -228,6 +259,15 @@ def run_git_ui(cmd: List[str], cwd: str, on_line: LineCallback,
                         p = _progress_from_line(line)
                         if p:
                             last_progress = p
+                        # 速率/对象数等附加进度信息：经注入点透传给 UI（无注入点则忽略）
+                        meta = parse_progress_meta(line)
+                        if meta and (
+                            meta[1] is not None or meta[2] is not None
+                        ):
+                            send = progress_detail or getattr(
+                                on_line, "send_progress_detail", None)
+                            if send:
+                                send(f"{meta[1] or ''} {meta[2] or ''}".strip())
                 # 读线程正常结束（子进程退出）后，进程可能仍在运行
                 # （pump join/timeout 场景），此时再补检一次取消标志，
                 # 否则取消请求会被吞掉、状态误判为 SUCCESS。
@@ -442,7 +482,9 @@ class GitService:
         rc, prog = run_git_ui(cmd, str(self.root), _collate,
                               cancelled=self.cancelled, env=self._env(),
                               timeout=self.clone_timeout, retries=self.retries,
-                              backoff=self._backoff)
+                              backoff=self._backoff,
+                              progress_detail=getattr(
+                                  self, "send_progress_detail", None))
         if self.cancelled():
             res.status = SyncStatus.CANCELLED
             res.action = SyncAction.CANCELLED
@@ -507,6 +549,7 @@ class GitService:
             fetch_cmd,
             str(repo_dir), self.on_line, cancelled=self.cancelled, env=self._env(),
             timeout=self.fetch_timeout, retries=self.retries, backoff=self._backoff,
+            progress_detail=getattr(self, "send_progress_detail", None),
         )
         # unshallow/带深度 fetch 失败（远端行为异常）时降级回普通 fetch，避免把仓库标红
         if rc != 0 and (used_unshallow or "--depth=" in " ".join(fetch_cmd)) and not self.cancelled():
@@ -516,6 +559,7 @@ class GitService:
                 fetch_cmd,
                 str(repo_dir), self.on_line, cancelled=self.cancelled, env=self._env(),
                 timeout=self.fetch_timeout, retries=self.retries, backoff=self._backoff,
+                progress_detail=getattr(self, "send_progress_detail", None),
             )
         if self.cancelled():
             res.status = SyncStatus.CANCELLED
@@ -559,6 +603,7 @@ class GitService:
             rc, _ = run_git_ui(
                 ["git", "merge", "--ff-only", "@{upstream}"],
                 str(repo_dir), self.on_line, cancelled=self.cancelled, timeout=120,
+                progress_detail=getattr(self, "send_progress_detail", None),
             )
             if rc != 0:
                 # 无法快进（分叉），尝试 rebase
@@ -566,6 +611,7 @@ class GitService:
                 rc, _ = run_git_ui(
                     ["git", "rebase", "@{upstream}"],
                     str(repo_dir), self.on_line, cancelled=self.cancelled, timeout=120,
+                    progress_detail=getattr(self, "send_progress_detail", None),
                 )
                 if rc != 0:
                     # 中止 rebase，保留原状态

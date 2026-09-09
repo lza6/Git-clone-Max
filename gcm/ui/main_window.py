@@ -89,6 +89,7 @@ class MainWindow(QMainWindow):
         )
         self.engine.line.connect(self._on_engine_line)
         self.engine.progress.connect(self._on_worker_progress)
+        self.engine.progress_detail.connect(self._on_worker_progress_detail)
         self.engine.result.connect(self._on_worker_result)
         self.engine.finished.connect(self._on_engine_finished)
         # 兼容旧引用（测试/托盘可能读 pool）
@@ -327,9 +328,14 @@ class MainWindow(QMainWindow):
 
         # 设置与日志
         g1 = QGroupBox("启动与后台运行")
+        g1.setToolTip("开机自启、下载完成后自动清空输入框 等启动行为")
         l1 = QHBoxLayout(g1)
         self.ck_autostart = QCheckBox("开机自启（写入任务计划：登录时启动一次）")
         l1.addWidget(self.ck_autostart)
+        self.ck_auto_clear = QCheckBox("下载完成后自动清空输入框")
+        self.ck_auto_clear.setChecked(bool(self.settings.auto_clear))
+        self.ck_auto_clear.stateChanged.connect(self._save_auto_clear)
+        l1.addWidget(self.ck_auto_clear)
         self.btn_check_update = QPushButton("检查更新")
         self.btn_check_update.clicked.connect(self.check_update_now)
         l1.addWidget(self.btn_check_update)
@@ -338,6 +344,7 @@ class MainWindow(QMainWindow):
 
         # 并行 / 网络设置（持久化到 settings.json）
         g3 = QGroupBox("并行与网络")
+        g3.setToolTip("并发数、超时、重试、代理与私有仓库认证 等网络相关设置")
         l3 = QGridLayout(g3)
         l3.setContentsMargins(10, 10, 10, 10)
         l3.setHorizontalSpacing(12)
@@ -346,38 +353,45 @@ class MainWindow(QMainWindow):
         self.spin_concurrency = QSpinBox()
         self.spin_concurrency.setRange(1, 32)
         self.spin_concurrency.setValue(int(self.settings.concurrency))
+        self.spin_concurrency.setToolTip(f"同时并行下载/更新的仓库数（1–{MAX_CONCURRENCY}）")
         self.spin_concurrency.valueChanged.connect(self._save_concurrency)
         l3.addWidget(self.spin_concurrency, 0, 1)
         l3.addWidget(QLabel("fetch 超时（秒）："), 0, 2)
         self.spin_fetch_timeout = QSpinBox()
         self.spin_fetch_timeout.setRange(10, 3600)
         self.spin_fetch_timeout.setValue(int(self.settings.fetch_timeout))
+        self.spin_fetch_timeout.setToolTip("访问仓库远程信息（fetch/克隆）的超时时间，单位秒")
         self.spin_fetch_timeout.valueChanged.connect(self._save_fetch_timeout)
         l3.addWidget(self.spin_fetch_timeout, 0, 3)
         l3.addWidget(QLabel("自动重试（次）："), 1, 0)
         self.spin_retries = QSpinBox()
         self.spin_retries.setRange(0, 5)
         self.spin_retries.setValue(int(self.settings.retries))
+        self.spin_retries.setToolTip("网络故障时自动重试次数（0 = 只尝试一次）")
         self.spin_retries.valueChanged.connect(self._save_retries)
         l3.addWidget(self.spin_retries, 1, 1)
         l3.addWidget(QLabel("HTTP 代理："), 1, 2)
         self.edit_proxy = QLineEdit(self.settings.proxy)
         self.edit_proxy.setPlaceholderText("http://127.0.0.1:7890（留空不代理）")
+        self.edit_proxy.setToolTip("网络代理地址，形如 http://127.0.0.1:7890；留空则不使用代理")
         self.edit_proxy.editingFinished.connect(self._save_proxy)
         l3.addWidget(self.edit_proxy, 1, 3)
         self.ck_unshallow = QCheckBox("浅克隆仓库更新时拉全量历史")
         self.ck_unshallow.setChecked(bool(self.settings.fetch_unshallow))
+        self.ck_unshallow.setToolTip("浅克隆仓库增量 fetch 时拉取全量历史，避免后续增量因深度不足失败")
         self.ck_unshallow.stateChanged.connect(self._save_fetch_unshallow)
         l3.addWidget(self.ck_unshallow, 2, 0, 1, 2)
         l3.addWidget(QLabel("GitHub Token："), 2, 2)
         self.edit_token = QLineEdit(self.settings.token)
         self.edit_token.setPlaceholderText("私有仓库认证令牌（可选，留空不传递）")
         self.edit_token.setEchoMode(QLineEdit.EchoMode.Password)
+        self.edit_token.setToolTip("GitHub 个人访问令牌（Fine-grained/PAT），访问私有仓库时使用；留空不传递")
         self.edit_token.editingFinished.connect(self._save_token)
         l3.addWidget(self.edit_token, 2, 3)
         v.addWidget(g3)
 
         g2 = QGroupBox("黑匣子日志（实时）")
+        g2.setToolTip("应用运行日志实时输出；可导出为文本文件排查问题")
         l2 = QVBoxLayout(g2)
         tb = QHBoxLayout()
         self.log_count = QLabel("0 条")
@@ -385,6 +399,7 @@ class MainWindow(QMainWindow):
         tb.addWidget(self.log_count)
         tb.addStretch()
         self.btn_save_log = QPushButton("导出日志…")
+        self.btn_save_log.setToolTip("把当前日志内容导出为文本文件")
         self.btn_save_log.clicked.connect(self.save_log)
         self.btn_clear_log = QPushButton("清空日志")
         self.btn_clear_log.clicked.connect(self.clear_log)
@@ -471,6 +486,10 @@ class MainWindow(QMainWindow):
 
     def _save_token(self):
         self.settings.token = self.edit_token.text().strip()
+        self.settings_store.save(self.settings)
+
+    def _save_auto_clear(self, checked):
+        self.settings.auto_clear = bool(checked)
         self.settings_store.save(self.settings)
 
     def _save_fetch_unshallow(self, checked):
@@ -568,9 +587,9 @@ class MainWindow(QMainWindow):
             return
         shallow = self.mode_combo.currentIndex() == 1
         depth = self.depth_spin.value()
-        # 下载完成后自动清空输入框（用户要求）
+        # 下载完成后自动清空输入框（跟随设置页开关）
         self._launch(specs, target_root=Path(target), shallow=shallow, depth=depth,
-                     clear_input=True)
+                     clear_input=self.settings.auto_clear)
 
     @staticmethod
     def _rows_to_specs(rows):
@@ -653,6 +672,7 @@ class MainWindow(QMainWindow):
         )
         self.engine.line.connect(self._on_engine_line)
         self.engine.progress.connect(self._on_worker_progress)
+        self.engine.progress_detail.connect(self._on_worker_progress_detail)
         self.engine.result.connect(self._on_worker_result)
         self.engine.finished.connect(self._on_engine_finished)
         self.pool = self.engine.pool
@@ -707,6 +727,7 @@ class MainWindow(QMainWindow):
         self.table.setItem(index, 0, name_item)
         prog = QProgressBar()
         prog.setRange(0, 0)
+        prog.setFormat("%p%")
         self.table.setCellWidget(index, 1, prog)
         status_item = QTableWidgetItem("等待中")
         status_item.setForeground(QColor(PALETTE["text_dim"]))
@@ -727,6 +748,18 @@ class MainWindow(QMainWindow):
             try:
                 bar.setRange(0, 100)
                 bar.setValue(int(percent))
+            except Exception:
+                pass
+
+    @pyqtSlot(int, str)
+    def _on_worker_progress_detail(self, index, text):
+        """进度列附加文本：把速率/对象数显示在进度条上（如 "7.03 MiB/s 7124"）。"""
+        if not (0 <= index < self.table.rowCount()):
+            return
+        bar = self.table.cellWidget(index, 1)
+        if isinstance(bar, QProgressBar) and text:
+            try:
+                bar.setFormat(f"%p%  {text}")
             except Exception:
                 pass
 

@@ -32,6 +32,7 @@ class TaskPayload:
 class WorkerSignals(QObject):
     line = pyqtSignal(int, str, str)        # index, text, level
     progress = pyqtSignal(int, str)         # index, percent_text
+    progress_detail = pyqtSignal(int, str)  # index, "rate files" 附加文本（速率/对象数）
     result = pyqtSignal(int, SyncResult)
     finished = pyqtSignal()
 
@@ -57,6 +58,13 @@ class CloneWorker(QRunnable):
         self._engine = engine           # 可选：引擎引用（供 line/progress 转发，避免 index=0）
         self._is_update = is_update     # 更新模式：进程开始即“更新中”，不先显示失败
 
+    def _emit_progress_detail(self, text):
+        """把进度附加文本（速率/对象数）经 signals.progress_detail 发出。"""
+        try:
+            self.signals.progress_detail.emit(self.index, text)
+        except Exception:
+            pass
+
     def run(self):
         spec = self.payload.spec
         flag = self.payload.flag or CancelFlag()
@@ -69,6 +77,8 @@ class CloneWorker(QRunnable):
                     action=SyncAction.FETCHED, message="更新中…"))
             # 复用传入的 service；若外部未配置浅克隆语义则按 payload 深度覆盖
             svc = self.service
+            # 进度附加文本（速率/对象数）注入点：把解析结果透传给本 worker 的进度详情信号
+            svc.send_progress_detail = self._emit_progress_detail
             if svc.fetch_depth != self._fetch_depth or svc.unshallow != self._unshallow:
                 svc = GitService(
                     svc.root, on_line=svc.on_line, cancelled=svc.cancelled,
@@ -76,6 +86,7 @@ class CloneWorker(QRunnable):
                     retries=svc.retries, backoff=svc._backoff, proxy=svc.proxy,
                     fetch_depth=self._fetch_depth, unshallow=self._unshallow,
                 )
+                svc.send_progress_detail = self._emit_progress_detail
             res = svc.sync(spec)
             # DB 记录由引擎统一处理（engine.py 传入 db=None 时此处跳过，
             # 避免多 worker 并发写同一 SQLite 连接）；独立使用时仍写库

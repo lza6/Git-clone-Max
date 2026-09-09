@@ -34,6 +34,7 @@ class SyncEngine(QObject):
 
     line = pyqtSignal(int, str, str)        # index, text, level
     progress = pyqtSignal(int, str)         # index, percent
+    progress_detail = pyqtSignal(int, str)  # index, "rate files" 附加文本（速率/对象数）
     result = pyqtSignal(int, SyncResult)    # index, result
     finished = pyqtSignal()                 # 全部 worker 完成（成功/失败/取消都算）
 
@@ -90,6 +91,10 @@ class SyncEngine(QObject):
     def _emit_line(self, index: int, text: str, level: str = "info"):
         self.line.emit(index, text, level)
 
+    def _emit_progress_detail(self, index: int, text: str):
+        """转发进度附加文本（速率/对象数）到 UI。"""
+        self.progress_detail.emit(index, text)
+
     def flush_progress(self):
         """把内存进度态原子落盘（周期调用；engine 单线程写文件）。"""
         if not self.progress_path or not self._dirty:
@@ -135,7 +140,7 @@ class SyncEngine(QObject):
     def _service(self) -> GitService:
         # fetch_depth/unshallow 同步给 service：让 worker（worker.py 不受允许改动）不因
         # 深度差异重建 GitService，从而避免重建时丢掉 token（token 仅在本注入点透传）。
-        return GitService(
+        svc = GitService(
             self.root,
             on_line=lambda c: self._emit_line(0, c.text, c.level),
             cancelled=lambda: self.is_cancelled(),
@@ -147,6 +152,9 @@ class SyncEngine(QObject):
             fetch_depth=self._depth if self._depth else 0,
             unshallow=self._unshallow,
         )
+        # 进度附加文本（速率/对象数）注入点：解析 git 行并统一经引擎信号转发到 UI
+        svc.send_progress_detail = self._emit_progress_detail
+        return svc
 
     def _precheck_skip(self, spec: RepoSpec) -> Optional[tuple]:
         """断点续传预检：progress 中已完成且目标目录存在 → 返回 (status, message)。
@@ -234,6 +242,7 @@ class SyncEngine(QObject):
                                  unshallow=self._unshallow)
             worker.signals.line.connect(self.line.emit)
             worker.signals.progress.connect(self.progress.emit)
+            worker.signals.progress_detail.connect(self.progress_detail.emit)
             worker.signals.result.connect(self._on_result)
             worker.signals.finished.connect(self._on_worker_done)
             self.tasks.append(worker)
