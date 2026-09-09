@@ -50,6 +50,31 @@ CREATE INDEX IF NOT EXISTS idx_sync_history_repo ON sync_history(repo_id, starte
 
 _BUSY_TIMEOUT_MS = 30000  # SQLite 写锁竞争等待上限，避免高并发直接抛 database is locked
 
+# 数据库 schema 版本（PRAGMA user_version）。每次结构变更，递增此值并补一段迁移。
+_SCHEMA_VERSION = 1
+
+
+def _migrate(conn):
+    """把 conn 连接的数据库从当前 user_version 迁移到 _SCHEMA_VERSION。
+
+    迁移在 'CREATE TABLE IF NOT EXISTS'（保证表存在）之后、业务访问之前调用。
+    幂等：user_version 已达标则直接返回。
+    """
+    v = conn.execute("PRAGMA user_version").fetchone()[0]
+    if v >= _SCHEMA_VERSION:
+        return
+    if v < 1:
+        # v1：repos 增加 标签/收藏/排除 三类扩展列（G06-6 迁移基线）
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(repos)")]
+        if "tags" not in cols:
+            conn.execute("ALTER TABLE repos ADD COLUMN tags TEXT DEFAULT ''")
+        if "favorite" not in cols:
+            conn.execute("ALTER TABLE repos ADD COLUMN favorite INTEGER DEFAULT 0")
+        if "excluded" not in cols:
+            conn.execute("ALTER TABLE repos ADD COLUMN excluded INTEGER DEFAULT 0")
+    conn.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
+    conn.commit()
+
 
 class Database:
     """线程安全 SQLite 封装。"""
@@ -65,6 +90,7 @@ class Database:
         self._conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS};")  # 高并发写不立刻抛锁错误
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            _migrate(self._conn)
             self._conn.commit()
 
     def close(self):

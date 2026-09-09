@@ -122,6 +122,9 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self.setStyleSheet(QSS)
+        # G02-4 URL 历史：同步成功的地址自动留档（data/history.json）
+        from ..db.history import UrlHistory
+        self.url_history = UrlHistory(self.data_dir / "history.json")
         self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"Git-clone-Max 启动，数据目录：{self.data_dir}")
         self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"并行线程：{self.engine.concurrency}（上限 {MAX_CONCURRENCY}）")
         self._load_db_into_grid()
@@ -191,6 +194,9 @@ class MainWindow(QMainWindow):
         )
         self.repo_input.setMinimumHeight(150)
         b.addWidget(self.repo_input)
+        # G02-4 右键菜单：从最近历史回填 / 清空历史
+        self.repo_input.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.repo_input.customContextMenuRequested.connect(self._repo_input_menu)
         quick = QHBoxLayout()
         quick.addWidget(QLabel("快捷填充："))
         for repo in ("vercel-labs/skills", "anthropics/skills",
@@ -633,6 +639,33 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "导出失败", str(e))
 
     # ------------------------------------------------------------ 动作
+    def _repo_input_menu(self, pos):
+        """输入框右键菜单：从最近 URL 历史回填 / 清空历史（G02-4）。"""
+        try:
+            from PyQt6.QtWidgets import QMenu
+            menu = QMenu(self)
+            items = getattr(self, "url_history", None).items() if hasattr(self, "url_history") else []
+            if items:
+                sub = menu.addMenu("从历史粘贴…")
+                for u in items[:15]:
+                    act = sub.addAction(u)
+                    act.triggered.connect(lambda _=False, url=u: self.repo_input.appendPlainText(url + "\n"))
+                menu.addSeparator()
+                act_clear = menu.addAction("清空历史")
+                act_clear.triggered.connect(self._clear_url_history)
+            else:
+                menu.addAction("（暂无历史）")
+            menu.exec(self.repo_input.mapToGlobal(pos))
+        except Exception:
+            pass
+
+    def _clear_url_history(self):
+        try:
+            self.url_history.clear()
+            self._emit_log(_fmt_dt(), LogLevel.INFO, "URL 历史已清空。")
+        except Exception:
+            pass
+
     def choose_target(self):
         d = QFileDialog.getExistingDirectory(self, "选择下载目录", self.target_edit.text())
         if d:
@@ -910,6 +943,12 @@ class MainWindow(QMainWindow):
         msg = self.table.item(index, 4)
         msg.setText(res.message)
         msg.setToolTip(res.detail or "")
+        # 同步成功 → 地址入 URL 历史（G02-4）
+        try:
+            if res.status == SyncStatus.SUCCESS:
+                self.url_history.add(res.spec.url_https)
+        except Exception:
+            pass
         # 记录到 DB 由 worker 内部完成
         self._emit_log(_fmt_dt(), LogLevel.INFO if res.status == SyncStatus.SUCCESS else LogLevel.WARN,
                         f"[{index}] {label}：{res.message}（{action_label}）")
