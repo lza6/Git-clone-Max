@@ -21,6 +21,24 @@
 3. 自检 `PyQt6`，缺失则自动 `pip install -r requirements.txt`
 4. 以 `python -m gcm` 启动 GUI
 
+## 多平台运行（Linux / macOS 源码）
+
+> 本项目测试在 Windows 上完成；Linux / macOS 上通过源码运行同样支持。
+
+```bash
+# 1. 创建虚拟环境
+python -m venv .venv
+source .venv/bin/activate        # Linux / macOS
+
+# 2. 安装依赖
+pip install -r requirements.txt
+
+# 3. 启动
+python -m gcm
+```
+
+> 注：`QT_QPA_PLATFORM=offscreen` 仅用于**无显示器环境 / CI**（如 `QT_QPA_PLATFORM=offscreen python -m gcm`），正常桌面环境无需设置。
+
 ## 功能
 
 | 功能 | 说明 |
