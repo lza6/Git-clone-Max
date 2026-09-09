@@ -189,7 +189,7 @@ class TestServiceExtra(unittest.TestCase):
         self.assertEqual(launches, 1, f"仓库类错误不应重试，实际 {launches} 次启动")
 
     def test_detect_conflict_dirty_and_ahead(self):
-        """本地领先上游 + 存在未提交改动 → 冲突。"""
+        """本地领先上游（已提交）+ 存在未提交改动 → 冲突；仅已提交领先不冲突。"""
         svc = GitService(self.tmp)
         spec = RepoSpec("d", "r", str(self.remote), folder_name="d__r")
         svc.sync(spec)
@@ -199,8 +199,8 @@ class TestServiceExtra(unittest.TestCase):
         (clone / "b.txt").write_text("b", encoding="utf-8")
         _git(clone, "add", ".")
         _git(clone, "commit", "-m", "local")   # 已提交：本地领先 1
+        # 仅已提交领先（clean）→ 不判冲突（该场景由 sync 的 ahead 分支/merge 失败处理）
         conflict, reason = _detect_conflict(str(clone))
-        # 已提交则无 dirty，_detect_conflict 应返回 False（不误判冲突）
         self.assertFalse(conflict)
         self.assertEqual(reason, "")
         # 制造「已提交领先 + 额外未提交改动」→ 此时才应判冲突
@@ -283,11 +283,18 @@ class TestUpdaterExtra(unittest.TestCase):
 
     def test_check_latest_no_exe_asset(self):
         from gcm.app import updater
+        # 同版本（v3.0.0 = 当前 __version__）且无 exe 资产 → 不是新版本
         payload = {"tag_name": "v3.0.0", "assets": [],
                    "html_url": "https://example.com/releases/latest"}
         has_new, ver, url, err = updater.check_latest(fetcher=lambda: json.dumps(payload))
-        self.assertTrue(has_new)
-        self.assertEqual(url, "https://example.com/releases/latest")  # 兜底 html_url
+        self.assertFalse(has_new, "同版本不应判定为更新")
+        # 更高版本 + 无 exe 资产 → 有更新且 url 兜底 html_url
+        payload2 = {"tag_name": "v9.9.9", "assets": [],
+                    "html_url": "https://example.com/releases/latest"}
+        has_new2, ver2, url2, err2 = updater.check_latest(fetcher=lambda: json.dumps(payload2))
+        self.assertTrue(has_new2)
+        self.assertEqual(url2, "https://example.com/releases/latest")  # 兜底 html_url
+        self.assertEqual(ver2, "v9.9.9")
 
     def test_check_latest_bad_json(self):
         from gcm.app import updater

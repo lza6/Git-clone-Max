@@ -83,17 +83,14 @@ def _divergence_info(git_dir: str) -> Tuple[int, int]:
 
 
 def _detect_conflict(git_dir: str) -> Tuple[bool, str]:
-    """检测本地是否有会阻止 fast-forward 的改动。返回 (is_conflict, reason)。
+    """检测本地是否已有会阻止 fast-forward 的改动。
 
-    触发条件（满足其一即冲突）：
-    - 存在未提交改动（dirty）
-    - 工作树干净但本地已领先上游（ahead>0）——本地提交与远端分叉，fast-forward 不可行
-      既有的 test_conflict_preserved（本地提交 + 远端推新）依赖该分支。
+    语义：**仅检测本地工作树/已提交的「脏」状态**；本地领先远端（ahead>0）能否
+    安全快进由调用方（_update 的 merge --ff-only 失败路径）处理，此处不判。
+    - 无未提交改动（clean）→ 不冲突（即使 ahead>0，fast-forward 失败会走 rebase 流程）
+    - 有未提交改动：本地领先上游时 pull 必然受阻 → 冲突
     """
     if not _is_dirty(git_dir):
-        ahead, _ = _divergence_info(git_dir)
-        if ahead > 0:
-            return True, f"本地领先上游 {ahead} 个提交（本地提交与远端分叉）"
         return False, ""
     # 有未提交改动：若本地领先上游，则 pull 必然受阻
     ahead, _ = _divergence_info(git_dir)
