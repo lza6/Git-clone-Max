@@ -80,8 +80,9 @@ python -m unittest discover -s tests -v
 ## 发布
 
 ```bash
-git tag v1.1.0
+git tag v3.0.0
 git push origin main --tags
+python scripts/publish_release.py --tag v3.0.0   # 自动上传 exe 到 GitHub Release
 ```
 
 ## License
