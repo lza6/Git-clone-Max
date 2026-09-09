@@ -356,6 +356,10 @@ class MainWindow(QMainWindow):
         self.edit_proxy.setPlaceholderText("http://127.0.0.1:7890（留空不代理）")
         self.edit_proxy.editingFinished.connect(self._save_proxy)
         l3.addWidget(self.edit_proxy, 1, 3)
+        self.ck_unshallow = QCheckBox("浅克隆仓库更新时拉全量历史")
+        self.ck_unshallow.setChecked(bool(self.settings.fetch_unshallow))
+        self.ck_unshallow.stateChanged.connect(self._save_fetch_unshallow)
+        l3.addWidget(self.ck_unshallow, 2, 0, 1, 2)
         v.addWidget(g3)
 
         g2 = QGroupBox("黑匣子日志（实时）")
@@ -441,6 +445,10 @@ class MainWindow(QMainWindow):
 
     def _save_proxy(self):
         self.settings.proxy = self.edit_proxy.text().strip()
+        self.settings_store.save(self.settings)
+
+    def _save_fetch_unshallow(self, checked):
+        self.settings.fetch_unshallow = bool(checked)
         self.settings_store.save(self.settings)
 
     # ------------------------------------------------------------ 更新检查
@@ -629,7 +637,9 @@ class MainWindow(QMainWindow):
             worker = CloneWorker(i, payload, self.service, self.db,
                                  str(self.progress_path),
                                  on_line=lambda c, i=i: self._emit_log(
-                                     _fmt_dt(), LogLevel.INFO, f"[{i}] {c.text}"))
+                                     _fmt_dt(), LogLevel.INFO, f"[{i}] {c.text}"),
+                                 fetch_depth=depth if shallow else 0,
+                                 unshallow=self.settings.get("fetch_unshallow", False))
             worker.signals.line.connect(self._on_worker_line)
             worker.signals.progress.connect(self._on_worker_progress)
             worker.signals.result.connect(self._on_worker_result)

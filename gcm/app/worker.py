@@ -10,9 +10,7 @@ from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal, pyqtSlot
 
 from ..db.repo_db import Database, load_progress, save_progress
 from ..git.service import GitService
-from ..models import RepoSpec, StreamChunk, SyncResult, SyncAction, SyncStatus
-
-# 每个仓库独立的取消标志
+from ..models import RepoSpec, StreamChunk, SyncResult, SyncAction, SyncStatus# 每个仓库独立的取消标志
 class CancelFlag:
     def __init__(self):
         self._cancelled = False
@@ -42,7 +40,8 @@ class CloneWorker(QRunnable):
     """并行执行一个仓库的同步任务。"""
 
     def __init__(self, index: int, payload: TaskPayload, service: GitService,
-                 db: Database, progress_path: str, on_line=None):
+                 db: Database, progress_path: str, on_line=None,
+                 fetch_depth: int = 0, unshallow: bool = False):
         super().__init__()
         self.setAutoDelete(True)
         self.index = index
@@ -52,13 +51,24 @@ class CloneWorker(QRunnable):
         self.progress_path = progress_path
         self.signals = WorkerSignals()
         self._external_line = on_line
+        self._fetch_depth = fetch_depth
+        self._unshallow = unshallow
 
     def run(self):
         spec = self.payload.spec
         flag = self.payload.flag or CancelFlag()
         res = SyncResult(spec=spec, status=SyncStatus.RUNNING)
         try:
-            res = self.service.sync(spec)
+            # 复用传入的 service；若外部未配置浅克隆语义则按 payload 深度覆盖
+            svc = self.service
+            if svc.fetch_depth != self._fetch_depth or svc.unshallow != self._unshallow:
+                svc = GitService(
+                    svc.root, on_line=svc.on_line, cancelled=svc.cancelled,
+                    fetch_timeout=svc.fetch_timeout, clone_timeout=svc.clone_timeout,
+                    retries=svc.retries, backoff=svc._backoff, proxy=svc.proxy,
+                    fetch_depth=self._fetch_depth, unshallow=self._unshallow,
+                )
+            res = svc.sync(spec)
             # 记录数据库（空仓库 head_sha 为空也照常入库，action=empty）
             if self.db is not None:
                 repo_id = self.db.upsert_repo(spec, res.path, host=self.payload.host,

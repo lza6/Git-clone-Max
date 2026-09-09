@@ -28,6 +28,7 @@ class Settings:
     minimize_to_tray: bool = True     # 最小化时收进系统托盘
     language: str = "zh"              # 保留：zh / en（i18n 备用）
     token: str = ""                   # GitHub token（私有仓库认证，P3-3）
+    fetch_unshallow: bool = False     # 浅克隆仓库增量 fetch 时拉全量历史（V3-P0-3）
 
 
 _DEFAULTS: dict = asdict(Settings())
