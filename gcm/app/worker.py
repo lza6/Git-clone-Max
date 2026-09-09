@@ -28,6 +28,7 @@ class CancelFlag:
 class TaskPayload:
     spec: RepoSpec
     flag: CancelFlag = None
+    host: str = "github.com"   # 仓库来源 host（导入仓库为 local/gitlab 等，落库原样保留）
 
 
 class WorkerSignals(QObject):
@@ -60,7 +61,7 @@ class CloneWorker(QRunnable):
             res = self.service.sync(spec)
             # 记录数据库（空仓库 head_sha 为空也照常入库，action=empty）
             if self.db is not None:
-                repo_id = self.db.upsert_repo(spec, res.path, host="github.com",
+                repo_id = self.db.upsert_repo(spec, res.path, host=self.payload.host,
                                               default_branch=None, head_sha=res.head_sha)
                 self.db.add_sync_history(
                     repo_id, res.status, res.action, res.message, res.detail,

@@ -505,6 +505,20 @@ class MainWindow(QMainWindow):
         self._launch(specs, target_root=Path(target), shallow=shallow, depth=depth,
                      clear_input=True)
 
+    @staticmethod
+    def _rows_to_specs(rows):
+        """从 DB 行构造 RepoSpec（统一入口，携带 local_path / is_local）。
+
+        导入仓库的 local_path 必须透传，否则 GitService._repo_dir 会用
+        root/folder_name 推导错误路径 → 误走克隆。is_local 由 url 是否存在判定
+        （纯本地无远端才 is_local；本地路径远端仍可 fetch 增量更新）。
+        """
+        return [RepoSpec(owner=r["owner"], repo=r["repo"],
+                         url_https=r["url"], folder_name=r["folder_name"],
+                         local_path=r.get("local_path") or "",
+                         is_local=not bool(r.get("url")))
+                for r in rows]
+
     def update_all(self):
         if self.busy:
             QMessageBox.information(self, "提示", "有任务正在运行，请先取消或等待完成。")
@@ -517,13 +531,11 @@ class MainWindow(QMainWindow):
         from collections import OrderedDict
         groups: "OrderedDict[str, list]" = OrderedDict()
         for r in rows:
-            root = str(Path(r["local_path"]).parent)
+            root = str(Path(r["local_path"] or r["folder_name"]).parent)
             groups.setdefault(root, []).append(r)
         if len(groups) == 1:
             root = next(iter(groups))
-            specs = [RepoSpec(owner=r["owner"], repo=r["repo"],
-                              url_https=r["url"], folder_name=r["folder_name"])
-                     for r in groups[root]]
+            specs = self._rows_to_specs(groups[root])
             self._launch(specs, target_root=Path(root), shallow=False, depth=1)
             return
         # 多根目录逐组串行启动（每组内部并行）
@@ -536,9 +548,7 @@ class MainWindow(QMainWindow):
         root, rows = self._multi_root_update.pop(0)
         if self.busy:
             return  # 当前组仍在运行，等 finished 槽再拉下一组
-        specs = [RepoSpec(owner=r["owner"], repo=r["repo"],
-                          url_https=r["url"], folder_name=r["folder_name"])
-                 for r in rows]
+        specs = self._rows_to_specs(rows)
         self.log.append(_fmt_dt(), LogLevel.SYSTEM, f"一键更新：处理根目录 {root}（{len(specs)} 个仓库）")
         self._launch(specs, target_root=Path(root), shallow=False, depth=1,
                      multi_root_relay=True)
@@ -579,7 +589,16 @@ class MainWindow(QMainWindow):
             self.flags[i] = flag
             self.row_specs[i] = spec
             self._add_table_row(i, spec)
-            payload = TaskPayload(spec=spec, flag=flag)
+            # 每个任务携带来源 host（导入仓库为 local/gitlab 等；未知回退 github.com），
+            # 避免 worker 落库时统一硬编码为 github.com 产生重复记录 / host 归属错误
+            host = "github.com"
+            try:
+                rec = self.db.get_repo(spec.owner, spec.repo, None)
+                if rec and rec.get("host"):
+                    host = rec["host"]
+            except Exception:
+                pass
+            payload = TaskPayload(spec=spec, flag=flag, host=host)
             worker = CloneWorker(i, payload, self.service, self.db,
                                  str(self.progress_path),
                                  on_line=lambda c, i=i: self.log.append(

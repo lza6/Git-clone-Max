@@ -267,7 +267,7 @@ class GitService:
                  cancelled: Optional[Callable[[], bool]] = None,
                  fetch_timeout: float = 300, clone_timeout: float = 600,
                  retries: int = 0, backoff: Tuple[float, ...] = (1.0, 3.0, 8.0),
-                 proxy: str = ""):
+                 proxy: str = "", fetch_depth: int = 0, unshallow: bool = False):
         self.root = Path(root_dir)
         self.root.mkdir(parents=True, exist_ok=True)
         self.on_line = on_line or (lambda c: None)
@@ -277,6 +277,8 @@ class GitService:
         self.retries = max(0, retries)
         self._backoff = backoff
         self.proxy = proxy.strip()
+        self.fetch_depth = max(0, int(fetch_depth))   # >0 时浅层仓库 fetch 带 --depth
+        self.unshallow = bool(unshallow)              # True 时浅层仓库 fetch --unshallow 拉全量
 
     def _env(self, extra: Optional[Dict[str, str]] = None) -> Optional[Dict[str, str]]:
         """构造 subprocess 环境：未设置代理时注入 http_proxy/https_proxy。"""
@@ -295,6 +297,21 @@ class GitService:
         if spec.local_path:
             return Path(spec.local_path)
         return self.root / spec.folder_name
+
+    def _is_shallow_repo(self, repo_dir: Path) -> bool:
+        """检测仓库是否为浅克隆（存在 .git/shallow 或 git rev-parse 判定）。"""
+        git_dir = repo_dir / ".git"
+        # worktree 场景 .git 为文件（gitdir: ...），此处仅支持普通仓库
+        if git_dir.is_dir() and (git_dir / "shallow").exists():
+            return True
+        try:
+            r = subprocess.run(
+                ["git", "-C", str(repo_dir), "rev-parse", "--is-shallow-repository"],
+                capture_output=True, text=True, timeout=20,
+            )
+            return r.returncode == 0 and r.stdout.strip() == "true"
+        except Exception:
+            return False
 
     def _emit(self, text: str, level: str = "info"):
         self.on_line(StreamChunk(index=0, text=text, level=level))
@@ -396,10 +413,17 @@ class GitService:
         before = self._head_sha(repo_dir)
         res.head_sha = before
 
-        # 1) fetch
+        # 1) fetch：浅克隆仓库需显式 depth 语义，全量仓库保持原样
         self._emit(f"检查 {spec.display} 远端更新 …")
+        fetch_cmd = ["git", "fetch", "--progress", "--prune", "origin"]
+        if self.unshallow and self._is_shallow_repo(repo_dir):
+            fetch_cmd = ["git", "fetch", "--progress", "--prune", "--unshallow", "origin"]
+            self._emit(f"{spec.display} 为浅克隆仓库，正在拉取全量历史（--unshallow）…")
+        elif self.fetch_depth and self._is_shallow_repo(repo_dir):
+            fetch_cmd = ["git", "fetch", "--progress", "--prune",
+                         f"--depth={self.fetch_depth}", "origin"]
         rc, _ = run_git_ui(
-            ["git", "fetch", "--progress", "--prune", "origin"],
+            fetch_cmd,
             str(repo_dir), self.on_line, cancelled=self.cancelled, env=self._env(),
             timeout=self.fetch_timeout, retries=self.retries, backoff=self._backoff,
         )

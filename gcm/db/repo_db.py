@@ -131,15 +131,15 @@ class Database:
     def get_repo(self, owner: str, repo: str, host: str | None = "github.com") -> Optional[Dict[str, Any]]:
         with self._lock:
             if host is None:
-                row = self._conn.execute(
-                    "SELECT * FROM repos WHERE owner=? AND repo=?",
+                rows = self._conn.execute(
+                    "SELECT * FROM repos WHERE owner=? AND repo=? ORDER BY id DESC LIMIT 1",
                     (owner, repo),
-                ).fetchone()
-            else:
-                row = self._conn.execute(
-                    "SELECT * FROM repos WHERE owner=? AND repo=? AND host=?",
-                    (owner, repo, host),
-                ).fetchone()
+                ).fetchall()
+                return dict(rows[0]) if rows else None
+            row = self._conn.execute(
+                "SELECT * FROM repos WHERE owner=? AND repo=? AND host=?",
+                (owner, repo, host),
+            ).fetchone()
             return dict(row) if row else None
 
     def list_repos(self, host: str | None = None) -> List[Dict[str, Any]]:
