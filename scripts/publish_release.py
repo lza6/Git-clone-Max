@@ -32,21 +32,32 @@ sys.path.insert(0, str(ROOT / "scripts"))
 REPO = "lza6/Git-clone-Max"
 DIST = ROOT / "dist" / "Git-clone-Max.exe"
 ARTIFACT_NAME = "Git-clone-Max.exe"
-BODY = (
-    "GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 桌面工具（PyQt6）。\n\n"
-    "## 功能\n"
-    "- 批量并行（可调 1–16 线程）克隆 / 增量更新，互不阻塞\n"
-    "- 断点续传（progress.json 原子写）+ SQLite 入库追踪（repos + sync_history）\n"
-    "- 作者__仓库命名 + 冲突保护（本地改动绝不覆盖）\n"
-    "- 增量更新自动重试（网络抖动退避）+ 全局超时 + HTTP 代理支持\n"
-    "- 无效地址逐行校验提示 + 下载完成自动清空输入框\n"
-    "- 并发数 / 超时 / 重试 / 代理 设置持久化（settings.json）\n"
-    "- 系统托盘挂机 + 检查更新（发现新版跳转下载）\n"
-    "- 单文件自包含 exe（双击即用，无需安装 Python）\n\n"
-    "## 使用\n"
-    "- 直接下载 `Git-clone-Max.exe` 双击运行\n"
-    "- 需系统已安装 git（https://git-scm.com/download/win）\n"
-)
+
+
+def _build_body() -> str:
+    """根据当前 gcm.__version__ 动态生成 Release body。
+
+    版本号写死在常量里会随发版漂移落后，这里运行时读取，保证 tag 与 body
+    始终同版本。BODY 常量保留并指向同一模板，兼容旧测试对 pr.BODY 的引用。
+    """
+    from gcm import __version__  # 脚本入口已把 ROOT 加入 sys.path
+    return (
+        "GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 桌面工具（PyQt6）。\n\n"
+        f"## 版本 {__version__}\n"
+        "- 并发 1–32（设置页可调），重复地址自动去重\n"
+        "- 统一调度引擎：SQLite busy_timeout + progress.json 进程级锁，高并发不闪退/锁死\n"
+        "- 增量更新（fetch → merge --ff-only → rebase）+ 冲突保护（本地改动绝不覆盖）\n"
+        "- 断点续传、断网自动重试、全局超时、HTTP 代理、GitHub Token（私有仓库）\n"
+        "- 仓库详情对话框 + 同步历史；系统托盘 + 检查更新\n"
+        "- 单文件自包含 exe（双击即用，无需安装 Python）\n\n"
+        "## 使用\n"
+        "- 直接下载 `Git-clone-Max.exe` 双击运行\n"
+        "- 需系统已安装 git（https://git-scm.com/download/win）\n"
+    )
+
+
+# 兼容旧引用：动态模板（含当前版本号），等价于 _build_body()。
+BODY = _build_body()
 
 # 整体运行时长兜底（秒）：超过则 [FAIL] 运行超时 返回 1，绝不无限挂。
 DEADLINE = 300.0
@@ -206,7 +217,7 @@ def main() -> int:
     if rel is None and not args.dry_run:
         def _mkrel():
             r = repo.create_git_release(
-                tag=tag, name=f"Git-clone-Max {tag}", message=BODY,
+                tag=tag, name=f"Git-clone-Max {tag}", message=_build_body(),
                 draft=False, prerelease=False)
             cur[0] = r
             return r

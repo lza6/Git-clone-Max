@@ -14,7 +14,8 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
-    QGridLayout,
+    QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -25,6 +26,7 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QSplitter,
     QTableWidget,
@@ -123,6 +125,9 @@ class MainWindow(QMainWindow):
         self.tray = TrayController(parent=self)
         if self.settings.minimize_to_tray:
             self.tray.install()
+
+        # 启动后静默检查更新：不阻塞、不弹窗，有新版本仅写日志 + 托盘提示
+        QTimer.singleShot(2500, self._check_update_silent)
 
     # ------------------------------------------------------------ UI
     def _build_ui(self):
@@ -324,10 +329,22 @@ class MainWindow(QMainWindow):
     # ---------------- 设置与日志
     def _build_settings_tab(self):
         v = QVBoxLayout(self.tab_settings)
+        v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(10)
 
-        # 设置与日志
-        g1 = QGroupBox("启动与后台运行")
+        # 设置区：所有设置分组放入可滚动区域（日志区固定在下、不被滚动带跑）
+        self.settings_scroll = QScrollArea()
+        self.settings_scroll.setWidgetResizable(True)
+        self.settings_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.settings_scroll.setMinimumHeight(180)
+        scroll_widget = QWidget()
+        self.settings_scroll.setWidget(scroll_widget)
+        sv = QVBoxLayout(scroll_widget)
+        sv.setContentsMargins(12, 12, 12, 12)
+        sv.setSpacing(10)
+
+        # ---- 启动与后台运行
+        g1 = QGroupBox("启动与后台运行（开机自启 / 托盘）")
         g1.setToolTip("开机自启、下载完成后自动清空输入框 等启动行为")
         l1 = QHBoxLayout(g1)
         self.ck_autostart = QCheckBox("开机自启（写入任务计划：登录时启动一次）")
@@ -336,60 +353,92 @@ class MainWindow(QMainWindow):
         self.ck_auto_clear.setChecked(bool(self.settings.auto_clear))
         self.ck_auto_clear.stateChanged.connect(self._save_auto_clear)
         l1.addWidget(self.ck_auto_clear)
-        self.btn_check_update = QPushButton("检查更新")
-        self.btn_check_update.clicked.connect(self.check_update_now)
-        l1.addWidget(self.btn_check_update)
         l1.addStretch()
-        v.addWidget(g1)
+        sv.addWidget(g1)
 
-        # 并行 / 网络设置（持久化到 settings.json）
-        g3 = QGroupBox("并行与网络")
+        # ---- 并行与网络设置（持久化到 settings.json）
+        g3 = QGroupBox("并行与网络（并发 / 超时 / 重试 / 代理 / Token）")
         g3.setToolTip("并发数、超时、重试、代理与私有仓库认证 等网络相关设置")
-        l3 = QGridLayout(g3)
-        l3.setContentsMargins(10, 10, 10, 10)
-        l3.setHorizontalSpacing(12)
-        l3.setVerticalSpacing(8)
-        l3.addWidget(QLabel("并发数（1–32）："), 0, 0)
+        f3 = QFormLayout(g3)
+        f3.setContentsMargins(10, 10, 10, 10)
+        f3.setHorizontalSpacing(16)
+        f3.setVerticalSpacing(10)
+        f3.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        f3.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+
         self.spin_concurrency = QSpinBox()
         self.spin_concurrency.setRange(1, 32)
         self.spin_concurrency.setValue(int(self.settings.concurrency))
         self.spin_concurrency.setToolTip(f"同时并行下载/更新的仓库数（1–{MAX_CONCURRENCY}）")
         self.spin_concurrency.valueChanged.connect(self._save_concurrency)
-        l3.addWidget(self.spin_concurrency, 0, 1)
-        l3.addWidget(QLabel("fetch 超时（秒）："), 0, 2)
+        f3.addRow("并发数（1–32）：", self.spin_concurrency)
+
         self.spin_fetch_timeout = QSpinBox()
         self.spin_fetch_timeout.setRange(10, 3600)
         self.spin_fetch_timeout.setValue(int(self.settings.fetch_timeout))
         self.spin_fetch_timeout.setToolTip("访问仓库远程信息（fetch/克隆）的超时时间，单位秒")
         self.spin_fetch_timeout.valueChanged.connect(self._save_fetch_timeout)
-        l3.addWidget(self.spin_fetch_timeout, 0, 3)
-        l3.addWidget(QLabel("自动重试（次）："), 1, 0)
+        f3.addRow("fetch 超时（秒）：", self.spin_fetch_timeout)
+
         self.spin_retries = QSpinBox()
         self.spin_retries.setRange(0, 5)
         self.spin_retries.setValue(int(self.settings.retries))
         self.spin_retries.setToolTip("网络故障时自动重试次数（0 = 只尝试一次）")
         self.spin_retries.valueChanged.connect(self._save_retries)
-        l3.addWidget(self.spin_retries, 1, 1)
-        l3.addWidget(QLabel("HTTP 代理："), 1, 2)
+        f3.addRow("自动重试（次）：", self.spin_retries)
+
         self.edit_proxy = QLineEdit(self.settings.proxy)
         self.edit_proxy.setPlaceholderText("http://127.0.0.1:7890（留空不代理）")
         self.edit_proxy.setToolTip("网络代理地址，形如 http://127.0.0.1:7890；留空则不使用代理")
         self.edit_proxy.editingFinished.connect(self._save_proxy)
-        l3.addWidget(self.edit_proxy, 1, 3)
+        f3.addRow("HTTP 代理：", self.edit_proxy)
+
         self.ck_unshallow = QCheckBox("浅克隆仓库更新时拉全量历史")
         self.ck_unshallow.setChecked(bool(self.settings.fetch_unshallow))
         self.ck_unshallow.setToolTip("浅克隆仓库增量 fetch 时拉取全量历史，避免后续增量因深度不足失败")
         self.ck_unshallow.stateChanged.connect(self._save_fetch_unshallow)
-        l3.addWidget(self.ck_unshallow, 2, 0, 1, 2)
-        l3.addWidget(QLabel("GitHub Token："), 2, 2)
+        f3.addRow("浅克隆更新：", self.ck_unshallow)
+
         self.edit_token = QLineEdit(self.settings.token)
         self.edit_token.setPlaceholderText("私有仓库认证令牌（可选，留空不传递）")
         self.edit_token.setEchoMode(QLineEdit.EchoMode.Password)
         self.edit_token.setToolTip("GitHub 个人访问令牌（Fine-grained/PAT），访问私有仓库时使用；留空不传递")
         self.edit_token.editingFinished.connect(self._save_token)
-        l3.addWidget(self.edit_token, 2, 3)
-        v.addWidget(g3)
+        f3.addRow("GitHub Token：", self.edit_token)
+        sv.addWidget(g3)
 
+        # ---- 关于与更新
+        g4 = QGroupBox("关于与更新")
+        g4.setToolTip("版本信息与自检工具")
+        f4 = QFormLayout(g4)
+        f4.setContentsMargins(10, 10, 10, 10)
+        f4.setHorizontalSpacing(16)
+        f4.setVerticalSpacing(10)
+        f4.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        f4.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        try:
+            from .. import __version__ as _ver
+        except Exception:
+            _ver = "unknown"
+        self.lbl_version = QLabel(_ver)
+        self.lbl_version.setObjectName("muted")
+        f4.addRow("当前版本：", self.lbl_version)
+        h4 = QHBoxLayout()
+        self.btn_check_update = QPushButton("检查更新")
+        self.btn_check_update.clicked.connect(self.check_update_now)
+        h4.addWidget(self.btn_check_update)
+        self.btn_selftest = QPushButton("自检环境")
+        self.btn_selftest.setToolTip("检测 git / PyQt6 / 数据目录 / 当前并发 是否正常可用")
+        self.btn_selftest.clicked.connect(self._run_selftest)
+        h4.addWidget(self.btn_selftest)
+        h4.addStretch()
+        f4.addRow("环境自检：", h4)
+        sv.addWidget(g4)
+
+        sv.addStretch()
+        v.addWidget(self.settings_scroll, 1)
+
+        # ---- 黑匣子日志（实时）：固定在下、占剩余空间，日志滚动由控件自身负责
         g2 = QGroupBox("黑匣子日志（实时）")
         g2.setToolTip("应用运行日志实时输出；可导出为文本文件排查问题")
         l2 = QVBoxLayout(g2)
@@ -410,10 +459,36 @@ class MainWindow(QMainWindow):
         self.log_view.setObjectName("console")
         self.log_view.setReadOnly(True)
         self.log_view.setMaximumBlockCount(4000)
+        self.log_view.setMinimumHeight(100)
         l2.addWidget(self.log_view, 1)
-        v.addWidget(g2, 2)
+        v.addWidget(g2, 1)
 
-        v.addStretch()
+    def _run_selftest(self):
+        """本地环境自检：git / PyQt6 / 数据目录 / 当前并发 → 弹窗展示结果。"""
+        import shutil
+        import subprocess
+        lines: list[str] = []
+        git_path = shutil.which("git")
+        if not git_path:
+            lines.append("git：未检测到（请安装 Git 后重启应用）")
+        else:
+            lines.append(f"git：{git_path}")
+            try:
+                proc = subprocess.run(
+                    ["git", "--version"],
+                    capture_output=True, text=True, timeout=10,
+                    encoding="utf-8", errors="replace")
+                out = (proc.stdout or "").strip() or (proc.stderr or "").strip()
+                lines.append(f"版本：{out or '未知'}")
+            except Exception as e:
+                lines.append(f"版本：读取失败（{e}）")
+        from PyQt6.QtCore import PYQT_VERSION_STR
+        lines.append(f"PyQt6：{PYQT_VERSION_STR}")
+        lines.append(f"数据目录：{self.data_dir}")
+        lines.append(f"当前并发：{self.engine.concurrency}（上限 {MAX_CONCURRENCY}）")
+        lines.append(f"数据目录可写：{'是' if os.access(self.data_dir, os.W_OK) else '否'}")
+        QMessageBox.information(self, "环境自检", "\n".join(lines))
+        self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"环境自检完成：{' / '.join(lines)}")
 
     # ------------------------------------------------------------ 日志
     def _emit_log(self, time: str, level: LogLevel, text: str):
@@ -516,6 +591,29 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "检查更新", f"已是最新版本（{__version__}）")
         except Exception as e:
             QMessageBox.information(self, "检查更新", f"检查更新失败：{e}")
+
+    def _check_update_silent(self):
+        """启动后静默后台检查更新：不阻塞、不弹窗；有新版本写日志 + 托盘提示。
+
+        与手动按钮 check_update_now 共用 update_latest，只是结果呈现方式不同
+        （err 静默返回；发现新版只记日志，需要时用户可去设置页手动操作）。
+        """
+        try:
+            from ..app.updater import check_latest
+            from .. import __version__
+            has_new, ver, url, err = check_latest()
+            if err:
+                return
+            if has_new:
+                self._emit_log(_fmt_dt(), LogLevel.INFO,
+                               f"发现新版本 {ver}（当前 {__version__}），可到设置页检查更新。")
+                try:
+                    if getattr(self, "tray", None) is not None:
+                        self.tray.notify("Git-clone-Max 有新版本", f"最新 {ver}，可下载更新")
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def save_log(self):
         path, _ = QFileDialog.getSaveFileName(
