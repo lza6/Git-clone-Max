@@ -2,7 +2,20 @@
 
 > 只记录事实与证据。
 
-## v4.0.0 并发架构升级（本次交付）
+## v4.1.0 增量交付
+
+| 节点 | 状态 | 关键证据 |
+|------|------|----------|
+| V4.1-1 仓库详情对话框 | ✅ | `gcm/ui/repo_detail_dialog.py`（137 行）；`tests/test_repo_detail.py` 4 用例全绿 |
+| V4.1-2 GitHub Actions CI | ✅ | `.github/workflows/ci.yml`（windows-latest · py3.12 · pwsh offscreen 全量 + coverage）；PyYAML 复验 OK |
+| V4.1-3 README 多平台文档 | ✅ | 插入「多平台运行（Linux/macOS 源码）」小节，仅 +18 行 |
+| V4.1-4 管理页交互测试补覆盖 | ✅ | `tests/test_manage_ui.py` 20 用例（choose_target/open_target/check_update/delete_selected/import/show_history 等），发现无生产 bug |
+| V4.1-5 全量测试 | ✅ | `Ran 137 tests OK`（discover，含 launcher） |
+| V4.1-6 覆盖率 | ✅ | 核心 76%：engine 92% / scanner 89% / url_lib 98% / worker 88% / repo_db 89% / settings 96% / repo_detail 100% / main_window 77%↑ |
+| V4.1-7 打包+发布 | ✅ | commit `ccc2362` · tag `v4.1.0` 已推送 · Release 附件 98,081,107 bytes · 独立下载复验 sha256 `a9328c74…9d8dda` 与本地产物一致 |
+| V4.1-8 Release 页面 | ✅ | https://github.com/lza6/Git-clone-Max/releases/tag/v4.1.0 |
+
+## v4.0.0 并发架构升级（上一交付）
 
 | 节点 | 状态 | 关键证据 |
 |------|------|----------|
@@ -22,6 +35,12 @@
 4. 并发上限硬编码 16 与设置脱节 → 引擎收敛 + SpinBox 1–32。
 5. layerfs 冒号文件名 = Windows 平台限制 → 失败分类明确提示 + 不重试。
 6. `QSystemTrayIcon.isSystemTrayAvailable()` 在 offscreen 触发访问违规 → 提前返回 False（测试环境）。
+
+## 剩余（后续里程碑，非本次范围）
+- `local_repos_dialog.py` / `scan_worker.py` 交互弹窗覆盖率偏低（13% / 21%，属 UI 富交互路径，测试以 mock 为主）
+- `__main__.py` 54%（进程入口已冒烟覆盖）
+- publish_release 的 Release body 文案未随版本迭代（BODY 常量仍为 v2 描述），建议后续维护
+- CI 真实运行需在 GitHub Actions 环境验证（本机已 PyYAML 校验语法）
 
 ## 交付状态（历史基线）
 
