@@ -255,6 +255,10 @@ def run_git_ui(cmd: List[str], cwd: str, on_line: LineCallback,
                     line = raw.rstrip("\r\n")
                     if line:
                         on_line(StreamChunk(index=0, text=line, level="info"))
+                        # 内存护栏：只保留最近 200 行（含原始进度行），
+                        # 防止超大仓库克隆日志无限累积导致 OOM（32 并发时尤其明显）
+                        if len(log) >= 200:
+                            log[:] = log[-200:]
                         log.append(line)
                         p = _progress_from_line(line)
                         if p:

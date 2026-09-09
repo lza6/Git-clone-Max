@@ -103,6 +103,12 @@ class MainWindow(QMainWindow):
         self.busy = False
         self._close_requested = False
 
+        # 高频进度详情节流：速率/对象数批量刷新（32 并发时不阻塞主线程）
+        self._detail_batch: dict = {}
+        self._detail_timer = QTimer(self)
+        self._detail_timer.setInterval(300)
+        self._detail_timer.timeout.connect(self._flush_detail_batch)
+
         # 日志模型
         self.log = LogModel(max_entries=3000)
         self.log.appended.connect(self._on_log_appended)
@@ -849,17 +855,26 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
+    # 高频进度详情（速率/对象数）节流：合并为 300ms 批量刷新，32 并发不刷屏主线程
     @pyqtSlot(int, str)
     def _on_worker_progress_detail(self, index, text):
-        """进度列附加文本：把速率/对象数显示在进度条上（如 "7.03 MiB/s 7124"）。"""
         if not (0 <= index < self.table.rowCount()):
             return
-        bar = self.table.cellWidget(index, 1)
-        if isinstance(bar, QProgressBar) and text:
-            try:
-                bar.setFormat(f"%p%  {text}")
-            except Exception:
-                pass
+        self._detail_batch[index] = text
+        if not self._detail_timer.isActive():
+            self._detail_timer.start()
+
+    def _flush_detail_batch(self):
+        if not getattr(self, "_detail_batch", None):
+            return
+        batch, self._detail_batch = self._detail_batch, {}
+        for idx, text in batch.items():
+            w = self.table.cellWidget(idx, 1)
+            if isinstance(w, QProgressBar):
+                try:
+                    w.setFormat(f"%p%  {text}")
+                except Exception:
+                    pass
 
     @pyqtSlot(int, SyncResult)
     def _on_worker_result(self, index, res: SyncResult):

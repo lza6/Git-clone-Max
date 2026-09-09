@@ -75,6 +75,9 @@ class SyncEngine(QObject):
         # 取消缓存：key -> 是否已取消（避免 UI 每行输出遍历全部 flags）
         self._cancelled = False
 
+        # 内存护栏：完成时释放对 worker 的强引用，避免 QRunnable 队列积压导致 OOM
+        self._retired_tasks: List[CloneWorker] = []
+
     # ------------------------------------------------------------ 并发
     def set_concurrency(self, n: int) -> int:
         """设置线程池并发上限，返回实际生效值（1..32）。"""
@@ -82,6 +85,24 @@ class SyncEngine(QObject):
         n = max(1, min(32, n))
         self.pool.setMaxThreadCount(n)
         return n
+
+    # ------------------------------------------------------------ 内存护栏
+    def _retire_task(self, worker: CloneWorker):
+        """worker 完成时把它的强引用转移出活跃列表并尽快释放。
+
+        QThreadPool 只会在任务结束后自动 delete（autoDelete=True），但我们仍持有
+        self.tasks 的强引用——若不及时清空，32 并发跑完仍会累积整个列表的
+        CloneWorker/SyncResult/日志尾部，是长时 OOM 的来源之一。
+        """
+        try:
+            if worker in self.tasks:
+                self.tasks.remove(worker)
+            self._retired_tasks.append(worker)
+            # 只保留最近 32 个退役对象引用，其余交给 GC
+            if len(self._retired_tasks) > 32:
+                del self._retired_tasks[: len(self._retired_tasks) - 32]
+        except Exception:
+            pass
 
     @property
     def concurrency(self) -> int:
@@ -275,6 +296,19 @@ class SyncEngine(QObject):
             self.flush_progress()  # 全部完成：强制落盘一次
             self.busy = False
             self.finished.emit()
+            self._release_tasks()  # 全部结束后集中释放 worker 引用防 OOM
+
+    def _release_tasks(self):
+        """全部完成时清空活跃任务列表与 flags/specs 引用，降低长时运行内存占用。"""
+        try:
+            for w in self.tasks:
+                self._retire_task(w)
+            self.tasks.clear()
+            self.flags.clear()
+            self.specs.clear()
+            self._host_by_key = {}
+        except Exception:
+            pass
 
     # ------------------------------------------------------------ 收尾
     def shutdown(self):

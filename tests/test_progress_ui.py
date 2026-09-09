@@ -87,7 +87,9 @@ class TestProgressDetailSlot(unittest.TestCase):
         spec = RepoSpec("owner", "repo", "https://github.com/owner/repo.git")
         self._w._prepare_table(1)
         self._w._add_table_row(0, spec)
+        # 节流批量刷新：调用槽后需手动 flush（模拟定时器到期）
         self._w._on_worker_progress_detail(0, "7.03 MiB/s 7124")
+        self._w._flush_detail_batch()
         bar = self._w.table.cellWidget(0, 1)
         self.assertIsInstance(bar, QProgressBar)
         self.assertIn("7.03 MiB/s", bar.format())
