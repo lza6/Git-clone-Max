@@ -31,8 +31,9 @@ class TestLauncher(unittest.TestCase):
             )
             try:
                 out, _ = proc.communicate(timeout=60)
-                # 正常退出：检查是否到达启动行（或明确报错行）
-                self.assertIn("正在启动 Git-clone-Max", out or "")
+                # 正常退出：检查是否到达启动行（或明确报错行）；兼容 str/bytes
+                text = out.decode("utf-8", "replace") if isinstance(out, bytes) else (out or "")
+                self.assertIn("正在启动 Git-clone-Max", text)
             except subprocess.TimeoutExpired:
                 # 进程仍存活 = 已进入 GUI 事件循环 → 成功
                 proc.kill()
