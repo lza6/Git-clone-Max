@@ -86,10 +86,17 @@ class MainWindow(QMainWindow):
         self.log = LogModel(max_entries=3000)
         self.log.appended.connect(self._on_log_appended)
 
+        # 日志洪峰节流：git 高输出时合并为一次批量刷新，避免主线程被刷屏拖慢
+        self._log_batch: list = []
+        self._log_batch_timer = QTimer(self)
+        self._log_batch_timer.setInterval(120)
+        self._log_batch_timer.timeout.connect(self._flush_log_batch)
+        self._log_batch_timer.start()
+
         # git 服务（回调直接转发到 log；超时/重试/代理来自设置）
         self.service = GitService(
             self.data_dir / "clones",
-            on_line=lambda c: self.log.append(_fmt_dt(), LogLevel.INFO, f"[{c.text}]"),
+            on_line=lambda c: self._emit_log(_fmt_dt(), LogLevel.INFO, f"[{c.text}]"),
             cancelled=lambda: self._any_cancel(),
             fetch_timeout=self.settings.fetch_timeout,
             clone_timeout=self.settings.clone_timeout,
@@ -99,8 +106,8 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self.setStyleSheet(QSS)
-        self.log.append(_fmt_dt(), LogLevel.SYSTEM, f"Git-clone-Max 启动，数据目录：{self.data_dir}")
-        self.log.append(_fmt_dt(), LogLevel.SYSTEM, f"并行线程：{self.pool.maxThreadCount()}")
+        self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"Git-clone-Max 启动，数据目录：{self.data_dir}")
+        self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"并行线程：{self.pool.maxThreadCount()}")
         self._load_db_into_grid()
 
         # 系统托盘（失败静默降级，不影响主流程）
@@ -375,22 +382,42 @@ class MainWindow(QMainWindow):
         v.addStretch()
 
     # ------------------------------------------------------------ 日志
-    @pyqtSlot(int)
-    def _on_log_appended(self, count):
-        self.log_count.setText(f"{count} 条")
-        if hasattr(self, "log_view") and self.log_view and self.log._entries:
-            ev = self.log._entries[-1]
+    def _emit_log(self, time: str, level: LogLevel, text: str):
+        """统一日志入口：入模型 + 节流批量渲染（高频 git 输出不阻塞主线程）。"""
+        if not hasattr(self, "_log_batch"):
+            self._log_batch = []
+            self._log_batch_timer = QTimer(self)
+            self._log_batch_timer.setInterval(120)
+            self._log_batch_timer.timeout.connect(self._flush_log_batch)
+            self._log_batch_timer.start()
+        self.log.append(time, level, text)
+        # 节流：把待渲染条目并入批量，由定时器统一 flush
+        from .theme import LogEvent as _LE
+        ev = _LE(time, level, text)
+        self._log_batch.append(ev)
+
+    def _flush_log_batch(self):
+        if not getattr(self, "_log_batch", None):
+            return
+        batch, self._log_batch = self._log_batch, []
+        if not (hasattr(self, "log_view") and self.log_view):
+            return
+        cur = self.log_view
+        for ev in batch:
             prefix = {
                 LogLevel.WARN: "[警告] ",
                 LogLevel.ERROR: "[错误] ",
                 LogLevel.SYSTEM: "[系统] ",
             }.get(ev.level, "")
-            self.log_view.appendPlainText(f"[{ev.time}] {prefix}{ev.text}")
-            # 只保留尾部，滚动跟随
-            sb = self.log_view.verticalScrollBar()
-            if sb.value() >= sb.maximum() - 40:
-                self.log_view.verticalScrollBar().setValue(
-                    self.log_view.verticalScrollBar().maximum())
+            cur.appendPlainText(f"[{ev.time}] {prefix}{ev.text}")
+        # 滚动跟随（仅在用户已处于底部时）
+        sb = cur.verticalScrollBar()
+        if sb.value() >= sb.maximum() - 40:
+            cur.verticalScrollBar().setValue(cur.verticalScrollBar().maximum())
+
+    @pyqtSlot(int)
+    def _on_log_appended(self, count):
+        self.log_count.setText(f"{count} 条")
 
     def clear_log(self):
         self.log.clear()
@@ -444,7 +471,7 @@ class MainWindow(QMainWindow):
             return
         try:
             Path(path).write_text(self.log.to_plain_text(), encoding="utf-8")
-            self.log.append(_fmt_dt(), LogLevel.INFO, f"日志已导出：{path}")
+            self._emit_log(_fmt_dt(), LogLevel.INFO, f"日志已导出：{path}")
         except Exception as e:
             QMessageBox.critical(self, "导出失败", str(e))
 
@@ -491,7 +518,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if ret != QMessageBox.StandardButton.Yes:
                 return
-            self.log.append(_fmt_dt(), LogLevel.WARN,
+            self._emit_log(_fmt_dt(), LogLevel.WARN,
                             f"已忽略 {len(invalid)} 行无效地址：{', '.join(invalid)}")
         target = self.target_edit.text().strip()
         if not target:
@@ -549,7 +576,7 @@ class MainWindow(QMainWindow):
         if self.busy:
             return  # 当前组仍在运行，等 finished 槽再拉下一组
         specs = self._rows_to_specs(rows)
-        self.log.append(_fmt_dt(), LogLevel.SYSTEM, f"一键更新：处理根目录 {root}（{len(specs)} 个仓库）")
+        self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"一键更新：处理根目录 {root}（{len(specs)} 个仓库）")
         self._launch(specs, target_root=Path(root), shallow=False, depth=1,
                      multi_root_relay=True)
 
@@ -564,9 +591,9 @@ class MainWindow(QMainWindow):
         self.mode_combo.setEnabled(False)
         self.depth_spin.setEnabled(False)
 
-        self.log.append(_fmt_dt(), LogLevel.SYSTEM,
+        self._emit_log(_fmt_dt(), LogLevel.SYSTEM,
                         f"开始并行同步 {len(specs)} 个仓库（{'浅克隆 depth=' + str(depth) if shallow else '满量'}）")
-        self.log.append(_fmt_dt(), LogLevel.SYSTEM, f"根目录：{target_root}")
+        self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"根目录：{target_root}")
 
         # 下载完成后自动清空输入框（默认开启）
         self._clear_after_finish = clear_input and not multi_root_relay
@@ -575,7 +602,7 @@ class MainWindow(QMainWindow):
         # 重建 service（根目录可变；超时/重试/代理来自设置）
         self.service = GitService(
             target_root,
-            on_line=lambda c: self.log.append(_fmt_dt(), LogLevel.INFO, f"[{c.text}]"),
+            on_line=lambda c: self._emit_log(_fmt_dt(), LogLevel.INFO, f"[{c.text}]"),
             cancelled=lambda: self._any_cancel(),
             fetch_timeout=self.settings.fetch_timeout,
             clone_timeout=self.settings.clone_timeout,
@@ -601,7 +628,7 @@ class MainWindow(QMainWindow):
             payload = TaskPayload(spec=spec, flag=flag, host=host)
             worker = CloneWorker(i, payload, self.service, self.db,
                                  str(self.progress_path),
-                                 on_line=lambda c, i=i: self.log.append(
+                                 on_line=lambda c, i=i: self._emit_log(
                                      _fmt_dt(), LogLevel.INFO, f"[{i}] {c.text}"))
             worker.signals.line.connect(self._on_worker_line)
             worker.signals.progress.connect(self._on_worker_progress)
@@ -635,7 +662,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------ 槽
     @pyqtSlot(int, str, str)
     def _on_worker_line(self, index, text, level):
-        self.log.append(_fmt_dt(), LogLevel(level or "info"), f"[{index}] {text}")
+        self._emit_log(_fmt_dt(), LogLevel(level or "info"), f"[{index}] {text}")
 
     @pyqtSlot(int, str)
     def _on_worker_progress(self, index, percent):
@@ -684,7 +711,7 @@ class MainWindow(QMainWindow):
         msg.setText(res.message)
         msg.setToolTip(res.detail or "")
         # 记录到 DB 由 worker 内部完成
-        self.log.append(_fmt_dt(), LogLevel.INFO if res.status == SyncStatus.SUCCESS else LogLevel.WARN,
+        self._emit_log(_fmt_dt(), LogLevel.INFO if res.status == SyncStatus.SUCCESS else LogLevel.WARN,
                         f"[{index}] {label}：{res.message}（{action_label}）")
 
     @pyqtSlot()
@@ -722,11 +749,11 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(
                 f"完成：成功 {ok} · 冲突 {conflict} · 失败 {fail}")
             completed = f"成功 {ok} · 冲突 {conflict} · 失败 {fail}"
-            self.log.append(_fmt_dt(), LogLevel.SYSTEM, f"全部任务结束：{completed}")
+            self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"全部任务结束：{completed}")
             # 下载完成自动清空输入框
             if getattr(self, "_clear_after_finish", False):
                 self.repo_input.clear()
-                self.log.append(_fmt_dt(), LogLevel.SYSTEM, "下载完成，已自动清空输入框。")
+                self._emit_log(_fmt_dt(), LogLevel.SYSTEM, "下载完成，已自动清空输入框。")
             self._load_db_into_grid()
             # 全部完成系统通知（托盘存在时）
             try:
@@ -743,7 +770,7 @@ class MainWindow(QMainWindow):
     def cancel_all(self):
         for flag in self.flags.values():
             flag.cancel()
-        self.log.append(_fmt_dt(), LogLevel.WARN, "已请求取消全部任务…")
+        self._emit_log(_fmt_dt(), LogLevel.WARN, "已请求取消全部任务…")
         self.statusBar().showMessage("正在取消…")
         # 由结果槽统一复位
 
@@ -796,7 +823,7 @@ class MainWindow(QMainWindow):
         if dlg.selected:
             n = dlg.import_selected()
             self._load_db_into_grid()
-            self.log.append(_fmt_dt(), LogLevel.INFO, f"已导入 {n} 个本地仓库")
+            self._emit_log(_fmt_dt(), LogLevel.INFO, f"已导入 {n} 个本地仓库")
             self.statusBar().showMessage(f"已导入 {n} 个本地仓库")
 
     def show_history(self, repo_id: int):
@@ -826,7 +853,7 @@ class MainWindow(QMainWindow):
         for rid in repo_ids:
             self.db.delete_repo(rid)
         self._load_db_into_grid()
-        self.log.append(_fmt_dt(), LogLevel.INFO, f"已删除 {len(repo_ids)} 条数据库记录")
+        self._emit_log(_fmt_dt(), LogLevel.INFO, f"已删除 {len(repo_ids)} 条数据库记录")
 
     # ------------------------------------------------------------ 关闭
     def closeEvent(self, e: QCloseEvent):

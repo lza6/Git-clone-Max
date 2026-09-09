@@ -124,10 +124,24 @@ class LogModel(QObject):
     def append(self, time: str, level: LogLevel, text: str):
         entry = LogEvent(time, level, text)
         self._entries.append(entry)
-        if len(self._entries) > self.max_entries:
+        self._dropped, n = self._trim()
+        self.appended.emit(n)
+
+    def append_many(self, entries):
+        """批量追加多条（只 emit 一次，用于日志洪峰节流合并）。"""
+        if not entries:
+            return
+        self._entries.extend(entries)
+        self._dropped, n = self._trim()
+        self.appended.emit(n)
+
+    def _trim(self) -> tuple:
+        """裁剪超限条目，返回 (dropped, 现条数)。"""
+        n = len(self._entries)
+        if n > self.max_entries:
             self._entries = self._entries[-self.max_entries:]
-            self._dropped += 1
-        self.appended.emit(len(self._entries))
+            return self._dropped + (n - self.max_entries), self.max_entries
+        return self._dropped, n
 
     def clear(self):
         self._entries.clear()
