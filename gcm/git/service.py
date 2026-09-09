@@ -193,6 +193,12 @@ def run_git_ui(cmd: List[str], cwd: str, on_line: LineCallback,
                         p = _progress_from_line(line)
                         if p:
                             last_progress = p
+                # 读线程正常结束（子进程退出）后，进程可能仍在运行
+                # （pump join/timeout 场景），此时再补检一次取消标志，
+                # 否则取消请求会被吞掉、状态误判为 SUCCESS。
+                if not cancelled_flag and not timed_out and cancelled():
+                    cancelled_flag = True
+                    _kill_tree(proc)
             except Exception:
                 pass
             finally:
@@ -299,9 +305,12 @@ class GitService:
         return self.root / spec.folder_name
 
     def _is_shallow_repo(self, repo_dir: Path) -> bool:
-        """检测仓库是否为浅克隆（存在 .git/shallow 或 git rev-parse 判定）。"""
+        """检测仓库是否为浅克隆。
+
+        .git/shallow 标记文件优先；worktree 场景 .git 为文件（gitdir: 指向），
+        走 git rev-parse 兜底（对 worktree 同样有效）。
+        """
         git_dir = repo_dir / ".git"
-        # worktree 场景 .git 为文件（gitdir: ...），此处仅支持普通仓库
         if git_dir.is_dir() and (git_dir / "shallow").exists():
             return True
         try:
@@ -416,8 +425,10 @@ class GitService:
         # 1) fetch：浅克隆仓库需显式 depth 语义，全量仓库保持原样
         self._emit(f"检查 {spec.display} 远端更新 …")
         fetch_cmd = ["git", "fetch", "--progress", "--prune", "origin"]
+        used_unshallow = False
         if self.unshallow and self._is_shallow_repo(repo_dir):
             fetch_cmd = ["git", "fetch", "--progress", "--prune", "--unshallow", "origin"]
+            used_unshallow = True
             self._emit(f"{spec.display} 为浅克隆仓库，正在拉取全量历史（--unshallow）…")
         elif self.fetch_depth and self._is_shallow_repo(repo_dir):
             fetch_cmd = ["git", "fetch", "--progress", "--prune",
@@ -427,6 +438,15 @@ class GitService:
             str(repo_dir), self.on_line, cancelled=self.cancelled, env=self._env(),
             timeout=self.fetch_timeout, retries=self.retries, backoff=self._backoff,
         )
+        # unshallow/带深度 fetch 失败（远端行为异常）时降级回普通 fetch，避免把仓库标红
+        if rc != 0 and (used_unshallow or "--depth=" in " ".join(fetch_cmd)) and not self.cancelled():
+            self._emit(f"{spec.display} 浅层 fetch 失败，降级为普通 fetch …", "warn")
+            fetch_cmd = ["git", "fetch", "--progress", "--prune", "origin"]
+            rc, _ = run_git_ui(
+                fetch_cmd,
+                str(repo_dir), self.on_line, cancelled=self.cancelled, env=self._env(),
+                timeout=self.fetch_timeout, retries=self.retries, backoff=self._backoff,
+            )
         if self.cancelled():
             res.status = SyncStatus.CANCELLED
             res.action = SyncAction.CANCELLED

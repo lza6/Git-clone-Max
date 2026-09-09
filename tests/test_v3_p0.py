@@ -77,6 +77,53 @@ class TestRowsToSpecs(unittest.TestCase):
         self.assertEqual(specs[0].folder_name, "myproj")
 
 
+class TestDBRoundtrip(unittest.TestCase):
+    """审计 H1：scanner.to_spec → 入库 → _rows_to_specs 全链路语义一致性。"""
+
+    def test_db_roundtrip_preserves_is_local_semantics(self):
+        """纯本地无远端仓库：url 入库为空 → DB 行 url='' → _rows_to_specs 判 is_local=True。"""
+        from gcm.app.scanner import RepoInfo, to_spec
+        from gcm.db import repo_db
+        # 1) scanner 判定
+        info = RepoInfo(folder_name="my-proj", display="my-proj",
+                        path=r"D:\repos\my-proj", remote_url="")
+        spec = to_spec(info)
+        self.assertTrue(spec.is_local)
+        # 2) 即使只有 RepoSpec 默认字段（url_https="", local_path 特殊），入库 url 应为空
+        self.assertEqual(spec.url_https, "")
+        # 3) DB roundtrip：用与 local_repos_dialog 相同的写入方式
+        d = Path(tempfile.mkdtemp()) / "t.db"
+        db = repo_db.Database(d)
+        spec2 = RepoSpec(owner=info.folder_name, repo=info.folder_name,
+                         url_https=spec.url_https, folder_name=info.folder_name,
+                         local_path=info.path, is_local=spec.is_local)
+        db.upsert_repo(spec2, info.path, host="local")
+        rows = db.list_repos()
+        self.assertEqual(rows[0]["url"], "", "纯本地仓库 url 入库必须为空")
+        # 4) _rows_to_specs 从 DB 行重建 → is_local 仍为 True
+        from gcm.ui.main_window import MainWindow
+        built = MainWindow._rows_to_specs(rows)
+        self.assertTrue(built[0].is_local, "DB roundtrip 后纯本地仓库 is_local 必须保持 True")
+        self.assertEqual(built[0].local_path, r"D:\repos\my-proj")
+        db.close()
+
+    def test_remote_roundtrip_is_local_false(self):
+        """远端仓库（有 url）roundtrip 后 is_local 保持 False。"""
+        from gcm.db import repo_db
+        from gcm.models import RepoSpec
+        d = Path(tempfile.mkdtemp()) / "t.db"
+        db = repo_db.Database(d)
+        spec = RepoSpec(owner="o", repo="r", url_https="https://g.com/o/r.git",
+                        folder_name="o__r")
+        db.upsert_repo(spec, r"D:\x\o__r", host="github.com")
+        rows = db.list_repos()
+        from gcm.ui.main_window import MainWindow
+        built = MainWindow._rows_to_specs(rows)
+        self.assertFalse(built[0].is_local)
+        self.assertEqual(built[0].url_https, "https://g.com/o/r.git")
+        db.close()
+
+
 class TestPayloadHost(unittest.TestCase):
     """B2：worker 落库必须保留来源 host，不得硬编码 github.com。"""
 
@@ -124,8 +171,9 @@ class TestLocalPathRemoteIncremental(unittest.TestCase):
                         remote_url="")
         spec = to_spec(info)
         self.assertTrue(spec.is_local)
-        # 无远端时 url_https 回退到真实路径（供 _repo_dir 定位），不应为空
-        self.assertTrue(spec.url_https)
+        # 无远端时 url_https 必须为空（否则入 DB 后 url 非空会让 _rows_to_specs 误判）
+        self.assertEqual(spec.url_https, "")
+        self.assertEqual(spec.local_path, r"D:\repos\w")
 
     def test_real_incremental_update_via_local_path_remote(self):
         """真实 E2E：本地路径远端 → clone → 远端推新 → sync 增量 +1 提交 → HEAD 一致。"""

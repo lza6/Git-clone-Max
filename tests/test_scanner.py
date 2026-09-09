@@ -109,7 +109,9 @@ class TestScanner(unittest.TestCase):
         spec = to_spec(info)
         self.assertTrue(spec.is_local)
         self.assertEqual(spec.folder_name, "plain")
-        self.assertEqual(spec.url_https, str(d / "plain"))
+        # 纯本地无远端：url_https 必须为空（审计 H1：回填路径会让 DB roundtrip 误判 is_local）
+        self.assertEqual(spec.url_https, "")
+        self.assertEqual(spec.local_path, str(d / "plain"))
 
     def test_to_spec_remote(self):
         info = RepoInfo(folder_name="o__r", display="o/r", path="/x/o__r",

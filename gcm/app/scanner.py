@@ -184,11 +184,13 @@ def to_spec(info: RepoInfo) -> RepoSpec:
     URL 才是 is_local（纯本地，不 fetch/merge）。
     """
     url = info.url_https or info.remote_url
-    # 只要存在任意远端（含本地路径远端），就不是纯本地 → 可增量更新
+    # 只要存在任意远端（含本地路径远端），就不是纯本地 → 可增量更新。
+    # 注意：url_https 不再回填 info.path —— 纯本地仓库无远端，url 应保持为空，
+    # 否则入 DB 后 url 非空会让 _rows_to_specs 误判 is_local=False（审计 H1）。
     is_local = not (info.remote_url or info.url_https)
     spec = RepoSpec(owner=info.owner or info.folder_name,
                     repo=info.repo or info.folder_name,
-                    url_https=url or info.path,
+                    url_https=url,
                     display=info.display,
                     folder_name=info.folder_name,
                     is_local=is_local,

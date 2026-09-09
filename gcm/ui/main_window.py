@@ -423,8 +423,15 @@ class MainWindow(QMainWindow):
     def _on_log_appended(self, count):
         self.log_count.setText(f"{count} 条")
 
+    def has_pending_logs(self) -> bool:
+        """供 closeEvent 判断是否还有积压节流日志需 flush。"""
+        return bool(getattr(self, "_log_batch", None))
+
     def clear_log(self):
         self.log.clear()
+        # 清空节流积压，避免清空后 ≤120ms 幽灵追加回旧行
+        if hasattr(self, "_log_batch"):
+            self._log_batch.clear()
         self.log_view.clear()
 
     # ------------------------------------------------------------ 设置持久化
@@ -878,6 +885,11 @@ class MainWindow(QMainWindow):
             for flag in self.flags.values():
                 flag.cancel()
         self._close_requested = True
+        # flush 剩余节流日志，避免关窗瞬间最后若干行（如"全部任务结束"）丢失
+        try:
+            self._flush_log_batch()
+        except Exception:
+            pass
         # 取消剩余任务并清空未启动队列，避免退出后留下孤儿 git 进程
         for flag in self.flags.values():
             flag.cancel()
