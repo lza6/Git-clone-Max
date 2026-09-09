@@ -29,6 +29,7 @@ class Settings:
     language: str = "zh"              # 保留：zh / en（i18n 备用）
     token: str = ""                   # GitHub token（私有仓库认证，P3-3）
     fetch_unshallow: bool = False     # 浅克隆仓库增量 fetch 时拉全量历史（V3-P0-3）
+    download_dir: str = ""            # 上次使用的下载位置（启动时恢复）
 
 
 _DEFAULTS: dict = asdict(Settings())

@@ -91,22 +91,6 @@ class MainWindow(QMainWindow):
         self.engine.progress.connect(self._on_worker_progress)
         self.engine.result.connect(self._on_worker_result)
         self.engine.finished.connect(self._on_engine_finished)
-        # 统一调度引擎：并发/去重/进度落盘/取消 全部收敛到 engine（不再各自拼装）
-        self.engine = SyncEngine(
-            self.data_dir / "clones",
-            db=self.db,
-            progress_path=self.progress_path,
-            concurrency=int(self.settings.concurrency),
-            fetch_timeout=self.settings.fetch_timeout,
-            clone_timeout=self.settings.clone_timeout,
-            retries=self.settings.retries,
-            proxy=self.settings.proxy,
-            token=self.settings.token,
-        )
-        self.engine.line.connect(self._on_engine_line)
-        self.engine.progress.connect(self._on_worker_progress)
-        self.engine.result.connect(self._on_worker_result)
-        self.engine.finished.connect(self._on_engine_finished)
         # 兼容旧引用（测试/托盘可能读 pool）
         self.pool = self.engine.pool
 
@@ -211,7 +195,9 @@ class MainWindow(QMainWindow):
         opts = QHBoxLayout()
         g1 = QGroupBox("下载位置")
         l1 = QHBoxLayout(g1)
-        self.target_edit = QLineEdit(str(self.data_dir / "clones"))
+        # 恢复上次选择（settings.download_dir），否则默认 data/clones
+        default_dir = str(self.settings.download_dir or (self.data_dir / "clones"))
+        self.target_edit = QLineEdit(default_dir)
         btn_browse = QPushButton("浏览…")
         btn_browse.clicked.connect(self.choose_target)
         l1.addWidget(self.target_edit, 1)
@@ -356,7 +342,7 @@ class MainWindow(QMainWindow):
         l3.setContentsMargins(10, 10, 10, 10)
         l3.setHorizontalSpacing(12)
         l3.setVerticalSpacing(8)
-        l3.addWidget(QLabel("并发数（1–16）："), 0, 0)
+        l3.addWidget(QLabel("并发数（1–32）："), 0, 0)
         self.spin_concurrency = QSpinBox()
         self.spin_concurrency.setRange(1, 32)
         self.spin_concurrency.setValue(int(self.settings.concurrency))
@@ -528,6 +514,9 @@ class MainWindow(QMainWindow):
         d = QFileDialog.getExistingDirectory(self, "选择下载目录", self.target_edit.text())
         if d:
             self.target_edit.setText(d)
+            # 记住用户选择，下次启动恢复
+            self.settings.download_dir = d
+            self.settings_store.save(self.settings)
 
     def open_target(self):
         path = self.target_edit.text().strip()

@@ -41,7 +41,8 @@ class CloneWorker(QRunnable):
 
     def __init__(self, index: int, payload: TaskPayload, service: GitService,
                  db: Database, progress_path: str, on_line=None,
-                 fetch_depth: int = 0, unshallow: bool = False):
+                 fetch_depth: int = 0, unshallow: bool = False,
+                 engine=None, is_update: bool = False):
         super().__init__()
         self.setAutoDelete(True)
         self.index = index
@@ -53,12 +54,19 @@ class CloneWorker(QRunnable):
         self._external_line = on_line
         self._fetch_depth = fetch_depth
         self._unshallow = unshallow
+        self._engine = engine           # 可选：引擎引用（供 line/progress 转发，避免 index=0）
+        self._is_update = is_update     # 更新模式：进程开始即“更新中”，不先显示失败
 
     def run(self):
         spec = self.payload.spec
         flag = self.payload.flag or CancelFlag()
         res = SyncResult(spec=spec, status=SyncStatus.RUNNING)
         try:
+            # 更新模式下：状态先置“更新中”，避免启动瞬间显示“失败”
+            if self._is_update:
+                self.signals.result.emit(self.index, SyncResult(
+                    spec=spec, status=SyncStatus.RUNNING,
+                    action=SyncAction.FETCHED, message="更新中…"))
             # 复用传入的 service；若外部未配置浅克隆语义则按 payload 深度覆盖
             svc = self.service
             if svc.fetch_depth != self._fetch_depth or svc.unshallow != self._unshallow:
