@@ -83,8 +83,17 @@ def _divergence_info(git_dir: str) -> Tuple[int, int]:
 
 
 def _detect_conflict(git_dir: str) -> Tuple[bool, str]:
-    """检测本地是否有会阻止 fast-forward 的改动。返回 (is_conflict, reason)。"""
+    """检测本地是否有会阻止 fast-forward 的改动。返回 (is_conflict, reason)。
+
+    触发条件（满足其一即冲突）：
+    - 存在未提交改动（dirty）
+    - 工作树干净但本地已领先上游（ahead>0）——本地提交与远端分叉，fast-forward 不可行
+      既有的 test_conflict_preserved（本地提交 + 远端推新）依赖该分支。
+    """
     if not _is_dirty(git_dir):
+        ahead, _ = _divergence_info(git_dir)
+        if ahead > 0:
+            return True, f"本地领先上游 {ahead} 个提交（本地提交与远端分叉）"
         return False, ""
     # 有未提交改动：若本地领先上游，则 pull 必然受阻
     ahead, _ = _divergence_info(git_dir)
@@ -421,6 +430,12 @@ class GitService:
         repo_dir = self._repo_dir(spec)
         before = self._head_sha(repo_dir)
         res.head_sha = before
+        # 空仓库（无头）已存在：hit 导入的空仓库，跳过 fetch 直接标记 empty
+        if not before:
+            res.status = SyncStatus.SUCCESS
+            res.action = SyncAction.EMPTY
+            res.message = "空仓库（暂无提交）"
+            return res
 
         # 1) fetch：浅克隆仓库需显式 depth 语义，全量仓库保持原样
         self._emit(f"检查 {spec.display} 远端更新 …")
