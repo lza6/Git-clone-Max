@@ -97,12 +97,19 @@ def parse_remote_url(url: str) -> tuple:
     url = (url or "").strip()
     if not url or remote_is_local(url):
         return ("", "", "", "")
-    # 从 url_lib 复用 github 解析；其余平台做通用正则
-    from ..app.url_lib import parse_repo_url, host_of
+    # 复用通用解析器（多平台 HTTPS/SSH/子组）；GitHub 走旧 parse_repo_url 保持 folder 语义
+    from ..app.url_lib import parse_any_repo_url, parse_repo_url, host_of
+    spec = parse_any_repo_url(url)
+    if spec is not None:
+        host = host_of(url) or "github.com"
+        # 本地扫描的规范名用 host__owner__repo；github 用 owner__repo
+        if host == "github.com":
+            return (spec.owner, spec.repo, spec.url_https, "github.com")
+        return (spec.owner, spec.repo, spec.url_https, host)
     spec = parse_repo_url(url)
     if spec is not None:
         return (spec.owner, spec.repo, spec.url_https, "github.com")
-    # 通用：https://host/owner/repo(.git) 或 ssh://git@host/owner/repo
+    # 兜底通用正则
     m = re.match(r"^(?:https?://|ssh://(?:git@)?|git@)([^/:]+)[:/]([^/]+)/([^/]+?)(?:\.git)?/?$",
                  url, re.IGNORECASE)
     if m:

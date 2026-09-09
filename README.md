@@ -1,7 +1,8 @@
 # Git-clone-Max
 
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
-> 克隆目录一律 `作者__仓库`，本地改动永不覆盖。
+> **v5.0：多平台直克隆** — GitLab / Gitee / Codeberg / Bitbucket / 自建主机（HTTPS/SSH/短格式/子组）同样支持。
+> 克隆目录一律 `host__作者__仓库`（GitHub 为 `作者__仓库`），本地改动永不覆盖。
 
 ## 🚀 懒人小白一键使用
 
@@ -24,7 +25,6 @@
 ## 多平台运行（Linux / macOS 源码）
 
 > 本项目测试在 Windows 上完成；Linux / macOS 上通过源码运行同样支持。
-
 ```bash
 # 1. 创建虚拟环境
 python -m venv .venv
@@ -43,7 +43,9 @@ python -m gcm
 
 | 功能 | 说明 |
 |------|------|
+| 多平台 | GitHub / GitLab / Gitee / Codeberg / Bitbucket / 自建主机，HTTPS + SSH + 短格式 + 子组，直接复制地址即下载 |
 | 批量并行 | 线程池 ≤32 并发（默认 8，设置页可调 1–32），仓库互不阻塞，重复地址自动去重 |
+| 跨 host 命名 | `host__作者__仓库` 防同名冲突；GitHub 保持 `作者__仓库` |
 | 断点续传 | `progress.json` 进程级锁 + 引擎周期落盘（原子写）；中断后已完成的仓库下一轮自动跳过、其余继续 |
 | 并发安全 | 引擎统一调度：SQLite `busy_timeout` 30s + 进度文件互斥锁，高并发下不再闪退 / 锁死 |
 | 增量更新 | 已存在 → `git fetch --prune` → `merge --ff-only`；无法快进退化为 rebase |
@@ -51,7 +53,6 @@ python -m gcm
 | 失败恢复 | 单个仓库失败不中断整体；Windows 非法文件名/目录占用等平台限制错误给出明确提示且不无效重试 |
 | 数据库 | SQLite `repos.db` 记录仓库元数据 + `sync_history` 全量同步快照 |
 | 一键更新 | 「仓库管理 → ⟳ 一键更新全部」对库中所有仓库增量同步 |
-| 作者__仓库命名 | 同名仓库不冲突（如 `lza6__Git-clone-Max`） |
 | 黑匣子日志 | 实时 git 原生输出 + 关键字高亮 + 导出 txt |
 | 下载完自动清空 | 所有仓库同步完成后自动清空输入框 |
 
@@ -65,7 +66,7 @@ Git-clone-Max/
 │   ├── models.py           数据模型
 │   ├── app/
 │   │   ├── engine.py       统一调度引擎（并发/去重/进度/取消）
-│   │   ├── url_lib.py      地址解析 / 命名
+│   │   ├── url_lib.py      通用 Git URL 解析（多平台）/ 跨 host 命名
 │   │   └── worker.py       并行 worker（git 同步 + 结果回传）
 │   ├── db/repo_db.py       SQLite（busy_timeout）/ progress 文件锁
 │   ├── git/service.py      git 操作（clone/fetch/merge/rebase/冲突/平台限制识别）
@@ -83,6 +84,8 @@ python -m pip install pyinstaller
 python -m PyInstaller --noconfirm --clean --onefile --windowed --name "Git-clone-Max" \
   --add-data "gcm;gcm" --collect-all "PyQt6" gcm/__main__.py
 ```
+
+> **v5.0 起支持多平台直克隆**：GitLab / Gitee / Codeberg / Bitbucket / 自建主机，HTTPS + SSH + 短格式 + 子组均可；命名 `host__作者__仓库`（GitHub 保持 `作者__仓库`）。
 
 ## 测试
 
