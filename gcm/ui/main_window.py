@@ -571,32 +571,6 @@ class MainWindow(QMainWindow):
         # 下载完成后自动清空输入框（用户要求）
         self._launch(specs, target_root=Path(target), shallow=shallow, depth=depth,
                      clear_input=True)
-        if invalid:
-            shown = "\n".join(f"  ✗ {line}" for line in invalid)
-            ret = QMessageBox.question(
-                self, "无效地址（忽略并继续？）",
-                f"{len(invalid)} 行不是有效的 GitHub 仓库地址：\n{shown}\n\n"
-                "继续将只同步有效行，是否忽略无效行？",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            if ret != QMessageBox.StandardButton.Yes:
-                return
-            self._emit_log(_fmt_dt(), LogLevel.WARN,
-                            f"已忽略 {len(invalid)} 行无效地址：{', '.join(invalid)}")
-        target = self.target_edit.text().strip()
-        if not target:
-            QMessageBox.warning(self, "提示", "请先选择下载目录。")
-            return
-        try:
-            Path(target).mkdir(parents=True, exist_ok=True)
-        except OSError as e:
-            QMessageBox.warning(self, "提示", f"无法创建下载目录：{e}")
-            return
-
-        shallow = self.mode_combo.currentIndex() == 1
-        depth = self.depth_spin.value()
-        # 下载完成后自动清空输入框（用户要求）
-        self._launch(specs, target_root=Path(target), shallow=shallow, depth=depth,
-                     clear_input=True)
 
     @staticmethod
     def _rows_to_specs(rows):
@@ -768,6 +742,7 @@ class MainWindow(QMainWindow):
             SyncStatus.CANCELLED: (PALETTE["warning"], "已取消"),
             SyncStatus.CONFLICT: (PALETTE["warning"], "冲突"),
             SyncStatus.SKIPPED: (PALETTE["text_dim"], "跳过"),
+            SyncStatus.RUNNING: (PALETTE["accent"], "更新中"),
         }
         color, label = status_map.get(res.status, (PALETTE["text"], str(res.status.value)))
         st = self.table.item(index, 2)
