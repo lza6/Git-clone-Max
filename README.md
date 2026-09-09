@@ -25,10 +25,12 @@
 
 | 功能 | 说明 |
 |------|------|
-| 批量并行 | 线程池 ≤8 并发，仓库互不阻塞 |
-| 断点续传 | `progress.json` 原子写入；中断后已完成的仓库下一轮自动跳过、其余继续 |
+| 批量并行 | 线程池 ≤32 并发（默认 8，设置页可调 1–32），仓库互不阻塞，重复地址自动去重 |
+| 断点续传 | `progress.json` 进程级锁 + 引擎周期落盘（原子写）；中断后已完成的仓库下一轮自动跳过、其余继续 |
+| 并发安全 | 引擎统一调度：SQLite `busy_timeout` 30s + 进度文件互斥锁，高并发下不再闪退 / 锁死 |
 | 增量更新 | 已存在 → `git fetch --prune` → `merge --ff-only`；无法快进退化为 rebase |
 | 冲突保护 | 本地有改动且与远端分叉 → **标记冲突、保留本地、绝不覆盖** |
+| 失败恢复 | 单个仓库失败不中断整体；Windows 非法文件名/目录占用等平台限制错误给出明确提示且不无效重试 |
 | 数据库 | SQLite `repos.db` 记录仓库元数据 + `sync_history` 全量同步快照 |
 | 一键更新 | 「仓库管理 → ⟳ 一键更新全部」对库中所有仓库增量同步 |
 | 作者__仓库命名 | 同名仓库不冲突（如 `lza6__Git-clone-Max`） |
@@ -44,13 +46,14 @@ Git-clone-Max/
 │   ├── __main__.py         入口（python -m gcm）
 │   ├── models.py           数据模型
 │   ├── app/
+│   │   ├── engine.py       统一调度引擎（并发/去重/进度/取消）
 │   │   ├── url_lib.py      地址解析 / 命名
-│   │   └── worker.py       并行 worker + 断点续传
-│   ├── db/repo_db.py       SQLite
-│   ├── git/service.py      git 操作（clone/fetch/merge/rebase/冲突检测）
+│   │   └── worker.py       并行 worker（git 同步 + 结果回传）
+│   ├── db/repo_db.py       SQLite（busy_timeout）/ progress 文件锁
+│   ├── git/service.py      git 操作（clone/fetch/merge/rebase/冲突/平台限制识别）
 │   └── ui/                 主题 + 三 Tab 主窗口
 ├── scripts/                bat / ps1 启动器
-├── tests/                  单元测试（含 git 真实 E2E）
+├── tests/                  单元测试（含真实 git E2E / 并发引擎测试）
 ├── requirements.txt
 └── pyproject.toml
 ```
@@ -74,15 +77,16 @@ python -m unittest discover -s tests -v
 ## 后台挂机 / 长期运行
 
 - **内存**：日志环形缓冲上限 3000 条自动裁剪；worker 任务完成后自动释放；不用全局定时器轮询。
+- **并发安全**：进度文件进程级锁 + SQLite `busy_timeout=30000`；并发 32 实测无闪退 / 锁死。
 - **退出保护**：任务运行中关闭会二次确认，确认后取消剩余任务并安全关闭数据库。
 - **开机自启**（可选）：设置页勾选「开机自启」会创建任务计划登录时启动。
 
 ## 发布
 
 ```bash
-git tag v3.0.0
+git tag v4.0.0
 git push origin main --tags
-python scripts/publish_release.py --tag v3.0.0   # 自动上传 exe 到 GitHub Release
+python scripts/publish_release.py --tag v4.0.0   # 自动上传 exe 到 GitHub Release
 ```
 
 ## License

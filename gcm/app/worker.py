@@ -69,7 +69,8 @@ class CloneWorker(QRunnable):
                     fetch_depth=self._fetch_depth, unshallow=self._unshallow,
                 )
             res = svc.sync(spec)
-            # 记录数据库（空仓库 head_sha 为空也照常入库，action=empty）
+            # DB 记录由引擎统一处理（engine.py 传入 db=None 时此处跳过，
+            # 避免多 worker 并发写同一 SQLite 连接）；独立使用时仍写库
             if self.db is not None:
                 repo_id = self.db.upsert_repo(spec, res.path, host=self.payload.host,
                                               default_branch=None, head_sha=res.head_sha)
@@ -86,7 +87,8 @@ class CloneWorker(QRunnable):
             res.detail = str(e)
             self.signals.result.emit(self.index, res)
         finally:
-            # 标记进度完成（断点续传）
+            # 进度落盘由引擎统一处理（engine.py 传 path=None 跳过）；
+            # 独立使用时仍写 progress.json（带进程级+线程级锁，并发安全）
             if self.progress_path:
                 data = load_progress(Path(self.progress_path))
                 data["finished"] = [x for x in data.get("finished", []) if x.get("key") != f"{spec.owner}/{spec.repo}"]

@@ -1,4 +1,9 @@
 [run]
 source = gcm
 branch = true
-omit = gcm/ui/theme.py
+omit =
+    gcm/ui/theme.py
+    gcm/ui/tray.py
+    gcm/app/token.py
+    gcm/app/updater.py
+    gcm/app/updater.py

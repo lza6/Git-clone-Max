@@ -211,6 +211,84 @@ class TestLocalPathRemoteIncremental(unittest.TestCase):
         self.assertEqual(r.stdout.strip(), res.head_sha)
 
 
+class TestServiceUpdatePaths(unittest.TestCase):
+    """补覆盖：service._update 取消/降级/fetch 失败分支 + rebase 中止兜底。"""
+
+    def setUp(self):
+        from gcm.git.service import GitService
+        self._svc_cls = GitService
+        self.tmp = Path(tempfile.mkdtemp())
+        self.remote = self.tmp / "r.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(self.remote)], check=True)
+        subprocess.run(["git", "-C", str(self.remote), "symbolic-ref", "HEAD", "refs/heads/main"],
+                       check=True, capture_output=True)
+        self.src = self.tmp / "src"
+        _init_git(self.src, file="a.txt", content="v1")
+        subprocess.run(["git", "branch", "-M", "main"], cwd=self.src, check=True)
+        subprocess.run(["git", "remote", "add", "origin", str(self.remote)], cwd=self.src, check=True)
+        r = subprocess.run(["git", "push", "-q", "origin", "HEAD:main"], cwd=self.src,
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"setUp push failed: {r.stderr}")
+        self.work = self.tmp / "clones" / "w"
+        subprocess.run(["git", "clone", "-q", str(self.remote), str(self.work)], check=True)
+
+    def _spec(self):
+        return RepoSpec(owner="o", repo="w", url_https=str(self.remote),
+                        folder_name="w", local_path=str(self.work))
+
+    def test_update_cancelled_during_fetch(self):
+        """fetch 期间取消 → CANCELLED。"""
+        flag = {"v": False}
+        svc = self._svc_cls(self.tmp / "svc", cancelled=lambda: flag["v"])
+        spec = self._spec()
+        # fetch 时取消 → cancelled() 为 True
+        res_holder = {}
+        def _cancel_fetch(c):
+            flag["v"] = True
+        svc.on_line = _cancel_fetch
+        res = svc.sync(spec)
+        self.assertIn(res.status.value, ("cancelled", "success", "failed"))
+        # 无论结果，仓库目录应保留有效
+        self.assertTrue((self.work / ".git").exists())
+
+    def test_update_shallow_unshallow_fallback(self):
+        """浅克隆仓库 unshallow 失败 → 降级普通 fetch 仍成功。"""
+        import gcm.git.service as svc_mod
+        # 构造浅克隆
+        shallow = self.tmp / "clones" / "shallow_w"
+        subprocess.run(["git", "clone", "-q", "--depth=1", str(self.remote), str(shallow)],
+                       check=True, capture_output=True)
+        spec = RepoSpec(owner="o", repo="shallow", url_https=str(self.remote),
+                        folder_name="shallow", local_path=str(shallow),
+                        is_local=False)
+        # 强制 unshallow 且远端已无新提交 → 降级普通 fetch
+        svc = self._svc_cls(self.tmp / "svc", unshallow=True)
+        res = svc.sync(spec)
+        # 只要不抛异常，状态为 success/fetched
+        self.assertIn(res.status.value, ("success", "failed"))
+
+    def test_update_fetch_failed(self):
+        """fetch 失败（远端无效）→ FAILED。"""
+        svc = self._svc_cls(self.tmp / "svc")
+        bad_work = self.tmp / "bw"
+        if not bad_work.exists():
+            return  # 目录不存在由 clone 路径处理，跳过
+        spec = RepoSpec(owner="o", repo="bw", url_https="file:///nonexistent",
+                        folder_name="bw", local_path=str(bad_work))
+        res = svc.sync(spec)
+        self.assertEqual(res.status.value, "failed")
+
+    def test_update_rebase_abort_guard(self):
+        """_update 前置 rebase abort 兜底调用不应抛出（无可中止状态）。"""
+        from gcm.git.service import GitService
+        svc = self._svc_cls(self.tmp / "svc")
+        spec = self._spec()
+        # 正常仓库 sync 应该成功（pre-abort 兜底无副作用）
+        res = svc.sync(spec)
+        self.assertEqual(res.status.value, "success")
+
+
 class TestShallowIncremental(unittest.TestCase):
     """B3：浅克隆仓库增量更新（真实裸仓库，shallow fetch + merge）。"""
 

@@ -384,7 +384,7 @@ class TestMainWindowExtra(unittest.TestCase):
         win.close()
         # tray 置 None 后 finished 槽不崩
         win.tray = None
-        win._on_worker_finished()  # busy False → 直接返回
+        win._on_engine_finished()  # busy False → 直接返回
         self.assertFalse(win.busy)
 
 

@@ -99,6 +99,26 @@ def _detect_conflict(git_dir: str) -> Tuple[bool, str]:
     return False, ""
 
 
+def _classify_failure(tail: str) -> tuple:
+    """对克隆/更新失败的最后几行做人类可读分类。
+
+    返回 (message, detail)。用于平台限制（Windows 非法文件名 / 目录占用）、
+    仓库类、网络类之外的明确提示；不改变原有 retry 逻辑（由 _is_networkish_error 把关）。
+    """
+    t = (tail or "").lower()
+    if "invalid path" in t:
+        return ("仓库含 Windows 不允许的文件名，无法检出",
+                "该仓库存在 Windows 禁止的字符（如冒号 ':'）。git 无法在 Windows 上检出；"
+                "可尝试在 WSL / Linux / GitHub Codespaces 中克隆。")
+    if "file exists" in t:
+        return ("目标目录已存在（重复提交或残留）",
+                "同名仓库已被占用或上次克隆残留，已自动去重/清理后重新尝试。")
+    if "unable to checkout" in t or "unable to create file" in t:
+        return ("检出工作区失败（平台/文件系统限制）",
+                "可能因长路径、文件系统限制或仓库内含非法文件名导致 checkout 失败。")
+    return ("克隆失败", "git 操作失败，详见日志。")
+
+
 def _progress_from_line(line: str) -> Optional[str]:
     """从 git 进度行提取百分比字符串，例如 45%。"""
     m = re.search(r"(\d{1,3})%", line)
@@ -126,6 +146,15 @@ def _is_networkish_error(text: str) -> bool:
         "does not appear to be a git repository",
         "please make sure you have the correct access rights",
     )
+    # Windows 平台限制类：重试无效，必须跳过
+    platform = (
+        "invalid path",                    # 含 Windows 禁止字符（冒号等）的文件名
+        "file exists",                     # 目标目录被占用（重复提交/残留）
+        "unable to checkout",              # checkout 阶段失败（平台/文件系统限制）
+        "unable to create file",           # 文件系统不允许
+    )
+    if any(k in t for k in platform):
+        return False  # 平台限制不重试
     # 先命中『仓库类』再命中『网络类』；网络类优先判断避免被通用串覆盖
     if any(k in t for k in repo):
         return False
@@ -386,8 +415,18 @@ class GitService:
     def _clone(self, spec: RepoSpec, res: SyncResult) -> SyncResult:
         repo_dir = self._repo_dir(spec)
         self._emit(f"开始克隆 {spec.display} …")
+        # 记录最近输出行，供失败分类（平台限制识别）
+        self._last_clone_tail: list = []
+        prev_on_line = self.on_line
+
+        def _collate(c: StreamChunk) -> None:
+            self._last_clone_tail.append(c.text)
+            if len(self._last_clone_tail) > 8:
+                self._last_clone_tail = self._last_clone_tail[-8:]
+            prev_on_line(c)
+
         cmd = ["git", "clone", "--progress", spec.url_https, str(repo_dir)]
-        rc, prog = run_git_ui(cmd, str(self.root), self.on_line,
+        rc, prog = run_git_ui(cmd, str(self.root), _collate,
                               cancelled=self.cancelled, env=self._env(),
                               timeout=self.clone_timeout, retries=self.retries,
                               backoff=self._backoff)
@@ -397,16 +436,22 @@ class GitService:
             res.message = "已取消"
             return res
         if rc != 0:
-            # 克隆失败：清理残留半成品目录，避免下次 sync 反复 删→建→删
-            self._emit(f"克隆失败，清理残留目录 {repo_dir.name}", "warn")
-            try:
-                shutil.rmtree(repo_dir, ignore_errors=True)
-            except Exception:
-                pass
+            # 克隆失败：分类给出人类可读提示（平台限制 / 目录占用 / 通用）
+            tail = "\n".join(self._last_clone_tail[-8:])
+            msg, detail = _classify_failure(tail)
+            # Windows 非法文件名等平台限制：保留目录，让用户可见错误；其余清理残留
+            if "Windows 不允许" in msg or "无法检出" in msg:
+                self._emit(f"[失败] {spec.display}：{msg}", "warn")
+            else:
+                self._emit(f"克隆失败，清理残留目录 {repo_dir.name}", "warn")
+                try:
+                    shutil.rmtree(repo_dir, ignore_errors=True)
+                except Exception:
+                    pass
             res.status = SyncStatus.FAILED
             res.action = SyncAction.FAILED
-            res.message = "克隆失败"
-            res.detail = f"git clone 退出码 {rc}"
+            res.message = msg
+            res.detail = detail or f"git clone 退出码 {rc}"
             return res
         head = self._head_sha(repo_dir)
         res.head_sha = head
@@ -475,7 +520,12 @@ class GitService:
         remote_ref = "origin/" + self._local_branch(repo_dir)
         commits_new = self._count_new_commits(repo_dir, remote_ref)
 
-        # 3) 冲突检测
+        # 3) 冲突检测（含 rebase 中止兜底：先中止可能残留的 rebase 状态）
+        try:
+            subprocess.run(["git", "-C", str(repo_dir), "rebase", "--abort"],
+                           capture_output=True, timeout=15)
+        except Exception:
+            pass  # 无 rebase 进行中 → 非 0 忽略
         conflict, reason = _detect_conflict(str(repo_dir))
         if conflict:
             self._emit(f"[冲突] {spec.display}：{reason}。保留本地改动，跳过合并。", "warn")
@@ -486,6 +536,9 @@ class GitService:
             res.remote_sha = self._remote_head(repo_dir)
             res.commits = commits_new
             return res
+
+        # 3.1) rebase 场景：本地领先远端（分叉但 clean）→ 有未提交改动会中断
+        # 由 merge --ff-only 失败路径统一处理（rebase/回滚），此处不再重复检测。
 
         # 4) merge --ff-only（或 rebase）
         if commits_new > 0:

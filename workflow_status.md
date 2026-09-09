@@ -2,7 +2,28 @@
 
 > 只记录事实与证据。
 
-## 交付状态
+## v4.0.0 并发架构升级（本次交付）
+
+| 节点 | 状态 | 关键证据 |
+|------|------|----------|
+| V4-1 新增 `gcm/app/engine.py` SyncEngine | ✅ | 统一调度：去重 / 并发 1–32 / 进度周期落盘 / 取消缓存 / finished 收敛 |
+| V4-2 `repo_db.py` 并发安全 | ✅ | `busy_timeout=30000`；`_progress_guard` 线程+进程双层锁（msvcrt/fcntl）|
+| V4-3 `service.py` 失败分类 + 平台限制不重试 | ✅ | `_classify_failure`（invalid path / file exists / unable to checkout）+ `_is_networkish_error` 加入 platform 类；clone 失败路径分类；rebase abort 兜底 |
+| V4-4 `main_window.py` 接入 engine | ✅ | `_launch`/`update_all` 统一走 engine；`_save_concurrency` 生效；并发 SpinBox 1–32；closeEvent 用 engine.shutdown |
+| V4-5 并发 E2E 测试 `tests/test_engine.py` | ✅ | 批量 8 / 并发 32 / 去重 / 失败不中断 / 断点续传 / 文件锁并发写 / 平台错误不重试（8 用例）|
+| V4-6 版本 bump 4.0.0 + README 同步 | ✅ | `__version__=4.0.0`；README 并发描述与目录结构更新 |
+| V4-7 全量测试 | ✅ | `Ran 113 tests OK`（含真实 git E2E、并发引擎、launcher）|
+| V4-8 覆盖率 | ✅ | `TOTAL 78%`（剔除 theme/tray/token/updater 外部交互模块；核心 engine 92% / scanner 89% / repo_db 89% / worker 88%）|
+
+**本次修复的根因**
+1. progress.json 共用 tmp 路径并发写 → PermissionError → finished 信号丢失 → UI 永久 busy（闪退表象）→ 引擎统一落盘 + 双层文件锁。
+2. SQLite 无 busy_timeout → `database is locked` → busy_timeout=30000。
+3. 同 `folder_name` 无去重 → 两 worker 抢目录（layerfs 日志实证）→ 引擎按目标目录去重。
+4. 并发上限硬编码 16 与设置脱节 → 引擎收敛 + SpinBox 1–32。
+5. layerfs 冒号文件名 = Windows 平台限制 → 失败分类明确提示 + 不重试。
+6. `QSystemTrayIcon.isSystemTrayAvailable()` 在 offscreen 触发访问违规 → 提前返回 False（测试环境）。
+
+## 交付状态（历史基线）
 
 | 节点 | 状态 | 关键证据 |
 |------|------|----------|

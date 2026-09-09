@@ -103,25 +103,38 @@ class TestMainWindow(unittest.TestCase):
         finally:
             self._drain_log_timer()
 
+    def test_update_all_empty_db_informs(self):
+        """一键更新在数据库为空时提示，不崩溃。"""
+        try:
+            w = self._w
+            # 清空 DB 再点一键更新 → 应弹「数据库中没有已记录的仓库」
+            w.db.delete_all_repos()
+            w.update_all()
+            self.assertTrue(
+                any("数据库中没有已记录的仓库" in text for _, text in self.h.informed),
+                "空 DB 一键更新应提示")
+            self.assertFalse(w.busy)
+        finally:
+            self._drain_log_timer()
+
     def test_valid_only_starts_and_clears(self):
         try:
             w = self._w
             w.repo_input.setPlainText("https://github.com/a/b\nhttps://github.com/c/d")
-            # 直接调用 _launch 简化（避开真实网络）：验证按钮状态与输入框复位
+            # 直接调用 _launch：引擎去重/调度在后台线程跑真实 git，
+            # 这里不等待网络（测试只关心 UI 状态机与复位逻辑）。
             specs = [RepoSpec("a", "b", "https://github.com/a/b.git"),
                      RepoSpec("c", "d", "https://github.com/c/d.git")]
             target = self._d / "clones"
             w._launch(specs, target_root=target, shallow=False, depth=1, clear_input=True)
             self.assertTrue(w.busy)
             self.assertFalse(w.btn_start.isEnabled())
-            # 模拟所有任务完成（_pending_count 与行数一致；finished 信号逐次递减）
+            # 引擎已接管完成判定：直接触发 finished 槽（等价于全部 worker 完成后引擎 emit）
+            for row in range(w.table.rowCount()):
+                w.table.item(row, 2).setText("成功")
+                w.table.item(row, 3).setText("已最新")
             w._pending_count = w.table.rowCount()
-            for i in range(w.table.rowCount()):
-                it = w.table.item(i, 2)
-                it.setText("成功")
-            # 逐次触发 finished 槽，模拟每个 worker 的 finished 信号
-            for i in range(w.table.rowCount()):
-                w._on_worker_finished()
+            w._on_engine_finished()
             self.assertFalse(w.busy)
             self.assertTrue(w.btn_start.isEnabled())
             self.assertEqual(w.repo_input.toPlainText(), "")

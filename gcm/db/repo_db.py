@@ -48,6 +48,9 @@ CREATE INDEX IF NOT EXISTS idx_sync_history_repo ON sync_history(repo_id, starte
 """
 
 
+_BUSY_TIMEOUT_MS = 30000  # SQLite 写锁竞争等待上限，避免高并发直接抛 database is locked
+
+
 class Database:
     """线程安全 SQLite 封装。"""
 
@@ -59,6 +62,7 @@ class Database:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL;")
         self._conn.execute("PRAGMA foreign_keys=ON;")
+        self._conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS};")  # 高并发写不立刻抛锁错误
         with self._lock:
             self._conn.executescript(_SCHEMA)
             self._conn.commit()
@@ -168,6 +172,13 @@ class Database:
             self._conn.execute("DELETE FROM repos WHERE id=?", (repo_id,))
             self._conn.commit()
 
+    def delete_all_repos(self):
+        """清空全部仓库记录（含历史）。供测试/重置使用。"""
+        with self._lock:
+            self._conn.execute("DELETE FROM sync_history")
+            self._conn.execute("DELETE FROM repos")
+            self._conn.commit()
+
     def count(self) -> int:
         with self._lock:
             return int(self._conn.execute("SELECT COUNT(*) AS c FROM repos").fetchone()["c"])
@@ -176,21 +187,70 @@ class Database:
 # ---------------------------------------------------------------------------
 # 断点续传：progress.json（含已完任务记录）
 # ---------------------------------------------------------------------------
+# progress.json 的读写需要互斥：多 worker 并发（或未来多实例）写同一 tmp 路径
+# 会导致 PermissionError（Windows）。这里提供线程级 + 进程级双层锁。
+import contextlib as _contextlib
+
+_progress_lock = threading.RLock()
+
+
+@_contextlib.contextmanager
+def _progress_guard(path: Path):
+    """线程锁 + 进程锁双层互斥，保护对 progress.json 的读改写。
+
+    进程锁：Windows msvcrt（每句柄独占锁）/ POSIX fcntl.flock。
+    同进程多线程 → RLock 串行；多进程 → 文件锁串行。锁失败降级为仅线程锁。
+    """
+    with _progress_lock:
+        lock_fh = None
+        try:
+            if os.name == "nt":
+                import msvcrt
+                lock_fh = open(str(path) + ".lock", "a+")
+                msvcrt.locking(lock_fh.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+                lock_fh = open(str(path) + ".lock", "a+")
+                fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+        except Exception:
+            lock_fh = None  # 锁获取失败 → 降级为仅线程锁
+        try:
+            yield
+        finally:
+            if lock_fh is not None:
+                try:
+                    if os.name == "nt":
+                        import msvcrt
+                        lock_fh.seek(0)
+                        msvcrt.locking(lock_fh.fileno(), msvcrt.LK_UNLCK, 1)
+                    else:
+                        import fcntl
+                        fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
+                except Exception:
+                    pass
+                try:
+                    lock_fh.close()
+                except Exception:
+                    pass
+
+
 def load_progress(path: Path) -> Dict[str, Any]:
     if not path.exists():
         return {"finished": [], "in_progress": {}}
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        with _progress_guard(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
     except Exception:
         return {"finished": [], "in_progress": {}}
 
 
 def save_progress(path: Path, data: Dict[str, Any]):
     tmp = path.with_suffix(".json.tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)  # 原子写
+    with _progress_guard(path):
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)  # 原子写
 
 
 def mark_finished(path: Path, spec: RepoSpec, result: Dict[str, Any]):

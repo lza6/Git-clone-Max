@@ -2,12 +2,18 @@
 """系统托盘：最小化挂机时的图标、进度摘要与通知。"""
 from __future__ import annotations
 
+import os
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 
 def ensure_supported() -> bool:
+    # offscreen 平台插件下 QSystemTrayIcon.isSystemTrayAvailable() 在 Windows 会
+    # 触发访问违规（Qt 环境问题，非代码 bug）。offscreen 本就没有系统托盘 → 提前返回 False。
+    if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+        return False
     return QSystemTrayIcon.isSystemTrayAvailable()
 
 
