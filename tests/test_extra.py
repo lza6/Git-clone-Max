@@ -25,6 +25,7 @@ from gcm.git.service import (
 )
 from gcm.models import RepoSpec
 from gcm.ui.theme import LogLevel
+import gcm.ui.main_window as gcm_main_window  # 供 show_history 对话框 patch 使用
 
 
 def _git(cwd, *args):
@@ -360,21 +361,31 @@ class TestMainWindowExtra(unittest.TestCase):
         # _any_cancel / cancel_all（无任务时不抛）
         self.assertFalse(win._any_cancel())
         win.cancel_all()
-        # show_history 空记录 → 弹"暂无记录"
+        # show_history：repo 存在 → 打开 RepoDetailDialog（patch 模态框防 exec 阻塞）
         win.db.upsert_repo(RepoSpec("o", "r", "https://github.com/o/r.git"), "x")
-        infos = []
-        orig_info = QMessageBox.information
-        QMessageBox.information = lambda *a, **k: infos.append(a)
         rid = win.db.list_repos("github.com")[0]["id"]
-        win.show_history(rid)
-        self.assertEqual(infos[0][2], "暂无记录")
-        QMessageBox.information = orig_info
+        opened = []
+        orig_dlg = gcm_main_window.RepoDetailDialog
+        class _FakeDlg:
+            """不弹模态窗：仅记录入参，exec 立即返回。"""
+            def __init__(self, repo, history, parent=None):
+                opened.append((repo, history))
+            def exec(self):
+                return 0
+        gcm_main_window.RepoDetailDialog = _FakeDlg
+        try:
+            win.show_history(rid)
+            self.assertEqual(len(opened), 1, "应打开详情对话框")
+            self.assertEqual(opened[0][0]["id"], rid)
+        finally:
+            gcm_main_window.RepoDetailDialog = orig_dlg
         # delete_selected：未选中 → 提示（不崩，需先补桩弹窗）
         info2 = []
+        orig_info2 = QMessageBox.information
         QMessageBox.information = lambda *a, **k: info2.append(a)
         win.delete_selected()
         self.assertGreaterEqual(len(info2), 1)
-        QMessageBox.information = orig_info
+        QMessageBox.information = orig_info2
         # save_log 取消（无路径）
         orig_sf = QFileDialog.getSaveFileName
         QFileDialog.getSaveFileName = lambda *a, **k: ("", "")

@@ -41,7 +41,7 @@ class SyncEngine(QObject):
                  progress_path: Optional[Path] = None,
                  concurrency: int = 8,
                  fetch_timeout: int = 300, clone_timeout: int = 600,
-                 retries: int = 2, proxy: str = ""):
+                 retries: int = 2, proxy: str = "", token: str = ""):
         super().__init__()
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -54,6 +54,7 @@ class SyncEngine(QObject):
         self.clone_timeout = clone_timeout
         self.retries = max(0, retries)
         self.proxy = (proxy or "").strip()
+        self.token = (token or "").strip()
 
         self.tasks: List[CloneWorker] = []
         self.flags: Dict[int, CancelFlag] = {}
@@ -132,6 +133,8 @@ class SyncEngine(QObject):
         return groups
 
     def _service(self) -> GitService:
+        # fetch_depth/unshallow 同步给 service：让 worker（worker.py 不受允许改动）不因
+        # 深度差异重建 GitService，从而避免重建时丢掉 token（token 仅在本注入点透传）。
         return GitService(
             self.root,
             on_line=lambda c: self._emit_line(0, c.text, c.level),
@@ -140,6 +143,9 @@ class SyncEngine(QObject):
             clone_timeout=self.clone_timeout,
             retries=self.retries,
             proxy=self.proxy,
+            token=self.token,
+            fetch_depth=self._depth if self._depth else 0,
+            unshallow=self._unshallow,
         )
 
     def _precheck_skip(self, spec: RepoSpec) -> Optional[tuple]:

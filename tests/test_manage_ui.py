@@ -280,20 +280,33 @@ class TestManageUi(unittest.TestCase):
         self.assertEqual(self.w.manage_stats.text(), "共 1 个仓库")
 
     # ------------------------------------------------------------ show_history
-    def test_show_history_information_contains_lines(self):
-        """有历史记录 → QMessageBox.information 文本包含格式化记录行。"""
+    def test_show_history_opens_repo_detail_dialog(self):
+        """有历史记录 → 打开 RepoDetailDialog，repo dict id 与 history 长度正确。"""
         rid = self._seed_repo()
         self.db.add_sync_history(rid, SyncStatus.SUCCESS, SyncAction.CLONED,
                                  message="首次克隆完成", commits=5,
                                  started_at="2026-09-09 10:00:00")
-        with _msgbox_patch() as m_msg:
+        with mock.patch("gcm.ui.main_window.RepoDetailDialog") as m_dlg:
             self.w.show_history(rid)
+        m_dlg.assert_called_once()
+        m_dlg.return_value.exec.assert_called_once()
+        repo_arg = m_dlg.call_args.kwargs.get("repo") or m_dlg.call_args.args[0]
+        hist_arg = m_dlg.call_args.kwargs.get("history") or m_dlg.call_args.args[1]
+        self.assertEqual(repo_arg["id"], rid)
+        self.assertEqual(len(hist_arg), 1)
+
+    def test_show_history_missing_repo_falls_back(self):
+        """repo 记录不存在（已删除）→ 回退为 QMessageBox.information，不抛异常。"""
+        rid = self._seed_repo()
+        self.db.add_sync_history(rid, SyncStatus.SUCCESS, SyncAction.CLONED,
+                                 message="首次克隆完成", commits=5,
+                                 started_at="2026-09-09 10:00:00")
+        self.db.delete_repo(rid)
+        with _msgbox_patch() as m_msg, \
+                mock.patch("gcm.ui.main_window.RepoDetailDialog") as m_dlg:
+            self.w.show_history(rid)
+        m_dlg.assert_not_called()
         m_msg.information.assert_called_once()
-        text = m_msg.information.call_args.args[2]
-        self.assertIn("2026-09-09 10:00:00", text)
-        self.assertIn("cloned", text)
-        self.assertIn("+5", text)
-        self.assertIn("首次克隆完成", text)
 
 
 if __name__ == "__main__":

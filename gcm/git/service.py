@@ -308,7 +308,8 @@ class GitService:
                  cancelled: Optional[Callable[[], bool]] = None,
                  fetch_timeout: float = 300, clone_timeout: float = 600,
                  retries: int = 0, backoff: Tuple[float, ...] = (1.0, 3.0, 8.0),
-                 proxy: str = "", fetch_depth: int = 0, unshallow: bool = False):
+                 proxy: str = "", fetch_depth: int = 0, unshallow: bool = False,
+                 token: str = ""):
         self.root = Path(root_dir)
         self.root.mkdir(parents=True, exist_ok=True)
         self.on_line = on_line or (lambda c: None)
@@ -318,18 +319,30 @@ class GitService:
         self.retries = max(0, retries)
         self._backoff = backoff
         self.proxy = proxy.strip()
+        self.token = (token or "").strip()
         self.fetch_depth = max(0, int(fetch_depth))   # >0 时浅层仓库 fetch 带 --depth
         self.unshallow = bool(unshallow)              # True 时浅层仓库 fetch --unshallow 拉全量
 
     def _env(self, extra: Optional[Dict[str, str]] = None) -> Optional[Dict[str, str]]:
-        """构造 subprocess 环境：未设置代理时注入 http_proxy/https_proxy。"""
-        if not self.proxy:
+        """构造 subprocess 环境。
+
+        - 未设代理且无 token 时返回 None（调用方透传 None 即继承当前进程环境）。
+        - 有代理时注入 http_proxy/https_proxy；有 token 时经 GIT_CONFIG_* 注入
+          `http.extraHeader=Authorization: Bearer <token>`（纯 git 支持、免临时脚本，
+          仅对本次 git 子进程生效，不污染全局配置）。
+        """
+        if not self.proxy and not self.token:
             return extra
         env = dict(os.environ)
         if extra:
             env.update(extra)
-        env.setdefault("http_proxy", self.proxy)
-        env.setdefault("https_proxy", self.proxy)
+        if self.proxy:
+            env.setdefault("http_proxy", self.proxy)
+            env.setdefault("https_proxy", self.proxy)
+        if self.token:
+            env["GIT_CONFIG_COUNT"] = "1"
+            env["GIT_CONFIG_KEY_0"] = "http.extraHeader"
+            env["GIT_CONFIG_VALUE_0"] = f"Authorization: Bearer {self.token}"
         return env
 
     # ------------------------------------------------------------ 工具

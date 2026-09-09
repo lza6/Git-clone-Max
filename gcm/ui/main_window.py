@@ -42,6 +42,7 @@ from ..db.repo_db import Database, load_progress
 from ..db.settings import Settings, SettingsStore
 from ..git.service import GitService
 from ..models import RepoSpec, SyncResult, SyncStatus
+from .repo_detail_dialog import RepoDetailDialog
 from .theme import LogEvent, LogLevel, LogModel, PALETTE, QSS, make_highlighter
 
 DOMAIN = "github.com"
@@ -84,6 +85,7 @@ class MainWindow(QMainWindow):
             clone_timeout=self.settings.clone_timeout,
             retries=self.settings.retries,
             proxy=self.settings.proxy,
+            token=self.settings.token,
         )
         self.engine.line.connect(self._on_engine_line)
         self.engine.progress.connect(self._on_worker_progress)
@@ -99,6 +101,7 @@ class MainWindow(QMainWindow):
             clone_timeout=self.settings.clone_timeout,
             retries=self.settings.retries,
             proxy=self.settings.proxy,
+            token=self.settings.token,
         )
         self.engine.line.connect(self._on_engine_line)
         self.engine.progress.connect(self._on_worker_progress)
@@ -380,6 +383,12 @@ class MainWindow(QMainWindow):
         self.ck_unshallow.setChecked(bool(self.settings.fetch_unshallow))
         self.ck_unshallow.stateChanged.connect(self._save_fetch_unshallow)
         l3.addWidget(self.ck_unshallow, 2, 0, 1, 2)
+        l3.addWidget(QLabel("GitHub Token："), 2, 2)
+        self.edit_token = QLineEdit(self.settings.token)
+        self.edit_token.setPlaceholderText("私有仓库认证令牌（可选，留空不传递）")
+        self.edit_token.setEchoMode(QLineEdit.EchoMode.Password)
+        self.edit_token.editingFinished.connect(self._save_token)
+        l3.addWidget(self.edit_token, 2, 3)
         v.addWidget(g3)
 
         g2 = QGroupBox("黑匣子日志（实时）")
@@ -472,6 +481,10 @@ class MainWindow(QMainWindow):
 
     def _save_proxy(self):
         self.settings.proxy = self.edit_proxy.text().strip()
+        self.settings_store.save(self.settings)
+
+    def _save_token(self):
+        self.settings.token = self.edit_token.text().strip()
         self.settings_store.save(self.settings)
 
     def _save_fetch_unshallow(self, checked):
@@ -663,7 +676,7 @@ class MainWindow(QMainWindow):
         self._clear_after_finish = clear_input and not multi_root_relay
         self._multi_root_relay = multi_root_relay
 
-        # 统一调度：engine 重建 root（根目录可变；超时/重试/代理来自设置）
+        # 统一调度：engine 重建 root（根目录可变；超时/重试/代理/token 来自设置）
         self.engine = SyncEngine(
             target_root,
             db=self.db,
@@ -673,6 +686,7 @@ class MainWindow(QMainWindow):
             clone_timeout=self.settings.clone_timeout,
             retries=self.settings.retries,
             proxy=self.settings.proxy,
+            token=self.settings.token,
         )
         self.engine.line.connect(self._on_engine_line)
         self.engine.progress.connect(self._on_worker_progress)
@@ -906,13 +920,18 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"已导入 {n} 个本地仓库")
 
     def show_history(self, repo_id: int):
-        hist = self.db.history(repo_id, 20)
-        lines = []
-        for h in hist:
-            lines.append(
-                f"{h['started_at']} {h['action']:10s} {h['status']:8s} "
-                f"+{h['commits']}  {h['message'][:70]}")
-        QMessageBox.information(self, "同步历史", "\n".join(lines) or "暂无记录")
+        """打开仓库详情对话框；记录已不存在时回退为纯文本历史提示。"""
+        repo = next((r for r in self.db.list_repos() if r.get("id") == repo_id), None)
+        hist = self.db.history(repo_id, 50)
+        if repo is None:
+            lines = []
+            for h in hist:
+                lines.append(
+                    f"{h['started_at']} {h['action']:10s} {h['status']:8s} "
+                    f"+{h['commits']}  {h['message'][:70]}")
+            QMessageBox.information(self, "同步历史", "\n".join(lines) or "仓库不存在或已删除")
+            return
+        RepoDetailDialog(repo=repo, history=hist, parent=self).exec()
 
     def delete_selected(self):
         rows = sorted({i.row() for i in self.manage_table.selectedIndexes()})
