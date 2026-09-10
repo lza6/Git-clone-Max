@@ -353,7 +353,7 @@ class GitService:
                  fetch_timeout: float = 300, clone_timeout: float = 600,
                  retries: int = 0, backoff: Tuple[float, ...] = (1.0, 3.0, 8.0),
                  proxy: str = "", fetch_depth: int = 0, unshallow: bool = False,
-                 token: str = "", submodule: bool = False):
+                 token: str = "", submodule: bool = False, rate_limit_kbps: int = 0):
         self.root = Path(root_dir)
         self.root.mkdir(parents=True, exist_ok=True)
         self.on_line = on_line or (lambda c: None)
@@ -367,6 +367,7 @@ class GitService:
         self.fetch_depth = max(0, int(fetch_depth))   # >0 时浅层仓库 fetch 带 --depth
         self.unshallow = bool(unshallow)              # True 时浅层仓库 fetch --unshallow 拉全量
         self._submodule = bool(submodule)             # G08-1 True 时 clone 带子模块
+        self.rate_limit_kbps = max(0, int(rate_limit_kbps or 0))  # G04-4 限速
 
     def _env(self, extra: Optional[Dict[str, str]] = None) -> Optional[Dict[str, str]]:
         """构造 subprocess 环境。
@@ -376,7 +377,7 @@ class GitService:
           `http.extraHeader=Authorization: Bearer <token>`（纯 git 支持、免临时脚本，
           仅对本次 git 子进程生效，不污染全局配置）。
         """
-        if not self.proxy and not self.token:
+        if not self.proxy and not self.token and not self.rate_limit_kbps:
             return extra
         env = dict(os.environ)
         if extra:
@@ -387,10 +388,18 @@ class GitService:
         # F1 安全加固：token 只发给 github.com（本工具默认 GitHub 私有仓库认证）。
         # 非 github host（gitlab/gitee 等）不注入，避免 PAT 外泄到未知域名。
         host = (getattr(self, "_current_host", "") or "").lower().replace("www.", "")
+        cfg = []
         if self.token and (not host or host == "github.com"):
-            env["GIT_CONFIG_COUNT"] = "1"
-            env["GIT_CONFIG_KEY_0"] = "http.extraHeader"
-            env["GIT_CONFIG_VALUE_0"] = f"Authorization: Bearer {self.token}"
+            cfg.append(("http.extraHeader", f"Authorization: Bearer {self.token}"))
+        # G04-4 下载限速：低于 lowSpeedLimit KiB/s 持续 lowSpeedTime 秒 → 中止
+        if self.rate_limit_kbps > 0:
+            cfg.append(("http.lowSpeedLimit", str(self.rate_limit_kbps)))
+            cfg.append(("http.lowSpeedTime", "30"))
+        if cfg:
+            env["GIT_CONFIG_COUNT"] = str(len(cfg))
+            for i, (k, v) in enumerate(cfg):
+                env[f"GIT_CONFIG_KEY_{i}"] = k
+                env[f"GIT_CONFIG_VALUE_{i}"] = v
         return env
 
     # ------------------------------------------------------------ 工具

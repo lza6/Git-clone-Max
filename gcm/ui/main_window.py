@@ -448,6 +448,16 @@ class MainWindow(QMainWindow):
         self.btn_detect_proxy.clicked.connect(self._detect_proxy_now)
         f3.addRow("", self.btn_detect_proxy)
 
+        # G04-4 下载限速（KiB/s）
+        self.spin_rate = QSpinBox()
+        self.spin_rate.setRange(0, 100000)
+        self.spin_rate.setValue(int(getattr(self.settings, "rate_limit_kbps", 0) or 0))
+        self.spin_rate.setSuffix(" KiB/s")
+        self.spin_rate.setSpecialValueText("不限速")
+        self.spin_rate.setToolTip("低于该速率持续 30s 视为卡死中止（0 = 不限速）")
+        self.spin_rate.valueChanged.connect(self._save_rate_limit)
+        f3.addRow("限速：", self.spin_rate)
+
         self.ck_unshallow = QCheckBox("浅克隆仓库更新时拉全量历史")
         self.ck_unshallow.setChecked(bool(self.settings.fetch_unshallow))
         self.ck_unshallow.setToolTip("浅克隆仓库增量 fetch 时拉取全量历史，避免后续增量因深度不足失败")
@@ -690,6 +700,11 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage("未检测到系统代理")
         except Exception as e:
             self._emit_log(_fmt_dt(), LogLevel.WARN, f"自动检测代理失败：{e}")
+
+    def _save_rate_limit(self, value):
+        """G04-4 保存下载限速（KiB/s，0=不限）。"""
+        self.settings.rate_limit_kbps = int(value or 0)
+        self.settings_store.save(self.settings)
 
     def _save_token(self):
         self.settings.token = self.edit_token.text().strip()
@@ -1002,6 +1017,7 @@ class MainWindow(QMainWindow):
             proxy=self.settings.proxy,
             token=self.settings.token,
             submodule=bool(getattr(self.settings, "submodule", False)),
+            rate_limit_kbps=int(getattr(self.settings, "rate_limit_kbps", 0) or 0),
         )
         self.engine.line.connect(self._on_engine_line)
         self.engine.progress.connect(self._on_worker_progress)

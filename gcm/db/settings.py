@@ -147,6 +147,7 @@ class Settings:
     theme: str = "deep"               # G05-1 主题：deep/light/nord
     clipboard_watch: bool = False     # G09-1 剪贴板监听（检测到仓库地址提示）
     font_scale: float = 1.0           # G10-1 字号缩放（0.8 ~ 1.6）
+    rate_limit_kbps: int = 0          # G04-4 下载限速 KiB/s（0=不限）
 
 
 _DEFAULTS: dict = asdict(Settings())
