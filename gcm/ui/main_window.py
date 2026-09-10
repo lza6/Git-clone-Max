@@ -510,6 +510,11 @@ class MainWindow(QMainWindow):
         self.btn_statistics.setToolTip("查看仓库总数 / 同步次数 / 成功率 / 平台分布")
         self.btn_statistics.clicked.connect(self.show_statistics)
         h4.addWidget(self.btn_statistics)
+        # G07-3 报表导出入口
+        self.btn_export = QPushButton("📄 导出报表")
+        self.btn_export.setToolTip("导出 CSV（Excel 友好）或 Markdown 报表")
+        self.btn_export.clicked.connect(self.export_report)
+        h4.addWidget(self.btn_export)
         h4.addStretch()
         f4.addRow("环境自检：", h4)
         sv.addWidget(g4)
@@ -546,6 +551,27 @@ class MainWindow(QMainWindow):
         """G07-1 打开统计中心对话框。"""
         from .statistics_dialog import StatisticsDialog
         StatisticsDialog(db=self.db, parent=self).exec()
+
+    def export_report(self):
+        """G07-3 导出 CSV/Markdown 报表（弹文件选择；CSV 为 Excel 友好 utf-8-sig）。"""
+        from PyQt6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出报表", str(self.data_dir / "sync_report.csv"),
+            "CSV (*.csv);;Markdown (*.md)")
+        if not path:
+            return
+        try:
+            from ..reports import export_csv, export_markdown
+            if str(path).lower().endswith(".md"):
+                n = export_markdown(self.db, path)
+            else:
+                n = export_csv(self.db, path)
+            self._emit_log(_fmt_dt(), LogLevel.INFO,
+                           f"报表已导出：{path}（{n} 行）")
+            self.statusBar().showMessage(f"报表已导出：{path}（{n} 行）")
+        except Exception as e:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "导出失败", str(e))
 
     def _run_selftest(self):
         import shutil
