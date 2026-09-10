@@ -56,6 +56,30 @@ def _is_known_host(host: str) -> bool:
     return (host or "").lower() in KNOWN_HOSTS
 
 
+# G08-2 @tag 合法性校验（F3）：拒绝空白/控制字符/路径穿越/前缀 - /git 保留前缀
+_INVALID_REF_RE = re.compile(
+    r"[\x00-\x1f\x7f\s~^:?*\[\\]|^\.\.|\.\.$|^\.$|^git$|^refs/|^-"
+)
+
+
+def _is_valid_ref(ref: str) -> bool:
+    """校验 @tag 分支/标签名是否合法（近似 git check-ref-format --branch 语义）。"""
+    ref = (ref or "").strip()
+    if not ref:
+        return False
+    if ref.startswith("-"):
+        return False
+    if _INVALID_REF_RE.search(ref):
+        return False
+    if ref.startswith(".") or ref.endswith("."):
+        return False
+    if ref.endswith("/") or "//" in ref:
+        return False
+    if ".." in ref:
+        return False  # 路径穿越
+    return True
+
+
 def _extract_tag_suffix(raw: str) -> str:
     """G08-2 从输入提取 @tag 后缀（仓库名后最后一个 @…）。
 
@@ -193,6 +217,10 @@ def parse_any_repo_url(raw: str) -> RepoSpec | None:
     if got is None:
         return None
     host, segments = got
+    # F1 安全加固：仅接受白名单 host（token 不会发给未知域名）。
+    # 自建主机的合法仓库仍可通过「本地扫描导入」纳入管理，不走此白名单入口。
+    if not _is_known_host(host):
+        return None
     if len(segments) < 2:
         return None
     owner, repo = segments[-2], segments[-1]
@@ -200,8 +228,10 @@ def parse_any_repo_url(raw: str) -> RepoSpec | None:
     # 防止 `https://github.com/attacker@evil/r` 把 URL 重拼后 token 发往恶意主机。
     # G08-2 @tag 例外：仅当 @ 位于仓库名之后（owner/repo@v1）才允许，
     # 此时 repo 段不含 @（正则已把 @tag 拆到 tag 后缀），只需再次确认。
-    if "@" in owner or "@" in repo:
-        # 可能是 SSH git@host 前缀误入 repo 段 → 仍拒绝
+    # F2 加固：所有 path 段（含子组前缀）含 @ 一律拒绝，避免绕过。
+    # （合法的 owner/repo@tag 已在 _match_generic 中把 @tag 从段剥离，故段内无 @；
+    #  SSH 的 git@host 前缀也在切分时去除。）
+    if any("@" in s for s in segments):
         return None
     # 段 == '..' 或 '.git' 等边界：无法确定真实仓库 → 拒绝，避免静默改写仓库
     for seg in (owner, repo):
@@ -219,8 +249,10 @@ def parse_any_repo_url(raw: str) -> RepoSpec | None:
         folder = f"{owner}__{repo}"
     else:
         folder = f"{host}__{owner}__{repo}"
-    # G08-2 @tag：从原始输入提取标签后缀（不影响 url_https/folder）
+    # G08-2 @tag：从原始输入提取标签后缀；F3 非法 ref 视为无 tag
     ref = _extract_tag_suffix(raw)
+    if not _is_valid_ref(ref):
+        ref = ""
     return RepoSpec(owner=owner, repo=repo, url_https=url_https,
                     folder_name=folder, ref=ref)
 

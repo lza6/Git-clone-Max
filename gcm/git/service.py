@@ -384,7 +384,10 @@ class GitService:
         if self.proxy:
             env.setdefault("http_proxy", self.proxy)
             env.setdefault("https_proxy", self.proxy)
-        if self.token:
+        # F1 安全加固：token 只发给 github.com（本工具默认 GitHub 私有仓库认证）。
+        # 非 github host（gitlab/gitee 等）不注入，避免 PAT 外泄到未知域名。
+        host = (getattr(self, "_current_host", "") or "").lower().replace("www.", "")
+        if self.token and (not host or host == "github.com"):
             env["GIT_CONFIG_COUNT"] = "1"
             env["GIT_CONFIG_KEY_0"] = "http.extraHeader"
             env["GIT_CONFIG_VALUE_0"] = f"Authorization: Bearer {self.token}"
@@ -438,6 +441,12 @@ class GitService:
         res.path = str(repo_dir)
         res.started = time.time()
         t0 = time.time()
+        # F1 安全加固：按 spec 的 host 记录，供 _env 决定是否注入 token
+        try:
+            from ..app.url_lib import host_of
+            self._current_host = host_of(spec.url_https) or ""
+        except Exception:
+            self._current_host = ""
 
         try:
             if repo_dir.exists() and (repo_dir / ".git").exists():

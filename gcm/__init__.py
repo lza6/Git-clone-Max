@@ -1,5 +1,5 @@
 """Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。"""
-__version__ = "6.1.0"
+__version__ = "6.2.0"
 __app_name__ = "Git-clone-Max"
 __changelog__ = (
     "4.0.0: 统一调度引擎(SyncEngine) · progress.json 进程级锁+周期落盘 · SQLite busy_timeout · "
@@ -36,4 +36,6 @@ __changelog__ = (
     "全量 306 测试全绿 · 覆盖 80% · 含安全回归(凭据前置 @ 仍拒绝)",
     "6.1.0: M6 - G10-1 字号缩放(qss_for_scale 0.8~1.6 钳制 + Ctrl+=/-/0 快捷键 + settings.font_scale) · "
     "全量 310 测试全绿 · 覆盖 80%",
+    "6.2.0: 安全加固(独立 security-reviewer F1/F2/F3) - host 白名单强制(token 仅发 github.com) · "
+    "所有 path 段 @ 拒绝 · ref 合法性校验(git check-ref-format 语义) · 全量 320 测试全绿 · 覆盖 80%",
 )
