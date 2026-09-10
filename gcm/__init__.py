@@ -1,5 +1,5 @@
 """Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。"""
-__version__ = "6.5.0"
+__version__ = "6.6.0"
 __app_name__ = "Git-clone-Max"
 __changelog__ = (
     "4.0.0: 统一调度引擎(SyncEngine) · progress.json 进程级锁+周期落盘 · SQLite busy_timeout · "
@@ -44,4 +44,6 @@ __changelog__ = (
     "设置页 SpinBox 0=不限速) · 全量 324 测试全绿 · 覆盖 80%",
     "6.5.0: 数据安全加固 - _safe_rmtree_partial 只清理半成品(含 .git 或空目录), "
     "非空非 git 目录保留不误删 · already exists 归入平台限制不重试 · 全量 328 测试全绿 · 覆盖 80%",
+    "6.6.0: G03-7 管理页行内「查看」按钮委托(QStyledItemDelegate, 每行独立可点击, "
+    "不再依赖先选中行) · 保留 _on_hist_btn 多选兼容入口 · 全量 331 测试全绿 · 覆盖 80%",
 )

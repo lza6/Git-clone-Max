@@ -350,11 +350,11 @@ class MainWindow(QMainWindow):
         self.manage_table.setMinimumHeight(260)
         self.manage_table.setContextMenuPolicy(Qt.ContextMenuPolicy.DefaultContextMenu)
         self.manage_table.doubleClicked.connect(self._on_manage_double_clicked)
-        # 每行共享的"查看历史"按钮（避免每行 setCellWidget 占用）
-        self._hist_btn = QPushButton("查看")
-        self._hist_btn.setStyleSheet(
-            "QPushButton { padding: 2px 8px; font-size: 12px; }")
-        self._hist_btn.clicked.connect(self._on_hist_btn)
+        # G03-7 末列「查看」按钮委托：每行独立可点击（不再依赖选中行 + 共享按钮）
+        from .manage_model import HistoryButtonDelegate
+        self._hist_delegate = HistoryButtonDelegate(self.manage_table)
+        self._hist_delegate.clicked.connect(self._on_hist_row_clicked)
+        self.manage_table.setItemDelegateForColumn(5, self._hist_delegate)
         v.addWidget(self.manage_table, 3)
 
         self.manage_desc = QLabel(
@@ -1314,8 +1314,14 @@ class MainWindow(QMainWindow):
         if r is not None:
             self.show_history(r.repo_id)
 
+    def _on_hist_row_clicked(self, row: int):
+        """G03-7 行内「查看」按钮委托回调：直接打开该行历史（无需先选中）。"""
+        r = self.manage_model.row_at(row)
+        if r is not None:
+            self.show_history(r.repo_id)
+
     def _on_hist_btn(self):
-        """共享按钮：对当前选中的行打开历史。"""
+        """兼容入口：对当前选中的行打开历史（多选场景仍可用）。"""
         idx = self.manage_table.selectionModel().selectedRows()
         if not idx:
             return

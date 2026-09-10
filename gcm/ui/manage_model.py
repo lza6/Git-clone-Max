@@ -6,7 +6,13 @@ import datetime
 from dataclasses import dataclass
 from typing import List, Optional
 
-from PyQt6.QtCore import QAbstractItemModel, QModelIndex, Qt, pyqtSignal
+from PyQt6.QtCore import QAbstractItemModel, QEvent, QModelIndex, QRect, Qt, pyqtSignal
+from PyQt6.QtWidgets import (
+    QApplication,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionButton,
+)
 
 
 @dataclass
@@ -148,3 +154,59 @@ class ManageModel(QAbstractItemModel):
         if role == Qt.ItemDataRole.ToolTipRole and col == 0:
             return r.url or r.local_path
         return None
+
+
+class HistoryButtonDelegate(QStyledItemDelegate):
+    """G03-7 末列「查看」按钮委托：每行独立可点击（替代共享按钮）。
+
+    用 QStyle 绘制原生按钮外观，sizeHint 给足按钮尺寸，editorEvent 处理点击。
+    """
+
+    clicked = pyqtSignal(int)  # row
+
+    def button_rect(self, rect: QRect) -> QRect:
+        """在单元格内居中放置一个合适宽高的按钮。"""
+        w = min(56, max(30, rect.width() - 12))
+        h = min(24, max(16, rect.height() - 8))
+        return QRect(
+            rect.x() + (rect.width() - w) // 2,
+            rect.y() + (rect.height() - h) // 2,
+            w, h,
+        )
+
+    def _option(self, option, rect: QRect) -> QStyleOptionButton:
+        btn = QStyleOptionButton()
+        btn.rect = rect
+        btn.text = "查看"
+        btn.state = QStyle.StateFlag.State_Enabled
+        return btn
+
+    def paint(self, painter, option, index):
+        if index.column() != 5:
+            super().paint(painter, option, index)
+            return
+        rect = self.button_rect(option.rect)
+        btn = self._option(option, rect)
+        style = option.widget.style() if option.widget else QApplication.style()
+        style.drawControl(QStyle.ControlElement.CE_PushButton, btn, painter)
+
+    def sizeHint(self, option, index):
+        if index.column() == 5:
+            btn = self._option(option, QRect(0, 0, 70, 30))
+            style = QApplication.style()
+            return style.sizeFromContents(
+                QStyle.ContentsType.CT_PushButton, btn, option.rect.size())
+        return super().sizeHint(option, index)
+
+    def editorEvent(self, event, model, option, index):
+        if index.column() != 5:
+            return False
+        rect = self.button_rect(option.rect)
+        if event.type() in (QEvent.Type.MouseButtonRelease,
+                            QEvent.Type.MouseButtonPress):
+            pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+            if rect.contains(pos):
+                if event.type() == QEvent.Type.MouseButtonRelease:
+                    self.clicked.emit(index.row())
+                return True
+        return False
