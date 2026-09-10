@@ -77,11 +77,40 @@ class RepoDetailDialog(QDialog):
         v.addWidget(self.lbl_title)
 
         v.addLayout(self._build_meta())
+        v.addWidget(self._build_stats())
 
         v.addWidget(QLabel("同步历史："))
         v.addWidget(self._build_table(), 1)
 
         v.addLayout(self._build_buttons())
+
+    def _build_stats(self) -> QLabel:
+        """G03-8 统计区：同步次数/成功/失败/冲突/取消/平均耗时（来自 db.stats_for_repo）。"""
+        stats = {}
+        try:
+            from ..db.repo_db import Database
+            rid = int(self.repo.get("id") or 0)
+            if rid and isinstance(self.parent(), object) and hasattr(self.parent(), "db"):
+                stats = self.parent().db.stats_for_repo(rid) or {}
+        except Exception:
+            stats = {}
+        if not stats:
+            # 兜底：从 self.history 现场聚合（不依赖 parent.db）
+            total = len(self.history)
+            ok = sum(1 for h in self.history if str(h.get("status")) == "success")
+            fail = sum(1 for h in self.history if str(h.get("status")) == "failed")
+            conf = sum(1 for h in self.history if str(h.get("status")) == "conflict")
+            canc = sum(1 for h in self.history if str(h.get("status")) == "cancelled")
+            durs = [int(h.get("duration_ms") or 0) for h in self.history]
+            avg = sum(durs) // total if total else 0
+            stats = {"total": total, "success": ok, "failed": fail,
+                     "conflict": conf, "cancelled": canc, "avg_duration_ms": avg}
+        text = (f"共 {stats.get('total', 0)} 次同步 · 成功 {stats.get('success', 0)} · "
+                f"失败 {stats.get('failed', 0)} · 冲突 {stats.get('conflict', 0)} · "
+                f"取消 {stats.get('cancelled', 0)} · 平均耗时 {stats.get('avg_duration_ms', 0) / 1000:.1f}s")
+        self.lbl_stats = QLabel(text)
+        self.lbl_stats.setObjectName("muted")
+        return self.lbl_stats
 
     def _build_meta(self) -> QGridLayout:
         grid = QGridLayout()

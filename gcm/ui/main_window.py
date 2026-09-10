@@ -471,6 +471,11 @@ class MainWindow(QMainWindow):
         self.btn_selftest.setToolTip("检测 git / PyQt6 / 数据目录 / 当前并发 是否正常可用")
         self.btn_selftest.clicked.connect(self._run_selftest)
         h4.addWidget(self.btn_selftest)
+        # G07-1 统计中心入口
+        self.btn_statistics = QPushButton("📊 统计中心")
+        self.btn_statistics.setToolTip("查看仓库总数 / 同步次数 / 成功率 / 平台分布")
+        self.btn_statistics.clicked.connect(self.show_statistics)
+        h4.addWidget(self.btn_statistics)
         h4.addStretch()
         f4.addRow("环境自检：", h4)
         sv.addWidget(g4)
@@ -503,8 +508,12 @@ class MainWindow(QMainWindow):
         l2.addWidget(self.log_view, 1)
         v.addWidget(g2, 1)
 
+    def show_statistics(self):
+        """G07-1 打开统计中心对话框。"""
+        from .statistics_dialog import StatisticsDialog
+        StatisticsDialog(db=self.db, parent=self).exec()
+
     def _run_selftest(self):
-        """本地环境自检：git / PyQt6 / 数据目录 / 当前并发 → 弹窗展示结果。"""
         import shutil
         import subprocess
         lines: list[str] = []

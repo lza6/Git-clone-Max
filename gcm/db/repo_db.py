@@ -232,6 +232,56 @@ class Database:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    # ------------------------------------------------------------ G03-8 / G07-1 统计
+    def stats_for_repo(self, repo_id: int) -> dict:
+        """单仓库同步聚合：次数/成功/失败/冲突/取消/平均耗时。"""
+        with self._lock:
+            row = self._conn.execute(
+                """
+                SELECT COUNT(*) AS total,
+                       SUM(CASE WHEN status='success' THEN 1 ELSE 0 END) AS success,
+                       SUM(CASE WHEN status='failed'  THEN 1 ELSE 0 END) AS failed,
+                       SUM(CASE WHEN status='conflict' THEN 1 ELSE 0 END) AS conflict,
+                       SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END) AS cancelled,
+                       AVG(duration_ms) AS avg_ms
+                FROM sync_history WHERE repo_id=?
+                """,
+                (repo_id,),
+            ).fetchone()
+            total = int(row["total"] or 0)
+            return {
+                "total": total,
+                "success": int(row["success"] or 0),
+                "failed": int(row["failed"] or 0),
+                "conflict": int(row["conflict"] or 0),
+                "cancelled": int(row["cancelled"] or 0),
+                "avg_duration_ms": int(row["avg_ms"] or 0) if total else 0,
+            }
+
+    def stats_overview(self) -> dict:
+        """全局统计：总仓库/总同步/成功失败/各 host 分布。"""
+        with self._lock:
+            total_repos = int(self._conn.execute(
+                "SELECT COUNT(*) AS c FROM repos").fetchone()["c"] or 0)
+            row = self._conn.execute(
+                """
+                SELECT COUNT(*) AS total,
+                       SUM(CASE WHEN status='success' THEN 1 ELSE 0 END) AS ok,
+                       SUM(CASE WHEN status='failed'  THEN 1 ELSE 0 END) AS bad
+                FROM sync_history
+                """
+            ).fetchone()
+            by_host_rows = self._conn.execute(
+                "SELECT host, COUNT(*) AS c FROM repos GROUP BY host ORDER BY c DESC"
+            ).fetchall()
+            return {
+                "total_repos": total_repos,
+                "total_syncs": int(row["total"] or 0),
+                "success_syncs": int(row["ok"] or 0),
+                "failed_syncs": int(row["bad"] or 0),
+                "by_host": {str(r["host"]): int(r["c"]) for r in by_host_rows},
+            }
+
     def delete_repo(self, repo_id: int):
         with self._lock:
             self._conn.execute("DELETE FROM sync_history WHERE repo_id=?", (repo_id,))
