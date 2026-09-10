@@ -144,6 +144,7 @@ class Settings:
     fetch_unshallow: bool = False     # 浅克隆仓库增量 fetch 时拉全量历史（V3-P0-3）
     download_dir: str = ""            # 上次使用的下载位置（启动时恢复）
     submodule: bool = False           # G08-1 克隆时拉取子模块（--recurse-submodules）
+    theme: str = "deep"               # G05-1 主题：deep/light/nord
 
 
 _DEFAULTS: dict = asdict(Settings())

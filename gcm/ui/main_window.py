@@ -121,7 +121,10 @@ class MainWindow(QMainWindow):
         self._log_batch_timer.start()
 
         self._build_ui()
-        self.setStyleSheet(QSS)
+        # G05-1 应用持久化主题（默认 deep）
+        from ..ui import theme as _th
+        _th.apply_theme(getattr(self.settings, "theme", "deep"))
+        self.setStyleSheet(_th.QSS)
         # G02-4 URL 历史：同步成功的地址自动留档（data/history.json）
         from ..db.history import UrlHistory
         self.url_history = UrlHistory(self.data_dir / "history.json")
@@ -447,6 +450,25 @@ class MainWindow(QMainWindow):
         f3.addRow("GitHub Token：", self.edit_token)
         sv.addWidget(g3)
 
+        # ---- 外观（G05-1 多主题）
+        g5 = QGroupBox("外观（主题）")
+        f5 = QFormLayout(g5)
+        f5.setContentsMargins(10, 10, 10, 10)
+        f5.setHorizontalSpacing(16)
+        f5.setVerticalSpacing(10)
+        f5.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.theme_combo = QComboBox()
+        from ..ui.theme import THEMES as _THEMES
+        for key, label in _THEMES.items():
+            self.theme_combo.addItem(label, key)
+        cur = getattr(self.settings, "theme", "deep")
+        idx = self.theme_combo.findData(cur)
+        if idx >= 0:
+            self.theme_combo.setCurrentIndex(idx)
+        self.theme_combo.currentIndexChanged.connect(self._save_theme)
+        f5.addRow("界面主题：", self.theme_combo)
+        sv.addWidget(g5)
+
         # ---- 关于与更新
         g4 = QGroupBox("关于与更新")
         g4.setToolTip("版本信息与自检工具")
@@ -640,6 +662,30 @@ class MainWindow(QMainWindow):
     def _save_submodule(self, checked):
         self.settings.submodule = bool(checked)
         self.settings_store.save(self.settings)
+
+    def _save_theme(self, index):
+        """G05-1 保存主题选择并即时应用到主窗口。"""
+        key = self.theme_combo.itemData(index) if index >= 0 else "deep"
+        key = key or "deep"
+        self.settings.theme = key
+        self.settings_store.save(self.settings)
+        try:
+            from ..ui import theme as _th
+            _th.apply_theme(key)
+            self.setStyleSheet(_th.QSS)
+            self._apply_theme_to_children()
+        except Exception:
+            pass
+
+    def _apply_theme_to_children(self):
+        """把主题样例应用到弹出的对话框（详情/统计等）。"""
+        from ..ui import theme as _th
+        for child in self.findChildren(object):
+            try:
+                if child.__class__.__name__.endswith(("Dialog", "MainWindow")):
+                    child.setStyleSheet(_th.QSS)
+            except Exception:
+                pass
 
     # ------------------------------------------------------------ 更新检查
     def check_update_now(self):

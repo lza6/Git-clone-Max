@@ -9,21 +9,80 @@ from typing import List, Optional
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat
 
-# GitHub 风格深色主题色板（与 README 保持一致）
-PALETTE = {
-    "bg": "#0d1117",
-    "panel": "#161b22",
-    "panel2": "#1c2128",
-    "border": "#30363d",
-    "accent": "#58a6ff",
-    "accent2": "#3fb950",
-    "warning": "#d29922",
-    "error": "#f85149",
-    "text": "#c9d1d9",
-    "text_dim": "#8b949e",
-    "console": "#0a0c10",
-    "console_fg": "#d0d7de",
+# 主题色板集合（G05-1 多主题）
+# Deep = 默认 GitHub 深色；Light = 浅色；Nord = 北欧风格
+PALETTES = {
+    "deep": {
+        "bg": "#0d1117",
+        "panel": "#161b22",
+        "panel2": "#1c2128",
+        "border": "#30363d",
+        "accent": "#58a6ff",
+        "accent2": "#3fb950",
+        "warning": "#d29922",
+        "error": "#f85149",
+        "text": "#c9d1d9",
+        "text_dim": "#8b949e",
+        "console": "#0a0c10",
+        "console_fg": "#d0d7de",
+    },
+    "light": {
+        "bg": "#ffffff",
+        "panel": "#f6f8fa",
+        "panel2": "#eef1f4",
+        "border": "#d0d7de",
+        "accent": "#0969da",
+        "accent2": "#1a7f37",
+        "warning": "#9a6700",
+        "error": "#cf222e",
+        "text": "#1f2328",
+        "text_dim": "#656d76",
+        "console": "#fbfbfb",
+        "console_fg": "#24292f",
+    },
+    "nord": {
+        "bg": "#2e3440",
+        "panel": "#3b4252",
+        "panel2": "#434c5e",
+        "border": "#4c566a",
+        "accent": "#88c0d0",
+        "accent2": "#a3be8c",
+        "warning": "#ebcb8b",
+        "error": "#bf616a",
+        "text": "#d8dee9",
+        "text_dim": "#7b88a1",
+        "console": "#232830",
+        "console_fg": "#d8dee9",
+    },
 }
+
+# 当前激活主题
+_current_theme = "deep"
+
+
+def apply_theme(name: str) -> None:
+    """切换当前主题（未知回退 deep）。"""
+    global _current_theme
+    _current_theme = name if name in PALETTES else "deep"
+
+
+def current_palette() -> dict:
+    return PALETTES[_current_theme]
+
+
+def current_theme() -> str:
+    return _current_theme
+
+
+# 主题名 → 中文标签（设置页下拉选项）
+THEMES = {
+    "deep": "深色 (Deep)",
+    "light": "浅色 (Light)",
+    "nord": "Nord 极简",
+}
+
+# 兼容：默认主题 = Deep（历史引用 PALETTE 的代码不受影响）
+PALETTE = PALETTES["deep"]
 
 QSS = f"""
 QWidget {{ background: {PALETTE['bg']}; color: {PALETTE['text']};

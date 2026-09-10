@@ -1,5 +1,5 @@
 """Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。"""
-__version__ = "5.6.0"
+__version__ = "5.7.0"
 __app_name__ = "Git-clone-Max"
 __changelog__ = (
     "4.0.0: 统一调度引擎(SyncEngine) · progress.json 进程级锁+周期落盘 · SQLite busy_timeout · "
@@ -25,4 +25,6 @@ __changelog__ = (
     "G08-1 子模块克隆(--recurse-submodules+update --init, 设置开关) · 全量 273 测试全绿 · 覆盖 81%",
     "5.6.0: M4 数据能力 - G03-8 详情页统计(次数/成功/失败/冲突/平均耗时) · "
     "G07-1 统计中心对话框(全局聚合+host 分布, 设置页入口) · 全量 278 测试全绿 · 覆盖 81%",
+    "5.7.0: M6 体验 - G05-1 多主题(Deep/Light/Nord 色板+apply_theme+设置页下拉即时生效) · "
+    "theme 纳入覆盖率计量(56%→83%) · 全量 287 测试全绿 · 覆盖 81%",
 )
