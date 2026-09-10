@@ -196,10 +196,11 @@ class MainWindow(QMainWindow):
         b = QVBoxLayout(box)
         self.repo_input = QPlainTextEdit()
         self.repo_input.setPlaceholderText(
-            "每行一个 GitHub 仓库地址，例如：\n"
+            "每行一个仓库地址，例如：\n"
             "https://github.com/vercel-labs/skills\n"
             "git@github.com:microsoft/azure-skills.git\n"
             "vercel-labs/agent-skills\n"
+            "https://gitlab.com/grp/repo@v1.2.0  （@后指定分支/标签）\n"
             "（地址中的 作者/仓库名 将自动作为文件夹名：作者__仓库）"
         )
         self.repo_input.setMinimumHeight(150)

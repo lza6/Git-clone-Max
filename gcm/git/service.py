@@ -483,10 +483,13 @@ class GitService:
                 self._last_clone_tail = self._last_clone_tail[-8:]
             prev_on_line(c)
 
-        cmd = ["git", "clone", "--progress", spec.url_https, str(repo_dir)]
+        cmd = ["git", "clone", "--progress"]
+        if getattr(spec, "ref", ""):
+            # G08-2 指定分支/标签：clone -b <ref>（选项必须在 <repo> 之前）
+            cmd += ["-b", spec.ref]
+        cmd += [spec.url_https, str(repo_dir)]
         if self._submodule:
-            # 追加在末尾（git clone 的选项必须在 <repo> 之前会解析失败，
-            # 实测 insert(1) 会被当成全局 git 选项 → unknown option）
+            # 追加在末尾（git clone 的选项插在 <repo> 前后均可，末尾最安全）
             cmd.append("--recurse-submodules")
         rc, prog = run_git_ui(cmd, str(self.root), _collate,
                               cancelled=self.cancelled, env=self._env(),
@@ -514,6 +517,26 @@ class GitService:
                 return res
             if sm_rc != 0:
                 self._emit(f"[警告] 子模块拉取失败（不影响主仓库）：{spec.display}", "warn")
+        if rc != 0 and not self.cancelled():
+            # G04-1 弱网降级：网络类失败 → 尝试 treeless 部分克隆（--filter=blob:none）
+            # 显著减少传输量提升弱网成功率；成功则继续，失败则按原逻辑报错。
+            tail0 = "\n".join(self._last_clone_tail[-8:])
+            if _is_networkish_error(tail0):
+                self._emit(f"{spec.display} 常规克隆失败，尝试 treeless 部分克隆（弱网降级）…", "warn")
+                try:
+                    import shutil as _sh
+                    _sh.rmtree(repo_dir, ignore_errors=True)
+                except Exception:
+                    pass
+                treeless_cmd = ["git", "clone", "--progress", "--filter=blob:none"]
+                if getattr(spec, "ref", ""):
+                    treeless_cmd += ["-b", spec.ref]
+                treeless_cmd += [spec.url_https, str(repo_dir)]
+                rc, prog = run_git_ui(treeless_cmd, str(self.root), _collate,
+                                      cancelled=self.cancelled, env=self._env(),
+                                      timeout=self.clone_timeout, retries=0,
+                                      backoff=self._backoff,
+                                      progress_detail=getattr(self, "send_progress_detail", None))
         if rc != 0:
             # 克隆失败：分类给出人类可读提示（平台限制 / 目录占用 / 通用）
             tail = "\n".join(self._last_clone_tail[-8:])

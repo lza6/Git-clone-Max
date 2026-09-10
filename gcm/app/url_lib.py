@@ -39,8 +39,9 @@ _SSH_SCP_RE = re.compile(
     re.IGNORECASE,
 )
 # 短格式仅接受 owner/repo（无 host）；owner 含域名点段 → 判为「带 host 的完整地址」由上面处理
+# 可选 @tag 后缀：owner/repo@v1.2.0
 _SHORT_RE = re.compile(
-    r"^([A-Za-z0-9_][A-Za-z0-9_.-]{0,38})/([A-Za-z0-9_][A-Za-z0-9_.-]{0,38}?)(?:\.git)?(?:/.*)?$"
+    r"^([A-Za-z0-9_][A-Za-z0-9_.-]{0,38})/([A-Za-z0-9_][A-Za-z0-9_.-]{0,38}?)(?:\.git)?(?:@[^\s/]+)?(?:/.*)?$"
 )
 
 _INVALID_DIR_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
@@ -53,6 +54,37 @@ def sanitize_name(name: str) -> str:
 
 def _is_known_host(host: str) -> bool:
     return (host or "").lower() in KNOWN_HOSTS
+
+
+def _extract_tag_suffix(raw: str) -> str:
+    """G08-2 从输入提取 @tag 后缀（仓库名后最后一个 @…）。
+
+    仅接受「仓库路径之后」的 @tag（如 owner/repo@v1.2.0、git@host:o/r.git@v1）。
+    host 前的 @（凭据前置）不在仓库路径后 → 返回空。
+    """
+    raw = (raw or "").strip()
+    if "@" not in raw:
+        return ""
+    # 去掉可能的协议与 host 段后再找路径段后的 @
+    cleaned = raw.split("://", 1)[-1]
+    # 去掉 ssh 的 git@host: 前缀
+    if cleaned.startswith("git@"):
+        idx = cleaned.find(":")
+        if idx >= 0:
+            cleaned = cleaned[idx + 1:]
+    # 现在 cleaned 形如 owner/repo@v1 或 owner/repo.git@v1（SSH 的 git@host 前缀
+    # 已在上面去掉；但 ssh://git@host/… 形式的 @ 尚未处理，用「@ 前必须有 /」判定）
+    at_idx = cleaned.rfind("@")
+    if at_idx < 0:
+        return ""
+    if "/" not in cleaned[:at_idx]:
+        return ""  # @ 出现在路径开始前（ssh 的 user@host）→ 非 tag
+    tag = cleaned[at_idx + 1:].strip()
+    # 去掉 query/fragment
+    tag = tag.split("?", 1)[0].split("#", 1)[0]
+    if not tag:
+        return ""
+    return tag
 
 
 def _match_generic(raw: str):
@@ -93,6 +125,12 @@ def _match_generic(raw: str):
             if s in _ACTION_SEG and i >= 2:
                 segments = segments[:i]
                 break
+        # G08-2 把 @tag 从最后一段 repo 剥出（repo@v1.2.0 → repo + tag 后缀由调用方提取）
+        if segments:
+            last = segments[-1]
+            at = last.rfind("@")
+            if 0 < at < len(last) - 1:
+                segments[-1] = last[:at]
         if not segments:
             return None
         return host, segments
@@ -110,6 +148,11 @@ def _match_generic(raw: str):
             if after[:1] in (":", "/"):
                 after = after[1:]
             tail = after.split("?", 1)[0].split("#", 1)[0]
+            # 先剥末段 @tag（repo.git@v1 → repo.git），再剥 .git
+            tail = tail.rstrip("/")
+            at = tail.rfind("@")
+            if at > 0:
+                tail = tail[:at]
             segments = []
             for seg in tail.split("/"):
                 if seg.endswith(".git"):
@@ -155,7 +198,10 @@ def parse_any_repo_url(raw: str) -> RepoSpec | None:
     owner, repo = segments[-2], segments[-1]
     # 凭据前置式主机覆盖（git 生态已知）：owner/repo 段含 '@' → 拒绝，
     # 防止 `https://github.com/attacker@evil/r` 把 URL 重拼后 token 发往恶意主机。
+    # G08-2 @tag 例外：仅当 @ 位于仓库名之后（owner/repo@v1）才允许，
+    # 此时 repo 段不含 @（正则已把 @tag 拆到 tag 后缀），只需再次确认。
     if "@" in owner or "@" in repo:
+        # 可能是 SSH git@host 前缀误入 repo 段 → 仍拒绝
         return None
     # 段 == '..' 或 '.git' 等边界：无法确定真实仓库 → 拒绝，避免静默改写仓库
     for seg in (owner, repo):
@@ -173,8 +219,10 @@ def parse_any_repo_url(raw: str) -> RepoSpec | None:
         folder = f"{owner}__{repo}"
     else:
         folder = f"{host}__{owner}__{repo}"
+    # G08-2 @tag：从原始输入提取标签后缀（不影响 url_https/folder）
+    ref = _extract_tag_suffix(raw)
     return RepoSpec(owner=owner, repo=repo, url_https=url_https,
-                    folder_name=folder)
+                    folder_name=folder, ref=ref)
 
 
 def parse_repo_url(raw: str) -> RepoSpec | None:
