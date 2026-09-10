@@ -146,6 +146,7 @@ class Settings:
     submodule: bool = False           # G08-1 克隆时拉取子模块（--recurse-submodules）
     theme: str = "deep"               # G05-1 主题：deep/light/nord
     clipboard_watch: bool = False     # G09-1 剪贴板监听（检测到仓库地址提示）
+    font_scale: float = 1.0           # G10-1 字号缩放（0.8 ~ 1.6）
 
 
 _DEFAULTS: dict = asdict(Settings())
@@ -231,6 +232,8 @@ def _coerce(key: str, val):
         return bool(val)
     if isinstance(default, int):
         return int(val)
+    if isinstance(default, float):
+        return float(val)
     if isinstance(default, str):
         # None（如用户清空代理）→ 空字符串，避免出现字面 "None"
         return str(val) if val is not None else ""

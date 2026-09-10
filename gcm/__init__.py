@@ -1,5 +1,5 @@
 """Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。"""
-__version__ = "6.0.0"
+__version__ = "6.1.0"
 __app_name__ = "Git-clone-Max"
 __changelog__ = (
     "4.0.0: 统一调度引擎(SyncEngine) · progress.json 进程级锁+周期落盘 · SQLite busy_timeout · "
@@ -34,4 +34,6 @@ __changelog__ = (
     "6.0.0: M5 网络与同步 - G08-2 @tag 语法(owner/repo@v1.2.0 → clone -b, HTTPS/SSH/短格式/子组) · "
     "G04-1 弱网降级(网络失败自动 treeless --filter=blob:none 部分克隆) · "
     "全量 306 测试全绿 · 覆盖 80% · 含安全回归(凭据前置 @ 仍拒绝)",
+    "6.1.0: M6 - G10-1 字号缩放(qss_for_scale 0.8~1.6 钳制 + Ctrl+=/-/0 快捷键 + settings.font_scale) · "
+    "全量 310 测试全绿 · 覆盖 80%",
 )

@@ -59,6 +59,20 @@ PALETTES = {
 # 当前激活主题
 _current_theme = "deep"
 
+# G10-1 字号缩放基线（QSS 里基础字体 px）
+FONT_BASE_PX = 13
+
+
+def qss_for_scale(scale: float = 1.0) -> str:
+    """按缩放比例生成 QSS（替换基础字号）。比例钳制在 [0.8, 1.6]。"""
+    try:
+        scale = float(scale)
+    except Exception:
+        scale = 1.0
+    scale = max(0.8, min(1.6, scale))
+    px = round(FONT_BASE_PX * scale)
+    return QSS.replace("font-size: 13px;", f"font-size: {px}px;")
+
 
 def apply_theme(name: str) -> None:
     """切换当前主题（未知回退 deep）。"""

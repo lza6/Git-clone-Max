@@ -121,10 +121,15 @@ class MainWindow(QMainWindow):
         self._log_batch_timer.start()
 
         self._build_ui()
-        # G05-1 应用持久化主题（默认 deep）
+        # G05-1 应用持久化主题（默认 deep）+ G10-1 字号缩放
         from ..ui import theme as _th
         _th.apply_theme(getattr(self.settings, "theme", "deep"))
-        self.setStyleSheet(_th.QSS)
+        self.setStyleSheet(_th.qss_for_scale(getattr(self.settings, "font_scale", 1.0)))
+        # G10-1 快捷键 Ctrl+= 放大 / Ctrl+- 缩小 / Ctrl+0 复位
+        from PyQt6.QtGui import QKeySequence, QShortcut
+        QShortcut(QKeySequence("Ctrl+="), self, activated=self.zoom_in)
+        QShortcut(QKeySequence("Ctrl+-"), self, activated=self.zoom_out)
+        QShortcut(QKeySequence("Ctrl+0"), self, activated=self.zoom_reset)
         # G02-4 URL 历史：同步成功的地址自动留档（data/history.json）
         from ..db.history import UrlHistory
         self.url_history = UrlHistory(self.data_dir / "history.json")
@@ -735,10 +740,33 @@ class MainWindow(QMainWindow):
         try:
             from ..ui import theme as _th
             _th.apply_theme(key)
-            self.setStyleSheet(_th.QSS)
+            self.setStyleSheet(_th.qss_for_scale(getattr(self.settings, "font_scale", 1.0)))
             self._apply_theme_to_children()
         except Exception:
             pass
+
+    # --------------------------------------------------------- G10-1 字号缩放
+    def _apply_font_scale(self):
+        try:
+            from ..ui import theme as _th
+            self.setStyleSheet(_th.qss_for_scale(getattr(self.settings, "font_scale", 1.0)))
+        except Exception:
+            pass
+
+    def zoom_in(self):
+        self.settings.font_scale = round(min(1.6, self.settings.font_scale + 0.1), 2)
+        self.settings_store.save(self.settings)
+        self._apply_font_scale()
+
+    def zoom_out(self):
+        self.settings.font_scale = round(max(0.8, self.settings.font_scale - 0.1), 2)
+        self.settings_store.save(self.settings)
+        self._apply_font_scale()
+
+    def zoom_reset(self):
+        self.settings.font_scale = 1.0
+        self.settings_store.save(self.settings)
+        self._apply_font_scale()
 
     def _apply_theme_to_children(self):
         """把主题样例应用到弹出的对话框（详情/统计等）。"""
