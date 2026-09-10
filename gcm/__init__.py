@@ -1,5 +1,5 @@
 """Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。"""
-__version__ = "5.3.0"
+__version__ = "5.4.0"
 __app_name__ = "Git-clone-Max"
 __changelog__ = (
     "4.0.0: 统一调度引擎(SyncEngine) · progress.json 进程级锁+周期落盘 · SQLite busy_timeout · "
@@ -19,4 +19,6 @@ __changelog__ = (
     "G02-4 URL 历史持久化(去重/上限/右键回填/清空) · 全量 259 测试全绿 · 覆盖 82%",
     "5.3.0: G02-1/2 进度表搜索过滤+表头排序(状态优先级) · G02-3 单仓库暂停(pause_task) · "
     "全量 261 测试全绿 · 覆盖 81%",
+    "5.4.0: G03 仓库管理进阶 - 标签(tags)设置/按标签过滤 · 收藏(favorite)置顶 · "
+    "黑名单(excluded)一键更新排除 · ManageModel 过滤+过期高亮 · 全量 268 测试全绿 · 覆盖 81%",
 )

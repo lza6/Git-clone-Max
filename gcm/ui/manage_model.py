@@ -2,6 +2,7 @@
 """仓库管理表模型：数据与视图解耦，支持大批量行的高性能展示与过滤。"""
 from __future__ import annotations
 
+import datetime
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -21,6 +22,10 @@ class ManageRow:
     url: str = ""
     repo_id: int = 0
     default_branch: str = ""
+    # G03 扩展列（v5.2 DB 迁移后模型同步）
+    tags: str = ""
+    favorite: int = 0
+    excluded: int = 0
 
 
 class ManageModel(QAbstractItemModel):
@@ -30,12 +35,16 @@ class ManageModel(QAbstractItemModel):
     """
 
     rowsChanged = pyqtSignal()
+    visChanged = pyqtSignal()
 
     def __init__(self, rows: Optional[List[dict]] = None, parent=None):
         super().__init__(parent)
         self._rows: List[ManageRow] = []
+        self._vis: List[bool] = []
         if rows:
             self.set_rows(rows)
+        else:
+            self._sync_vis()
 
     # ------------------------------------------------------------ 数据接入
     def set_rows(self, rows: List[dict]):
@@ -54,14 +63,48 @@ class ManageModel(QAbstractItemModel):
                 url=str(r.get("url") or ""),
                 repo_id=int(r.get("id") or 0),
                 default_branch=str(r.get("default_branch") or ""),
+                tags=str(r.get("tags") or ""),
+                favorite=int(r.get("favorite") or 0),
+                excluded=int(r.get("excluded") or 0),
             ))
         self.endResetModel()
         self.rowsChanged.emit()
+        self._sync_vis()
+
+    def _sync_vis(self):
+        self._vis = [True] * len(self._rows)
 
     def row_at(self, row: int) -> Optional[ManageRow]:
         if 0 <= row < len(self._rows):
             return self._rows[row]
         return None
+
+    def is_stale(self, row: int, days: int = 30) -> bool:
+        """该行是否「超过 days 天未同步」（G03-6 过期高亮）。"""
+        r = self.row_at(row)
+        if r is None or not r.last_sync_at:
+            return False
+        try:
+            last = datetime.datetime.strptime(r.last_sync_at[:19], "%Y-%m-%d %H:%M:%S")
+            return (datetime.datetime.now() - last).days > days
+        except Exception:
+            return False
+
+    def filter_rows(self, query: str) -> int:
+        """按仓库名/owner/repo/host/tags 过滤行；返回可见行数（G03-1）。"""
+        q = (query or "").strip().lower()
+        visible = 0
+        for r in range(len(self._rows)):
+            row = self._rows[r]
+            hay = " ".join([row.folder_name, row.owner, row.repo,
+                            row.host, row.tags]).lower()
+            if q and q not in hay:
+                self._vis[r] = False
+            else:
+                self._vis[r] = True
+                visible += 1
+        self.visChanged.emit()
+        return visible
 
     def remove_rows_at(self, indexes: List[int]) -> int:
         """删除指定行（倒序），返回删除数量。"""

@@ -137,6 +137,46 @@ class Database:
                                    (head_sha, repo_id))
             self._conn.commit()
 
+    # ------------------------------------------------------------ G03 标签/收藏/黑名单
+    def set_tags(self, repo_id: int, tags: list[str]) -> None:
+        """覆盖式设置标签（竖线分隔存储）。"""
+        val = "|".join(str(t).strip() for t in tags if str(t).strip())
+        with self._lock:
+            self._conn.execute("UPDATE repos SET tags=? WHERE id=?", (val, repo_id))
+            self._conn.commit()
+
+    def list_by_tag(self, tag: str) -> list[dict]:
+        """按标签精确匹配（tags 字段含该标签段）。"""
+        tag = (tag or "").strip()
+        with self._lock:
+            if not tag:
+                return []
+            rows = self._conn.execute(
+                "SELECT * FROM repos WHERE tags=? OR tags LIKE ? OR tags LIKE ? OR tags LIKE ?",
+                (tag, f"{tag}|%", f"%|{tag}|%", f"%|{tag}"),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def set_favorite(self, repo_id: int, fav: bool) -> None:
+        with self._lock:
+            self._conn.execute("UPDATE repos SET favorite=? WHERE id=?",
+                               (1 if fav else 0, repo_id))
+            self._conn.commit()
+
+    def set_excluded(self, repo_id: int, excluded: bool) -> None:
+        with self._lock:
+            self._conn.execute("UPDATE repos SET excluded=? WHERE id=?",
+                               (1 if excluded else 0, repo_id))
+            self._conn.commit()
+
+    def list_pending_updates(self) -> list[dict]:
+        """待更新仓库（排除黑名单 excluded=1）。"""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM repos WHERE excluded=0 ORDER BY favorite DESC, owner, repo"
+            ).fetchall()
+            return [dict(r) for r in rows]
+
     def add_sync_history(self, repo_id: int, status: SyncStatus, action: SyncAction,
                          message: str = "", detail: str = "", commits: int = 0,
                          head_before: str | None = None, head_after: str | None = None,
@@ -173,15 +213,15 @@ class Database:
             return dict(row) if row else None
 
     def list_repos(self, host: str | None = None) -> List[Dict[str, Any]]:
-        """列出仓库；host 为 None 时返回全部（含本地导入的仓库）。"""
+        """列出仓库；host 为 None 时返回全部（含本地导入的仓库）。收藏优先。"""
         with self._lock:
             if host is None:
                 rows = self._conn.execute(
-                    "SELECT * FROM repos ORDER BY owner, repo").fetchall()
+                    "SELECT * FROM repos ORDER BY favorite DESC, owner, repo").fetchall()
             else:
                 rows = self._conn.execute(
-                    "SELECT * FROM repos WHERE host=? ORDER BY owner, repo", (host,)
-                ).fetchall()
+                    "SELECT * FROM repos WHERE host=? ORDER BY favorite DESC, owner, repo",
+                    (host,)).fetchall()
             return [dict(r) for r in rows]
 
     def history(self, repo_id: int, limit: int = 20) -> List[Dict[str, Any]]:

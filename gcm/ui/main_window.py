@@ -763,7 +763,7 @@ class MainWindow(QMainWindow):
         if self.busy:
             QMessageBox.information(self, "提示", "有任务正在运行，请先取消或等待完成。")
             return
-        rows = self.db.list_repos()  # 全 host（含本地导入仓库）
+        rows = self.db.list_pending_updates()  # 全 host（已排除黑名单 excluded=1）
         if not rows:
             QMessageBox.information(self, "提示", "数据库中没有已记录的仓库，请先到「下载中心」添加。")
             return
