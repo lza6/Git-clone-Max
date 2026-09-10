@@ -245,14 +245,16 @@ def parse_any_repo_url(raw: str) -> RepoSpec | None:
     prefix = segments[:-2]
     path = [*prefix, owner, repo]
     url_https = f"https://{host}/{'/'.join(path)}.git"
-    if host == GITHUB_HOST:
-        folder = f"{owner}__{repo}"
-    else:
-        folder = f"{host}__{owner}__{repo}"
     # G08-2 @tag：从原始输入提取标签后缀；F3 非法 ref 视为无 tag
     ref = _extract_tag_suffix(raw)
     if not _is_valid_ref(ref):
         ref = ""
+    # 不同 @tag 应克隆到不同目录，避免覆盖（owner__repo@v1 vs owner__repo@v2）
+    if host == GITHUB_HOST:
+        folder = f"{owner}__{repo}" if not ref else f"{owner}__{repo}@{ref}"
+    else:
+        folder = (f"{host}__{owner}__{repo}" if not ref
+                  else f"{host}__{owner}__{repo}@{ref}")
     return RepoSpec(owner=owner, repo=repo, url_https=url_https,
                     folder_name=folder, ref=ref)
 

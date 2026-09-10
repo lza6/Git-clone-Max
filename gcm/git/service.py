@@ -431,7 +431,18 @@ class GitService:
                 return r.stdout.strip()
         except Exception:
             pass
+        # detached HEAD（如 tag 检出）：仓库有效但无分支 → 返回空串。
+        # 目录不存在/git 失败 → 回退默认分支名（保持既有兼容语义）。
+        try:
+            if (repo_dir / ".git").exists() or repo_dir.exists():
+                return ""
+        except Exception:
+            pass
         return "main"
+
+    def _is_detached(self, repo_dir: Path) -> bool:
+        """仓库是否处于 detached HEAD（tag 检出的典型状态）。"""
+        return self._local_branch(repo_dir) == ""
 
     # ------------------------------------------------------------ 主入口
     def sync(self, spec: RepoSpec) -> SyncResult:
@@ -630,7 +641,17 @@ class GitService:
             return res
 
         # 2) 计算可以快进的提交数
-        remote_ref = "origin/" + self._local_branch(repo_dir)
+        branch = self._local_branch(repo_dir)
+        # F6：detached HEAD（如指定 tag 检出）→ 不参与 ff/rebase，仅 fetch 保持新鲜
+        if not branch:
+            res.status = SyncStatus.SUCCESS
+            res.action = SyncAction.FETCHED
+            res.message = "已按标签/提交固定检出（detached HEAD），仅 fetch 检查"
+            res.head_sha = self._head_sha(repo_dir)
+            res.remote_sha = self._remote_head(repo_dir)
+            res.commits = 0
+            return res
+        remote_ref = "origin/" + branch
         commits_new = self._count_new_commits(repo_dir, remote_ref)
 
         # 3) 冲突检测（含 rebase 中止兜底：先中止可能残留的 rebase 状态）

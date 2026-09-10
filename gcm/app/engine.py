@@ -179,10 +179,14 @@ class SyncEngine(QObject):
     # ------------------------------------------------------------ 调度
     @staticmethod
     def _dedupe_specs(specs: Iterable[RepoSpec]) -> "OrderedDict[str, list[RepoSpec]]":
-        """按目标目录（folder_name 或 local_path）去重，返回 key -> [spec]。"""
+        """按目标目录（folder_name 或 local_path）去重，返回 key -> [spec]。
+
+        F5：folder_name 已把 @tag 编码进去（owner__repo@v1 vs @v2 目录不同），
+        直接用目标目录键即可天然区分不同 tag。
+        """
         groups: "OrderedDict[str, list[RepoSpec]]" = OrderedDict()
         for s in specs:
-            key = s.local_path or s.folder_name  # 目标目录键
+            key = s.local_path or s.folder_name  # 目标目录键（含 @tag 后缀）
             groups.setdefault(key, []).append(s)
         return groups
 

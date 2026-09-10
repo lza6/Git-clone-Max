@@ -74,16 +74,21 @@ class TestTagSyntax(unittest.TestCase):
 
         # 直接构造带 tag 的 spec 走 GitService（clone 命令加 -b）
         spec = RepoSpec("owner", "repo", str(remote),
-                        folder_name="owner__repo", ref="v1.0.0")
+                        folder_name="owner__repo@v1.0.0", ref="v1.0.0")
         svc = GitService(base / "root")
         r = svc.sync(spec)
         self.assertEqual(r.status, SyncStatus.SUCCESS, r.message)
-        clone = base / "root" / "owner__repo"
+        clone = base / "root" / "owner__repo@v1.0.0"
         # 该 tag 指向的 HEAD 提交
         self.assertEqual((clone / "a.txt").read_text(encoding="utf-8"), "v1")
         head = _git(clone, "rev-parse", "HEAD").stdout.strip()
         tgt = _git(work, "rev-parse", "v1.0.0").stdout.strip()
         self.assertEqual(head, tgt, "克隆应在 tag v1.0.0 指定的提交上")
+        # F6：detached HEAD 二次同步不应误报冲突
+        r2 = svc.sync(spec)
+        self.assertNotEqual(r2.status, SyncStatus.CONFLICT,
+                            "tag 检出的 detached HEAD 二次同步不应误报冲突")
+        self.assertEqual(r2.status, SyncStatus.SUCCESS, r2.message)
 
 
 if __name__ == "__main__":
