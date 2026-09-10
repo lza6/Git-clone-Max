@@ -42,7 +42,8 @@ class SyncEngine(QObject):
                  progress_path: Optional[Path] = None,
                  concurrency: int = 8,
                  fetch_timeout: int = 300, clone_timeout: int = 600,
-                 retries: int = 2, proxy: str = "", token: str = ""):
+                 retries: int = 2, proxy: str = "", token: str = "",
+                 submodule: bool = False):
         super().__init__()
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -56,6 +57,7 @@ class SyncEngine(QObject):
         self.retries = max(0, retries)
         self.proxy = (proxy or "").strip()
         self.token = (token or "").strip()
+        self._submodule = bool(submodule)   # G08-1 透传给 GitService
 
         self.tasks: List[CloneWorker] = []
         self.flags: Dict[int, CancelFlag] = {}
@@ -198,6 +200,7 @@ class SyncEngine(QObject):
             token=self.token,
             fetch_depth=self._depth if self._depth else 0,
             unshallow=self._unshallow,
+            submodule=getattr(self, "_submodule", False),
         )
         # 进度附加文本（速率/对象数）注入点：解析 git 行并统一经引擎信号转发到 UI
         svc.send_progress_detail = self._emit_progress_detail

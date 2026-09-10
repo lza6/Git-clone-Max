@@ -421,12 +421,23 @@ class MainWindow(QMainWindow):
         self.edit_proxy.setToolTip("网络代理地址，形如 http://127.0.0.1:7890；留空则不使用代理")
         self.edit_proxy.editingFinished.connect(self._save_proxy)
         f3.addRow("HTTP 代理：", self.edit_proxy)
+        # G04-3 自动检测系统代理（环境变量 / Windows 注册表）
+        self.btn_detect_proxy = QPushButton("自动检测")
+        self.btn_detect_proxy.setToolTip("读取系统代理（环境变量 / Windows 注册表）填入")
+        self.btn_detect_proxy.clicked.connect(self._detect_proxy_now)
+        f3.addRow("", self.btn_detect_proxy)
 
         self.ck_unshallow = QCheckBox("浅克隆仓库更新时拉全量历史")
         self.ck_unshallow.setChecked(bool(self.settings.fetch_unshallow))
         self.ck_unshallow.setToolTip("浅克隆仓库增量 fetch 时拉取全量历史，避免后续增量因深度不足失败")
         self.ck_unshallow.stateChanged.connect(self._save_fetch_unshallow)
         f3.addRow("浅克隆更新：", self.ck_unshallow)
+
+        self.ck_submodule = QCheckBox("克隆时拉取子模块（--recurse-submodules）")
+        self.ck_submodule.setChecked(bool(getattr(self.settings, "submodule", False)))
+        self.ck_submodule.setToolTip("含子模块的仓库克隆后工作区完整；开启会增加克隆耗时")
+        self.ck_submodule.stateChanged.connect(self._save_submodule)
+        f3.addRow("子模块：", self.ck_submodule)
 
         self.edit_token = QLineEdit(self.settings.token)
         self.edit_token.setPlaceholderText("私有仓库认证令牌（可选，留空不传递）")
@@ -588,6 +599,23 @@ class MainWindow(QMainWindow):
         self.settings.proxy = self.edit_proxy.text().strip()
         self.settings_store.save(self.settings)
 
+    def _detect_proxy_now(self):
+        """G04-3 一键自动检测系统代理并填入（可保存）。"""
+        try:
+            from ..app.proxy import detect_system_proxy
+            val = detect_system_proxy()
+            if val:
+                self.edit_proxy.setText(val)
+                self.settings.proxy = val
+                self.settings_store.save(self.settings)
+                self._emit_log(_fmt_dt(), LogLevel.INFO, f"已自动检测到代理：{val}")
+                self.statusBar().showMessage(f"代理已填入：{val}")
+            else:
+                self._emit_log(_fmt_dt(), LogLevel.WARN, "未检测到系统代理。")
+                self.statusBar().showMessage("未检测到系统代理")
+        except Exception as e:
+            self._emit_log(_fmt_dt(), LogLevel.WARN, f"自动检测代理失败：{e}")
+
     def _save_token(self):
         self.settings.token = self.edit_token.text().strip()
         self.settings_store.save(self.settings)
@@ -598,6 +626,10 @@ class MainWindow(QMainWindow):
 
     def _save_fetch_unshallow(self, checked):
         self.settings.fetch_unshallow = bool(checked)
+        self.settings_store.save(self.settings)
+
+    def _save_submodule(self, checked):
+        self.settings.submodule = bool(checked)
         self.settings_store.save(self.settings)
 
     # ------------------------------------------------------------ 更新检查
@@ -823,6 +855,7 @@ class MainWindow(QMainWindow):
             retries=self.settings.retries,
             proxy=self.settings.proxy,
             token=self.settings.token,
+            submodule=bool(getattr(self.settings, "submodule", False)),
         )
         self.engine.line.connect(self._on_engine_line)
         self.engine.progress.connect(self._on_worker_progress)

@@ -353,7 +353,7 @@ class GitService:
                  fetch_timeout: float = 300, clone_timeout: float = 600,
                  retries: int = 0, backoff: Tuple[float, ...] = (1.0, 3.0, 8.0),
                  proxy: str = "", fetch_depth: int = 0, unshallow: bool = False,
-                 token: str = ""):
+                 token: str = "", submodule: bool = False):
         self.root = Path(root_dir)
         self.root.mkdir(parents=True, exist_ok=True)
         self.on_line = on_line or (lambda c: None)
@@ -366,6 +366,7 @@ class GitService:
         self.token = (token or "").strip()
         self.fetch_depth = max(0, int(fetch_depth))   # >0 时浅层仓库 fetch 带 --depth
         self.unshallow = bool(unshallow)              # True 时浅层仓库 fetch --unshallow 拉全量
+        self._submodule = bool(submodule)             # G08-1 True 时 clone 带子模块
 
     def _env(self, extra: Optional[Dict[str, str]] = None) -> Optional[Dict[str, str]]:
         """构造 subprocess 环境。
@@ -483,6 +484,10 @@ class GitService:
             prev_on_line(c)
 
         cmd = ["git", "clone", "--progress", spec.url_https, str(repo_dir)]
+        if self._submodule:
+            # 追加在末尾（git clone 的选项必须在 <repo> 之前会解析失败，
+            # 实测 insert(1) 会被当成全局 git 选项 → unknown option）
+            cmd.append("--recurse-submodules")
         rc, prog = run_git_ui(cmd, str(self.root), _collate,
                               cancelled=self.cancelled, env=self._env(),
                               timeout=self.clone_timeout, retries=self.retries,
@@ -494,6 +499,21 @@ class GitService:
             res.action = SyncAction.CANCELLED
             res.message = "已取消"
             return res
+        if self._submodule and rc == 0:
+            # G08-1 拉取子模块（clone --recurse-submodules 之外的补充 update --init）
+            self._emit(f"拉取子模块 {spec.display} …")
+            sm_rc, _ = run_git_ui(
+                ["git", "-C", str(repo_dir), "submodule", "update", "--init", "--recursive"],
+                str(self.root), self.on_line, cancelled=self.cancelled, env=self._env(),
+                timeout=self.clone_timeout, retries=self.retries, backoff=self._backoff,
+            )
+            if self.cancelled():
+                res.status = SyncStatus.CANCELLED
+                res.action = SyncAction.CANCELLED
+                res.message = "已取消"
+                return res
+            if sm_rc != 0:
+                self._emit(f"[警告] 子模块拉取失败（不影响主仓库）：{spec.display}", "warn")
         if rc != 0:
             # 克隆失败：分类给出人类可读提示（平台限制 / 目录占用 / 通用）
             tail = "\n".join(self._last_clone_tail[-8:])
