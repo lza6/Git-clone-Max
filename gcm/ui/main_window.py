@@ -128,6 +128,13 @@ class MainWindow(QMainWindow):
         # G02-4 URL 历史：同步成功的地址自动留档（data/history.json）
         from ..db.history import UrlHistory
         self.url_history = UrlHistory(self.data_dir / "history.json")
+        # G09-1 剪贴板监听（设置开启时启动）
+        from ..app.clipboard_watcher import ClipboardWatcher
+        self.clipboard_watcher = ClipboardWatcher(
+            parent=self, enabled=bool(getattr(self.settings, "clipboard_watch", False)),
+            on_url=self._on_clipboard_url)
+        if getattr(self.settings, "clipboard_watch", False):
+            self.clipboard_watcher.start()
         self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"Git-clone-Max 启动，数据目录：{self.data_dir}")
         self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"并行线程：{self.engine.concurrency}（上限 {MAX_CONCURRENCY}）")
         self._load_db_into_grid()
@@ -385,6 +392,11 @@ class MainWindow(QMainWindow):
         self.ck_auto_clear.setChecked(bool(self.settings.auto_clear))
         self.ck_auto_clear.stateChanged.connect(self._save_auto_clear)
         l1.addWidget(self.ck_auto_clear)
+        # G09-1 剪贴板监听：检测到 git 地址提示加入队列
+        self.ck_clipboard = QCheckBox("监听剪贴板（检测到仓库地址自动提示）")
+        self.ck_clipboard.setChecked(bool(getattr(self.settings, "clipboard_watch", False)))
+        self.ck_clipboard.stateChanged.connect(self._save_clipboard_watch)
+        l1.addWidget(self.ck_clipboard)
         l1.addStretch()
         sv.addWidget(g1)
 
@@ -662,6 +674,30 @@ class MainWindow(QMainWindow):
     def _save_submodule(self, checked):
         self.settings.submodule = bool(checked)
         self.settings_store.save(self.settings)
+
+    def _save_clipboard_watch(self, checked):
+        """G09-1 保存剪贴板监听开关并启停 watcher。"""
+        self.settings.clipboard_watch = bool(checked)
+        self.settings_store.save(self.settings)
+        try:
+            self.clipboard_watcher._enabled_flag = bool(checked)
+            if checked:
+                self.clipboard_watcher.start()
+                self._emit_log(_fmt_dt(), LogLevel.INFO, "剪贴板监听已开启。")
+            else:
+                self.clipboard_watcher.stop()
+                self._emit_log(_fmt_dt(), LogLevel.INFO, "剪贴板监听已关闭。")
+        except Exception:
+            pass
+
+    def _on_clipboard_url(self, url: str):
+        """剪贴板检测到仓库地址：写日志 + 状态栏提示 + 填入输入框（不自动启动）。"""
+        try:
+            self.repo_input.appendPlainText(url + "\n")
+            self._emit_log(_fmt_dt(), LogLevel.INFO, f"剪贴板检测到仓库地址：{url}（已填入输入框）")
+            self.statusBar().showMessage(f"检测到仓库地址：{url}", 5000)
+        except Exception:
+            pass
 
     def _save_theme(self, index):
         """G05-1 保存主题选择并即时应用到主窗口。"""

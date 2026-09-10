@@ -145,6 +145,7 @@ class Settings:
     download_dir: str = ""            # 上次使用的下载位置（启动时恢复）
     submodule: bool = False           # G08-1 克隆时拉取子模块（--recurse-submodules）
     theme: str = "deep"               # G05-1 主题：deep/light/nord
+    clipboard_watch: bool = False     # G09-1 剪贴板监听（检测到仓库地址提示）
 
 
 _DEFAULTS: dict = asdict(Settings())
