@@ -110,7 +110,7 @@ def _classify_failure(tail: str) -> tuple:
         return ("仓库含 Windows 不允许的文件名，无法检出",
                 "该仓库存在 Windows 禁止的字符（如冒号 ':'）。git 无法在 Windows 上检出；"
                 "可尝试在 WSL / Linux / GitHub Codespaces 中克隆。")
-    if "file exists" in t:
+    if "file exists" in t or "already exists" in t:
         return ("目标目录已存在（重复提交或残留）",
                 "同名仓库已被占用或上次克隆残留，已自动去重/清理后重新尝试。")
     if "unable to checkout" in t or "unable to create file" in t:
@@ -179,6 +179,7 @@ def _is_networkish_error(text: str) -> bool:
     platform = (
         "invalid path",                    # 含 Windows 禁止字符（冒号等）的文件名
         "file exists",                     # 目标目录被占用（重复提交/残留）
+        "already exists",                  # 新版 git 文案：destination path ... already exists
         "unable to checkout",              # checkout 阶段失败（平台/文件系统限制）
         "unable to create file",           # 文件系统不允许
     )
@@ -403,6 +404,24 @@ class GitService:
         return env
 
     # ------------------------------------------------------------ 工具
+    def _safe_rmtree_partial(self, repo_dir: Path) -> None:
+        """只清理「本工具产生的半成品克隆」目录（含 .git 或为空）。
+
+        绝不删非空且无 .git 的目录——那可能是用户资料或他人正在写入的成果。
+        """
+        try:
+            if not repo_dir.exists():
+                return
+            is_partial_git = (repo_dir / ".git").exists()
+            is_empty = not any(repo_dir.iterdir())
+            if is_partial_git or is_empty:
+                shutil.rmtree(repo_dir, ignore_errors=True)
+            else:
+                # 非空且非 git 目录：保守起见不动，仅记录
+                self._emit(f"[警告] 目录非空且非 git 仓库，保留不清理：{repo_dir.name}", "warn")
+        except Exception:
+            pass
+
     def _repo_dir(self, spec: RepoSpec) -> Path:
         # 导入仓库优先用其真实本地路径
         if spec.local_path:
@@ -552,11 +571,7 @@ class GitService:
             tail0 = "\n".join(self._last_clone_tail[-8:])
             if _is_networkish_error(tail0):
                 self._emit(f"{spec.display} 常规克隆失败，尝试 treeless 部分克隆（弱网降级）…", "warn")
-                try:
-                    import shutil as _sh
-                    _sh.rmtree(repo_dir, ignore_errors=True)
-                except Exception:
-                    pass
+                self._safe_rmtree_partial(repo_dir)
                 treeless_cmd = ["git", "clone", "--progress", "--filter=blob:none"]
                 if getattr(spec, "ref", ""):
                     treeless_cmd += ["-b", spec.ref]
@@ -570,15 +585,13 @@ class GitService:
             # 克隆失败：分类给出人类可读提示（平台限制 / 目录占用 / 通用）
             tail = "\n".join(self._last_clone_tail[-8:])
             msg, detail = _classify_failure(tail)
-            # Windows 非法文件名等平台限制：保留目录，让用户可见错误；其余清理残留
-            if "Windows 不允许" in msg or "无法检出" in msg:
+            # 平台限制 / 目录占用类：保留目录（可能是他人成果或用户资料），不清理
+            if ("Windows 不允许" in msg or "无法检出" in msg
+                    or "目录已存在" in msg):
                 self._emit(f"[失败] {spec.display}：{msg}", "warn")
             else:
                 self._emit(f"克隆失败，清理残留目录 {repo_dir.name}", "warn")
-                try:
-                    shutil.rmtree(repo_dir, ignore_errors=True)
-                except Exception:
-                    pass
+                self._safe_rmtree_partial(repo_dir)
             res.status = SyncStatus.FAILED
             res.action = SyncAction.FAILED
             res.message = msg

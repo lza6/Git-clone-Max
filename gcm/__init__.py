@@ -1,5 +1,5 @@
 """Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。"""
-__version__ = "6.4.0"
+__version__ = "6.5.0"
 __app_name__ = "Git-clone-Max"
 __changelog__ = (
     "4.0.0: 统一调度引擎(SyncEngine) · progress.json 进程级锁+周期落盘 · SQLite busy_timeout · "
@@ -42,4 +42,6 @@ __changelog__ = (
     "detached HEAD(tag 检出)二次同步不误报冲突 · 全量 320 测试全绿 · 覆盖 80%",
     "6.4.0: G04-4 下载限速(settings.rate_limit_kbps → git http.lowSpeedLimit/lowSpeedTime, "
     "设置页 SpinBox 0=不限速) · 全量 324 测试全绿 · 覆盖 80%",
+    "6.5.0: 数据安全加固 - _safe_rmtree_partial 只清理半成品(含 .git 或空目录), "
+    "非空非 git 目录保留不误删 · already exists 归入平台限制不重试 · 全量 328 测试全绿 · 覆盖 80%",
 )

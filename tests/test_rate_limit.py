@@ -53,3 +53,43 @@ class TestRateSetting(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+class TestSafeCleanup(unittest.TestCase):
+    """LOW 修复：只清理半成品（含 .git 或空目录），不误删非空非 git 目录。"""
+
+    def test_safe_rmtree_removes_partial_git(self):
+        from gcm.git.service import GitService
+        base = Path(tempfile.mkdtemp())
+        d = base / "partial"
+        (d / ".git").mkdir(parents=True)
+        (d / "a.txt").write_text("x", encoding="utf-8")
+        svc = GitService(base / "root")
+        svc._safe_rmtree_partial(d)
+        self.assertFalse(d.exists(), "含 .git 的半成品应被清理")
+
+    def test_safe_rmtree_removes_empty_dir(self):
+        from gcm.git.service import GitService
+        base = Path(tempfile.mkdtemp())
+        d = base / "empty"
+        d.mkdir()
+        svc = GitService(base / "root")
+        svc._safe_rmtree_partial(d)
+        self.assertFalse(d.exists(), "空目录应被清理")
+
+    def test_safe_rmtree_keeps_user_data(self):
+        from gcm.git.service import GitService
+        base = Path(tempfile.mkdtemp())
+        d = base / "user_data"
+        d.mkdir()
+        (d / "important.txt").write_text("keep", encoding="utf-8")
+        svc = GitService(base / "root")
+        svc._safe_rmtree_partial(d)
+        self.assertTrue(d.exists(), "非空且非 git 目录必须保留")
+        self.assertTrue((d / "important.txt").exists())
+
+    def test_already_exists_classified_platform(self):
+        from gcm.git.service import _is_networkish_error, _classify_failure
+        msg = "fatal: destination path 'x' already exists and is not an empty directory"
+        self.assertFalse(_is_networkish_error(msg), "目录占用不应重试")
+        label, _ = _classify_failure(msg)
+        self.assertIn("目录已存在", label)
