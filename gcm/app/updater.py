@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """应用自更新：检查 GitHub Releases 最新版，提示跳转下载。
 
 不做自动覆盖安装（避免 UAC/杀软/在跑进程锁文件等坑），只做『发现新版 → 提示』。
@@ -8,7 +7,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Optional
+import time
 
 from .. import __version__
 
@@ -78,8 +77,22 @@ def check_latest(fetcher=None, timeout: int = _TIMEOUT) -> tuple:
         cur = _parse_version(__version__)
         lat = _parse_version(latest)
         return (lat > cur, latest, url, "")
-    except Exception as e:
-        return (False, "", "", f"检查更新失败：{e}")
+    except Exception as first_err:
+        # G21-3：GitHub API 偶发 5xx/抖动，单次重试（2s）后再放弃
+        time.sleep(2)
+        try:
+            raw = fetcher()
+            data = json.loads(raw)
+            latest = str(data.get("tag_name") or "")
+            assets = data.get("assets") or []
+            exe = next((a for a in assets if str(a.get("name", "")).lower().endswith(".exe")), None)
+            url = str(exe.get("browser_download_url") or "") if exe else \
+                str(data.get("html_url") or "")
+            cur = _parse_version(__version__)
+            lat = _parse_version(latest)
+            return (lat > cur, latest, url, "")
+        except Exception as e:
+            return (False, "", "", f"检查更新失败：{e}（首次：{first_err}）")
 
 
 if __name__ == "__main__":

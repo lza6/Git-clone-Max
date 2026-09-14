@@ -1,5 +1,5 @@
 """Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。"""
-__version__ = "6.6.0"
+__version__ = "6.7.0"
 __app_name__ = "Git-clone-Max"
 __changelog__ = (
     "4.0.0: 统一调度引擎(SyncEngine) · progress.json 进程级锁+周期落盘 · SQLite busy_timeout · "
@@ -13,8 +13,9 @@ __changelog__ = (
     "5.0.0: 多平台直克隆（GitLab/Gitee/Codeberg/Bitbucket/自建主机 HTTPS+SSH+短格式+子组）· "
     "通用 Git URL 解析器 · 跨 host 规范命名 host__owner__repo · 本地扫描多平台覆盖 · "
     "28 项新解析单测 · 全量 227 测试全绿 · 核心覆盖率 85%",
-    "5.1.0: 可靠性加固 G06 - token 加密落盘(DPAPI/Keyring/XOR 降级) · single-instance 进程锁+崩溃残留清理 · "
-    "全局异常兜底 error.log · settings .bak 备份+损坏恢复 · 跨进程单实例 E2E · 全量 249 测试全绿 · 覆盖 83%",
+    "5.1.0: 可靠性加固 G06 - token 加密落盘(DPAPI/Keyring/XOR 降级) · "
+    "single-instance 进程锁+崩溃残留清理 · 全局异常兜底 error.log · "
+    "settings .bak 备份+损坏恢复 · 跨进程单实例 E2E · 全量 249 测试全绿 · 覆盖 83%",
     "5.2.0: G06-6 DB 迁移机制(PRAGMA user_version + 幂等加列 tags/favorite/excluded) · "
     "G02-4 URL 历史持久化(去重/上限/右键回填/清空) · 全量 259 测试全绿 · 覆盖 82%",
     "5.3.0: G02-1/2 进度表搜索过滤+表头排序(状态优先级) · G02-3 单仓库暂停(pause_task) · "
@@ -34,10 +35,11 @@ __changelog__ = (
     "6.0.0: M5 网络与同步 - G08-2 @tag 语法(owner/repo@v1.2.0 → clone -b, HTTPS/SSH/短格式/子组) · "
     "G04-1 弱网降级(网络失败自动 treeless --filter=blob:none 部分克隆) · "
     "全量 306 测试全绿 · 覆盖 80% · 含安全回归(凭据前置 @ 仍拒绝)",
-    "6.1.0: M6 - G10-1 字号缩放(qss_for_scale 0.8~1.6 钳制 + Ctrl+=/-/0 快捷键 + settings.font_scale) · "
+    "6.1.0: M6 - G10-1 字号缩放(qss_for_scale 0.8~1.6 钳制 + Ctrl+=/-/0 快捷键) · "
     "全量 310 测试全绿 · 覆盖 80%",
     "6.2.0: 安全加固(独立 security-reviewer F1/F2/F3) - host 白名单强制(token 仅发 github.com) · "
-    "所有 path 段 @ 拒绝 · ref 合法性校验(git check-ref-format 语义) · 全量 320 测试全绿 · 覆盖 80%",
+    "所有 path 段 @ 拒绝 · ref 合法性校验(git check-ref-format 语义) · "
+    "全量 320 测试全绿 · 覆盖 80%",
     "6.3.0: F5/F6 修复(独立审查) - @tag 目录隔离(owner__repo@v1 vs @v2) + 去重键含 ref · "
     "detached HEAD(tag 检出)二次同步不误报冲突 · 全量 320 测试全绿 · 覆盖 80%",
     "6.4.0: G04-4 下载限速(settings.rate_limit_kbps → git http.lowSpeedLimit/lowSpeedTime, "
@@ -46,4 +48,11 @@ __changelog__ = (
     "非空非 git 目录保留不误删 · already exists 归入平台限制不重试 · 全量 328 测试全绿 · 覆盖 80%",
     "6.6.0: G03-7 管理页行内「查看」按钮委托(QStyledItemDelegate, 每行独立可点击, "
     "不再依赖先选中行) · 保留 _on_hist_btn 多选兼容入口 · 全量 331 测试全绿 · 覆盖 80%",
+    "6.7.0: M1/M2 缺陷清零+可靠性 - G21-1 暂停排序错行修复(index↔行映射) · "
+    "G21-2 进度落盘双路径统一(mark_finished) · G21-3 更新检查单次重试+静默失败留痕 · "
+    "G21-4 启动器退出码透传+托盘优雅退出 · G22-1 关窗优雅收敛(drain≤8s) · "
+    "G22-2 in_progress 全生命周期+崩溃恢复预填 · G22-3 BEGIN IMMEDIATE 并发写 · "
+    "G22-4 托盘进度tooltip · G22-5 结构化app.log · G22-6 failed 重试清单 · "
+    "G22-7 重试文案 · G28-1 日志/UI 全链路 redact · 工程化：CI 覆盖率门禁82/ruff/mypy/发布清单 · "
+    "全量 360 测试全绿 · 覆盖 81%",
 )

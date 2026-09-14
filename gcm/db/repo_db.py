@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """SQLite 数据库：仓库元数据 + 同步历史快照。断点续传基于 progress.json 单独实现。"""
 from __future__ import annotations
 
@@ -7,9 +6,8 @@ import os
 import sqlite3
 import threading
 import time
-from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Optional
 
 from ..models import RepoSpec, SyncAction, SyncStatus
 
@@ -101,13 +99,23 @@ class Database:
                 pass
 
     # ------------------------------------------------------------------ 写
+    def _begin_immediate(self):
+        """G22-3：写事务显式 BEGIN IMMEDIATE，避免 WAL 下共享锁升级死锁。"""
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+        except sqlite3.OperationalError:
+            pass  # 已在事务中（例如隐式开启）：沿用原语义
+
     def upsert_repo(self, spec: RepoSpec, local_path: str, host: str = "github.com",
                     default_branch: str | None = None, head_sha: str | None = None) -> int:
         """插入或更新仓库记录，返回 repo_id。"""
         with self._lock:
-            cur = self._conn.execute(
+            self._begin_immediate()
+            self._conn.execute(
                 """
-                INSERT INTO repos (owner, repo, folder_name, url, local_path, host, default_branch, head_sha, last_sync_at)
+                INSERT INTO repos
+                    (owner, repo, folder_name, url, local_path, host,
+                     default_branch, head_sha, last_sync_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(owner, repo, host) DO UPDATE SET
                     folder_name=excluded.folder_name,
@@ -129,12 +137,17 @@ class Database:
 
     def set_repo_head(self, repo_id: int, head_sha: str | None, default_branch: str | None = None):
         with self._lock:
+            self._begin_immediate()
             if default_branch is not None:
-                self._conn.execute("UPDATE repos SET default_branch=?, head_sha=?, updated_at=datetime('now','localtime') WHERE id=?",
-                                   (default_branch, head_sha, repo_id))
+                self._conn.execute(
+                    "UPDATE repos SET default_branch=?, head_sha=?,"
+                    " updated_at=datetime('now','localtime') WHERE id=?",
+                    (default_branch, head_sha, repo_id))
             else:
-                self._conn.execute("UPDATE repos SET head_sha=?, updated_at=datetime('now','localtime') WHERE id=?",
-                                   (head_sha, repo_id))
+                self._conn.execute(
+                    "UPDATE repos SET head_sha=?,"
+                    " updated_at=datetime('now','localtime') WHERE id=?",
+                    (head_sha, repo_id))
             self._conn.commit()
 
     # ------------------------------------------------------------ G03 标签/收藏/黑名单
@@ -142,6 +155,7 @@ class Database:
         """覆盖式设置标签（竖线分隔存储）。"""
         val = "|".join(str(t).strip() for t in tags if str(t).strip())
         with self._lock:
+            self._begin_immediate()
             self._conn.execute("UPDATE repos SET tags=? WHERE id=?", (val, repo_id))
             self._conn.commit()
 
@@ -159,12 +173,14 @@ class Database:
 
     def set_favorite(self, repo_id: int, fav: bool) -> None:
         with self._lock:
+            self._begin_immediate()
             self._conn.execute("UPDATE repos SET favorite=? WHERE id=?",
                                (1 if fav else 0, repo_id))
             self._conn.commit()
 
     def set_excluded(self, repo_id: int, excluded: bool) -> None:
         with self._lock:
+            self._begin_immediate()
             self._conn.execute("UPDATE repos SET excluded=? WHERE id=?",
                                (1 if excluded else 0, repo_id))
             self._conn.commit()
@@ -183,11 +199,12 @@ class Database:
                          remote_head: str | None = None, duration_ms: int = 0,
                          started_at: str | None = None, ended_at: str | None = None):
         with self._lock:
+            self._begin_immediate()
             self._conn.execute(
                 """
                 INSERT INTO sync_history
-                    (repo_id, status, action, message, detail, commits, head_before, head_after,
-                     remote_head, duration_ms, started_at, ended_at)
+                    (repo_id, status, action, message, detail, commits, head_before,
+                     head_after, remote_head, duration_ms, started_at, ended_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (repo_id, status.value, action.value, message, detail, commits,
@@ -198,7 +215,8 @@ class Database:
             self._conn.commit()
 
     # ------------------------------------------------------------------ 读
-    def get_repo(self, owner: str, repo: str, host: str | None = "github.com") -> Optional[Dict[str, Any]]:
+    def get_repo(self, owner: str, repo: str,
+                 host: str | None = "github.com") -> Optional[dict[str, Any]]:
         with self._lock:
             if host is None:
                 rows = self._conn.execute(
@@ -212,7 +230,7 @@ class Database:
             ).fetchone()
             return dict(row) if row else None
 
-    def list_repos(self, host: str | None = None) -> List[Dict[str, Any]]:
+    def list_repos(self, host: str | None = None) -> list[dict[str, Any]]:
         """列出仓库；host 为 None 时返回全部（含本地导入的仓库）。收藏优先。"""
         with self._lock:
             if host is None:
@@ -224,7 +242,7 @@ class Database:
                     (host,)).fetchall()
             return [dict(r) for r in rows]
 
-    def history(self, repo_id: int, limit: int = 20) -> List[Dict[str, Any]]:
+    def history(self, repo_id: int, limit: int = 20) -> list[dict[str, Any]]:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT * FROM sync_history WHERE repo_id=? ORDER BY id DESC LIMIT ?",
@@ -305,7 +323,7 @@ class Database:
 # ---------------------------------------------------------------------------
 # progress.json 的读写需要互斥：多 worker 并发（或未来多实例）写同一 tmp 路径
 # 会导致 PermissionError（Windows）。这里提供线程级 + 进程级双层锁。
-import contextlib as _contextlib
+import contextlib as _contextlib  # noqa: E402  （置于本模块中部，供进度读写使用）
 
 _progress_lock = threading.RLock()
 
@@ -350,18 +368,22 @@ def _progress_guard(path: Path):
                     pass
 
 
-def load_progress(path: Path) -> Dict[str, Any]:
+def load_progress(path: Path) -> dict[str, Any]:
     if not path.exists():
-        return {"finished": [], "in_progress": {}}
+        return {"finished": [], "in_progress": {}, "failed": []}
     try:
-        with _progress_guard(path):
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
+        with _progress_guard(path), open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        # G22-2：补齐新键，旧文件无痛升级
+        data.setdefault("finished", [])
+        data.setdefault("in_progress", {})
+        data.setdefault("failed", [])
+        return data
     except Exception:
-        return {"finished": [], "in_progress": {}}
+        return {"finished": [], "in_progress": {}, "failed": []}
 
 
-def save_progress(path: Path, data: Dict[str, Any]):
+def save_progress(path: Path, data: dict[str, Any]):
     tmp = path.with_suffix(".json.tmp")
     with _progress_guard(path):
         with open(tmp, "w", encoding="utf-8") as f:
@@ -369,7 +391,7 @@ def save_progress(path: Path, data: Dict[str, Any]):
         os.replace(tmp, path)  # 原子写
 
 
-def mark_finished(path: Path, spec: RepoSpec, result: Dict[str, Any]):
+def mark_finished(path: Path, spec: RepoSpec, result: dict[str, Any]):
     data = load_progress(path)
     key = f"{spec.owner}/{spec.repo}"
     data["finished"] = [x for x in data.get("finished", []) if x.get("key") != key]

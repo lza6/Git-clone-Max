@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """统一同步调度引擎：开始克隆 / 一键更新 / 并发调整 / 取消 / 断点续传。
 
 设计目标（对应 计划书/下一步改进指南.md 第四章）：
@@ -15,14 +14,16 @@ from __future__ import annotations
 
 import time
 from collections import OrderedDict
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Optional
 
 from PyQt6.QtCore import QObject, QThreadPool, pyqtSignal
 
 from ..db.repo_db import Database, load_progress, save_progress
 from ..git.service import GitService
 from ..models import RepoSpec, SyncResult, SyncStatus
+from ..util.redact import redact
 from .worker import CancelFlag, CloneWorker, TaskPayload
 
 # 周期落盘间隔（秒）：期间完成的任务先聚在内存，到时统一写一次
@@ -60,26 +61,28 @@ class SyncEngine(QObject):
         self._submodule = bool(submodule)   # G08-1 透传给 GitService
         self._rate_limit_kbps = max(0, int(rate_limit_kbps or 0))  # G04-4 限速
 
-        self.tasks: List[CloneWorker] = []
-        self.flags: Dict[int, CancelFlag] = {}
-        self.specs: Dict[int, RepoSpec] = {}
-        self._host_by_key: Dict[str, str] = {}
+        self.tasks: list[CloneWorker] = []
+        self.flags: dict[int, CancelFlag] = {}
+        self.specs: dict[int, RepoSpec] = {}
+        self._host_by_key: dict[str, str] = {}
         self._depth = 0
         self._unshallow = False
         self._pending = 0
         self.busy = False
 
-        # 进度内存态 + 周期落盘
-        self._progress: Dict[str, dict] = load_progress(self.progress_path) if self.progress_path \
-            else {"finished": [], "in_progress": {}}
+        # 进度内存态 + 周期落盘（G22-2：in_progress/failed 全生命周期跟踪）
+        self._progress: dict[str, dict] = self._normalize_progress(
+            load_progress(self.progress_path) if self.progress_path
+            else {"finished": [], "in_progress": {}})
         self._dirty = False
         self._skip_done = True          # 已完成且目录存在 → 直接跳过
+        self._launch_clear_input = False
 
         # 取消缓存：key -> 是否已取消（避免 UI 每行输出遍历全部 flags）
         self._cancelled = False
 
         # 内存护栏：完成时释放对 worker 的强引用，避免 QRunnable 队列积压导致 OOM
-        self._retired_tasks: List[CloneWorker] = []
+        self._retired_tasks: list[CloneWorker] = []
 
     # ------------------------------------------------------------ 并发
     def set_concurrency(self, n: int) -> int:
@@ -112,8 +115,24 @@ class SyncEngine(QObject):
         return self.pool.maxThreadCount()
 
     # ------------------------------------------------------------ 进度
+    @staticmethod
+    def _normalize_progress(data: dict[str, dict]) -> dict[str, dict]:
+        """G22-2：兼容旧 progress.json（可能缺 in_progress/failed 键）。"""
+        data.setdefault("finished", [])
+        data.setdefault("in_progress", {})
+        data.setdefault("failed", [])
+        return data
+
+    def _mark_in_progress(self, keys: list[str]):
+        """launch 时登记本轮待完成清单（崩溃后可恢复）。"""
+        ip = self._progress.setdefault("in_progress", {})
+        for k in keys:
+            ip[k] = time.strftime("%Y-%m-%d %H:%M:%S")
+        self._dirty = True
+
     def _emit_line(self, index: int, text: str, level: str = "info"):
-        self.line.emit(index, text, level)
+        # G28-1：出口统一打码（git 报错行可能回显含凭据的 remote URL）
+        self.line.emit(index, redact(text), level)
 
     def _emit_progress_detail(self, index: int, text: str):
         """转发进度附加文本（速率/对象数）到 UI。"""
@@ -179,13 +198,13 @@ class SyncEngine(QObject):
 
     # ------------------------------------------------------------ 调度
     @staticmethod
-    def _dedupe_specs(specs: Iterable[RepoSpec]) -> "OrderedDict[str, list[RepoSpec]]":
+    def _dedupe_specs(specs: Iterable[RepoSpec]) -> OrderedDict[str, list[RepoSpec]]:
         """按目标目录（folder_name 或 local_path）去重，返回 key -> [spec]。
 
         F5：folder_name 已把 @tag 编码进去（owner__repo@v1 vs @v2 目录不同），
         直接用目标目录键即可天然区分不同 tag。
         """
-        groups: "OrderedDict[str, list[RepoSpec]]" = OrderedDict()
+        groups: OrderedDict[str, list[RepoSpec]] = OrderedDict()
         for s in specs:
             key = s.local_path or s.folder_name  # 目标目录键（含 @tag 后缀）
             groups.setdefault(key, []).append(s)
@@ -239,7 +258,7 @@ class SyncEngine(QObject):
                 break  # 同 key 上有新记录但目录不在 → 需重新同步
         return None
 
-    def launch(self, specs: Iterable[RepoSpec], host_by_key: Optional[Dict[str, str]] = None,
+    def launch(self, specs: Iterable[RepoSpec], host_by_key: Optional[dict[str, str]] = None,
                fetch_depth: int = 0, unshallow: bool = False,
                clear_input: bool = False, check_existing: bool = True) -> int:
         """启动一组仓库的并行同步。返回实际调度数量（去重后）。
@@ -256,10 +275,18 @@ class SyncEngine(QObject):
         self._clear_input = clear_input
         self._skip_done = check_existing
 
+        # G22-1：先释放上轮可能滞留的旗标/列表引用，避免累积
+        try:
+            self.tasks.clear()
+            self.flags.clear()
+            self.specs.clear()
+        except Exception:
+            pass
+
         groups = self._dedupe_specs(specs)
         # 展开去重后的唯一 spec 列表
-        unique_specs: List[RepoSpec] = []
-        dup_keys: List[str] = []
+        unique_specs: list[RepoSpec] = []
+        dup_keys: list[str] = []
         for key, grp in groups.items():
             if not grp:
                 continue
@@ -290,8 +317,12 @@ class SyncEngine(QObject):
         self._depth = fetch_depth
         self._unshallow = unshallow
         self._pending = len(unique_specs)
+        # G22-2：登记本轮待完成清单并立即落盘（进程被杀后可据此恢复）
+        self._mark_in_progress([f"{s.owner}/{s.repo}" for s in unique_specs])
+        self.flush_progress()
         self._emit_line(0, f"开始并行同步 {len(unique_specs)} 个仓库"
-                           f"（{'浅克隆 depth=' + str(fetch_depth) if fetch_depth else '满量'}）", "system")
+                           f"（{'浅克隆 depth=' + str(fetch_depth) if fetch_depth else '满量'}）",
+                         "system")
 
         for i, spec in enumerate(unique_specs):
             flag = CancelFlag()
@@ -323,10 +354,12 @@ class SyncEngine(QObject):
         # 引擎统一落库（worker 不再写 DB，避免并发写同一 SQLite 连接）
         if self.db is not None:
             try:
-                repo_id = self.db.upsert_repo(res.spec, res.path,
-                                              host=self.specs.get(index, res.spec) and
-                                              self._host_by_key.get(f"{res.spec.owner}/{res.spec.repo}", "github.com"),
-                                              default_branch=None, head_sha=res.head_sha or None)
+                repo_id = self.db.upsert_repo(
+                    res.spec, res.path,
+                    host=(self.specs.get(index, res.spec) and
+                          self._host_by_key.get(f"{res.spec.owner}/{res.spec.repo}",
+                                                "github.com")),
+                    default_branch=None, head_sha=res.head_sha or None)
                 self.db.add_sync_history(
                     repo_id, res.status, res.action, res.message, res.detail,
                     commits=res.commits, head_before="", head_after=res.head_sha,
@@ -335,11 +368,24 @@ class SyncEngine(QObject):
                 pass  # 落库失败不影响 UI 展示（历史可追溯性损失通过日志暴露）
         # 进度内存态登记
         self._mark_done(f"{res.spec.owner}/{res.spec.repo}", res.status, res.message)
+        # G22-2：从待完成清单移除；失败项单独留档供「重试失败项」
+        key = f"{res.spec.owner}/{res.spec.repo}"
+        ip = self._progress.setdefault("in_progress", {})
+        ip.pop(key, None)
+        if res.status == SyncStatus.FAILED:
+            failed = [x for x in self._progress.get("failed", []) if x.get("key") != key]
+            failed.append({"key": key, "message": res.message,
+                           "time": time.strftime("%Y-%m-%d %H:%M:%S")})
+            self._progress["failed"] = failed
+        self._dirty = True
         # 转发给 UI
         self.result.emit(index, res)
 
     def _on_worker_done(self):
+        # 计数含取消：取消也是终态，若不计入会导致 finished 信号永不收敛
         self._pending = max(0, self._pending - 1)
+        # G22-2：每任务结束都周期落盘一次（进程被杀时 in_progress 尽量最新）
+        self.flush_progress()
         if self._pending == 0:
             self.flush_progress()  # 全部完成：强制落盘一次
             self.busy = False
@@ -359,9 +405,38 @@ class SyncEngine(QObject):
             pass
 
     # ------------------------------------------------------------ 收尾
+    def drain(self, timeout_ms: int = 8000) -> bool:
+        """G22-1：取消全部任务并等待在跑 worker 收敛（优雅关闭）。
+
+        返回是否在 timeout 内全部结束。等待期间泵 Qt 事件，
+        保证 QRunnable 的跨线程 finished 信号能送达主线程计数。
+        """
+        self.cancel_all()
+        deadline = time.time() + max(0.0, timeout_ms / 1000.0)
+        while self._pending > 0 and time.time() < deadline:
+            try:
+                from PyQt6.QtCore import QCoreApplication
+                app = QCoreApplication.instance()
+                if app is not None:
+                    app.processEvents()
+            except Exception:
+                pass
+            time.sleep(0.02)
+        try:
+            self.pool.waitForDone(200)
+        except Exception:
+            pass
+        return self._pending == 0
+
     def shutdown(self):
         """取消剩余任务并落盘，供窗口关闭时调用。"""
         self.cancel_all()
+        # G22-2：用户主动优雅退出时清空待完成清单，避免下次启动误报「上次未完成」
+        try:
+            self._progress["in_progress"] = {}
+            self._dirty = True
+        except Exception:
+            pass
         self.flush_progress()
         try:
             self.pool.clear()

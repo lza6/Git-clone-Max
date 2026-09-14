@@ -1,9 +1,7 @@
-# -*- coding: utf-8 -*-
 """本地仓库扫描的后台线程 + 信号桥（避免阻塞 UI 线程）。"""
 from __future__ import annotations
 
 import threading
-from typing import Callable, List
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
@@ -24,12 +22,12 @@ class ScanWorker(QObject):
     def start(self):
         def _run():
             try:
-                found: List[RepoInfo] = []
+                found: list[RepoInfo] = []
                 for r in self._roots:
                     found.extend(scan_git_dirs(r, self._max_depth))
                 # 去重（按 key）
                 seen = set()
-                uniq: List[RepoInfo] = []
+                uniq: list[RepoInfo] = []
                 for i in found:
                     if i.key in seen:
                         continue
@@ -46,7 +44,7 @@ class ScanWorker(QObject):
         self._thread = t
 
 
-def _dedupe(infos: List[RepoInfo]) -> List[RepoInfo]:
+def _dedupe(infos: list[RepoInfo]) -> list[RepoInfo]:
     seen = set()
     out = []
     for i in infos:

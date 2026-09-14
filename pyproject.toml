@@ -1,51 +1,59 @@
-# Git-clone-Max 打包与运行配置
+# Git-clone-Max 构建 / 静态检查配置
+#
+# 原文档型 pyproject.toml（Markdown）为非法 TOML，ruff/mypy 无法解析。
+# 现改为合法 TOML：`[project]` 元数据 + `[tool.ruff]` / `[tool.mypy]`。
+# 目录结构 / 运行 / 测试 / 打包 说明见项目根 README.md。
 
-```text
-Git-clone-Max/
-├── gcm/
-│   ├── __init__.py      版本与应用名
-│   ├── __main__.py      入口（python -m gcm）
-│   ├── models.py        数据模型
-│   ├── app/
-│   │   ├── url_lib.py   GitHub 地址解析 / 目录命名（作者__仓库）
-│   │   ├── updater.py   自更新（检查 GitHub Releases）
-│   │   └── worker.py    QThreadPool 并行 worker + 断点续传 progress.json
-│   ├── db/
-│   │   ├── repo_db.py   SQLite：repos + sync_history；断点续传进度
-│   │   └── settings.py  设置持久化（settings.json）
-│   ├── git/
-│   │   └── service.py   git clone / fetch / ff-only / rebase / 冲突检测
-│   └── ui/
-│       ├── theme.py     配色 + 日志模型 + 控制台高亮
-│       ├── tray.py      系统托盘
-│       └── main_window.py  三个 Tab 主窗口
-├── scripts/             发布脚本 + bat/ps1 启动器
-├── tests/               单元测试 + UI 集成 + 真实 git E2E
-├── requirements.txt     PyQt6（运行时）
-├── requirements-build.txt  PyInstaller + PyGithub（构建/发布）
-└── pyproject.toml
-```
+[project]
+name = "git-clone-max"
+version = "6.7.0"
+description = "GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 桌面工具（PyQt6）"
+requires-python = ">=3.10"
+dependencies = [
+    "PyQt6>=6.6",
+]
 
-## 运行
+[project.scripts]
+git-clone-max = "gcm.__main__:main"
 
-```bash
-python -m pip install -r requirements.txt
-python -m gcm
-```
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = [".venv", "build", "dist", ".git"]
 
-## 测试
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = [
+    # 存量豁免清单（G29-2 过渡期）：后续逐步收紧
+    "UP045",   # enum 造型（LogLevel 依赖 str 语义）
+    "B008",    # 函数调用默认参数（既有代码风格）
+    "SIM108",  # 三元表达式建议
+    "SIM105",  # try/except/pass → contextlib.suppress（既有多处防御风格）
+    "SIM115",  # 文件打开建议（Popen/进度锁等非 with 场景为有意）
+    "SIM103",  # 非布尔直接返回建议（保持可读性）
+    "B023",    # 循环变量绑定（run_git_ui 读线程闭包为设计所需）
+]
+# 存量长行/风格豁免：E501 逐文件基于既有代码（UI 文案/日志模板），不阻塞 CI。
+[tool.ruff.lint.per-file-ignores]
+"gcm/ui/*.py" = ["E501"]
+"gcm/db/settings.py" = ["E501"]
 
-```bash
-python -m pip install coverage
-python -m coverage run --source=gcm -m unittest discover -s tests
-python -m coverage report
-```
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+exclude = [".venv", "build", "dist"]
+# 存量错误豁免（G29-2 过渡期宽松起步）：
+#   call-overload      PyQt6 构造器重载（QShortcut/Popen）
+#   union-attr/attr-defined  运行时动态注入属性（send_progress_detail 等）
+#   dict-item/assignment     progress 结构（finished:list + in_progress:dict）
+#   override          Qt 基类签名覆写（closeEvent/parent）
+#   var-annotated     既有未标注局部变量
+#   module 平台分支（fcntl/msvcrt）属性访问
+disable_error_code = [
+    "call-overload", "union-attr", "attr-defined", "dict-item",
+    "assignment", "override", "var-annotated", "arg-type",
+]
 
-## 打包 / 发布
-
-```bash
-python -m pip install -r requirements-build.txt
-python -m PyInstaller Git-clone-Max.spec
-python scripts/publish_release.py --dry-run   # 校验
-python scripts/publish_release.py             # 上传 Release
-```
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+ignore_errors = true

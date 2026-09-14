@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """设置持久化：并发数 / 深浅克隆 / 自动清空 / 代理 / 超时 / 自动化开关 等。
 
 存储为 data/settings.json，原子写入（temp + os.replace），损坏时兜底为默认值。
@@ -11,7 +10,7 @@ import base64
 import json
 import os
 import threading
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 # token 加密封装：优先平台密钥环，缺失时用 DPAPI（Windows）或简单掩码。

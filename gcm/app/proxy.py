@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """G04-3 代理自动检测：读取系统代理（Windows 注册表 / 环境变量）。
 
 优先级：环境变量 HTTP_PROXY/HTTPS_PROXY > Windows 系统代理（注册表

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """系统托盘：最小化挂机时的图标、进度摘要与通知。"""
 from __future__ import annotations
 
@@ -24,10 +23,19 @@ class TrayController:
         self.parent = parent
         self._notify = notify or _default_notify
         self.tray = None
+        self._base_title = "Git-clone-Max"
+        # G22-4：进度计数内存态 + 节流合并（32 并发高频信号不刷爆 tooltip）
+        self._counts = {"running": 0, "ok": 0, "bad": 0}
+        from PyQt6.QtCore import QTimer
+        self._tip_timer = QTimer(self.parent)
+        self._tip_timer.setSingleShot(True)
+        self._tip_timer.setInterval(300)
+        self._tip_timer.timeout.connect(self._flush_tooltip)
 
     def install(self, title: str = "Git-clone-Max"):
         if not ensure_supported():
             return None
+        self._base_title = title
         tray = QSystemTrayIcon(self.parent)
         tray.setIcon(self._app_icon())
         tray.setToolTip(title)
@@ -36,15 +44,54 @@ class TrayController:
         act_quit = menu.addAction("退出")
         menu.addSeparator()
         act_show.triggered.connect(lambda: self._show_window())
-        act_quit.triggered.connect(QApplication.instance().quit)
+        # G21-4：「退出」必须走主窗 closeEvent，统一优雅收尾
+        # （engine.drain + 落盘 + 锁释放），不能直接 QApplication.quit 硬退
+        act_quit.triggered.connect(self._quit_gracefully)
         tray.setContextMenu(menu)
         tray.activated.connect(self._on_activated)
         tray.show()
         self.tray = tray
         return tray
 
+    # ------------------------------------------------------------ G22-4 进度
+    def update_counts(self, running_delta: int = 0, ok_delta: int = 0, bad_delta: int = 0,
+                      reset: bool = False):
+        """引擎信号桥接入口：增减计数并节流刷新 tooltip。"""
+        if reset:
+            self._counts = {"running": 0, "ok": 0, "bad": 0}
+        self._counts["running"] = max(0, self._counts["running"] + running_delta)
+        self._counts["ok"] = max(0, self._counts["ok"] + ok_delta)
+        self._counts["bad"] = max(0, self._counts["bad"] + bad_delta)
+        if self.tray is not None and not self._tip_timer.isActive():
+            self._tip_timer.start()
+
+    def _flush_tooltip(self):
+        if self.tray is None:
+            return
+        c = self._counts
+        if c["running"] > 0:
+            tip = f"{self._base_title} · 运行中 {c['running']} · 完成 {c['ok']} · 失败 {c['bad']}"
+        elif c["ok"] or c["bad"]:
+            tip = f"{self._base_title} · 上轮完成 {c['ok']} · 失败 {c['bad']}"
+        else:
+            tip = self._base_title
+        try:
+            self.tray.setToolTip(tip)
+        except Exception:
+            pass
+
+    def _quit_gracefully(self):
+        """G21-4：先关主窗（触发 closeEvent 优雅收尾），事件循环随之自然退出。"""
+        try:
+            if self.parent is not None:
+                self.parent.close()
+                return
+        except Exception:
+            pass
+        QApplication.instance().quit()
+
     def _app_icon(self):
-        from PyQt6.QtGui import QPixmap, QPainter, QColor
+        from PyQt6.QtGui import QColor, QPainter, QPixmap
         pm = QPixmap(64, 64)
         pm.fill(QColor("#0d1117"))
         p = QPainter(pm)

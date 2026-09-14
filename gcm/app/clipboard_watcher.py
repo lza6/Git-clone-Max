@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """G09-1 剪贴板监听：检测到 git URL → 回调提示「加入队列」。
 
 - check_once()：取剪贴板文本，正则提取受支持平台 URL，去重后回调 on_url。
@@ -8,7 +7,8 @@
 from __future__ import annotations
 
 import re
-from typing import Callable, List, Optional
+from collections.abc import Callable
+from typing import Optional
 
 from PyQt6.QtCore import QObject, QTimer
 
@@ -29,7 +29,7 @@ class ClipboardWatcher(QObject):
         super().__init__(parent)
         self._enabled_flag = bool(enabled)
         self.on_url = on_url or (lambda u: None)
-        self._last_seen: List[str] = []
+        self._last_seen: list[str] = []
         self._timer = QTimer(self)
         self._timer.setInterval(max(500, interval_ms))
         self._timer.timeout.connect(self.check_once)

@@ -1,10 +1,9 @@
-# -*- coding: utf-8 -*-
 """UI 通用：日志事件模型 / 文本高亮 / 样式常量。"""
 from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import List, Optional
+from typing import Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat
@@ -191,7 +190,7 @@ class LogModel(QObject):
     def __init__(self, max_entries: int = 3000, parent=None):
         super().__init__(parent)
         self.max_entries = max_entries
-        self._entries: List[LogEvent] = []
+        self._entries: list[LogEvent] = []
         self._dropped = 0
 
     def append(self, time: str, level: LogLevel, text: str):
@@ -220,7 +219,7 @@ class LogModel(QObject):
         self._entries.clear()
         self.appended.emit(0)
 
-    def snapshot(self) -> List[LogEvent]:
+    def snapshot(self) -> list[LogEvent]:
         return list(self._entries)
 
     def to_plain_text(self) -> str:

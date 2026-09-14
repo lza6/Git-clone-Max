@@ -1,8 +1,6 @@
-# -*- coding: utf-8 -*-
 """共享数据模型与常量。"""
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
 
 
 class SyncStatus(str, Enum):

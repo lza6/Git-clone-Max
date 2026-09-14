@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """G07-3 报表导出：CSV（Excel 友好）与 Markdown（阅读友好）。
 
 数据源：repos JOIN sync_history 全量。CSV 用 utf-8-sig 保证 Excel 中文不乱码。
@@ -27,7 +26,6 @@ def _fetch_rows(db) -> list[dict]:
         seen = set()
         for r in rows:
             d = dict(r)
-            key = (d["owner"], d["repo"], d["started_at"])
             if d.get("started_at") is None:
                 # 无历史仓库只保留一行
                 if (d["owner"], d["repo"], None) in seen:

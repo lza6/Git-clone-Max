@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """线程池 worker：并行执行 git 同步任务，实时转发日志到 UI。"""
 from __future__ import annotations
 
@@ -6,11 +5,18 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QObject, QRunnable, pyqtSignal
 
-from ..db.repo_db import Database, load_progress, save_progress
+from ..db.repo_db import Database, mark_finished
 from ..git.service import GitService
-from ..models import RepoSpec, StreamChunk, SyncResult, SyncAction, SyncStatus# 每个仓库独立的取消标志
+from ..models import (  # 每个仓库独立的取消标志
+    RepoSpec,
+    SyncAction,
+    SyncResult,
+    SyncStatus,
+)
+
+
 class CancelFlag:
     def __init__(self):
         self._cancelled = False
@@ -67,7 +73,6 @@ class CloneWorker(QRunnable):
 
     def run(self):
         spec = self.payload.spec
-        flag = self.payload.flag or CancelFlag()
         res = SyncResult(spec=spec, status=SyncStatus.RUNNING)
         try:
             # 更新模式下：状态先置“更新中”，避免启动瞬间显示“失败”
@@ -107,15 +112,14 @@ class CloneWorker(QRunnable):
             self.signals.result.emit(self.index, res)
         finally:
             # 进度落盘由引擎统一处理（engine.py 传 path=None 跳过）；
-            # 独立使用时仍写 progress.json（带进程级+线程级锁，并发安全）
+            # 独立使用时仍写 progress.json（G21-2：统一走 mark_finished，不再手工拼结构）
             if self.progress_path:
-                data = load_progress(Path(self.progress_path))
-                data["finished"] = [x for x in data.get("finished", []) if x.get("key") != f"{spec.owner}/{spec.repo}"]
-                data["finished"].append({
-                    "key": f"{spec.owner}/{spec.repo}",
-                    "status": res.status.value,
-                    "message": res.message,
-                    "time": time.strftime("%Y-%m-%d %H:%M:%S"),
-                })
-                save_progress(Path(self.progress_path), data)
+                try:
+                    mark_finished(Path(self.progress_path), spec, {
+                        "status": res.status.value,
+                        "message": res.message,
+                        "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    })
+                except Exception:
+                    pass
             self.signals.finished.emit()

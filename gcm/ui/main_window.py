@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """主窗口：三个 Tab（下载中心 / 仓库管理 / 设置 与 黑匣子日志）。"""
 from __future__ import annotations
 
@@ -7,10 +6,9 @@ import sys
 import time
 from pathlib import Path
 
-from PyQt6.QtCore import QThreadPool, QTimer, Qt, pyqtSlot
-from PyQt6.QtGui import QCloseEvent, QColor, QFont, QTextCursor
+from PyQt6.QtCore import Qt, QTimer, pyqtSlot
+from PyQt6.QtGui import QCloseEvent, QColor
 from PyQt6.QtWidgets import (
-    QApplication,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -28,24 +26,22 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSpinBox,
-    QSplitter,
+    QTableView,
     QTableWidget,
     QTableWidgetItem,
-    QTableView,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from ..app.engine import SyncEngine
-from ..app.url_lib import parse_repo_url, parse_urls
-from ..app.worker import CancelFlag, CloneWorker, TaskPayload, WorkerSignals
-from ..db.repo_db import Database, load_progress
-from ..db.settings import Settings, SettingsStore
-from ..git.service import GitService
+from ..app.url_lib import parse_urls
+from ..app.worker import CancelFlag
+from ..db.repo_db import Database
+from ..db.settings import SettingsStore
 from ..models import RepoSpec, SyncResult, SyncStatus
 from .repo_detail_dialog import RepoDetailDialog
-from .theme import LogEvent, LogLevel, LogModel, PALETTE, QSS, make_highlighter
+from .theme import PALETTE, LogLevel, LogModel
 
 DOMAIN = "github.com"
 MAX_CONCURRENCY = 32  # 并发上限：拉满速度（设置 SpinBox 同源）
@@ -143,6 +139,11 @@ class MainWindow(QMainWindow):
         self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"Git-clone-Max 启动，数据目录：{self.data_dir}")
         self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"并行线程：{self.engine.concurrency}（上限 {MAX_CONCURRENCY}）")
         self._load_db_into_grid()
+        # G22-2 崩溃恢复自检：上次会话有未完成/失败项 → 提示并回填输入区供一键续跑
+        try:
+            self._startup_recovery_prefill()
+        except Exception:
+            pass
 
         # 系统托盘（失败静默降级，不影响主流程）
         from .tray import TrayController
@@ -151,9 +152,41 @@ class MainWindow(QMainWindow):
             self.tray.install()
 
         # 启动后静默检查更新：不阻塞、不弹窗，有新版本仅写日志 + 托盘提示
-        QTimer.singleShot(2500, self._check_update_silent)
+        QTimer.singleShot(2500, self._check_update_silent)    # ------------------------------------------------------------ G22-2 崩溃恢复
+    def _startup_recovery_prefill(self):
+        """启动时检查 progress.json：in_progress 非空（上次中断）或 failed 非空
+
+        （上次有失败项）→ 日志提示 + 输入区回填待恢复地址（用户可一键重跑）。
+        只回填不自动启动，避免静默网络操作。
+        """
+        from ..db.repo_db import load_progress
+        prog = load_progress(self.progress_path)
+        pending_keys = list((prog.get("in_progress") or {}).keys())
+        failed_keys = [x.get("key", "") for x in (prog.get("failed") or [])]
+        recover = [k for k in pending_keys if k and k not in failed_keys]
+        lines = []
+        if recover:
+            lines.extend(recover)
+            self._emit_log(_fmt_dt(), LogLevel.WARN,
+                           f"上次会话有 {len(recover)} 项未完成，已回填输入区，可直接继续。")
+        if failed_keys:
+            extra = [k for k in failed_keys if k and k not in lines]
+            if extra:
+                lines.extend(extra)
+                self._emit_log(_fmt_dt(), LogLevel.WARN,
+                               f"上次有 {len(failed_keys)} 项失败，已一并回填（可重试）。")
+        if lines:
+            from ..app.url_lib import parse_any_repo_url
+            urls = []
+            for k in lines:
+                spec = parse_any_repo_url(k)
+                if spec is not None:
+                    urls.append(spec.url_https)
+            if urls:
+                self.repo_input.setPlainText("\n".join(urls))
 
     # ------------------------------------------------------------ UI
+
     def _build_ui(self):
         self.setWindowTitle("Git-clone-Max — GitHub 仓库批量并行下载")
         self.resize(1240, 840)
@@ -334,7 +367,6 @@ class MainWindow(QMainWindow):
         self.manage_model = ManageModel(parent=self)
         self.manage_table = QTableView()
         self.manage_table.setModel(self.manage_model)
-        labels = ["文件夹", "仓库", "路径", "最近同步", "HEAD", "历史"]
         self.manage_table.horizontalHeader().setDefaultAlignment(
             Qt.AlignmentFlag.AlignLeft)
         self.manage_table.horizontalHeader().setStretchLastSection(True)
@@ -796,8 +828,8 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------ 更新检查
     def check_update_now(self):
         try:
-            from ..app.updater import check_latest
             from .. import __version__
+            from ..app.updater import check_latest
             has_new, ver, url, err = check_latest()
             if err:
                 QMessageBox.information(self, "检查更新", err)
@@ -821,10 +853,17 @@ class MainWindow(QMainWindow):
         （err 静默返回；发现新版只记日志，需要时用户可去设置页手动操作）。
         """
         try:
-            from ..app.updater import check_latest
             from .. import __version__
+            from ..app.updater import check_latest
             has_new, ver, url, err = check_latest()
             if err:
+                # G21-3：静默检查失败必须留痕（结构化 app.log），不再无痕
+                try:
+                    from ..app.applog import warn as _log_warn
+                    _log_warn(f"check_update|silent_fail|{err}",
+                              self.data_dir / "app.log")
+                except Exception:
+                    pass
                 return
             if has_new:
                 self._emit_log(_fmt_dt(), LogLevel.INFO,
@@ -962,7 +1001,7 @@ class MainWindow(QMainWindow):
             return
         # 按 local_path 反推根目录集合：仓库可能分散在多个下载目录
         from collections import OrderedDict
-        groups: "OrderedDict[str, list]" = OrderedDict()
+        groups: OrderedDict[str, list] = OrderedDict()
         for r in rows:
             root = str(Path(r["local_path"] or r["folder_name"]).parent)
             groups.setdefault(root, []).append(r)
@@ -1025,9 +1064,13 @@ class MainWindow(QMainWindow):
         self.engine.result.connect(self._on_worker_result)
         self.engine.finished.connect(self._on_engine_finished)
         self.pool = self.engine.pool
+        # G22-4：托盘进度计数接入（托盘未安装时 update_counts 静默无效）
+        try:
+            if getattr(self, "tray", None) is not None:
+                self.tray.update_counts(reset=True)
+        except Exception:
+            pass
 
-        # 表格行数与去重后实际调度数对齐（engine 内部去重）
-        self._prepare_table(len(specs))
         host_by_key: dict = {}
         for spec in specs:
             host = "github.com"
@@ -1059,6 +1102,18 @@ class MainWindow(QMainWindow):
             self.busy = False
             self._reset_buttons()
             self._on_engine_finished()
+        else:
+            # G21-1：表格行与 engine 去重后的索引严格对齐（去重/断点跳过都会
+            # 改变唯一清单），旧行全部废弃重建，避免暂停/进度按错行
+            n = len(self.engine.specs)
+            self._prepare_table(n)
+            for i in range(n):
+                spec = self.engine.specs[i]
+                self._add_table_row(i, spec)
+                self.row_specs[i] = spec
+            self._pending_count = n
+            self.statusBar().showMessage(f"并行同步中：{n} 个仓库…")
+            return
         self.statusBar().showMessage(f"并行同步中：{len(specs)} 个仓库…")
 
     # ------------------------------------------------------------ 槽
@@ -1084,6 +1139,8 @@ class MainWindow(QMainWindow):
         name_item = QTableWidgetItem(spec.folder_name)
         name_item.setToolTip(spec.url_https)
         name_item.setData(Qt.ItemDataRole.UserRole, spec.folder_name)  # 供过滤
+        # G21-1：行内保存 engine index，排序/过滤后暂停仍能定位正确任务
+        name_item.setData(Qt.ItemDataRole.UserRole + 1, int(index))
         self.table.setItem(index, 0, name_item)
         prog = QProgressBar()
         prog.setRange(0, 0)
@@ -1145,16 +1202,26 @@ class MainWindow(QMainWindow):
 
     # --------------------------------------------------------- G02-3 单仓库暂停
     def pause_selected(self):
-        """暂停进度表中选中的行（仅取消该 worker，其余继续）。"""
+        """暂停进度表中选中的行（仅取消该 worker，其余继续）。
+
+        G21-1：行号只是视觉位置（排序/过滤后与 engine index 脱钩），
+        必须从行数据读回真实 index 再暂停。
+        """
         rows = sorted({i.row() for i in self.table.selectedIndexes()})
         if not rows:
             return
+        paused = 0
         for r in rows:
-            if hasattr(self, "engine") and self.engine is not None:
-                self.engine.pause_task(r)
+            it = self.table.item(r, 0)
+            idx = it.data(Qt.ItemDataRole.UserRole + 1) if it is not None else None
+            if idx is None:
+                idx = r  # 兼容：无标记行退化为旧行为
+            if (hasattr(self, "engine") and self.engine is not None
+                    and self.engine.pause_task(int(idx))):
+                paused += 1
         self._emit_log(_fmt_dt(), LogLevel.WARN,
-                       f"已请求暂停 {len(rows)} 个任务（其余继续）…")
-        self.statusBar().showMessage(f"正在暂停 {len(rows)} 个任务…")
+                       f"已请求暂停 {paused} 个任务（其余继续）…")
+        self.statusBar().showMessage(f"正在暂停 {paused} 个任务…")
 
     @pyqtSlot(int, str)
     def _on_worker_progress(self, index, percent):
@@ -1204,6 +1271,15 @@ class MainWindow(QMainWindow):
             SyncStatus.RUNNING: (PALETTE["accent"], "更新中"),
         }
         color, label = status_map.get(res.status, (PALETTE["text"], str(res.status.value)))
+        # G22-4：托盘计数（成功/失败分流；冲突/失败归 bad，其余终态归 ok）
+        try:
+            if getattr(self, "tray", None) is not None:
+                if res.status in (SyncStatus.FAILED, SyncStatus.CONFLICT):
+                    self.tray.update_counts(bad_delta=1)
+                else:
+                    self.tray.update_counts(ok_delta=1)
+        except Exception:
+            pass
         st = self.table.item(index, 2)
         st.setText(label)
         st.setForeground(QColor(color))
@@ -1255,6 +1331,11 @@ class MainWindow(QMainWindow):
                     fail += 1
         self.busy = False
         self._reset_buttons()
+        try:
+            if getattr(self, "tray", None) is not None:
+                self.tray.update_counts(reset=True)  # 空闲态 tooltip（G22-4）
+        except Exception:
+            pass
         self.statusBar().showMessage(
             f"完成：成功 {ok} · 冲突 {conflict} · 失败 {fail}")
         completed = f"成功 {ok} · 冲突 {conflict} · 失败 {fail}"
@@ -1398,8 +1479,16 @@ class MainWindow(QMainWindow):
             if ret != QMessageBox.StandardButton.Yes:
                 e.ignore()
                 return
-            if hasattr(self, "engine") and self.engine is not None:
-                self.engine.cancel_all()
+        if hasattr(self, "engine") and self.engine is not None:
+            # G22-1：先取消并等待在跑 worker 收敛（≤8s），杜绝硬杀 git 子进程
+            # 与 progress.json 半描述态；超时则记日志后按原语义退出
+            try:
+                ok = self.engine.drain(8000)
+                if not ok:
+                    self._emit_log(_fmt_dt(), LogLevel.WARN,
+                                   "仍有任务未在 8s 内收敛，将强制退出。")
+            except Exception:
+                pass
         self._close_requested = True
         # flush 剩余节流日志，避免关窗瞬间最后若干行（如"全部任务结束"）丢失
         try:

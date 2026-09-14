@@ -1,10 +1,9 @@
-# -*- coding: utf-8 -*-
 """仓库管理表模型：数据与视图解耦，支持大批量行的高性能展示与过滤。"""
 from __future__ import annotations
 
 import datetime
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Optional
 
 from PyQt6.QtCore import QAbstractItemModel, QEvent, QModelIndex, QRect, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -43,17 +42,17 @@ class ManageModel(QAbstractItemModel):
     rowsChanged = pyqtSignal()
     visChanged = pyqtSignal()
 
-    def __init__(self, rows: Optional[List[dict]] = None, parent=None):
+    def __init__(self, rows: Optional[list[dict]] = None, parent=None):
         super().__init__(parent)
-        self._rows: List[ManageRow] = []
-        self._vis: List[bool] = []
+        self._rows: list[ManageRow] = []
+        self._vis: list[bool] = []
         if rows:
             self.set_rows(rows)
         else:
             self._sync_vis()
 
     # ------------------------------------------------------------ 数据接入
-    def set_rows(self, rows: List[dict]):
+    def set_rows(self, rows: list[dict]):
         """从 db.list_repos() 的行列表重建。"""
         self.beginResetModel()
         self._rows = []
@@ -112,7 +111,7 @@ class ManageModel(QAbstractItemModel):
         self.visChanged.emit()
         return visible
 
-    def remove_rows_at(self, indexes: List[int]) -> int:
+    def remove_rows_at(self, indexes: list[int]) -> int:
         """删除指定行（倒序），返回删除数量。"""
         idxs = sorted(set(indexes), reverse=True)
         for i in idxs:

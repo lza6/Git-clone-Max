@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """统一 Git URL 解析器：多平台直克隆 + 作者__仓库 命名。
 
 设计目标（对应 计划书/下一步改进指南.md G01-1/G01-2/G01-6）：
@@ -12,7 +11,6 @@
 from __future__ import annotations
 
 import re
-from typing import List, Tuple
 from urllib.parse import urlparse
 
 from ..models import RepoSpec
@@ -283,14 +281,14 @@ def parse_repo_url(raw: str) -> RepoSpec | None:
                     folder_name=f"{owner}__{repo}")
 
 
-def parse_urls(text: str) -> Tuple[List[RepoSpec], List[str]]:
+def parse_urls(text: str) -> tuple[list[RepoSpec], list[str]]:
     """批量解析多行文本（每行一个地址）。
 
     返回 (有效规格列表, 无效行列表)。空行与纯空白行不算无效。
     多平台直克隆：任何 KNOWN_HOSTS 平台都算有效。
     """
-    valid: List[RepoSpec] = []
-    invalid: List[str] = []
+    valid: list[RepoSpec] = []
+    invalid: list[str] = []
     for raw in (text or "").splitlines():
         if not raw.strip():
             continue

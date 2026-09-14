@@ -1,11 +1,10 @@
-# -*- coding: utf-8 -*-
 """本地仓库导入对话框：扫描目标目录，勾选要纳入管理的已有 git 仓库。"""
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -41,12 +40,12 @@ class LocalReposDialog(QDialog):
         self.setMinimumSize(720, 420)
         self._db = db
         self._max_depth = max_depth
-        self._rows: List[RepoInfo] = []
-        self._filtered: List[RepoInfo] = []
-        self._selected: List[RepoInfo] = []
+        self._rows: list[RepoInfo] = []
+        self._filtered: list[RepoInfo] = []
+        self._selected: list[RepoInfo] = []
         self._worker: Optional[ScanWorker] = None
 
-        self._roots: List[Path] = []
+        self._roots: list[Path] = []
         if root_paths:
             self._roots = [Path(p) for p in root_paths if Path(p).is_dir()]
 
@@ -126,7 +125,7 @@ class LocalReposDialog(QDialog):
         self._worker.failed.connect(self._on_scan_failed)
         self._worker.start()
 
-    def _on_scan_done(self, result: List[RepoInfo]):
+    def _on_scan_done(self, result: list[RepoInfo]):
         self._rows = result
         self._set_scanning(False)
         self._render()
@@ -172,7 +171,7 @@ class LocalReposDialog(QDialog):
             self.table.setItem(i, 3, QTableWidgetItem(info.path))
         self.table.setUpdatesEnabled(True)
 
-    def _checked(self) -> List[RepoInfo]:
+    def _checked(self) -> list[RepoInfo]:
         sel = []
         for i, info in enumerate(self._filtered):
             w = self.table.cellWidget(i, 0)
@@ -210,7 +209,7 @@ class LocalReposDialog(QDialog):
         self.accept()
 
     @property
-    def selected(self) -> List[RepoInfo]:
+    def selected(self) -> list[RepoInfo]:
         return self._selected
 
     def import_selected(self) -> int:

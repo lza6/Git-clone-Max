@@ -39,7 +39,9 @@ if ($LASTEXITCODE -ne 0) {
     if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 依赖安装失败" -ForegroundColor Red; Read-Host; exit 1 }
 }
 
-# 5) 启动
+# 5) 启动（G21-4：退出码透传，不额外 spawn 校验进程）
 Write-Host "[INFO] 启动 Git-clone-Max ..." -ForegroundColor Green
 & $venvPy -m gcm
-Read-Host "按回车退出"
+$exitCode = $LASTEXITCODE
+Write-Host "[INFO] 应用已退出，退出码 $exitCode" -ForegroundColor Green
+exit $exitCode

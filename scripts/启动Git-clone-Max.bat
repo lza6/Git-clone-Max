@@ -65,9 +65,11 @@ if errorlevel 1 (
 )
 
 rem ============================================================
-rem 5) 启动应用
+rem 5) 启动应用（G21-4：退出码透传，不额外 spawn 校验进程）
 rem ============================================================
 echo [INFO] 正在启动 Git-clone-Max ...
 cd /d "%ROOT_DIR%"
 "%VENV_PY%" -m gcm
-pause
+set "EXIT_CODE=%ERRORLEVEL%"
+echo [INFO] 应用已退出，退出码 %EXIT_CODE%
+exit /b %EXIT_CODE%

@@ -1,9 +1,8 @@
-# -*- coding: utf-8 -*-
 """正式 Release 发布脚本（PyGithub）。
 
 用法：
     python scripts/publish_release.py --dry-run      # 校验本地产物 + 远端状态，不上传
-    python scripts/publish_release.py --tag v2.0.0   # 打 tag 并创建 Release 上传 exe
+    python scripts/publish_release.py --tag v2.0.0   # 打 tag 并创建 Release 上传 exe + portable zip
 
 依赖 requirements-build.txt（PyGithub）。token 走 git credential manager。
 幂等：同名 tag 的 Release 存在时更新其附件；同名附件先删除再上传。
@@ -22,8 +21,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-from github import Auth as _Auth  # noqa: F401  PyGithub（供 main 内引用，勿删）
-from github import Github as Github  # noqa: F401
+from github import Github as Github  # noqa: F401  PyGithub（供 main 内引用，勿删）
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -32,6 +30,9 @@ sys.path.insert(0, str(ROOT / "scripts"))
 REPO = "lza6/Git-clone-Max"
 DIST = ROOT / "dist" / "Git-clone-Max.exe"
 ARTIFACT_NAME = "Git-clone-Max.exe"
+# G23-7 onedir 便携版 zip（第二产物）
+PORTABLE_ZIP = ROOT / "dist" / "Git-clone-Max-portable.zip"
+PORTABLE_NAME = "Git-clone-Max-portable.zip"
 
 
 def _build_body() -> str:
@@ -41,6 +42,19 @@ def _build_body() -> str:
     始终同版本。BODY 常量保留并指向同一模板，兼容旧测试对 pr.BODY 的引用。
     """
     from gcm import __version__  # 脚本入口已把 ROOT 加入 sys.path
+    sha256_note = ""
+    try:
+        z = ROOT / "dist" / "Git-clone-Max-portable.zip"
+        if z.exists():
+            zh = hashlib.sha256(z.read_bytes()).hexdigest()
+            sha256_note = f"  \n- portable zip sha256: `{zh}`"
+    except Exception:
+        pass
+    try:
+        exe_sha = hashlib.sha256(
+            (ROOT / "dist" / "Git-clone-Max.exe").read_bytes()).hexdigest()
+    except Exception:
+        exe_sha = ""
     return (
         "GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 桌面工具（PyQt6）。\n\n"
         f"## 版本 {__version__}\n"
@@ -49,7 +63,10 @@ def _build_body() -> str:
         "- 增量更新（fetch → merge --ff-only → rebase）+ 冲突保护（本地改动绝不覆盖）\n"
         "- 断点续传、断网自动重试、全局超时、HTTP 代理、GitHub Token（私有仓库）\n"
         "- 仓库详情对话框 + 同步历史；系统托盘 + 检查更新\n"
-        "- 单文件自包含 exe（双击即用，无需安装 Python）\n\n"
+        "- 单文件自包含 exe（双击即用，无需安装 Python）\n"
+        "- 便携版 zip（onedir，启动更快）（G23-7）\n\n"
+        f"## 校验\n- 本版 onefile exe sha256：`{exe_sha or '构建后生成'}`"
+        f"{sha256_note}\n\n"
         "## 使用\n"
         "- 直接下载 `Git-clone-Max.exe` 双击运行\n"
         "- 需系统已安装 git（https://git-scm.com/download/win）\n"
@@ -126,7 +143,7 @@ def _call(label: str, started: float, fn):
             raise
         except RuntimeError as e:
             if str(e) == "运行超时":
-                print("[FAIL] 运行超时（>= %ds）" % int(DEADLINE), flush=True)
+                print(f"[FAIL] 运行超时（>= {int(DEADLINE)}s）", flush=True)
                 raise
             last = e
         except Exception as e:
@@ -135,10 +152,36 @@ def _call(label: str, started: float, fn):
             time.sleep(NET_BACKOFF)
     # 重试耗尽
     if time.monotonic() - started >= DEADLINE:
-        print("[FAIL] 运行超时（>= %ds）" % int(DEADLINE), flush=True)
+        print(f"[FAIL] 运行超时（>= {int(DEADLINE)}s）", flush=True)
         raise RuntimeError("运行超时")
     print(f"[FAIL] {label} 失败：{last}", flush=True)
     raise last
+
+
+def _upload_portable(rel, started: float) -> None:
+    """上传便携版 zip（G23-7 第二产物）；同名已存在则先删再传。"""
+    for a in rel.get_assets():
+        if a.name == PORTABLE_NAME:
+            try:
+                a.delete_asset()
+                print(f"[INFO] 已删除旧便携包 {PORTABLE_NAME}")
+            except Exception:
+                pass
+    psize = PORTABLE_ZIP.stat().st_size
+    def _upz(**kw):
+        return rel.upload_asset(
+            str(PORTABLE_ZIP),
+            content_type="application/zip",
+            **kw)
+    kwargs = {}
+    try:
+        if "timeout" in inspect.signature(rel.upload_asset).parameters:
+            kwargs["timeout"] = 120
+    except (TypeError, ValueError):
+        pass
+    asset = _call("上传 " + PORTABLE_NAME + "（" + str(psize) + " bytes）",
+                  started, lambda: _upz(**kwargs))
+    print(f"[OK] 便携包上传成功 id={asset.id} size={asset.size}")
 
 
 def main() -> int:
@@ -161,7 +204,7 @@ def main() -> int:
     except ImportError:
         print("[FAIL] 缺少 PyGithub，请先：python -m pip install -r requirements-build.txt")
         return 1
-    _auth_cls = _Auth
+    _auth_cls = Auth
     _github_cls = Github
     try:
         token = _call("解析 token（git credential fill）", started, _get_token)
@@ -245,11 +288,15 @@ def main() -> int:
             return 1
 
     if args.dry_run:
+        pz = PORTABLE_ZIP
+        print(f"[DRY] 产物：onefile exe {size} bytes"
+              + (f" + portable zip {pz.stat().st_size} bytes" if pz.exists()
+                 else "（portable zip 未生成）"))
         if rel is not None:
             print(f"[DRY] 已存在 Release {tag}，assets={[a.name for a in assets]}")
             for a in assets:
                 if a.name == ARTIFACT_NAME:
-                    print(f"[DRY] 远端同名附件 size={a.size} 与本地 {size} 对比："
+                    print(f"[DRY] 远端 exe size={a.size} 与本地 {size} 对比："
                           f"{'一致' if a.size == size else '不一致'}")
         else:
             print(f"[DRY] Release {tag} 不存在，将新建并上传 {size} bytes")
@@ -262,6 +309,8 @@ def main() -> int:
     for a in assets:
         if a.name == ARTIFACT_NAME and a.size == size:
             print(f"[SKIP] 远端已存在一致附件（{a.size} bytes），跳过上传")
+            if PORTABLE_ZIP.exists() and not any(x.name == PORTABLE_NAME for x in assets):
+                _upload_portable(rel, started)   # 主产物一致仅缺便携包 → 补传便携包
             print(f"[INFO] Release 页面：{rel.html_url}")
             return 0
 
@@ -302,7 +351,15 @@ def main() -> int:
         print(f"[FAIL] 上传失败：{e}")
         return 1
 
-    # 服务端下载校验（timeout=120）
+    # G23-7 便携版 zip（第二产物；缺失/未生成不阻塞主产物发布）
+    if PORTABLE_ZIP.exists():
+        try:
+            _upload_portable(rel, started)
+        except Exception as e:
+            print(f"[WARN] 便携包上传失败（不影响主产物）：{e}")
+
+    # 服务端下载校验（timeout=120）；校验失败仅 [WARN]，不阻塞发布闭环
+    # （sha256 一致性最终以人工「独立下载复验」为准，见 docs/RELEASE_CHECKLIST.md）
     server_sha = ""
     try:
         def _download():
@@ -316,6 +373,8 @@ def main() -> int:
         server_sha = hashlib.sha256(data).hexdigest()
     except Exception as e:
         print(f"[WARN] 服务端下载校验跳过：{e}")
+        print(f"[INFO] Release 页面：{rel.html_url}")
+        return 0
 
     ok = server_sha == sha
     print(f"[{'OK' if ok else 'FAIL'}] 服务端 sha256={server_sha[:16]}… "

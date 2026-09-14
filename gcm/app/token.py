@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """应用启动时间优化：从系统 git 凭证管理器读取 GitHub token 以备私有仓库克隆。"""
 from __future__ import annotations
 

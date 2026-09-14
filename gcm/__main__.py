@@ -1,10 +1,10 @@
-# -*- coding: utf-8 -*-
 """应用入口：数据目录解析 + 主窗口启动。"""
 from __future__ import annotations
 
 import os
 import sys
 from pathlib import Path
+
 
 def get_data_dir() -> Path:
     """数据目录：默认与可执行文件同级；可通过 GCM_DATA_DIR 覆盖。"""
@@ -23,8 +23,8 @@ def get_data_dir() -> Path:
 
 
 def main() -> int:
-    from PyQt6.QtWidgets import QApplication
     from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import QApplication
 
     data_dir = get_data_dir()
     # G06-2 single-instance：第二个实例被拦截并聚焦首个窗口

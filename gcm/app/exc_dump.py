@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """G06-3 全局异常兜底：sys.excepthook 捕获 + Qt 消息拦截 → data/error.log。
 
 - 未捕获异常：写 traceback + 环境信息到 data/error.log，不白屏静默。
@@ -7,7 +6,6 @@
 """
 from __future__ import annotations
 
-import os
 import sys
 import time
 import traceback

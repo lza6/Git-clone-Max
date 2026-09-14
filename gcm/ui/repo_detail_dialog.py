@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """仓库详情对话框：展示仓库元信息与同步历史。"""
 from __future__ import annotations
 
@@ -88,7 +87,6 @@ class RepoDetailDialog(QDialog):
         """G03-8 统计区：同步次数/成功/失败/冲突/取消/平均耗时（来自 db.stats_for_repo）。"""
         stats = {}
         try:
-            from ..db.repo_db import Database
             rid = int(self.repo.get("id") or 0)
             if rid and isinstance(self.parent(), object) and hasattr(self.parent(), "db"):
                 stats = self.parent().db.stats_for_repo(rid) or {}

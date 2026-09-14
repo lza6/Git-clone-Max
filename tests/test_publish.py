@@ -111,14 +111,19 @@ class PublishTestCase(unittest.TestCase):
 
         self._patchers = [
             mock.patch.object(pr, "_get_token", return_value="t" * 40),
-            mock.patch.object(pr, "urllib", mock.MagicMock()),
-            mock.patch.object(pr, "hashlib", mock.MagicMock()),
+            # urllib 保持真实模块：服务端下载校验读 asset.browser_download_url
+            # （example.com 替身 URL），真实 urlopen 失败仅 [WARN] 跳过不影响断言。
+            # hashlib 保持真实模块：BODY 模板现在用 hashlib 计算产物 sha256
+            # （G28-4 校验行），mock 掉会让期望 message 与实际不一致。
         ]
         for p in self._patchers:
             p.start()
         self.addCleanup(self._stop)
 
         pr.DIST = self.dist  # 脚本常量，测试内赋值真实 Path
+        # G23-7 便携包常量：测试内赋值临时路径且不生成 zip（隔离主产物断言）
+        self.portable = self.tmp / pr.PORTABLE_NAME
+        pr.PORTABLE_ZIP = self.portable
 
     def _restore_github(self):
         if self._shadow_saved is not None:

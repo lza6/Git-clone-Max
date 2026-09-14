@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """本地 git 仓库扫描：发现目标目录下所有已有 git 仓库，纳入统一管理。
 
 解决『用户以前就有 git 仓库，也想用本软件统一更新』的场景：
@@ -10,9 +9,8 @@ from __future__ import annotations
 import os
 import re
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
 
 from ..models import RepoSpec
 
@@ -80,11 +78,7 @@ def remote_is_local(url: str) -> bool:
     if "\\" in url:                     # Windows 反斜杠路径
         return True
     # 无协议：判断是否本地路径（含盘符 C:/ 或根路径 /x/y）
-    if re.match(r"^[A-Za-z]:[/\\]", url):
-        return True
-    if url.startswith("/"):
-        return True
-    return False
+    return re.match(r"^[A-Za-z]:[/\\]", url) is not None or url.startswith("/")
 
 
 def parse_remote_url(url: str) -> tuple:
@@ -98,7 +92,7 @@ def parse_remote_url(url: str) -> tuple:
     if not url or remote_is_local(url):
         return ("", "", "", "")
     # 复用通用解析器（多平台 HTTPS/SSH/子组）；GitHub 走旧 parse_repo_url 保持 folder 语义
-    from ..app.url_lib import parse_any_repo_url, parse_repo_url, host_of
+    from ..app.url_lib import host_of, parse_any_repo_url, parse_repo_url
     spec = parse_any_repo_url(url)
     if spec is not None:
         host = host_of(url) or "github.com"
@@ -150,7 +144,7 @@ def _make_info(root: Path, dirpath: Path, depth: int) -> RepoInfo:
     )
 
 
-def scan_git_dirs(root: str | Path, max_depth: int = 2) -> List[RepoInfo]:
+def scan_git_dirs(root: str | Path, max_depth: int = 2) -> list[RepoInfo]:
     """扫描根目录下所有含 .git 的仓库目录（最多下钻 max_depth 层）。
 
     - 不深入 .git / 依赖目录等内部
@@ -160,7 +154,7 @@ def scan_git_dirs(root: str | Path, max_depth: int = 2) -> List[RepoInfo]:
     root = Path(root)
     if not root.is_dir():
         return []
-    results: List[RepoInfo] = []
+    results: list[RepoInfo] = []
     for dirpath, dirnames, _ in os.walk(root):
         depth = len(Path(dirpath).relative_to(root).parts)
         # .git 单独处理；其余隐藏目录（.venv/.idea 等）跳过
@@ -177,7 +171,7 @@ def scan_git_dirs(root: str | Path, max_depth: int = 2) -> List[RepoInfo]:
     return results
 
 
-def filter_new(existing: List[RepoInfo], known_keys: set) -> List[RepoInfo]:
+def filter_new(existing: list[RepoInfo], known_keys: set) -> list[RepoInfo]:
     """剔除已入库的仓库，只保留新的。known_keys 为已知 (host/owner/repo 或 path:xxx)。"""
     return [i for i in existing if i.key not in known_keys]
 

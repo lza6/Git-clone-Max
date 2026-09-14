@@ -1,3 +1,5 @@
+# See https://docs.github.com/en/actions
+
 name: CI
 
 on:
@@ -9,28 +11,69 @@ on:
 jobs:
   test:
     runs-on: windows-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install PyQt6 coverage
+          python -m pip install -r requirements-build.txt
+
+      - name: Setup git identity
+        run: |
+          git config --system user.email "ci@example.com"
+          git config --system user.name "CI"
+      - shell: pwsh
+        run: |
+          git config --system core.autocrlf true
 
       - name: Run tests (offscreen)
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: |
-          $env:QT_QPA_PLATFORM = 'offscreen'
-          python -m unittest discover -s tests
-        shell: pwsh
-
-      - name: Coverage
-        run: |
-          pip install coverage
           python -m coverage run --source=gcm -m unittest discover -s tests
-          python -m coverage report
+
+      # G29-1 覆盖率门禁：不达标 CI 变红。过渡期 82%，冲刺 85%。
+      - name: Coverage gate
+        run: |
+          python -m coverage report --fail-under=82
+
+      # G29-2 ruff 静态检查：零 error
+      - name: Install ruff
+        run: |
+          python -m pip install ruff
+      - name: Lint (ruff)
+        run: |
+          ruff check gcm --output-format=github
+
+      # G29-6 模块级覆盖率表格输出到 job summary
+      - name: Coverage summary
+        env:
+          QT_QPA_PLATFORM: offscreen
         shell: pwsh
+        run: |
+          python -m coverage json > $null
+          @"
+          import json
+          with open("coverage.json", encoding="utf-8") as f:
+              data = json.load(f)
+          total = data["totals"]["percent_covered"]
+          lines = ["### 模块级覆盖率", "", "| 模块 | 覆盖率 |", "|------|--------|"]
+          for name, meta in sorted(data["files"].items()):
+              lines.append(f"| {name} | {meta['summary']['percent_covered']:.1f}% |")
+          lines.append(f"| **TOTAL** | **{total:.1f}%** |")
+          with open(Path.home() / ".workflow_summary.md", "w", encoding="utf-8") as f:
+              f.write("\n".join(lines))
+          "@ | python -
+
+      - name: Upload summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: workflow-summary
+          path: .workflow_summary.md

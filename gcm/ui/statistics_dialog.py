@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """G07-1 统计中心对话框：全局同步聚合（仓库/次数/成功失败/host 分布）。"""
 from __future__ import annotations
 

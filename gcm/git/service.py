@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """git 核心服务：clone / fetch 增量更新 / 断点续传 / 冲突检测。"""
 
 from __future__ import annotations
@@ -8,9 +7,10 @@ import re
 import shutil
 import subprocess
 import time
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, Optional, Tuple
+from typing import Optional
 
 from ..models import RepoSpec, StreamChunk, SyncAction, SyncResult, SyncStatus
 
@@ -32,11 +32,11 @@ if os.name == "nt":
 class _Backoff:
     """重试退避调度：dirty 非零时导致立即成功，见 run_git_ui 说明。"""
 
-    delays: Tuple[float, ...] = (1.0, 3.0, 8.0)
+    delays: tuple[float, ...] = (1.0, 3.0, 8.0)
     max_attempts: int = 3
 
 
-def _retry_delays(retries: int) -> Tuple[float, ...]:
+def _retry_delays(retries: int) -> tuple[float, ...]:
     """按配置的重试次数生成退避间隔。retries=2 → (1.0, 3.0)。"""
     base = (1.0, 3.0, 8.0)
     return base[:max(0, retries)]
@@ -60,7 +60,7 @@ def _is_dirty(git_dir: str) -> bool:
         return True
 
 
-def _divergence_info(git_dir: str) -> Tuple[int, int]:
+def _divergence_info(git_dir: str) -> tuple[int, int]:
     """返回本地与上游的分叉信息 (ahead, behind)。
 
     ahead  = 本地领先上游的提交数（@{upstream}..HEAD）
@@ -82,7 +82,7 @@ def _divergence_info(git_dir: str) -> Tuple[int, int]:
     return _count("@{upstream}..HEAD"), _count("HEAD..@{upstream}")
 
 
-def _detect_conflict(git_dir: str) -> Tuple[bool, str]:
+def _detect_conflict(git_dir: str) -> tuple[bool, str]:
     """检测本地是否已有会阻止 fast-forward 的改动。
 
     语义：**仅检测本地工作树/已提交的「脏」状态**；本地领先远端（ahead>0）能否
@@ -210,12 +210,12 @@ def _kill_tree(proc: subprocess.Popen) -> None:
         pass
 
 
-def run_git_ui(cmd: List[str], cwd: str, on_line: LineCallback,
-               env: Optional[Dict[str, str]] = None,
+def run_git_ui(cmd: Iterable[str], cwd: str, on_line: LineCallback,
+               env: Optional[dict[str, str]] = None,
                label: str = "git", cancelled: Callable[[], bool] = lambda: False,
                timeout: float | None = None,
-               retries: int = 0, backoff: Tuple[float, ...] = (1.0, 3.0, 8.0),
-               progress_detail: Optional[Callable[[str], None]] = None) -> Tuple[int, str]:
+               retries: int = 0, backoff: tuple[float, ...] = (1.0, 3.0, 8.0),
+               progress_detail: Optional[Callable[[str], None]] = None) -> tuple[int, str]:
     """运行 git 命令并实时转发输出，带超时与整树终止。
 
     返回 (returncode, 最后进度)。`retries` > 0 时，网络类失败自动重试。
@@ -236,7 +236,7 @@ def run_git_ui(cmd: List[str], cwd: str, on_line: LineCallback,
             creationflags=_CREATE_FLAGS, env=env,
         )
         start = time.time()
-        log: List[str] = []
+        log: list[str] = []
         timed_out = False
         cancelled_flag = False
 
@@ -324,8 +324,13 @@ def run_git_ui(cmd: List[str], cwd: str, on_line: LineCallback,
 
         if timed_out:
             if attempts < max_attempts - 1 and not cancelled():
-                on_line(StreamChunk(index=0, text="操作超时，自动重试…", level="warn"))
-                time.sleep(backoff[attempts] if attempts < len(backoff) else backoff[-1])
+                delay = backoff[attempts] if attempts < len(backoff) else backoff[-1]
+                # G22-7：重试文案含剩余等待秒数与原因（用户可感知重试节奏）
+                on_line(StreamChunk(
+                    index=0,
+                    text=f"操作超时，{delay:.0f}s 后自动重试（{attempts + 1}/{max_attempts - 1}）…",
+                    level="warn"))
+                time.sleep(delay)
                 attempts += 1
                 continue
             break
@@ -336,7 +341,8 @@ def run_git_ui(cmd: List[str], cwd: str, on_line: LineCallback,
                 delay = backoff[attempts] if attempts < len(backoff) else backoff[-1]
                 on_line(StreamChunk(
                     index=0,
-                    text=f"网络抖动，{delay:.0f}s 后自动重试（{attempts + 1}/{max_attempts - 1}）…",
+                    text=f"网络抖动（原因：{tail.splitlines()[-1].strip() if tail else '未知'}），"
+                         f"{delay:.0f}s 后自动重试（{attempts + 1}/{max_attempts - 1}）…",
                     level="warn",
                 ))
                 time.sleep(delay)
@@ -352,7 +358,7 @@ class GitService:
     def __init__(self, root_dir: str | Path, on_line: Optional[LineCallback] = None,
                  cancelled: Optional[Callable[[], bool]] = None,
                  fetch_timeout: float = 300, clone_timeout: float = 600,
-                 retries: int = 0, backoff: Tuple[float, ...] = (1.0, 3.0, 8.0),
+                 retries: int = 0, backoff: tuple[float, ...] = (1.0, 3.0, 8.0),
                  proxy: str = "", fetch_depth: int = 0, unshallow: bool = False,
                  token: str = "", submodule: bool = False, rate_limit_kbps: int = 0):
         self.root = Path(root_dir)
@@ -370,7 +376,7 @@ class GitService:
         self._submodule = bool(submodule)             # G08-1 True 时 clone 带子模块
         self.rate_limit_kbps = max(0, int(rate_limit_kbps or 0))  # G04-4 限速
 
-    def _env(self, extra: Optional[Dict[str, str]] = None) -> Optional[Dict[str, str]]:
+    def _env(self, extra: Optional[dict[str, str]] = None) -> Optional[dict[str, str]]:
         """构造 subprocess 环境。
 
         - 未设代理且无 token 时返回 None（调用方透传 None 即继承当前进程环境）。
@@ -447,7 +453,9 @@ class GitService:
             return False
 
     def _emit(self, text: str, level: str = "info"):
-        self.on_line(StreamChunk(index=0, text=text, level=level))
+        # G28-1：出口统一打码，token/授权头不会进入 UI 或日志
+        from ..util.redact import redact
+        self.on_line(StreamChunk(index=0, text=redact(text), level=level))
 
     def _local_branch(self, repo_dir: Path) -> str:
         try:
@@ -479,7 +487,6 @@ class GitService:
         repo_dir = self._repo_dir(spec)
         res.path = str(repo_dir)
         res.started = time.time()
-        t0 = time.time()
         # F1 安全加固：按 spec 的 host 记录，供 _env 决定是否注入 token
         try:
             from ..app.url_lib import host_of
@@ -570,7 +577,8 @@ class GitService:
             # 显著减少传输量提升弱网成功率；成功则继续，失败则按原逻辑报错。
             tail0 = "\n".join(self._last_clone_tail[-8:])
             if _is_networkish_error(tail0):
-                self._emit(f"{spec.display} 常规克隆失败，尝试 treeless 部分克隆（弱网降级）…", "warn")
+                self._emit(f"{spec.display} 常规克隆失败，尝试 treeless 部分克隆"
+                           "（弱网降级）…", "warn")
                 self._safe_rmtree_partial(repo_dir)
                 treeless_cmd = ["git", "clone", "--progress", "--filter=blob:none"]
                 if getattr(spec, "ref", ""):
@@ -641,7 +649,8 @@ class GitService:
             progress_detail=getattr(self, "send_progress_detail", None),
         )
         # unshallow/带深度 fetch 失败（远端行为异常）时降级回普通 fetch，避免把仓库标红
-        if rc != 0 and (used_unshallow or "--depth=" in " ".join(fetch_cmd)) and not self.cancelled():
+        if (rc != 0 and (used_unshallow or "--depth=" in " ".join(fetch_cmd))
+                and not self.cancelled()):
             self._emit(f"{spec.display} 浅层 fetch 失败，降级为普通 fetch …", "warn")
             fetch_cmd = ["git", "fetch", "--progress", "--prune", "origin"]
             rc, _ = run_git_ui(

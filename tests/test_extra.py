@@ -112,11 +112,13 @@ class TestRepoDbExtra(unittest.TestCase):
         self.db.close()
 
     def test_load_progress_missing_and_corrupt(self):
+        # G22-2/G22-6：结构补齐 failed 键，旧文件无痛升级
+        expected = {"finished": [], "in_progress": {}, "failed": []}
         missing = load_progress(self.tmp / "nope.json")
-        self.assertEqual(missing, {"finished": [], "in_progress": {}})
+        self.assertEqual(missing, expected)
         bad = self.tmp / "bad.json"
         bad.write_text("{oops", encoding="utf-8")
-        self.assertEqual(load_progress(bad), {"finished": [], "in_progress": {}})
+        self.assertEqual(load_progress(bad), expected)
 
     def test_set_repo_head(self):
         spec = RepoSpec("o", "r", "https://github.com/o/r.git", folder_name="o__r")
