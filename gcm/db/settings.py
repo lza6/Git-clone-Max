@@ -128,7 +128,7 @@ def _mask_token(plain: str) -> str:
 class Settings:
     """应用级可持久化配置。"""
 
-    concurrency: int = 8              # 并行线程数 1..16
+    concurrency: int = 8              # 并行线程数 1..32
     shallow_default: bool = False     # 是否默认浅克隆
     depth: int = 1                    # 浅克隆深度
     auto_clear: bool = True           # 下载完成自动清空输入框

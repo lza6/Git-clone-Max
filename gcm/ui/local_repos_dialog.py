@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -84,6 +84,10 @@ class LocalReposDialog(QDialog):
         self.filter_edit.textChanged.connect(self._apply_filter)
         v.addWidget(self.filter_edit)
 
+        self.chk_only_new = QCheckBox("仅显示未入库")
+        self.chk_only_new.stateChanged.connect(self._apply_filter)
+        v.addWidget(self.chk_only_new)
+
         self.progress = QProgressBar()
         self.progress.setRange(0, 0)
         self.progress.setVisible(False)
@@ -98,8 +102,10 @@ class LocalReposDialog(QDialog):
         self.btn_select_all.clicked.connect(self._select_all)
         self.btn_select_none = QPushButton("全不选")
         self.btn_select_none.clicked.connect(self._select_none)
+        self.chk_overwrite = QCheckBox("覆盖已入库路径")
         btns.addButton(self.btn_select_all, QDialogButtonBox.ButtonRole.ActionRole)
         btns.addButton(self.btn_select_none, QDialogButtonBox.ButtonRole.ActionRole)
+        btns.addButton(self.chk_overwrite, QDialogButtonBox.ButtonRole.ActionRole)
         self._import_btn = btns.addButton("导入", QDialogButtonBox.ButtonRole.AcceptRole)
         self._import_btn.clicked.connect(self._on_import)
         btn_cancel = btns.addButton("取消", QDialogButtonBox.ButtonRole.RejectRole)
@@ -149,13 +155,24 @@ class LocalReposDialog(QDialog):
     def _render(self):
         self._apply_filter()
 
+    def _is_imported(self, info: RepoInfo) -> bool:
+        """判断仓库是否已入库；db 为 None 时一律按未入库处理。"""
+        if self._db is None:
+            return False
+        return self._db.get_repo(info.owner, info.repo, None) is not None
+
     def _apply_filter(self, *args):
         q = self.filter_edit.text().strip().lower()
         if q:
-            self._filtered = [i for i in self._rows if q in i.display.lower()
-                              or q in i.path.lower()]
+            # 用 UserRole 中的原显示名匹配（灰标追加的「（已入库）」后缀不参与过滤）
+            self._filtered = [
+                i for i in self._rows
+                if (q in i.display.lower() or q in i.path.lower())
+            ]
         else:
             self._filtered = list(self._rows)
+        if self.chk_only_new.isChecked():
+            self._filtered = [i for i in self._filtered if not self._is_imported(i)]
         self._rebuild_table()
 
     def _rebuild_table(self):
@@ -164,9 +181,16 @@ class LocalReposDialog(QDialog):
         self.table.setUpdatesEnabled(False)
         for i, info in enumerate(rows):
             chk = QCheckBox()
-            chk.setChecked(True)
+            imported = self._is_imported(info)
+            chk.setEnabled(not imported)
+            chk.setChecked(not imported)
             self.table.setCellWidget(i, 0, chk)
-            self.table.setItem(i, 1, QTableWidgetItem(info.display))
+            display = info.display
+            if imported:
+                display = f"{display}（已入库）"
+            item = QTableWidgetItem(display)
+            item.setData(Qt.ItemDataRole.UserRole, info.display)
+            self.table.setItem(i, 1, item)
             self.table.setItem(i, 2, QTableWidgetItem(info.remote_url or "（无远端）"))
             self.table.setItem(i, 3, QTableWidgetItem(info.path))
         self.table.setUpdatesEnabled(True)
@@ -213,11 +237,17 @@ class LocalReposDialog(QDialog):
         return self._selected
 
     def import_selected(self) -> int:
-        """把勾选的仓库写入 DB，返回导入数量。"""
+        """把勾选的仓库写入 DB，返回导入数量。
+
+        已入库仓库默认跳过（不覆盖原 local_path）；
+        勾选「覆盖已入库路径」后才重新 upsert。
+        """
         if not self._db or not self._selected:
             return 0
         n = 0
         for info in self._selected:
+            if self._is_imported(info) and not self.chk_overwrite.isChecked():
+                continue
             spec = to_spec(info)
             try:
                 self._db.upsert_repo(spec, info.path,

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sqlite3
 import threading
 import time
@@ -90,6 +91,8 @@ class Database:
             self._conn.executescript(_SCHEMA)
             _migrate(self._conn)
             self._conn.commit()
+        # G33-5：sync_history 容量治理计数器（每 100 次 add_sync_history 自动清理一次）
+        self._prune_counter = 0
 
     def close(self):
         with self._lock:
@@ -213,6 +216,35 @@ class Database:
                  ended_at or time.strftime("%Y-%m-%d %H:%M:%S")),
             )
             self._conn.commit()
+            # G33-5：插入后按计数器节奏触发容量清理
+            self._maybe_prune_history()
+
+    # ------------------------------------------------------------ G33-5 容量治理
+    def _maybe_prune_history(self, force: bool = False) -> int:
+        """sync_history 容量治理：每仓库保留最近 200 条 + 全局 90 天窗口。
+
+        调用节奏：计数器每次 +1，达到 100 的倍数或 force=True 时真正执行清理
+        （避免每次插入都跑全表窗口函数）。返回本次删除的行数。
+        时区注意：started_at 为本地时间文本，90 天窗口用
+        datetime('now','localtime','-90 days') 与之一致比较，避免 8 小时边界误删。
+        """
+        self._prune_counter += 1
+        if not (force or self._prune_counter % 100 == 0):
+            return 0
+        with self._lock:
+            cur = self._conn.execute(
+                """
+                DELETE FROM sync_history WHERE id NOT IN (
+                    SELECT id FROM (
+                        SELECT id, ROW_NUMBER() OVER (PARTITION BY repo_id ORDER BY id DESC) AS rn
+                        FROM sync_history
+                    ) WHERE rn <= 200
+                ) OR started_at < datetime('now', 'localtime', '-90 days')
+                """
+            )
+            self._conn.commit()
+            self._prune_counter = 0
+            return cur.rowcount
 
     # ------------------------------------------------------------------ 读
     def get_repo(self, owner: str, repo: str,
@@ -316,6 +348,26 @@ class Database:
     def count(self) -> int:
         with self._lock:
             return int(self._conn.execute("SELECT COUNT(*) AS c FROM repos").fetchone()["c"])
+
+    # ------------------------------------------------------------ G33-3 备份
+    def backup_to(self, dest: str | Path) -> int:
+        """备份数据库到 dest，返回备份时的仓库总数（self.count()）。
+
+        WAL 模式下直接拷贝主库会漏掉未检查点的数据：这里先在同连接执行
+        PRAGMA wal_checkpoint(TRUNCATE) 把 WAL 落盘并截断，commit 后再
+        shutil.copy2 拷贝主库文件，保证备份包含全部已提交数据。
+        checkpoint 会短暂阻塞其它写者，建议 UI 空闲时调用（内部已加锁门闩）。
+        """
+        dest = Path(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with self._lock:
+            try:
+                self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+            except Exception:
+                pass  # 非 WAL / 其它异常：跳过 checkpoint，主库文件本身完整可拷
+            self._conn.commit()
+            shutil.copy2(self.path, dest)
+            return self.count()
 
 
 # ---------------------------------------------------------------------------

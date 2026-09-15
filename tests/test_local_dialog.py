@@ -21,8 +21,9 @@ sys.path.insert(0, str(ROOT))
 
 from PyQt6.QtWidgets import QApplication, QCheckBox
 
-from gcm.app.scanner import RepoInfo
+from gcm.app.scanner import RepoInfo, _name_to_owner_repo, _remote_url
 from gcm.db.repo_db import Database
+from gcm.models import RepoSpec
 from gcm.ui.local_repos_dialog import LocalReposDialog
 from gcm.ui.scan_worker import ScanWorker, _dedupe
 
@@ -363,6 +364,151 @@ class TestLocalReposDialog(unittest.TestCase):
             self.assertEqual(db.count(), 0)
         finally:
             dlg2.close()
+            db.close()
+
+    # ------------------------------------------------------------ G33-1 已入库灰标 / 仅显示未入库
+    def test_rebuild_greys_out_imported_and_filters_original_display(self):
+        """已入库行：checkbox 禁用且未勾选、display 追加「（已入库）」；
+        过滤关键字按 UserRole 里的原显示名匹配。"""
+        # Arrange：真实 tmp DB 预插一条 o/r（host 随意，host=None 匹配任意 host）
+        db = Database(self.tmp / "t.db")
+        spec = RepoSpec(owner="o", repo="r", url_https="", display="o/r",
+                        folder_name="o__r", is_local=True, local_path="/x/o__r")
+        db.upsert_repo(spec, "/x/o__r", host="local", default_branch=None, head_sha=None)
+        infos = [
+            RepoInfo(folder_name="o__r", display="o/r", path="/x/o__r",
+                     remote_url="", owner="o", repo="r"),
+            RepoInfo(folder_name="plain", display="plain", path="/x/plain"),
+        ]
+        dlg = LocalReposDialog(parent=None, root_paths=[str(self.tmp)], db=db)
+        try:
+            dlg._rows = infos
+            dlg._apply_filter("")
+            # Assert：已入库行灰标
+            chk = dlg.table.cellWidget(0, 0)
+            self.assertIsInstance(chk, QCheckBox)
+            self.assertFalse(chk.isEnabled(), "已入库行 checkbox 应禁用")
+            self.assertFalse(chk.isChecked(), "已入库行不应默认勾选")
+            self.assertEqual(dlg.table.item(0, 1).text(), "o/r（已入库）")
+            # Assert：未入库行不受影响
+            self.assertTrue(dlg.table.cellWidget(1, 0).isEnabled())
+            self.assertTrue(dlg.table.cellWidget(1, 0).isChecked())
+            self.assertEqual(dlg.table.item(1, 1).text(), "plain")
+            # Assert：过滤关键字命中「o/r」（用 UserRole 原显示名，忽略「（已入库）」后缀）
+            dlg.filter_edit.setText("o/r")
+            self.assertEqual(dlg.table.rowCount(), 1)
+            self.assertEqual(dlg.table.item(0, 1).text(), "o/r（已入库）")
+            # Assert：过滤「已入库」三个字不命中任何行
+            dlg.filter_edit.setText("已入库")
+            self.assertEqual(dlg.table.rowCount(), 0)
+            # Assert：勾选 chk_only_new → 已入库行被剔除
+            dlg.chk_only_new.setChecked(True)
+            self.assertEqual(dlg.table.rowCount(), 0)
+        finally:
+            dlg.close()
+            db.close()
+
+    def test_chk_only_new_hides_imported_rows(self):
+        """勾选 chk_only_new → 剔除已入库行并重建表格（rowCount 减 1）。"""
+        # Arrange
+        db = Database(self.tmp / "t.db")
+        spec = RepoSpec(owner="o", repo="r", url_https="", display="o/r",
+                        folder_name="o__r", is_local=True, local_path="/x/o__r")
+        db.upsert_repo(spec, "/x/o__r", host="local", default_branch=None, head_sha=None)
+        infos = [
+            RepoInfo(folder_name="o__r", display="o/r", path="/x/o__r",
+                     remote_url="", owner="o", repo="r"),
+            RepoInfo(folder_name="plain", display="plain", path="/x/plain"),
+        ]
+        dlg = LocalReposDialog(parent=None, root_paths=[str(self.tmp)], db=db)
+        try:
+            dlg._rows = infos
+            dlg._apply_filter("")
+            self.assertEqual(dlg.table.rowCount(), 2)
+            # Act：勾选「仅显示未入库」
+            dlg.chk_only_new.setChecked(True)
+            # Assert：已入库行被剔除
+            self.assertEqual(dlg.table.rowCount(), 1)
+            self.assertEqual(dlg.table.item(0, 1).text(), "plain")
+            # Act：取消勾选 → 恢复显示
+            dlg.chk_only_new.setChecked(False)
+            self.assertEqual(dlg.table.rowCount(), 2)
+        finally:
+            dlg.close()
+            db.close()
+
+    def test_no_db_never_greys_out(self):
+        """db 为 None 时全部按未入库处理：不灰标、不过滤、_is_imported 全 False。"""
+        # Arrange
+        infos = [
+            RepoInfo(folder_name="o__r", display="o/r", path="/x/o__r",
+                     remote_url="", owner="o", repo="r"),
+            RepoInfo(folder_name="plain", display="plain", path="/x/plain"),
+        ]
+        dlg = LocalReposDialog(parent=None, root_paths=[str(self.tmp)], db=None)
+        try:
+            dlg._rows = infos
+            dlg._apply_filter("")
+            # Assert：无 DB 不灰标
+            self.assertTrue(dlg.table.cellWidget(0, 0).isEnabled())
+            self.assertTrue(dlg.table.cellWidget(0, 0).isChecked())
+            self.assertEqual(dlg.table.item(0, 1).text(), "o/r")
+            # Assert：无 DB 时 _is_imported 恒为 False
+            self.assertFalse(dlg._is_imported(infos[0]))
+            self.assertFalse(dlg._is_imported(infos[1]))
+            # Assert：chk_only_new 勾选不过滤（全未入库 → 无剔除）
+            dlg.chk_only_new.setChecked(True)
+            self.assertEqual(dlg.table.rowCount(), 2)
+        finally:
+            dlg.close()
+
+    # ------------------------------------------------------------ G33-2 二次导入不覆盖路径
+    def test_import_selected_skips_imported_without_overwrite(self):
+        """二次导入同 owner/repo：未勾选「覆盖路径」→ 返回 0 且 local_path 不变。"""
+        # Arrange：第一次导入 local_path A
+        db = Database(self.tmp / "t.db")
+        spec = RepoSpec(owner="o", repo="r", url_https="", display="o/r",
+                        folder_name="o__r", is_local=True, local_path="/x/a")
+        db.upsert_repo(spec, "/x/a", host="local", default_branch=None, head_sha=None)
+        # 第二次扫描到同一 owner/repo 但 local_path B 的 RepoInfo
+        info_b = RepoInfo(folder_name="o__r", display="o/r", path="/x/b",
+                          remote_url="", owner="o", repo="r")
+        dlg = LocalReposDialog(parent=None, root_paths=[str(self.tmp)], db=db)
+        try:
+            dlg._selected = [info_b]
+            # Act：未勾选覆盖 → 跳过
+            n = dlg.import_selected()
+            # Assert：返回 0，local_path 仍为 A
+            self.assertEqual(n, 0)
+            row = db.get_repo("o", "r", None)
+            self.assertIsNotNone(row)
+            self.assertEqual(row["local_path"], "/x/a")
+        finally:
+            dlg.close()
+            db.close()
+
+    def test_import_selected_overwrites_path_when_checked(self):
+        """勾选「覆盖路径」→ 二次导入返回 1，local_path 更新为 B。"""
+        # Arrange：第一次导入 local_path A
+        db = Database(self.tmp / "t.db")
+        spec = RepoSpec(owner="o", repo="r", url_https="", display="o/r",
+                        folder_name="o__r", is_local=True, local_path="/x/a")
+        db.upsert_repo(spec, "/x/a", host="local", default_branch=None, head_sha=None)
+        info_b = RepoInfo(folder_name="o__r", display="o/r", path="/x/b",
+                          remote_url="", owner="o", repo="r")
+        dlg = LocalReposDialog(parent=None, root_paths=[str(self.tmp)], db=db)
+        try:
+            dlg._selected = [info_b]
+            dlg.chk_overwrite.setChecked(True)
+            # Act：勾选覆盖 → 正常 upsert
+            n = dlg.import_selected()
+            # Assert：返回 1，local_path 更新为 B
+            self.assertEqual(n, 1)
+            row = db.get_repo("o", "r", None)
+            self.assertIsNotNone(row)
+            self.assertEqual(row["local_path"], "/x/b")
+        finally:
+            dlg.close()
             db.close()
 
     # ------------------------------------------------------------ 基本构建

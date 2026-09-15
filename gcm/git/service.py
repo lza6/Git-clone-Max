@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -215,11 +216,15 @@ def run_git_ui(cmd: Iterable[str], cwd: str, on_line: LineCallback,
                label: str = "git", cancelled: Callable[[], bool] = lambda: False,
                timeout: float | None = None,
                retries: int = 0, backoff: tuple[float, ...] = (1.0, 3.0, 8.0),
-               progress_detail: Optional[Callable[[str], None]] = None) -> tuple[int, str]:
+               progress_detail: Optional[Callable[[str], None]] = None,
+               thread_probe: Optional[Callable[[threading.Thread], None]] = None,
+               ) -> tuple[int, str]:
     """运行 git 命令并实时转发输出，带超时与整树终止。
 
     返回 (returncode, 最后进度)。`retries` > 0 时，网络类失败自动重试。
     `progress_detail`：可选回调，收到速率/对象数等附加进度文本（如 "7.03 MiB/s 7124"）。
+    `thread_probe`：测试钩子（默认 None），join 判定前后各回调一次读线程引用；
+    生产调用方不传，仅用于单测观察读线程生命周期，属向后兼容扩展。
 
     实现要点：
     - 读线程持续泵 stdout，主线程用 proc.wait(timeout) 兜底，静默挂死也能按时触发超时。
@@ -302,10 +307,27 @@ def run_git_ui(cmd: Iterable[str], cwd: str, on_line: LineCallback,
                 proc.wait(timeout=15)
             except Exception:
                 pass
+        if thread_probe is not None:
+            try:
+                thread_probe(pump)
+            except Exception:
+                pass
         try:
             pump.join(timeout=5)
         except Exception:
             pass
+        if thread_probe is not None:
+            try:
+                thread_probe(pump)
+            except Exception:
+                pass
+        if pump.is_alive():
+            # G33-4 读线程卡死（极端：管道缓冲满/被杀进程未刷管道）：
+            # daemon 已保证进程不挂，这里只输出一次性警告，不再继续等待
+            on_line(StreamChunk(
+                index=0,
+                text=f"git 输出读线程未及时退出，已放弃等待（{label}）",
+                level="warn"))
         # 确保读线程已退出（其 finally 已关闭 stdout），兜底再关一次防 ResourceWarning
         try:
             if proc.stdout:

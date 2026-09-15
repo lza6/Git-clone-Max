@@ -98,6 +98,9 @@ class MainWindow(QMainWindow):
         self.row_specs: dict = {}           # index -> RepoSpec
         self.busy = False
         self._close_requested = False
+        # G33-6 启动耗时记录（构造结束写回；自检时展示，>3s 提示较慢）
+        self._startup_start = time.perf_counter()
+        self._startup_ms = 0
 
         # 高频进度详情节流：速率/对象数批量刷新（32 并发时不阻塞主线程）
         self._detail_batch: dict = {}
@@ -152,7 +155,11 @@ class MainWindow(QMainWindow):
             self.tray.install()
 
         # 启动后静默检查更新：不阻塞、不弹窗，有新版本仅写日志 + 托盘提示
-        QTimer.singleShot(2500, self._check_update_silent)    # ------------------------------------------------------------ G22-2 崩溃恢复
+        QTimer.singleShot(2500, self._check_update_silent)  # G21-3 启动后静默检查更新
+        # G33-6 记录本次主窗口启动耗时（含 UI 构建；自检时展示，>3s 提示较慢）
+        self._startup_ms = int((time.perf_counter() - self._startup_start) * 1000)
+
+    # ------------------------------------------------------------ G22-2 崩溃恢复
     def _startup_recovery_prefill(self):
         """启动时检查 progress.json：in_progress 非空（上次中断）或 failed 非空
 
@@ -621,7 +628,7 @@ class MainWindow(QMainWindow):
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "导出失败", str(e))
 
-    def _run_selftest(self):
+    def _run_selftest(self, log_path: str | Path | None = None):
         import shutil
         import subprocess
         lines: list[str] = []
@@ -644,8 +651,20 @@ class MainWindow(QMainWindow):
         lines.append(f"数据目录：{self.data_dir}")
         lines.append(f"当前并发：{self.engine.concurrency}（上限 {MAX_CONCURRENCY}）")
         lines.append(f"数据目录可写：{'是' if os.access(self.data_dir, os.W_OK) else '否'}")
+        # G33-6 启动耗时：构造完成即记录；>3s 标注较慢（exe 解包/低配机器场景）
+        startup_ms = getattr(self, "_startup_ms", 0)
+        slow_note = "（启动偏慢，可考虑使用便携版）" if startup_ms > 3000 else ""
+        lines.append(f"启动耗时：{startup_ms} ms{slow_note}")
         QMessageBox.information(self, "环境自检", "\n".join(lines))
         self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"环境自检完成：{' / '.join(lines)}")
+        # G33-6 结构化留痕：selftest|startup_ms=…（供长期监控启动性能回归）
+        try:
+            from ..app import applog
+            applog.info(
+                f"selftest|startup_ms={startup_ms}|concurrency={self.engine.concurrency}",
+                log_path or (self.data_dir / "app.log"))
+        except Exception:
+            pass
 
     # ------------------------------------------------------------ 日志
     def _emit_log(self, time: str, level: LogLevel, text: str):
