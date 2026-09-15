@@ -1,5 +1,5 @@
 """Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。"""
-__version__ = "6.7.0"
+__version__ = "7.0.0"
 __app_name__ = "Git-clone-Max"
 __changelog__ = (
     "4.0.0: 统一调度引擎(SyncEngine) · progress.json 进程级锁+周期落盘 · SQLite busy_timeout · "
@@ -55,4 +55,8 @@ __changelog__ = (
     "G22-4 托盘进度tooltip · G22-5 结构化app.log · G22-6 failed 重试清单 · "
     "G22-7 重试文案 · G28-1 日志/UI 全链路 redact · 工程化：CI 覆盖率门禁82/ruff/mypy/发布清单 · "
     "全量 360 测试全绿 · 覆盖 81%",
+    "7.0.0: M1 可靠性补全 - G33-1 导入已入库灰标+仅显示未入库过滤 · G33-2 二次导入不覆盖(覆盖勾选) · "
+    "G33-3 DB WAL checkpoint 一致性备份 backup_to · G33-4 取消/超时读线程退出保障+警告 · "
+    "G33-5 sync_history 容量治理(每仓200+90天窗口/100次自动清理) · G33-6 启动耗时自检+app.log 留痕 · "
+    "G33-7 注释漂移修正 · 全量 379 测试全绿 · 覆盖 81%",
 )
