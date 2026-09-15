@@ -84,6 +84,26 @@ class ManageModel(QAbstractItemModel):
             return self._rows[row]
         return None
 
+    # ------------------------------------------------------------ host 分布统计（G35-6）
+    def host_counts(self) -> dict[str, int]:
+        """按 host 对内存行分组计数；空 host 归一为 `local`（G35-6）。
+
+        纯内存聚合、不新增 SQL；返回的 dict 键按计数降序排列，保证
+        host_summary 输出稳定可排序。
+        """
+        counts: dict[str, int] = {}
+        for row in self._rows:
+            host = row.host or "local"
+            counts[host] = counts.get(host, 0) + 1
+        return dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
+
+    def host_summary(self) -> str:
+        """将 host 分布拼成单行统计文案，如 `github.com: 2 · gitlab.com: 1`。
+
+        无仓库时返回空串；主控将其拼入 manage_stats 文案。
+        """
+        return " · ".join(f"{host}: {n}" for host, n in self.host_counts().items())
+
     def is_stale(self, row: int, days: int = 30) -> bool:
         """该行是否「超过 days 天未同步」（G03-6 过期高亮）。"""
         r = self.row_at(row)

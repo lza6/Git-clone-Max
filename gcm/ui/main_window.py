@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -129,6 +131,9 @@ class MainWindow(QMainWindow):
         # G02-4 URL 历史：同步成功的地址自动留档（data/history.json）
         from ..db.history import UrlHistory
         self.url_history = UrlHistory(self.data_dir / "history.json")
+        # G35-4 任务清单：data/lists/*.json（保存/载入输入区地址）
+        from ..db.lists import TaskLists
+        self.task_lists = TaskLists(self.data_dir / "lists")
         # G09-1 剪贴板监听（设置开启时启动）
         from ..app.clipboard_watcher import ClipboardWatcher
         self.clipboard_watcher = ClipboardWatcher(
@@ -250,16 +255,32 @@ class MainWindow(QMainWindow):
         # G02-4 右键菜单：从最近历史回填 / 清空历史
         self.repo_input.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.repo_input.customContextMenuRequested.connect(self._repo_input_menu)
+        # G35-3 拖拽导入：.txt/.csv → 读入每行地址；目录 → 本地扫描检测
+        self.repo_input.setAcceptDrops(True)
+        self.repo_input.dragEnterEvent = self._repo_input_drag_enter
+        self.repo_input.dropEvent = self._repo_input_drop
         quick = QHBoxLayout()
         quick.addWidget(QLabel("快捷填充："))
-        for repo in ("vercel-labs/skills", "anthropics/skills",
-                     "microsoft/azure-skills", "remotion-dev/skills",
-                     "slidevjs/slidev", "openmeterio/openmeter"):
+        # G35-7 快捷填充可配置：跟随 settings.quick_repos（持久化，可编辑）
+        for repo in getattr(self.settings, "quick_repos", None) or ():
             btn = QPushButton(repo)
             btn.clicked.connect(lambda _=False, r=repo: self.repo_input.appendPlainText(
                 f"https://github.com/{r}"))
             quick.addWidget(btn)
         quick.addStretch()
+        # G35-4 任务清单：保存当前输入区为命名清单 / 下拉载入（分享用 data/lists/*.json）
+        self.btn_save_list = QPushButton("💾 保存清单")
+        self.btn_save_list.setToolTip("把当前输入区的地址保存为命名任务清单（data/lists/*.json）")
+        self.btn_save_list.clicked.connect(self._save_task_list)
+        self.combo_load_list = QComboBox()
+        self.combo_load_list.setToolTip("选择已保存的清单一键载入")
+        self.combo_load_list.setMinimumWidth(180)
+        self.btn_load_list = QPushButton("载入")
+        self.btn_load_list.setToolTip("把所选清单的地址填入输入区")
+        self.btn_load_list.clicked.connect(self._load_task_list)
+        quick.addWidget(self.btn_save_list)
+        quick.addWidget(self.combo_load_list)
+        quick.addWidget(self.btn_load_list)
         b.addLayout(quick)
         v.addWidget(box)
 
@@ -323,6 +344,9 @@ class MainWindow(QMainWindow):
         # G02-2 表头点击排序（状态列优先级：运行>等待>成功>冲突>失败>取消>跳过）
         self.table.setSortingEnabled(True)
         self.table.horizontalHeader().sortIndicatorChanged.connect(self._on_sort_changed)
+        # G35-1 进度表右键菜单：重试此仓库 / 复制错误详情 / 打开所在目录
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._progress_table_menu)
         v.addWidget(self.table, 3)
 
         # G02-1 搜索过滤框（防抖 200ms）+ 进度表右键「暂停此项」（G02-3）
@@ -359,11 +383,19 @@ class MainWindow(QMainWindow):
         self.btn_import_local.clicked.connect(self.import_local_repos)
         self.btn_delete = QPushButton("🗑 删除选中记录")
         self.btn_delete.clicked.connect(self.delete_selected)
+        self.btn_batch_tag = QPushButton("🏷 打标签")
+        self.btn_batch_tag.setToolTip("给选中的仓库追加标签（多选批量）")
+        self.btn_batch_tag.clicked.connect(self.batch_tag_selected)
+        self.btn_export_selected = QPushButton("📄 导出所选")
+        self.btn_export_selected.setToolTip("把选中的仓库导出为 CSV 报表")
+        self.btn_export_selected.clicked.connect(self.export_selected_csv)
         top.addWidget(self.btn_import_local)
         top.addWidget(self.btn_update_all)
         top.addWidget(self.btn_cancel_manage)
         top.addWidget(self.btn_refresh)
         top.addWidget(self.btn_delete)
+        top.addWidget(self.btn_batch_tag)
+        top.addWidget(self.btn_export_selected)
         v.addLayout(top)
 
         # 模型化视图：数据与视图解耦，大批量行不卡（共享按钮 + 懒加载）
@@ -596,6 +628,11 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+    def _save_finish_sound(self, checked):
+        """G35-2 保存任务完成提示音开关。"""
+        self.settings.finish_sound = bool(checked)
+        self.settings_store.save(self.settings)
+
     def _on_clipboard_url(self, url: str):
         """剪贴板检测到仓库地址：写日志 + 状态栏提示 + 填入输入框（不自动启动）。"""
         try:
@@ -713,9 +750,105 @@ class MainWindow(QMainWindow):
         from .download_tools import repo_input_menu as _rim
         _rim(self, pos, _fmt_dt)
 
+    # ------------------------------------------------------------ G35-3 拖拽导入
+    def _repo_input_drag_enter(self, e):
+        """拖入 .txt/.csv 或目录时接受拖放（否则忽略）。"""
+        if e.mimeData().hasUrls():
+            urls = e.mimeData().urls()
+            for u in urls:
+                p = Path(u.toLocalFile())
+                if p.is_file() and p.suffix.lower() in (".txt", ".csv"):
+                    e.acceptProposedAction()
+                    return
+                if p.is_dir():
+                    e.acceptProposedAction()
+                    return
+        e.ignore()
+
+    def _repo_input_drop(self, e):
+        """拖入文件 → 读入每行地址并追加到输入区；拖入目录 → 本地扫描导入。"""
+        if not e.mimeData().hasUrls():
+            e.ignore()
+            return
+        e.acceptProposedAction()
+        added_lines: list[str] = []
+        dirs: list[str] = []
+        for u in e.mimeData().urls():
+            p = Path(u.toLocalFile())
+            if p.is_file() and p.suffix.lower() in (".txt", ".csv"):
+                try:
+                    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+                        line = line.strip()
+                        if line and not line.startswith(("#", "//")):
+                            added_lines.append(line)
+                except Exception as exc:
+                    self._emit_log(_fmt_dt(), LogLevel.WARN,
+                                   f"读取拖入文件失败：{p}（{exc}）")
+            elif p.is_dir():
+                dirs.append(str(p))
+        if added_lines:
+            self.repo_input.appendPlainText("\n".join(added_lines) + "\n")
+            self._emit_log(_fmt_dt(), LogLevel.INFO,
+                           f"已从拖入文件导入 {len(added_lines)} 行地址。")
+        if dirs:
+            # 复用本地导入扫描通道（默认扫描拖入目录）
+            try:
+                from .local_repos_dialog import LocalReposDialog
+                dlg = LocalReposDialog(parent=self, root_paths=dirs, db=self.db)
+                dlg.exec()
+                if dlg.selected:
+                    n = dlg.import_selected()
+                    self._load_db_into_grid()
+                    self._emit_log(_fmt_dt(), LogLevel.INFO, f"已从拖入目录导入 {n} 个本地仓库")
+                    self.statusBar().showMessage(f"已导入 {n} 个本地仓库")
+            except Exception as exc:
+                self._emit_log(_fmt_dt(), LogLevel.WARN, f"拖入目录导入失败：{exc}")
+
     def _clear_url_history(self):
         from .download_tools import clear_url_history as _cuh
         _cuh(self, _fmt_dt)
+
+    # --------------------------------------------------------- G35-4 任务清单
+    def _refresh_task_lists(self):
+        """刷新清单下拉（保留当前选择若仍在列表）。"""
+        names = self.task_lists.list_names()
+        current = self.combo_load_list.currentText()
+        self.combo_load_list.clear()
+        self.combo_load_list.addItems(names)
+        if current in names:
+            self.combo_load_list.setCurrentText(current)
+
+    def _save_task_list(self):
+        """把当前输入区地址保存为命名清单。"""
+        text = self.repo_input.toPlainText()
+        items = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        if not items:
+            QMessageBox.information(self, "提示", "输入区为空，没有可保存的地址。")
+            return
+        name, ok = QInputDialog.getText(self, "保存任务清单", "清单名称：")
+        if not ok or not name.strip():
+            return
+        try:
+            self.task_lists.save(name.strip(), items)
+            self._refresh_task_lists()
+            self._emit_log(_fmt_dt(), LogLevel.INFO, f"已保存任务清单：{name.strip()}（{len(items)} 行）")
+            self.statusBar().showMessage(f"已保存清单：{name.strip()}")
+        except Exception as e:
+            QMessageBox.warning(self, "保存失败", str(e))
+
+    def _load_task_list(self):
+        """把所选清单的地址填入输入区。"""
+        name = self.combo_load_list.currentText()
+        if not name:
+            QMessageBox.information(self, "提示", "请先选择要载入的清单。")
+            return
+        items = self.task_lists.items(name)
+        if not items:
+            QMessageBox.information(self, "提示", f"清单「{name}」为空或不存在。")
+            return
+        self.repo_input.appendPlainText("\n".join(items) + "\n")
+        self._emit_log(_fmt_dt(), LogLevel.INFO, f"已载入任务清单：{name}（{len(items)} 行）")
+        self.statusBar().showMessage(f"已载入清单：{name}")
 
     def choose_target(self):
         from .download_tools import choose_target as _ct
@@ -1009,6 +1142,89 @@ class MainWindow(QMainWindow):
                        f"已请求暂停 {paused} 个任务（其余继续）…")
         self.statusBar().showMessage(f"正在暂停 {paused} 个任务…")
 
+    # --------------------------------------------------------- G35-1 进度表右键菜单
+    def _progress_table_menu(self, pos):
+        """进度表右键菜单：重试此仓库 / 复制错误详情 / 打开所在目录。
+
+        FAILED/CANCELLED 行可用「重试此仓库」；其余动作对所有行可用。
+        """
+        row = self.table.rowAt(pos.y())
+        if row < 0:
+            return
+        name_item = self.table.item(row, 0)
+        status_item = self.table.item(row, 2)
+        if name_item is None or status_item is None:
+            return
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu(self)
+        status_text = status_item.text()
+        if status_text in ("失败", "已取消"):
+            act_retry = menu.addAction("⟳ 重试此仓库")
+            act_retry.triggered.connect(
+                lambda _=False, r=row: self._retry_table_row(r))
+            menu.addSeparator()
+        act_copy = menu.addAction("复制错误详情")
+        act_copy.triggered.connect(
+            lambda _=False, r=row: self._copy_row_detail(r))
+        act_open = menu.addAction("打开所在目录")
+        act_open.triggered.connect(
+            lambda _=False, r=row: self._open_row_dir(r))
+        menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    def _retry_table_row(self, row: int):
+        """单仓库重试：把该行 spec 经 _launch 重新调度（其余任务不受影响）。"""
+        if self.busy:
+            QMessageBox.information(self, "提示", "有任务正在运行，请等本轮结束后重试。")
+            return
+        idx = self._row_engine_index(row)
+        spec = self.row_specs.get(idx)
+        if spec is None:
+            return
+        target = self.target_edit.text().strip() or str(self.data_dir / "clones")
+        self._launch([spec], target_root=Path(target),
+                     shallow=False, depth=self.depth_spin.value(), clear_input=False)
+        self._emit_log(_fmt_dt(), LogLevel.WARN, f"已重试仓库：{spec.display}")
+
+    def _copy_row_detail(self, row: int):
+        """复制该行错误详情（message + detail）到剪贴板。"""
+        msg_item = self.table.item(row, 4)
+        detail = ""
+        if msg_item is not None:
+            detail = msg_item.toolTip() or msg_item.text()
+        from PyQt6.QtWidgets import QApplication as _QApp
+        _QApp.clipboard().setText(detail)
+        self.statusBar().showMessage("错误详情已复制")
+
+    def _open_row_dir(self, row: int):
+        """打开该行仓库所在目录（Windows startfile / POSIX 打开器）。"""
+        idx = self._row_engine_index(row)
+        spec = self.row_specs.get(idx)
+        if spec is None:
+            return
+        if spec.local_path:
+            p = Path(spec.local_path)
+        else:
+            p = Path(self.target_edit.text().strip() or self.data_dir / "clones") / spec.folder_name
+        if not p.is_dir():
+            QMessageBox.warning(self, "目录不存在", str(p))
+            return
+        if sys.platform == "win32":
+            os.startfile(str(p))  # noqa
+        else:
+            import shutil
+            openers = ("xdg-open", "open")
+            for op in openers:
+                if shutil.which(op):
+                    import subprocess
+                    subprocess.Popen([op, str(p)])
+                    break
+
+    def _row_engine_index(self, row: int) -> int:
+        """从表格行读回 engine index（UserRole+1；排序/过滤后仍精确）。"""
+        it = self.table.item(row, 0)
+        idx = it.data(Qt.ItemDataRole.UserRole + 1) if it is not None else None
+        return int(idx) if idx is not None else row
+
     @pyqtSlot(int, str)
     def _on_worker_progress(self, index, percent):
         if not (0 <= index < self.table.rowCount()):
@@ -1069,6 +1285,8 @@ class MainWindow(QMainWindow):
         st = self.table.item(index, 2)
         st.setText(label)
         st.setForeground(QColor(color))
+        # G35-8 状态格 tooltip：message + detail 拼接（与详情列 tooltip 互补）
+        st.setToolTip(f"{res.message or ''}" + (f"\n{res.detail or ''}" if res.detail else ""))
         act = self.table.item(index, 3)
         action_label = {
             "cloned": "新建克隆",
@@ -1139,6 +1357,13 @@ class MainWindow(QMainWindow):
                     f"成功 {ok} · 冲突 {conflict} · 失败 {fail}")
         except Exception:
             pass
+        # G35-2 完成提示音（设置开关默认开；QApplication.beep 无 UI 影响）
+        try:
+            if bool(getattr(self.settings, "finish_sound", True)):
+                from PyQt6.QtWidgets import QApplication as _QApp
+                _QApp.beep()
+        except Exception:
+            pass
         # 多根目录继任：还有下一组则继续（QTimer 调度避免嵌套重入）
         if getattr(self, "_multi_root_relay", False) and self._multi_root_update:
             QTimer.singleShot(0, self._update_next_root)
@@ -1170,7 +1395,15 @@ class MainWindow(QMainWindow):
     def _load_db_into_grid(self):
         """从 DB 加载仓库列表到模型（全 host，含本地导入仓库；批量懒渲染）。"""
         self.manage_model.set_rows(self.db.list_repos())
-        self.manage_stats.setText(f"共 {self.manage_model.rowCount()} 个仓库")
+        base = f"共 {self.manage_model.rowCount()} 个仓库"
+        # G35-6 平台分布：内存聚合（host_summary 由 manage_model 提供）
+        try:
+            hs = self.manage_model.host_summary()
+            if hs:
+                base += f" ｜ {hs}"
+        except Exception:
+            pass
+        self.manage_stats.setText(base)
 
     def _refresh_manage(self):
         self._load_db_into_grid()
@@ -1254,6 +1487,64 @@ class MainWindow(QMainWindow):
             self.db.delete_repo(rid)
         self._load_db_into_grid()
         self._emit_log(_fmt_dt(), LogLevel.INFO, f"已删除 {len(repo_ids)} 条数据库记录")
+
+    # --------------------------------------------------------- G35-9 批量操作
+    def batch_tag_selected(self):
+        """给选中的仓库追加标签（多选批量，覆盖式设置指定标签）。"""
+        rows = sorted({i.row() for i in self.manage_table.selectedIndexes()})
+        if not rows:
+            QMessageBox.information(self, "提示", "请先选择要打标签的仓库。")
+            return
+        tag, ok = QInputDialog.getText(
+            self, "批量打标签", "输入标签名（多个用逗号分隔，将覆盖原标签）：")
+        if not ok:
+            return
+        tags = [t.strip() for t in tag.split(",") if t.strip()]
+        if not tags:
+            return
+        n = 0
+        for r in rows:
+            row = self.manage_model.row_at(r)
+            if row is not None:
+                rec = self.db.get_repo(row.owner, row.repo, row.host)
+                if rec:
+                    self.db.set_tags(rec["id"], tags)
+                    n += 1
+        self._load_db_into_grid()
+        self._emit_log(_fmt_dt(), LogLevel.INFO, f"已为 {n} 个仓库设置标签：{', '.join(tags)}")
+        self.statusBar().showMessage(f"已为 {n} 个仓库设置标签")
+
+    def export_selected_csv(self):
+        """把选中的仓库导出为 CSV（仅所选行；无历史则同样导出元数据）。"""
+        rows = sorted({i.row() for i in self.manage_table.selectedIndexes()})
+        if not rows:
+            QMessageBox.information(self, "提示", "请先选择要导出的仓库。")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出所选仓库", str(self.data_dir / "selected_repos.csv"),
+            "CSV (*.csv)")
+        if not path:
+            return
+        try:
+            import csv as _csv
+            sel = []
+            for r in rows:
+                row = self.manage_model.row_at(r)
+                if row is not None:
+                    sel.append({
+                        "owner": row.owner, "repo": row.repo, "host": row.host,
+                        "local_path": row.local_path, "folder_name": row.folder_name,
+                        "tags": row.tags,
+                    })
+            with open(path, "w", newline="", encoding="utf-8-sig") as f:
+                w = _csv.DictWriter(f, fieldnames=["owner", "repo", "host",
+                                                   "local_path", "folder_name", "tags"])
+                w.writeheader()
+                w.writerows(sel)
+            self._emit_log(_fmt_dt(), LogLevel.INFO, f"已导出所选 {len(sel)} 个仓库：{path}")
+            self.statusBar().showMessage(f"已导出 {len(sel)} 个仓库")
+        except Exception as e:
+            QMessageBox.critical(self, "导出失败", str(e))
 
     # ------------------------------------------------------------ 关闭
     def closeEvent(self, e: QCloseEvent):

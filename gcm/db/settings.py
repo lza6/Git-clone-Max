@@ -145,6 +145,11 @@ class Settings:
     submodule: bool = False           # G08-1 克隆时拉取子模块（--recurse-submodules）
     theme: str = "deep"               # G05-1 主题：deep/light/nord
     clipboard_watch: bool = False     # G09-1 剪贴板监听（检测到仓库地址提示）
+    finish_sound: bool = True         # G35-2 全部任务完成时提示音（QApplication.beep）
+    quick_repos: tuple = (            # G35-7 下载中心「快捷填充」按钮仓库列表（可编辑持久化）
+        "vercel-labs/skills", "anthropics/skills", "microsoft/azure-skills",
+        "remotion-dev/skills", "slidevjs/slidev", "openmeterio/openmeter",
+    )
     font_scale: float = 1.0           # G10-1 字号缩放（0.8 ~ 1.6）
     rate_limit_kbps: int = 0          # G04-4 下载限速 KiB/s（0=不限）
 
@@ -237,4 +242,9 @@ def _coerce(key: str, val):
     if isinstance(default, str):
         # None（如用户清空代理）→ 空字符串，避免出现字面 "None"
         return str(val) if val is not None else ""
+    if isinstance(default, (tuple, list)):
+        # 序列字段（G35-7 quick_repos）：list/tuple 互通，逐项转 str
+        if not isinstance(val, (tuple, list)):
+            return default
+        return tuple(str(v) for v in val)
     return val

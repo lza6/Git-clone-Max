@@ -63,6 +63,12 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     owner.ck_clipboard.setChecked(bool(getattr(settings, "clipboard_watch", False)))
     owner.ck_clipboard.stateChanged.connect(owner._save_clipboard_watch)
     l1.addWidget(owner.ck_clipboard)
+    # G35-2 完成提示音：全部任务结束响一声（挂机用户感知「跑完了」）
+    owner.ck_finish_sound = QCheckBox("任务完成提示音")
+    owner.ck_finish_sound.setChecked(bool(getattr(settings, "finish_sound", True)))
+    owner.ck_finish_sound.setToolTip("全部任务完成时响一声提示音（QApplication.beep）")
+    owner.ck_finish_sound.stateChanged.connect(owner._save_finish_sound)
+    l1.addWidget(owner.ck_finish_sound)
     l1.addStretch()
     sv.addWidget(g1)
 

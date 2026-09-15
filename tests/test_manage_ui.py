@@ -26,6 +26,7 @@ from gcm.db.repo_db import Database
 from gcm.db.settings import SettingsStore
 from gcm.models import RepoSpec, SyncAction, SyncStatus
 from gcm.ui.main_window import MainWindow
+from gcm.ui.manage_model import ManageModel, ManageRow
 
 # 共享 QApplication 实例（离屏）
 _app = QApplication.instance() or QApplication(sys.argv)
@@ -186,7 +187,9 @@ class TestManageUi(unittest.TestCase):
         m_msg.question.assert_called_once()
         self.assertEqual(self.db.count(), 1, "确认后应从 DB 删除一条记录")
         self.assertEqual(self.w.manage_model.rowCount(), 1)
-        self.assertEqual(self.w.manage_stats.text(), "共 1 个仓库")
+        # G35-6 管理页统计含 host 分布
+        self.assertIn("共 1 个仓库", self.w.manage_stats.text())
+        self.assertIn("github.com: 1", self.w.manage_stats.text())
         self.assertIn("已删除 1 条数据库记录", self.w.log.to_plain_text())
 
     def test_delete_selected_no_selection_prompts(self):
@@ -277,7 +280,9 @@ class TestManageUi(unittest.TestCase):
         self.w._refresh_manage()
         self.assertEqual(self.w.manage_model.rowCount(), 1)
         self.assertEqual(self.w.manage_model.row_at(0).repo, "hello-world")
-        self.assertEqual(self.w.manage_stats.text(), "共 1 个仓库")
+        # G35-6 管理页统计含 host 分布
+        self.assertIn("共 1 个仓库", self.w.manage_stats.text())
+        self.assertIn("github.com: 1", self.w.manage_stats.text())
 
     # ------------------------------------------------------------ show_history
     def test_show_history_opens_repo_detail_dialog(self):
@@ -307,6 +312,52 @@ class TestManageUi(unittest.TestCase):
             self.w.show_history(rid)
         m_dlg.assert_not_called()
         m_msg.information.assert_called_once()
+
+
+class TestManageModel(unittest.TestCase):
+    """G35-6 host 分布统计：ManageModel 纯逻辑方法测试（不依赖 MainWindow）。"""
+
+    @staticmethod
+    def _row(host: str = "github.com") -> ManageRow:
+        """构造最小 ManageRow，仅 host 字段参与统计。"""
+        return ManageRow(folder_name="f", owner="o", repo="r",
+                         local_path="/x", last_sync_at="",
+                         head_sha="", host=host)
+
+    def _model_with(self, hosts: list[str]) -> ManageModel:
+        """直接向内存 _rows 注入指定 host 列表（空串代表未归一化 host）。"""
+        m = ManageModel()
+        m._rows = [self._row(h) for h in hosts]
+        m._sync_vis()
+        return m
+
+    # ------------------------------------------------------------ host_counts
+    def test_host_counts_groups_and_normalizes_empty_to_local(self):
+        """按 host 分组计数，空 host 归一为 local，且键按计数降序。"""
+        model = self._model_with(["github.com", "gitlab.com",
+                                  "github.com", ""])
+        counts = model.host_counts()
+        self.assertEqual(counts, {"github.com": 2, "gitlab.com": 1, "local": 1})
+
+    def test_host_counts_empty_model(self):
+        """空模型 → 返回空 dict。"""
+        model = ManageModel()
+        self.assertEqual(model.host_counts(), {})
+
+    # ------------------------------------------------------------ host_summary
+    def test_host_summary_includes_all_hosts(self):
+        """单行文本包含 github.com 与 gitlab.com 的计数。"""
+        model = self._model_with(["github.com", "gitlab.com",
+                                  "github.com", ""])
+        text = model.host_summary()
+        self.assertIn("github.com: 2", text)
+        self.assertIn("gitlab.com: 1", text)
+        self.assertIn("local: 1", text)
+
+    def test_host_summary_empty_model(self):
+        """空模型 → 返回空串。"""
+        model = ManageModel()
+        self.assertEqual(model.host_summary(), "")
 
 
 if __name__ == "__main__":

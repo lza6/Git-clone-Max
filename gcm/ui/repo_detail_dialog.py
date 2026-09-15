@@ -49,7 +49,7 @@ class RepoDetailDialog(QDialog):
     - 标题：owner/repo
     - 元信息区：仓库路径 / 主机 / 当前 HEAD / 最近同步 / 默认分支
     - 历史表格：只读展示同步历史
-    - 底部按钮：打开目录 / 复制路径 / 关闭
+    - 底部按钮：打开目录 / 复制路径 / 复制克隆命令 / 关闭
     """
 
     def __init__(self, repo: dict, history: list, parent=None):
@@ -175,6 +175,10 @@ class RepoDetailDialog(QDialog):
         self.btn_copy_path.clicked.connect(self.copy_path)
         btns.addWidget(self.btn_copy_path)
 
+        self.btn_copy_command = QPushButton("复制克隆命令")
+        self.btn_copy_command.clicked.connect(self.copy_clone_command)
+        btns.addWidget(self.btn_copy_command)
+
         self.btn_close = QPushButton("关闭")
         self.btn_close.clicked.connect(self.accept)
         btns.addWidget(self.btn_close)
@@ -192,3 +196,24 @@ class RepoDetailDialog(QDialog):
     def copy_path(self) -> None:
         """复制本地路径到剪贴板。"""
         QApplication.clipboard().setText(str(self.repo.get("local_path") or ""))
+
+    def copy_clone_command(self) -> None:
+        """G35-5 复制克隆命令到剪贴板。
+
+        - 无 ref：``git clone <url>``
+        - 有 ref：``git clone -b <ref> <url>``（对应 @tag 语法）
+        url 为空时回退为 https 形式；仍为空则复制空字符串，不抛异常。
+        """
+        url = str(self.repo.get("url") or "").strip()
+        if not url:
+            # 兜底：用 owner/repo 拼 https 地址；仍缺字段时留空
+            owner = str(self.repo.get("owner") or "").strip()
+            name = str(self.repo.get("repo") or "").strip()
+            if owner and name:
+                url = f"https://github.com/{owner}/{name}"
+        ref = str(self.repo.get("ref") or "").strip()
+        if ref:
+            cmd = f"git clone -b {ref} {url}"
+        else:
+            cmd = f"git clone {url}"
+        QApplication.clipboard().setText(cmd)

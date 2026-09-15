@@ -107,6 +107,45 @@ class TestRepoDetailDialog(unittest.TestCase):
         m_start.assert_called_once()
         dlg.close()
 
+    # ------------------------------------------------------------ G35-5 复制克隆命令
+    def test_copy_command_no_ref(self):
+        """repo 带 url 且无 ref → 剪贴板 == git clone <url>。"""
+        self.dlg.btn_copy_command.click()
+        self.assertEqual(
+            QApplication.clipboard().text(),
+            "git clone https://github.com/octocat/hello-world.git",
+        )
+
+    def test_copy_command_with_ref(self):
+        """repo 带 url 且 ref=v1.2.0 → git clone -b v1.2.0 <url>。"""
+        dlg = RepoDetailDialog(_repo(self.tmp) | {"ref": "v1.2.0"}, [])
+        dlg.show()
+        dlg.btn_copy_command.click()
+        self.assertEqual(
+            QApplication.clipboard().text(),
+            "git clone -b v1.2.0 https://github.com/octocat/hello-world.git",
+        )
+        dlg.close()
+
+    def test_copy_command_empty_url_no_crash(self):
+        """repo url 为空 → 按钮存在，命令尝试不崩。"""
+        dlg = RepoDetailDialog(_repo(self.tmp) | {"url": ""}, [])
+        dlg.show()
+        dlg.btn_copy_command.click()  # 不抛异常
+        self.assertIsNotNone(dlg.btn_copy_command)
+        dlg.close()
+
+    def test_copy_command_missing_ref_key(self):
+        """repo dict 无 ref 键（向后兼容）→ 按无 ref 处理。"""
+        dlg = RepoDetailDialog({"owner": "o", "repo": "r", "url": "https://github.com/o/r"}, [])
+        dlg.show()
+        dlg.btn_copy_command.click()
+        self.assertEqual(
+            QApplication.clipboard().text(),
+            "git clone https://github.com/o/r",
+        )
+        dlg.close()
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
