@@ -128,6 +128,10 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+="), self, activated=self.zoom_in)
         QShortcut(QKeySequence("Ctrl+-"), self, activated=self.zoom_out)
         QShortcut(QKeySequence("Ctrl+0"), self, activated=self.zoom_reset)
+        # G36-8 全局热键：Ctrl+Alt+S 开始/取消、Ctrl+Alt+U 一键更新、Ctrl+Alt+M 显示窗口
+        QShortcut(QKeySequence("Ctrl+Alt+S"), self, activated=self._hotkey_start_cancel)
+        QShortcut(QKeySequence("Ctrl+Alt+U"), self, activated=self.update_all)
+        QShortcut(QKeySequence("Ctrl+Alt+M"), self, activated=self._hotkey_show_window)
         # G02-4 URL 历史：同步成功的地址自动留档（data/history.json）
         from ..db.history import UrlHistory
         self.url_history = UrlHistory(self.data_dir / "history.json")
@@ -160,6 +164,62 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(2500, self._check_update_silent)  # G21-3 启动后静默检查更新
         # G33-6 记录本次主窗口启动耗时（含 UI 构建；自检时展示，>3s 提示较慢）
         self._startup_ms = int((time.perf_counter() - self._startup_start) * 1000)
+        # G36-1/G36-9：show() 后单次调度——首次运行向导 + 系统深浅色自适应
+        QTimer.singleShot(300, self._maybe_show_onboarding)
+        QTimer.singleShot(500, self._maybe_apply_system_theme)
+
+    # ------------------------------------------------------------ G36-1 首次运行向导
+    def _maybe_show_onboarding(self):
+        """首次运行（settings.first_run_done 未置位）→ 显示三步向导。
+
+        跳过或完成均写 first_run_done；目录/模式回填设置。仅真实窗口展示
+        （offscreen/测试环境自动跳过，避免模态阻塞）。
+        """
+        if getattr(self.settings, "first_run_done", False):
+            return
+        if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+            return
+        try:
+            from .onboarding import OnboardingDialog
+            dlg = OnboardingDialog(parent=self,
+                                   default_dir=str(self.data_dir / "clones"))
+            dlg.exec()
+            self.settings.first_run_done = True
+            if getattr(dlg, "selected_dir", ""):
+                self.target_edit.setText(dlg.selected_dir)
+                self.settings.download_dir = dlg.selected_dir
+            mode = getattr(dlg, "selected_mode", "") or ""
+            if mode.startswith("浅"):
+                self.mode_combo.setCurrentIndex(1)
+            self.settings_store.save(self.settings)
+        except Exception as e:
+            self._emit_log(_fmt_dt(), LogLevel.WARN,
+                           f"首次运行向导未完成：{e}")
+
+    # ------------------------------------------------------------ G36-9 跟随系统深浅色
+    def _maybe_apply_system_theme(self):
+        """跟随 Windows 系统深浅色：仅在用户设置 theme=auto 时自动切换。
+
+        说明：默认主题手动（deep/light/nord），用户显式选 auto 才读取注册表
+        并应用 light/deep；读取失败无副作用，保持现状。
+        """
+        try:
+            if getattr(self.settings, "theme", "deep") != "auto":
+                return
+            from ..app.system_theme import detect_system_light_theme, map_system_to_theme
+            pref = detect_system_light_theme()
+            target = map_system_to_theme(pref)
+            if target and target in ("light", "deep"):
+                from ..ui import theme as _th
+                _th.apply_theme(target)
+                self.setStyleSheet(
+                    _th.qss_for_scale(getattr(self.settings, "font_scale", 1.0)))
+                self._apply_theme_to_children()
+                self.settings.theme = target
+                self._emit_log(_fmt_dt(), LogLevel.INFO,
+                               f"已按系统深浅色切换主题：{target}")
+        except Exception:
+            pass
 
     # ------------------------------------------------------------ G22-2 崩溃恢复
     def _startup_recovery_prefill(self):
@@ -194,12 +254,57 @@ class MainWindow(QMainWindow):
             if urls:
                 self.repo_input.setPlainText("\n".join(urls))
 
+    # --------------------------------------------------------- G36-3 统一图标
+    @staticmethod
+    def _std_icon(name: str, widget=None):
+        """取语义图标（QStyle.StandardPixmap）；无映射返回 None（保留 emoji 文本回退）。"""
+        try:
+            from .theme import std_icon
+            return std_icon(name, widget)
+        except Exception:
+            return None
+
     # ------------------------------------------------------------ UI
+
+    def _serialize_geometry(self) -> str:
+        """G36-4 当前窗口几何 → "WxH+X+Y"（含最大化状态前缀 M:）。"""
+        try:
+            if self.isMaximized():
+                return f"M:{self.normalGeometry().width()}x{self.normalGeometry().height()}"
+            g = self.geometry()
+            return f"{g.width()}x{g.height()}+{g.x()}+{g.y()}"
+        except Exception:
+            return ""
+
+    def _restore_geometry(self) -> None:
+        """G36-4 从 settings.geometry 恢复窗口几何（尺寸/位置/最大化）。"""
+        raw = str(getattr(self.settings, "geometry", "") or "")
+        if not raw:
+            return
+        try:
+            maximized = raw.startswith("M:")
+            if maximized:
+                raw = raw[2:]
+            w, h, x, y = (int(v) for v in raw.replace("x", " ").replace("+", " ").split())
+            # 防小屏溢出：只接受最小尺寸以上
+            w = max(w, 1020)
+            h = max(h, 700)
+            self.resize(w, h)
+            self.move(x, y)
+            if maximized:
+                self.showMaximized()
+        except Exception:
+            pass  # 几何串损坏 → 保持默认
 
     def _build_ui(self):
         self.setWindowTitle("Git-clone-Max — GitHub 仓库批量并行下载")
         self.resize(1240, 840)
         self.setMinimumSize(1020, 700)
+        # G36-4 恢复上次窗口几何（尺寸+位置）；无记录则保持默认
+        try:
+            self._restore_geometry()
+        except Exception:
+            pass
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -233,6 +338,16 @@ class MainWindow(QMainWindow):
         self._build_settings_tab()
 
         self.statusBar().showMessage("就绪")
+        # G36-5 首次显示空态 overlay（表初始为空）
+        try:
+            self._update_empty_download()
+            ov = getattr(self, "_empty_manage", None)
+            if ov is not None and self.manage_model.rowCount() == 0:
+                ov.setVisible(True)
+                ov.setGeometry(self.manage_table.rect())
+                ov.raise_()
+        except Exception:
+            pass
 
     # ---------------- 下载中心
     def _build_download_tab(self):
@@ -313,17 +428,20 @@ class MainWindow(QMainWindow):
         v.addLayout(opts)
 
         btns = QHBoxLayout()
-        self.btn_start = QPushButton("▶  开始并行下载 / 更新")
+        self.btn_start = QPushButton("开始并行下载 / 更新")
         self.btn_start.setObjectName("primary")
         self.btn_start.setMinimumHeight(38)
         self.btn_start.clicked.connect(self.start_all)
-        self.btn_cancel = QPushButton("⏹ 取消全部")
+        self.btn_start.setIcon(self._std_icon("play", self.btn_start))
+        self.btn_cancel = QPushButton("取消全部")
         self.btn_cancel.setEnabled(False)
         self.btn_cancel.clicked.connect(self.cancel_all)
+        self.btn_cancel.setIcon(self._std_icon("stop", self.btn_cancel))
         self.btn_clear = QPushButton("清空列表")
         self.btn_clear.clicked.connect(self.repo_input.clear)
-        self.btn_open = QPushButton("📂 打开克隆目录")
+        self.btn_open = QPushButton("打开克隆目录")
         self.btn_open.clicked.connect(self.open_target)
+        self.btn_open.setIcon(self._std_icon("open_dir", self.btn_open))
         btns.addWidget(self.btn_start, 2)
         btns.addWidget(self.btn_cancel)
         btns.addWidget(self.btn_clear)
@@ -348,6 +466,14 @@ class MainWindow(QMainWindow):
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._progress_table_menu)
         v.addWidget(self.table, 3)
+        # G36-5 下载中心空态引导：overlay 标签（绝对定位在表格上，有数据时隐藏）
+        self._empty_download = QLabel("⬇ 粘贴仓库地址开始下载\n（支持多行 / 拖入 txt 文件）")
+        self._empty_download.setObjectName("muted")
+        self._empty_download.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty_download.setWordWrap(True)
+        self._empty_download.setVisible(False)
+        self._empty_download.setParent(self.table)
+        self._empty_download.raise_()
 
         # G02-1 搜索过滤框（防抖 200ms）+ 进度表右键「暂停此项」（G02-3）
         row_tools = QHBoxLayout()
@@ -371,24 +497,30 @@ class MainWindow(QMainWindow):
         self.manage_stats.setObjectName("muted")
         top.addWidget(self.manage_stats)
         top.addStretch()
-        self.btn_update_all = QPushButton("⟳  一键更新全部")
+        self.btn_update_all = QPushButton("一键更新全部")
         self.btn_update_all.setObjectName("primary")
         self.btn_update_all.clicked.connect(self.update_all)
+        self.btn_update_all.setIcon(self._std_icon("refresh", self.btn_update_all))
         self.btn_cancel_manage = QPushButton("取消全部")
         self.btn_cancel_manage.setEnabled(False)
         self.btn_cancel_manage.clicked.connect(self.cancel_all)
+        self.btn_cancel_manage.setIcon(self._std_icon("stop", self.btn_cancel_manage))
         self.btn_refresh = QPushButton("刷新列表")
         self.btn_refresh.clicked.connect(self._refresh_manage)
-        self.btn_import_local = QPushButton("📥 导入本地已有仓库")
+        self.btn_refresh.setIcon(self._std_icon("refresh", self.btn_refresh))
+        self.btn_import_local = QPushButton("导入本地已有仓库")
         self.btn_import_local.clicked.connect(self.import_local_repos)
-        self.btn_delete = QPushButton("🗑 删除选中记录")
+        self.btn_import_local.setIcon(self._std_icon("folder", self.btn_import_local))
+        self.btn_delete = QPushButton("删除选中记录")
         self.btn_delete.clicked.connect(self.delete_selected)
-        self.btn_batch_tag = QPushButton("🏷 打标签")
+        self.btn_delete.setIcon(self._std_icon("trash", self.btn_delete))
+        self.btn_batch_tag = QPushButton("打标签")
         self.btn_batch_tag.setToolTip("给选中的仓库追加标签（多选批量）")
         self.btn_batch_tag.clicked.connect(self.batch_tag_selected)
-        self.btn_export_selected = QPushButton("📄 导出所选")
+        self.btn_export_selected = QPushButton("导出所选")
         self.btn_export_selected.setToolTip("把选中的仓库导出为 CSV 报表")
         self.btn_export_selected.clicked.connect(self.export_selected_csv)
+        self.btn_export_selected.setIcon(self._std_icon("save", self.btn_export_selected))
         top.addWidget(self.btn_import_local)
         top.addWidget(self.btn_update_all)
         top.addWidget(self.btn_cancel_manage)
@@ -424,6 +556,14 @@ class MainWindow(QMainWindow):
         self._hist_delegate.clicked.connect(self._on_hist_row_clicked)
         self.manage_table.setItemDelegateForColumn(5, self._hist_delegate)
         v.addWidget(self.manage_table, 3)
+        # G36-5 管理页空态引导：overlay 标签（有仓库时隐藏）
+        self._empty_manage = QLabel("📁 尚未导入仓库\n点击「导入本地已有仓库」开始")
+        self._empty_manage.setObjectName("muted")
+        self._empty_manage.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty_manage.setWordWrap(True)
+        self._empty_manage.setVisible(False)
+        self._empty_manage.setParent(self.manage_table)
+        self._empty_manage.raise_()
 
         self.manage_desc = QLabel(
             "「一键更新全部」会按 作者__仓库 命名找到每个仓库目录，"
@@ -631,6 +771,11 @@ class MainWindow(QMainWindow):
     def _save_finish_sound(self, checked):
         """G35-2 保存任务完成提示音开关。"""
         self.settings.finish_sound = bool(checked)
+        self.settings_store.save(self.settings)
+
+    def _save_animations(self, checked):
+        """G36-6 保存任务完成动效开关。"""
+        self.settings.animations = bool(checked)
         self.settings_store.save(self.settings)
 
     def _on_clipboard_url(self, url: str):
@@ -1049,6 +1194,22 @@ class MainWindow(QMainWindow):
         self.table.setSortingEnabled(was_sorting)
         # 过滤状态保持
         self._filter_progress_rows(getattr(self, "_progress_filter_text", ""))
+        # G36-5 空态引导：无行 → 显示 overlay
+        self._update_empty_download()
+
+    def _update_empty_download(self):
+        """G36-5 下载中心空态：进度表无可见行时显示引导 overlay。"""
+        try:
+            ov = getattr(self, "_empty_download", None)
+            if ov is None:
+                return
+            visible = self.table.rowCount() == 0
+            ov.setVisible(visible)
+            if visible:
+                ov.setGeometry(self.table.rect())
+                ov.raise_()
+        except Exception:
+            pass
 
     def _add_table_row(self, index, spec: RepoSpec):
         # 关闭排序再插入行，保证 index 与行号对齐（引擎回调按 index 定位）
@@ -1113,7 +1274,8 @@ class MainWindow(QMainWindow):
                 for r in range(self.table.rowCount()):
                     it = self.table.item(r, 2)
                     if it is not None:
-                        base = it.text()
+                        # 显示文本含符号后缀（G36-2），按 UserRole 原始状态值映射优先级
+                        base = it.data(Qt.ItemDataRole.UserRole) or it.text()
                         pri = order_map.get(base, 99)
                         it.setData(Qt.ItemDataRole.UserRole + 1, pri)
         except Exception:
@@ -1157,8 +1319,9 @@ class MainWindow(QMainWindow):
             return
         from PyQt6.QtWidgets import QMenu
         menu = QMenu(self)
-        status_text = status_item.text()
-        if status_text in ("失败", "已取消"):
+        # 用 UserRole 存的原始状态键判断（符号只是视觉后缀，不参与逻辑）
+        status_key = status_item.data(Qt.ItemDataRole.UserRole) or ""
+        if status_key in ("failed", "cancelled"):
             act_retry = menu.addAction("⟳ 重试此仓库")
             act_retry.triggered.connect(
                 lambda _=False, r=row: self._retry_table_row(r))
@@ -1265,12 +1428,12 @@ class MainWindow(QMainWindow):
             bar.setRange(0, 1)
             bar.setValue(1)
         status_map = {
-            SyncStatus.SUCCESS: (PALETTE["accent2"], "成功"),
-            SyncStatus.FAILED: (PALETTE["error"], "失败"),
-            SyncStatus.CANCELLED: (PALETTE["warning"], "已取消"),
-            SyncStatus.CONFLICT: (PALETTE["warning"], "冲突"),
-            SyncStatus.SKIPPED: (PALETTE["text_dim"], "跳过"),
-            SyncStatus.RUNNING: (PALETTE["accent"], "更新中"),
+            SyncStatus.SUCCESS: (PALETTE["accent2"], "成功 ✓"),
+            SyncStatus.FAILED: (PALETTE["error"], "失败 ✕"),
+            SyncStatus.CANCELLED: (PALETTE["warning"], "已取消 ⊘"),
+            SyncStatus.CONFLICT: (PALETTE["warning"], "冲突 ⚠"),
+            SyncStatus.SKIPPED: (PALETTE["text_dim"], "跳过 →"),
+            SyncStatus.RUNNING: (PALETTE["accent"], "更新中…"),
         }
         color, label = status_map.get(res.status, (PALETTE["text"], str(res.status.value)))
         # G22-4：托盘计数（成功/失败分流；冲突/失败归 bad，其余终态归 ok）
@@ -1285,6 +1448,8 @@ class MainWindow(QMainWindow):
         st = self.table.item(index, 2)
         st.setText(label)
         st.setForeground(QColor(color))
+        # 状态原始值存 UserRole：排序/右键/统计按原始值判断（符号仅视觉）
+        st.setData(Qt.ItemDataRole.UserRole, res.status.value)
         # G35-8 状态格 tooltip：message + detail 拼接（与详情列 tooltip 互补）
         st.setToolTip(f"{res.message or ''}" + (f"\n{res.detail or ''}" if res.detail else ""))
         act = self.table.item(index, 3)
@@ -1303,6 +1468,13 @@ class MainWindow(QMainWindow):
         msg = self.table.item(index, 4)
         msg.setText(res.message)
         msg.setToolTip(res.detail or "")
+        # G36-6 完成动效：成功绿/失败红背景色 1.2s 消隐（设置开关；offscreen 自动关）
+        if bool(getattr(self.settings, "animations", True)) and \
+                os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+            try:
+                self._animate_result_row(index, res.status)
+            except Exception:
+                pass
         # 同步成功 → 地址入 URL 历史（G02-4）
         try:
             if res.status == SyncStatus.SUCCESS:
@@ -1312,6 +1484,38 @@ class MainWindow(QMainWindow):
         # 记录到 DB 由 worker 内部完成
         self._emit_log(_fmt_dt(), LogLevel.INFO if res.status == SyncStatus.SUCCESS else LogLevel.WARN,
                         f"[{index}] {label}：{res.message}（{action_label}）")
+
+    def _animate_result_row(self, index: int, status: SyncStatus):
+        """G36-6 完成动效：成功绿/失败红背景色 1.2s 淡出到主题底色。
+
+        仅在非 offscreen（有真实渲染）且设置开启时由 _on_worker_result 调用。
+        动效结束后背景复位为主题面板色，不影响排序/过滤的 UserRole 数据。
+        """
+        try:
+            from PyQt6.QtCore import QVariantAnimation
+            from PyQt6.QtGui import QBrush
+            st = self.table.item(index, 2)
+            if st is None:
+                return
+            flash = PALETTE["accent2"] if status == SyncStatus.SUCCESS else PALETTE["error"]
+            start_color = QColor(flash)
+            base_color = QColor(PALETTE["panel"])
+            anim = QVariantAnimation(self)
+            anim.setDuration(1200)
+            anim.setStartValue(start_color)
+            anim.setEndValue(base_color)
+            anim.valueChanged.connect(
+                lambda c: st.setBackground(QBrush(QColor(c))))
+            anim.finished.connect(
+                lambda: st.setBackground(QBrush(base_color)))
+            # 保留引用防止被 GC（存到窗口级列表）
+            if not hasattr(self, "_row_anims"):
+                self._row_anims = []
+            self._row_anims.append(anim)
+            anim.finished.connect(lambda: self._row_anims.remove(anim))
+            anim.start()
+        except Exception:
+            pass
 
     # ------------------------------------------------------------ 槽
     @pyqtSlot()
@@ -1324,14 +1528,15 @@ class MainWindow(QMainWindow):
             it = self.table.item(i, 2)
             if not it:
                 continue
-            t = it.text()
-            if t in ("成功", "失败", "已取消", "冲突", "跳过"):
+            # 用 UserRole 存的原始状态值统计（显示文本含符号后缀，不再做字符串匹配）
+            t = it.data(Qt.ItemDataRole.UserRole) or it.text()
+            if t in ("success", "failed", "cancelled", "conflict", "skipped"):
                 done += 1
-                if t == "成功":
+                if t == "success":
                     ok += 1
-                elif t == "冲突":
+                elif t == "conflict":
                     conflict += 1
-                elif t == "失败":
+                elif t == "failed":
                     fail += 1
         self.busy = False
         self._reset_buttons()
@@ -1391,6 +1596,23 @@ class MainWindow(QMainWindow):
             return self.engine.is_cancelled()
         return any(f() for f in getattr(self, "flags", {}).values())
 
+    # --------------------------------------------------------- G36-8 全局热键
+    def _hotkey_start_cancel(self):
+        """Ctrl+Alt+S：空闲→开始全部；运行中→取消全部。"""
+        if self.busy:
+            self.cancel_all()
+        else:
+            self.start_all()
+
+    def _hotkey_show_window(self):
+        """Ctrl+Alt+M：显示并激活主窗口（托盘最小化后可唤回）。"""
+        try:
+            self.show()
+            self.raise_()
+            self.activateWindow()
+        except Exception:
+            pass
+
     # ------------------------------------------------------------ 管理页
     def _load_db_into_grid(self):
         """从 DB 加载仓库列表到模型（全 host，含本地导入仓库；批量懒渲染）。"""
@@ -1404,6 +1626,17 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         self.manage_stats.setText(base)
+        # G36-5 管理页空态：无仓库时显示引导 overlay
+        try:
+            ov = getattr(self, "_empty_manage", None)
+            if ov is not None:
+                visible = self.manage_model.rowCount() == 0
+                ov.setVisible(visible)
+                if visible:
+                    ov.setGeometry(self.manage_table.rect())
+                    ov.raise_()
+        except Exception:
+            pass
 
     def _refresh_manage(self):
         self._load_db_into_grid()
@@ -1546,6 +1779,19 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "导出失败", str(e))
 
+    def resizeEvent(self, e):
+        """G36-5 空态 overlay 跟随表格尺寸重定位。"""
+        try:
+            if getattr(self, "_empty_download", None) is not None and \
+                    self._empty_download.isVisible():
+                self._empty_download.setGeometry(self.table.rect())
+            if getattr(self, "_empty_manage", None) is not None and \
+                    self._empty_manage.isVisible():
+                self._empty_manage.setGeometry(self.manage_table.rect())
+        except Exception:
+            pass
+        super().resizeEvent(e)
+
     # ------------------------------------------------------------ 关闭
     def closeEvent(self, e: QCloseEvent):
         if self.busy:
@@ -1579,6 +1825,8 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         try:
+            # G36-4 记忆窗口几何（尺寸+位置），重启恢复
+            self.settings.geometry = self._serialize_geometry()
             self.settings_store.save(self.settings)
             self.db.close()
         except Exception:

@@ -1,4 +1,4 @@
-"""UI 通用：日志事件模型 / 文本高亮 / 样式常量。"""
+"""UI 通用：日志事件模型 / 文本高亮 / 样式常量 / 图标 helper。"""
 from __future__ import annotations
 
 import re
@@ -6,7 +6,47 @@ from enum import Enum
 from typing import Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat
+from PyQt6.QtGui import QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat
+from PyQt6.QtWidgets import QStyle  # QStyle.StandardPixmap 在 QtWidgets 命名空间
+
+# G36-3 统一图标体系：语义键 → QStyle.StandardPixmap（零资源文件、跨平台一致）。
+# 找不到映射的键返回空图标（调用方保留 emoji 文本作回退）。
+_STD_ICONS: dict[str, QStyle.StandardPixmap] = {
+    "play": QStyle.StandardPixmap.SP_MediaPlay,
+    "stop": QStyle.StandardPixmap.SP_MediaStop,
+    "open_dir": QStyle.StandardPixmap.SP_DirOpenIcon,
+    "refresh": QStyle.StandardPixmap.SP_BrowserReload,
+    "save": QStyle.StandardPixmap.SP_DialogSaveButton,
+    "trash": QStyle.StandardPixmap.SP_TrashIcon,
+    "info": QStyle.StandardPixmap.SP_MessageBoxInformation,
+    "warn": QStyle.StandardPixmap.SP_MessageBoxWarning,
+    "error": QStyle.StandardPixmap.SP_MessageBoxCritical,
+    "ok": QStyle.StandardPixmap.SP_DialogApplyButton,
+    "close": QStyle.StandardPixmap.SP_DialogCloseButton,
+    "folder": QStyle.StandardPixmap.SP_DirIcon,
+    "file": QStyle.StandardPixmap.SP_FileIcon,
+    "arrow_down": QStyle.StandardPixmap.SP_ArrowDown,
+    "arrow_up": QStyle.StandardPixmap.SP_ArrowUp,
+    "computer": QStyle.StandardPixmap.SP_ComputerIcon,
+}
+
+
+def std_icon(name: str, widget=None) -> Optional[QIcon]:
+    """返回语义图标的 QIcon；无映射返回 None（调用方保留文本回退）。
+
+    widget 提供 style()（通常传按钮自身），保证与当前主题/样式一致。
+    """
+    pm = _STD_ICONS.get(name)
+    if pm is None:
+        return None
+    try:
+        style = widget.style() if widget is not None else None
+        if style is not None:
+            return style.standardIcon(pm)
+        from PyQt6.QtWidgets import QApplication
+        return QApplication.style().standardIcon(pm)
+    except Exception:
+        return None
 
 # 主题色板集合（G05-1 多主题）
 # Deep = 默认 GitHub 深色；Light = 浅色；Nord = 北欧风格

@@ -48,6 +48,33 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     sv.setContentsMargins(12, 12, 12, 12)
     sv.setSpacing(10)
 
+    # ---- G36-7 设置搜索：顶部搜索框，输入关键字隐藏不匹配分组
+    search_row = QHBoxLayout()
+    search_row.addWidget(QLabel("🔍 设置搜索"))
+    owner.settings_search = QLineEdit()
+    owner.settings_search.setPlaceholderText("搜索设置项（分组标题 / 行内标签）…")
+    owner.settings_search.setClearButtonEnabled(True)
+    search_row.addWidget(owner.settings_search, 1)
+    sv.addLayout(search_row)
+
+    # 分组收集 + 过滤闭包：空关键字全显；否则标题或行内 QLabel 文本匹配才可见
+    groups: list[QGroupBox] = []
+    owner.settings_groups = groups  # 供测试/外部断言分组可见性
+
+    def _apply_settings_filter(keyword: str) -> None:
+        """按关键字过滤设置分组：标题含关键字 或 任一行标签含关键字。"""
+        kw = keyword.strip().lower()
+        for group in groups:
+            if not kw:
+                group.setVisible(True)
+                continue
+            title = group.title().lower()
+            labels = [lbl.text().lower() for lbl in group.findChildren(QLabel)]
+            matched = kw in title or any(kw in t for t in labels if t)
+            group.setVisible(matched)
+
+    owner.settings_search.textChanged.connect(_apply_settings_filter)
+
     # ---- 启动与后台运行
     g1 = QGroupBox("启动与后台运行（开机自启 / 托盘）")
     g1.setToolTip("开机自启、下载完成后自动清空输入框 等启动行为")
@@ -69,8 +96,15 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     owner.ck_finish_sound.setToolTip("全部任务完成时响一声提示音（QApplication.beep）")
     owner.ck_finish_sound.stateChanged.connect(owner._save_finish_sound)
     l1.addWidget(owner.ck_finish_sound)
+    # G36-6 完成动效：成功绿/失败红背景淡出（低配/离屏自动关）
+    owner.ck_animations = QCheckBox("任务完成动效")
+    owner.ck_animations.setChecked(bool(getattr(settings, "animations", True)))
+    owner.ck_animations.setToolTip("任务结束时行背景色 1.2s 淡出（成功绿/失败红）")
+    owner.ck_animations.stateChanged.connect(owner._save_animations)
+    l1.addWidget(owner.ck_animations)
     l1.addStretch()
     sv.addWidget(g1)
+    groups.append(g1)
 
     # ---- 并行与网络设置（持久化到 settings.json）
     g3 = QGroupBox("并行与网络（并发 / 超时 / 重试 / 代理 / Token）")
@@ -147,6 +181,7 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     owner.edit_token.editingFinished.connect(owner._save_token)
     f3.addRow("GitHub Token：", owner.edit_token)
     sv.addWidget(g3)
+    groups.append(g3)
 
     # ---- 外观（G05-1 多主题）
     g5 = QGroupBox("外观（主题）")
@@ -159,6 +194,8 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     from ..ui.theme import THEMES as _THEMES
     for key, label in _THEMES.items():
         owner.theme_combo.addItem(label, key)
+    # G36-9 跟随系统深浅色（auto = 启动/系统变化时按注册表自动切 light/deep）
+    owner.theme_combo.addItem("跟随系统（自动）", "auto")
     cur = getattr(settings, "theme", "deep")
     idx = owner.theme_combo.findData(cur)
     if idx >= 0:
@@ -166,6 +203,7 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     owner.theme_combo.currentIndexChanged.connect(owner._save_theme)
     f5.addRow("界面主题：", owner.theme_combo)
     sv.addWidget(g5)
+    groups.append(g5)
 
     # ---- 关于与更新
     g4 = QGroupBox("关于与更新")
@@ -204,6 +242,7 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     h4.addStretch()
     f4.addRow("环境自检：", h4)
     sv.addWidget(g4)
+    groups.append(g4)
 
     sv.addStretch()
     return settings_scroll
