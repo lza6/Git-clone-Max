@@ -2,18 +2,14 @@
 from __future__ import annotations
 
 import os
-import sys
 import time
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSlot
 from PyQt6.QtGui import QCloseEvent, QColor
 from PyQt6.QtWidgets import (
-    QCheckBox,
     QComboBox,
-    QFileDialog,
-    QFormLayout,
-    QFrame,
+    QFileDialog,  # noqa: F401  — 测试 mock 引用（download_tools 经本模块访问）
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -24,7 +20,6 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
-    QScrollArea,
     QSpinBox,
     QTableView,
     QTableWidget,
@@ -40,6 +35,7 @@ from ..app.worker import CancelFlag
 from ..db.repo_db import Database
 from ..db.settings import SettingsStore
 from ..models import RepoSpec, SyncResult, SyncStatus
+from .log_buffer import LogBuffer
 from .repo_detail_dialog import RepoDetailDialog
 from .theme import PALETTE, LogLevel, LogModel
 
@@ -107,19 +103,20 @@ class MainWindow(QMainWindow):
         self._detail_timer = QTimer(self)
         self._detail_timer.setInterval(300)
         self._detail_timer.timeout.connect(self._flush_detail_batch)
-
         # 日志模型
         self.log = LogModel(max_entries=3000)
         self.log.appended.connect(self._on_log_appended)
 
-        # 日志洪峰节流：git 高输出时合并为一次批量刷新，避免主线程被刷屏拖慢
+        # 日志洪峰节流（G33-8 拆分）：git 高输出时合并为一次批量刷新，
+        # 由 LogBuffer 定时器驱动；_log_batch/_log_batch_timer 保持兼容引用。
+        self._log_buffer: LogBuffer | None = None
         self._log_batch: list = []
-        self._log_batch_timer = QTimer(self)
-        self._log_batch_timer.setInterval(120)
-        self._log_batch_timer.timeout.connect(self._flush_log_batch)
-        self._log_batch_timer.start()
+        self._log_batch_timer: QTimer | None = None
 
         self._build_ui()
+        # 首次日志写入前先挂 LogBuffer（此时 log_view/log_count 已存在）
+        self._ensure_log_buffer()
+
         # G05-1 应用持久化主题（默认 deep）+ G10-1 字号缩放
         from ..ui import theme as _th
         _th.apply_theme(getattr(self.settings, "theme", "deep"))
@@ -412,194 +409,22 @@ class MainWindow(QMainWindow):
 
     # ---------------- 设置与日志
     def _build_settings_tab(self):
+        """G33-8 拆分：设置页控件构建委托给 settings_panel.py / log_buffer.py。
+
+        控件名（self.spin_concurrency / self.log_view 等）仍挂载在本窗口，
+        测试与既有引用零变化；此处只做布局组装。
+        """
         v = QVBoxLayout(self.tab_settings)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(10)
 
         # 设置区：所有设置分组放入可滚动区域（日志区固定在下、不被滚动带跑）
-        self.settings_scroll = QScrollArea()
-        self.settings_scroll.setWidgetResizable(True)
-        self.settings_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.settings_scroll.setMinimumHeight(180)
-        scroll_widget = QWidget()
-        self.settings_scroll.setWidget(scroll_widget)
-        sv = QVBoxLayout(scroll_widget)
-        sv.setContentsMargins(12, 12, 12, 12)
-        sv.setSpacing(10)
-
-        # ---- 启动与后台运行
-        g1 = QGroupBox("启动与后台运行（开机自启 / 托盘）")
-        g1.setToolTip("开机自启、下载完成后自动清空输入框 等启动行为")
-        l1 = QHBoxLayout(g1)
-        self.ck_autostart = QCheckBox("开机自启（写入任务计划：登录时启动一次）")
-        l1.addWidget(self.ck_autostart)
-        self.ck_auto_clear = QCheckBox("下载完成后自动清空输入框")
-        self.ck_auto_clear.setChecked(bool(self.settings.auto_clear))
-        self.ck_auto_clear.stateChanged.connect(self._save_auto_clear)
-        l1.addWidget(self.ck_auto_clear)
-        # G09-1 剪贴板监听：检测到 git 地址提示加入队列
-        self.ck_clipboard = QCheckBox("监听剪贴板（检测到仓库地址自动提示）")
-        self.ck_clipboard.setChecked(bool(getattr(self.settings, "clipboard_watch", False)))
-        self.ck_clipboard.stateChanged.connect(self._save_clipboard_watch)
-        l1.addWidget(self.ck_clipboard)
-        l1.addStretch()
-        sv.addWidget(g1)
-
-        # ---- 并行与网络设置（持久化到 settings.json）
-        g3 = QGroupBox("并行与网络（并发 / 超时 / 重试 / 代理 / Token）")
-        g3.setToolTip("并发数、超时、重试、代理与私有仓库认证 等网络相关设置")
-        f3 = QFormLayout(g3)
-        f3.setContentsMargins(10, 10, 10, 10)
-        f3.setHorizontalSpacing(16)
-        f3.setVerticalSpacing(10)
-        f3.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        f3.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-
-        self.spin_concurrency = QSpinBox()
-        self.spin_concurrency.setRange(1, 32)
-        self.spin_concurrency.setValue(int(self.settings.concurrency))
-        self.spin_concurrency.setToolTip(f"同时并行下载/更新的仓库数（1–{MAX_CONCURRENCY}）")
-        self.spin_concurrency.valueChanged.connect(self._save_concurrency)
-        f3.addRow("并发数（1–32）：", self.spin_concurrency)
-
-        self.spin_fetch_timeout = QSpinBox()
-        self.spin_fetch_timeout.setRange(10, 3600)
-        self.spin_fetch_timeout.setValue(int(self.settings.fetch_timeout))
-        self.spin_fetch_timeout.setToolTip("访问仓库远程信息（fetch/克隆）的超时时间，单位秒")
-        self.spin_fetch_timeout.valueChanged.connect(self._save_fetch_timeout)
-        f3.addRow("fetch 超时（秒）：", self.spin_fetch_timeout)
-
-        self.spin_retries = QSpinBox()
-        self.spin_retries.setRange(0, 5)
-        self.spin_retries.setValue(int(self.settings.retries))
-        self.spin_retries.setToolTip("网络故障时自动重试次数（0 = 只尝试一次）")
-        self.spin_retries.valueChanged.connect(self._save_retries)
-        f3.addRow("自动重试（次）：", self.spin_retries)
-
-        self.edit_proxy = QLineEdit(self.settings.proxy)
-        self.edit_proxy.setPlaceholderText("http://127.0.0.1:7890（留空不代理）")
-        self.edit_proxy.setToolTip("网络代理地址，形如 http://127.0.0.1:7890；留空则不使用代理")
-        self.edit_proxy.editingFinished.connect(self._save_proxy)
-        f3.addRow("HTTP 代理：", self.edit_proxy)
-        # G04-3 自动检测系统代理（环境变量 / Windows 注册表）
-        self.btn_detect_proxy = QPushButton("自动检测")
-        self.btn_detect_proxy.setToolTip("读取系统代理（环境变量 / Windows 注册表）填入")
-        self.btn_detect_proxy.clicked.connect(self._detect_proxy_now)
-        f3.addRow("", self.btn_detect_proxy)
-
-        # G04-4 下载限速（KiB/s）
-        self.spin_rate = QSpinBox()
-        self.spin_rate.setRange(0, 100000)
-        self.spin_rate.setValue(int(getattr(self.settings, "rate_limit_kbps", 0) or 0))
-        self.spin_rate.setSuffix(" KiB/s")
-        self.spin_rate.setSpecialValueText("不限速")
-        self.spin_rate.setToolTip("低于该速率持续 30s 视为卡死中止（0 = 不限速）")
-        self.spin_rate.valueChanged.connect(self._save_rate_limit)
-        f3.addRow("限速：", self.spin_rate)
-
-        self.ck_unshallow = QCheckBox("浅克隆仓库更新时拉全量历史")
-        self.ck_unshallow.setChecked(bool(self.settings.fetch_unshallow))
-        self.ck_unshallow.setToolTip("浅克隆仓库增量 fetch 时拉取全量历史，避免后续增量因深度不足失败")
-        self.ck_unshallow.stateChanged.connect(self._save_fetch_unshallow)
-        f3.addRow("浅克隆更新：", self.ck_unshallow)
-
-        self.ck_submodule = QCheckBox("克隆时拉取子模块（--recurse-submodules）")
-        self.ck_submodule.setChecked(bool(getattr(self.settings, "submodule", False)))
-        self.ck_submodule.setToolTip("含子模块的仓库克隆后工作区完整；开启会增加克隆耗时")
-        self.ck_submodule.stateChanged.connect(self._save_submodule)
-        f3.addRow("子模块：", self.ck_submodule)
-
-        self.edit_token = QLineEdit(self.settings.token)
-        self.edit_token.setPlaceholderText("私有仓库认证令牌（可选，留空不传递）")
-        self.edit_token.setEchoMode(QLineEdit.EchoMode.Password)
-        self.edit_token.setToolTip("GitHub 个人访问令牌（Fine-grained/PAT），访问私有仓库时使用；留空不传递")
-        self.edit_token.editingFinished.connect(self._save_token)
-        f3.addRow("GitHub Token：", self.edit_token)
-        sv.addWidget(g3)
-
-        # ---- 外观（G05-1 多主题）
-        g5 = QGroupBox("外观（主题）")
-        f5 = QFormLayout(g5)
-        f5.setContentsMargins(10, 10, 10, 10)
-        f5.setHorizontalSpacing(16)
-        f5.setVerticalSpacing(10)
-        f5.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.theme_combo = QComboBox()
-        from ..ui.theme import THEMES as _THEMES
-        for key, label in _THEMES.items():
-            self.theme_combo.addItem(label, key)
-        cur = getattr(self.settings, "theme", "deep")
-        idx = self.theme_combo.findData(cur)
-        if idx >= 0:
-            self.theme_combo.setCurrentIndex(idx)
-        self.theme_combo.currentIndexChanged.connect(self._save_theme)
-        f5.addRow("界面主题：", self.theme_combo)
-        sv.addWidget(g5)
-
-        # ---- 关于与更新
-        g4 = QGroupBox("关于与更新")
-        g4.setToolTip("版本信息与自检工具")
-        f4 = QFormLayout(g4)
-        f4.setContentsMargins(10, 10, 10, 10)
-        f4.setHorizontalSpacing(16)
-        f4.setVerticalSpacing(10)
-        f4.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        f4.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-        try:
-            from .. import __version__ as _ver
-        except Exception:
-            _ver = "unknown"
-        self.lbl_version = QLabel(_ver)
-        self.lbl_version.setObjectName("muted")
-        f4.addRow("当前版本：", self.lbl_version)
-        h4 = QHBoxLayout()
-        self.btn_check_update = QPushButton("检查更新")
-        self.btn_check_update.clicked.connect(self.check_update_now)
-        h4.addWidget(self.btn_check_update)
-        self.btn_selftest = QPushButton("自检环境")
-        self.btn_selftest.setToolTip("检测 git / PyQt6 / 数据目录 / 当前并发 是否正常可用")
-        self.btn_selftest.clicked.connect(self._run_selftest)
-        h4.addWidget(self.btn_selftest)
-        # G07-1 统计中心入口
-        self.btn_statistics = QPushButton("📊 统计中心")
-        self.btn_statistics.setToolTip("查看仓库总数 / 同步次数 / 成功率 / 平台分布")
-        self.btn_statistics.clicked.connect(self.show_statistics)
-        h4.addWidget(self.btn_statistics)
-        # G07-3 报表导出入口
-        self.btn_export = QPushButton("📄 导出报表")
-        self.btn_export.setToolTip("导出 CSV（Excel 友好）或 Markdown 报表")
-        self.btn_export.clicked.connect(self.export_report)
-        h4.addWidget(self.btn_export)
-        h4.addStretch()
-        f4.addRow("环境自检：", h4)
-        sv.addWidget(g4)
-
-        sv.addStretch()
+        from .settings_panel import build_log_box, build_settings_ui
+        self.settings_scroll = build_settings_ui(self)
         v.addWidget(self.settings_scroll, 1)
 
         # ---- 黑匣子日志（实时）：固定在下、占剩余空间，日志滚动由控件自身负责
-        g2 = QGroupBox("黑匣子日志（实时）")
-        g2.setToolTip("应用运行日志实时输出；可导出为文本文件排查问题")
-        l2 = QVBoxLayout(g2)
-        tb = QHBoxLayout()
-        self.log_count = QLabel("0 条")
-        self.log_count.setObjectName("muted")
-        tb.addWidget(self.log_count)
-        tb.addStretch()
-        self.btn_save_log = QPushButton("导出日志…")
-        self.btn_save_log.setToolTip("把当前日志内容导出为文本文件")
-        self.btn_save_log.clicked.connect(self.save_log)
-        self.btn_clear_log = QPushButton("清空日志")
-        self.btn_clear_log.clicked.connect(self.clear_log)
-        tb.addWidget(self.btn_save_log)
-        tb.addWidget(self.btn_clear_log)
-        l2.addLayout(tb)
-        self.log_view = QPlainTextEdit()
-        self.log_view.setObjectName("console")
-        self.log_view.setReadOnly(True)
-        self.log_view.setMaximumBlockCount(4000)
-        self.log_view.setMinimumHeight(100)
-        l2.addWidget(self.log_view, 1)
+        g2 = build_log_box(self)
         v.addWidget(g2, 1)
 
     def show_statistics(self):
@@ -608,25 +433,9 @@ class MainWindow(QMainWindow):
         StatisticsDialog(db=self.db, parent=self).exec()
 
     def export_report(self):
-        """G07-3 导出 CSV/Markdown 报表（弹文件选择；CSV 为 Excel 友好 utf-8-sig）。"""
-        from PyQt6.QtWidgets import QFileDialog
-        path, _ = QFileDialog.getSaveFileName(
-            self, "导出报表", str(self.data_dir / "sync_report.csv"),
-            "CSV (*.csv);;Markdown (*.md)")
-        if not path:
-            return
-        try:
-            from ..reports import export_csv, export_markdown
-            if str(path).lower().endswith(".md"):
-                n = export_markdown(self.db, path)
-            else:
-                n = export_csv(self.db, path)
-            self._emit_log(_fmt_dt(), LogLevel.INFO,
-                           f"报表已导出：{path}（{n} 行）")
-            self.statusBar().showMessage(f"报表已导出：{path}（{n} 行）")
-        except Exception as e:
-            from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.critical(self, "导出失败", str(e))
+        """G07-3 导出 CSV/Markdown 报表（G33-8 拆分：委托 download_tools）。"""
+        from .download_tools import export_report as _er
+        _er(self, _fmt_dt)
 
     def _run_selftest(self, log_path: str | Path | None = None):
         import shutil
@@ -667,38 +476,34 @@ class MainWindow(QMainWindow):
             pass
 
     # ------------------------------------------------------------ 日志
+    def _ensure_log_buffer(self):
+        """G33-8 惰性挂载 LogBuffer（log_view/log_count 就绪后调用）。
+
+        保持 _log_batch / _log_batch_timer 兼容引用，供历史测试 tearDown 与 closeEvent 访问。
+        """
+        if self._log_buffer is not None:
+            return
+        self._log_buffer = LogBuffer(parent=self, log_view=self.log_view,
+                                     log_count=self.log_count)
+        self._log_batch = self._log_buffer._batch
+        self._log_batch_timer = self._log_buffer.timer
+
     def _emit_log(self, time: str, level: LogLevel, text: str):
-        """统一日志入口：入模型 + 节流批量渲染（高频 git 输出不阻塞主线程）。"""
-        if not hasattr(self, "_log_batch"):
-            self._log_batch = []
-            self._log_batch_timer = QTimer(self)
-            self._log_batch_timer.setInterval(120)
-            self._log_batch_timer.timeout.connect(self._flush_log_batch)
-            self._log_batch_timer.start()
+        """统一日志入口：入模型 + 节流批量渲染（高频 git 输出不阻塞主线程）。
+
+        G33-8 拆分：批量渲染逻辑委托 LogBuffer（log_buffer.py）。
+        """
+        self._ensure_log_buffer()
         self.log.append(time, level, text)
-        # 节流：把待渲染条目并入批量，由定时器统一 flush
+        # 节流：把待渲染条目并入批量，由 LogBuffer 定时器统一 flush
         from .theme import LogEvent as _LE
-        ev = _LE(time, level, text)
-        self._log_batch.append(ev)
+        self._log_buffer.append(_LE(time, level, text))
 
     def _flush_log_batch(self):
-        if not getattr(self, "_log_batch", None):
-            return
-        batch, self._log_batch = self._log_batch, []
-        if not (hasattr(self, "log_view") and self.log_view):
-            return
-        cur = self.log_view
-        for ev in batch:
-            prefix = {
-                LogLevel.WARN: "[警告] ",
-                LogLevel.ERROR: "[错误] ",
-                LogLevel.SYSTEM: "[系统] ",
-            }.get(ev.level, "")
-            cur.appendPlainText(f"[{ev.time}] {prefix}{ev.text}")
-        # 滚动跟随（仅在用户已处于底部时）
-        sb = cur.verticalScrollBar()
-        if sb.value() >= sb.maximum() - 40:
-            cur.verticalScrollBar().setValue(cur.verticalScrollBar().maximum())
+        """兼容入口：刷日志缓冲（历史测试/closeEvent 引用）。"""
+        buf = getattr(self, "_log_buffer", None)
+        if buf is not None:
+            buf.flush()
 
     @pyqtSlot(int)
     def _on_log_appended(self, count):
@@ -706,13 +511,16 @@ class MainWindow(QMainWindow):
 
     def has_pending_logs(self) -> bool:
         """供 closeEvent 判断是否还有积压节流日志需 flush。"""
-        return bool(getattr(self, "_log_batch", None))
+        buf = getattr(self, "_log_buffer", None)
+        return bool(getattr(self, "_log_batch", None)) or (buf is not None and buf.has_pending())
 
     def clear_log(self):
         self.log.clear()
         # 清空节流积压，避免清空后 ≤120ms 幽灵追加回旧行
         if hasattr(self, "_log_batch"):
             self._log_batch.clear()
+        if hasattr(self, "_log_buffer"):
+            self._log_buffer.clear_pending()
         self.log_view.clear()
 
     # ------------------------------------------------------------ 设置持久化
@@ -896,67 +704,26 @@ class MainWindow(QMainWindow):
             pass
 
     def save_log(self):
-        path, _ = QFileDialog.getSaveFileName(
-            self, "导出日志", str(self.data_dir / "clone_log.txt"), "文本文件 (*.txt)")
-        if not path:
-            return
-        try:
-            Path(path).write_text(self.log.to_plain_text(), encoding="utf-8")
-            self._emit_log(_fmt_dt(), LogLevel.INFO, f"日志已导出：{path}")
-        except Exception as e:
-            QMessageBox.critical(self, "导出失败", str(e))
+        from .download_tools import save_log as _sl
+        _sl(self, _fmt_dt)
 
     # ------------------------------------------------------------ 动作
     def _repo_input_menu(self, pos):
         """输入框右键菜单：从最近 URL 历史回填 / 清空历史（G02-4）。"""
-        try:
-            from PyQt6.QtWidgets import QMenu
-            menu = QMenu(self)
-            items = getattr(self, "url_history", None).items() if hasattr(self, "url_history") else []
-            if items:
-                sub = menu.addMenu("从历史粘贴…")
-                for u in items[:15]:
-                    act = sub.addAction(u)
-                    act.triggered.connect(lambda _=False, url=u: self.repo_input.appendPlainText(url + "\n"))
-                menu.addSeparator()
-                act_clear = menu.addAction("清空历史")
-                act_clear.triggered.connect(self._clear_url_history)
-            else:
-                menu.addAction("（暂无历史）")
-            menu.exec(self.repo_input.mapToGlobal(pos))
-        except Exception:
-            pass
+        from .download_tools import repo_input_menu as _rim
+        _rim(self, pos, _fmt_dt)
 
     def _clear_url_history(self):
-        try:
-            self.url_history.clear()
-            self._emit_log(_fmt_dt(), LogLevel.INFO, "URL 历史已清空。")
-        except Exception:
-            pass
+        from .download_tools import clear_url_history as _cuh
+        _cuh(self, _fmt_dt)
 
     def choose_target(self):
-        d = QFileDialog.getExistingDirectory(self, "选择下载目录", self.target_edit.text())
-        if d:
-            self.target_edit.setText(d)
-            # 记住用户选择，下次启动恢复
-            self.settings.download_dir = d
-            self.settings_store.save(self.settings)
+        from .download_tools import choose_target as _ct
+        _ct(self)
 
     def open_target(self):
-        path = self.target_edit.text().strip()
-        if not os.path.isdir(path):
-            QMessageBox.warning(self, "目录不存在", path)
-            return
-        if sys.platform == "win32":
-            os.startfile(path)  # noqa
-        else:
-            import shutil
-            openers = ("xdg-open", "open")
-            for op in openers:
-                if shutil.which(op):
-                    import subprocess
-                    subprocess.Popen([op, path])
-                    break
+        from .download_tools import open_target as _ot
+        _ot(self)
 
     def start_all(self):
         if self.busy:
