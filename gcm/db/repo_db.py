@@ -50,7 +50,7 @@ CREATE INDEX IF NOT EXISTS idx_sync_history_repo ON sync_history(repo_id, starte
 _BUSY_TIMEOUT_MS = 30000  # SQLite 写锁竞争等待上限，避免高并发直接抛 database is locked
 
 # 数据库 schema 版本（PRAGMA user_version）。每次结构变更，递增此值并补一段迁移。
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 
 def _migrate(conn):
@@ -71,6 +71,11 @@ def _migrate(conn):
             conn.execute("ALTER TABLE repos ADD COLUMN favorite INTEGER DEFAULT 0")
         if "excluded" not in cols:
             conn.execute("ALTER TABLE repos ADD COLUMN excluded INTEGER DEFAULT 0")
+    if v < 2:
+        # v2：repos 增加 备注列（G37-6 每仓库备注）
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(repos)")]
+        if "note" not in cols:
+            conn.execute("ALTER TABLE repos ADD COLUMN note TEXT DEFAULT ''")
     conn.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
     conn.commit()
 
@@ -179,6 +184,15 @@ class Database:
             self._begin_immediate()
             self._conn.execute("UPDATE repos SET favorite=? WHERE id=?",
                                (1 if fav else 0, repo_id))
+            self._conn.commit()
+
+    def set_note(self, repo_id: int, note: str) -> None:
+        """G37-6 设置仓库备注（覆盖式）。"""
+        with self._lock:
+            self._begin_immediate()
+            self._conn.execute(
+                "UPDATE repos SET note=?, updated_at=datetime('now','localtime') WHERE id=?",
+                (str(note or ""), repo_id))
             self._conn.commit()
 
     def set_excluded(self, repo_id: int, excluded: bool) -> None:
@@ -331,6 +345,60 @@ class Database:
                 "failed_syncs": int(row["bad"] or 0),
                 "by_host": {str(r["host"]): int(r["c"]) for r in by_host_rows},
             }
+
+    def stats_usage(self) -> dict:
+        """G37-5 用量统计：累计克隆/更新次数与新增提交数（按 action 聚合）。"""
+        with self._lock:
+            row = self._conn.execute(
+                """
+                SELECT
+                    SUM(CASE WHEN action='cloned' THEN 1 ELSE 0 END) AS clones,
+                    SUM(CASE WHEN action='updated' THEN 1 ELSE 0 END) AS updates,
+                    SUM(CASE WHEN action='updated' THEN commits ELSE 0 END) AS commits
+                FROM sync_history
+                """
+            ).fetchone()
+            return {
+                "clones": int(row["clones"] or 0),
+                "updates": int(row["updates"] or 0),
+                "commits": int(row["commits"] or 0),
+            }
+
+    def stats_daily(self, days: int = 30) -> list[dict]:
+        """最近 N 天每日同步聚合（成功/失败/冲突三序列），用于趋势图。
+
+        返回 [{"date": "YYYY-MM-DD", "success": n, "failed": n, "conflict": n}, ...]，
+        日期升序；无数据的天补零（G37-1 趋势展示用）。
+        """
+        days = max(1, min(int(days), 90))
+        import datetime as _dt
+        today = _dt.date.today()
+        start = today - _dt.timedelta(days=days - 1)
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT substr(started_at, 1, 10) AS day,
+                       SUM(CASE WHEN status='success' THEN 1 ELSE 0 END) AS ok,
+                       SUM(CASE WHEN status='failed'  THEN 1 ELSE 0 END) AS bad,
+                       SUM(CASE WHEN status='conflict' THEN 1 ELSE 0 END) AS conf
+                FROM sync_history
+                WHERE started_at >= ?
+                GROUP BY day
+                """,
+                (start.strftime("%Y-%m-%d") + " 00:00:00",),
+            ).fetchall()
+        by_day = {str(r["day"]): r for r in rows}
+        out = []
+        for i in range(days):
+            d = (start + _dt.timedelta(days=i)).strftime("%Y-%m-%d")
+            r = by_day.get(d)
+            out.append({
+                "date": d,
+                "success": int(r["ok"] or 0) if r else 0,
+                "failed": int(r["bad"] or 0) if r else 0,
+                "conflict": int(r["conf"] or 0) if r else 0,
+            })
+        return out
 
     def delete_repo(self, repo_id: int):
         with self._lock:

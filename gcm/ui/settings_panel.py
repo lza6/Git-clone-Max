@@ -173,6 +173,16 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     owner.ck_submodule.stateChanged.connect(owner._save_submodule)
     f3.addRow("子模块：", owner.ck_submodule)
 
+    # G37-4 自动更新间隔（分钟，0=关）
+    owner.spin_auto_update = QSpinBox()
+    owner.spin_auto_update.setRange(0, 10080)  # 0 或 1 分钟 ~ 7 天
+    owner.spin_auto_update.setValue(int(getattr(settings, "auto_update_minutes", 0) or 0))
+    owner.spin_auto_update.setSuffix(" 分钟")
+    owner.spin_auto_update.setSpecialValueText("关闭")
+    owner.spin_auto_update.setToolTip("定时自动一键更新全部（任务运行中自动跳过）；0=关闭")
+    owner.spin_auto_update.valueChanged.connect(owner._save_auto_update)
+    f3.addRow("自动更新：", owner.spin_auto_update)
+
     owner.edit_token = QLineEdit(settings.token)
     owner.edit_token.setPlaceholderText("私有仓库认证令牌（可选，留空不传递）")
     owner.edit_token.setEchoMode(QLineEdit.EchoMode.Password)

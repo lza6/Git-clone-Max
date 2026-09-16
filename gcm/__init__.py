@@ -1,5 +1,5 @@
 """Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。"""
-__version__ = "7.2.0"
+__version__ = "7.3.0"
 __app_name__ = "Git-clone-Max"
 __changelog__ = (
     "4.0.0: 统一调度引擎(SyncEngine) · progress.json 进程级锁+周期落盘 · SQLite busy_timeout · "
@@ -67,4 +67,7 @@ __changelog__ = (
     "统一图标体系(QStyle.StandardPixmap) · 窗口尺寸记忆(geometry) · 空态引导 overlay · "
     "完成动效(背景淡出) · 设置页搜索过滤 · 全局热键(Ctrl+Alt+S/U/M) · 跟随系统深浅色(auto) · "
     "全量 486 测试全绿 · 覆盖 81%",
+    "7.3.0: G37 数据能力纵深 - 30 天同步趋势(QPainter 柱状) · 详情页检查远端(ls-remote 对比) · "
+    "报表筛选导出(日期/host/状态) · 自动更新间隔定时 · 用量统计(克隆/更新/提交) · "
+    "每仓库备注(note 迁移 0002+可编辑) · 全量 522 测试全绿 · 覆盖 81%",
 )

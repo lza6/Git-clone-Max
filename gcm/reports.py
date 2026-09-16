@@ -1,27 +1,68 @@
 """G07-3 报表导出：CSV（Excel 友好）与 Markdown（阅读友好）。
 
 数据源：repos JOIN sync_history 全量。CSV 用 utf-8-sig 保证 Excel 中文不乱码。
+G37-3：新增可选 filters 筛选（start/end 日期范围、host、status），
+参数化查询（? 占位）防注入；None/空值不筛，向后兼容既有调用。
 """
 from __future__ import annotations
 
 import csv
 import time
+from datetime import datetime
 from pathlib import Path
 
 
-def _fetch_rows(db) -> list[dict]:
-    """拉取全部仓库 + 最近同步历史（含无历史的仓库）。"""
+def _parse_date(s: str) -> datetime | None:
+    """解析 'YYYY-MM-DD' 日期文本；无效返回 None。"""
     try:
-        rows = db._conn.execute(
-            """
+        return datetime.strptime(s, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        return None
+
+
+def _fetch_rows(db, filters: dict | None = None) -> list[dict]:
+    """拉取全部仓库 + 同步历史（含无历史的仓库）；filters 可选筛选。
+
+    filters 支持：start/end（"YYYY-MM-DD"，作用于 started_at 起止）、
+    host（r.host 精确匹配）、status（h.status 精确匹配）。
+    约定：None/空值忽略；无效日期忽略；有效 start > end 返回空。
+    """
+    try:
+        filters = filters or {}
+        start = str(filters.get("start") or "").strip()
+        end = str(filters.get("end") or "").strip()
+        host = str(filters.get("host") or "").strip()
+        status = str(filters.get("status") or "").strip()
+
+        where, params = [], []
+        d_start = _parse_date(start)
+        d_end = _parse_date(end)
+        if d_start and d_end and d_start > d_end:
+            return []  # 起始晚于截止：不可达区间，直接无数据
+        if d_start:
+            where.append("h.started_at >= ?")
+            params.append(f"{start} 00:00:00")
+        if d_end:
+            where.append("h.started_at <= ?")
+            params.append(f"{end} 23:59:59")
+        if host:
+            where.append("r.host = ?")
+            params.append(host)
+        if status:
+            where.append("h.status = ?")
+            params.append(status)
+
+        sql = """
             SELECT r.owner, r.repo, r.host,
                    h.status, h.action, h.message, h.commits,
                    h.duration_ms, h.started_at
             FROM repos r
             LEFT JOIN sync_history h ON h.repo_id = r.id
-            ORDER BY r.owner, r.repo, h.id DESC
-            """
-        ).fetchall()
+        """
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY r.owner, r.repo, h.id DESC"
+        rows = db._conn.execute(sql, params).fetchall()
         out = []
         seen = set()
         for r in rows:
@@ -37,9 +78,9 @@ def _fetch_rows(db) -> list[dict]:
         return []
 
 
-def export_csv(db, out_path: str | Path) -> int:
-    """导出 CSV 报表；返回行数（不含表头）。"""
-    rows = _fetch_rows(db)
+def export_csv(db, out_path: str | Path, filters: dict | None = None) -> int:
+    """导出 CSV 报表；返回行数（不含表头）。filters 可选，默认全量。"""
+    rows = _fetch_rows(db, filters)
     path = Path(out_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8-sig", newline="") as f:
@@ -56,9 +97,9 @@ def export_csv(db, out_path: str | Path) -> int:
     return len(rows)
 
 
-def export_markdown(db, out_path: str | Path) -> int:
-    """导出 Markdown 报表；返回行数。"""
-    rows = _fetch_rows(db)
+def export_markdown(db, out_path: str | Path, filters: dict | None = None) -> int:
+    """导出 Markdown 报表；返回行数。filters 可选，默认全量。"""
+    rows = _fetch_rows(db, filters)
     path = Path(out_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [

@@ -2,14 +2,17 @@
 from __future__ import annotations
 
 import os
+import subprocess
+import threading
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QTableWidget,
@@ -49,13 +52,17 @@ class RepoDetailDialog(QDialog):
     - 标题：owner/repo
     - 元信息区：仓库路径 / 主机 / 当前 HEAD / 最近同步 / 默认分支
     - 历史表格：只读展示同步历史
-    - 底部按钮：打开目录 / 复制路径 / 复制克隆命令 / 关闭
+    - 底部按钮：打开目录 / 复制路径 / 复制克隆命令 / 检查远端 / 关闭
     """
+
+    # G37-2 远端检查结果回主线程（worker 线程 emit → 主线程 queued 槽，线程安全）
+    remote_checked = pyqtSignal(str)
 
     def __init__(self, repo: dict, history: list, parent=None):
         super().__init__(parent)
         self.repo = repo
         self.history = list(history or [])
+        self._remote_thread: threading.Thread | None = None
 
         owner = str(repo.get("owner", ""))
         name = str(repo.get("repo", ""))
@@ -64,6 +71,7 @@ class RepoDetailDialog(QDialog):
         self.setMinimumSize(680, 420)
         self.setStyleSheet(QSS)
 
+        self.remote_checked.connect(self._finish_remote_check)
         self._build_ui()
 
     # ------------------------------------------------------------ UI
@@ -127,8 +135,38 @@ class RepoDetailDialog(QDialog):
             val.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             grid.addWidget(key, i, 0, alignment=Qt.AlignmentFlag.AlignTop)
             grid.addWidget(val, i, 1, alignment=Qt.AlignmentFlag.AlignTop)
+        # G37-6 备注：可编辑行 + 保存按钮（持久化到 repos.note）
+        note_row = len(rows)
+        key = QLabel("备注")
+        key.setObjectName("muted")
+        self.note_edit = QLineEdit(str(self.repo.get("note") or ""))
+        self.note_edit.setPlaceholderText("添加备注…")
+        self.btn_save_note = QPushButton("保存")
+        self.btn_save_note.setToolTip("保存备注（persist 到 repos.note）")
+        self.btn_save_note.clicked.connect(self._save_note)
+        grid.addWidget(key, note_row, 0, alignment=Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(self.note_edit, note_row, 1, alignment=Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(self.btn_save_note, note_row, 2, alignment=Qt.AlignmentFlag.AlignTop)
         grid.setColumnStretch(1, 1)
         return grid
+
+    def _save_note(self):
+        """G37-6 保存备注到 DB（通过 parent.db.set_note；无 db 则本地更新 dict）。"""
+        note = self.note_edit.text().strip()
+        try:
+            rid = int(self.repo.get("id") or 0)
+            db = None
+            try:
+                if hasattr(self.parent(), "db"):
+                    db = self.parent().db
+            except Exception:
+                db = None
+            if db is not None and rid:
+                db.set_note(rid, note)
+            self.repo["note"] = note
+            QMessageBox.information(self, "备注", "备注已保存。")
+        except Exception as e:
+            QMessageBox.warning(self, "保存失败", str(e))
 
     def _build_table(self) -> QTableWidget:
         self.table = QTableWidget(0, 5)
@@ -179,6 +217,15 @@ class RepoDetailDialog(QDialog):
         self.btn_copy_command.clicked.connect(self.copy_clone_command)
         btns.addWidget(self.btn_copy_command)
 
+        self.btn_check_remote = QPushButton("检查远端")
+        self.btn_check_remote.clicked.connect(self.check_remote)
+        btns.addWidget(self.btn_check_remote)
+
+        # G37-2 远端检查结果（只读、muted 样式；后台线程经 singleShot 回主线程更新）
+        self.lbl_remote = QLabel("")
+        self.lbl_remote.setObjectName("muted")
+        btns.addWidget(self.lbl_remote)
+
         self.btn_close = QPushButton("关闭")
         self.btn_close.clicked.connect(self.accept)
         btns.addWidget(self.btn_close)
@@ -217,3 +264,58 @@ class RepoDetailDialog(QDialog):
         else:
             cmd = f"git clone {url}"
         QApplication.clipboard().setText(cmd)
+
+    # ------------------------------------------------------------ G37-2 检查远端
+    def check_remote(self) -> None:
+        """G37-2 检查远端：后台 ls-remote 并比较本地 HEAD，结果写入 lbl_remote。
+
+        - url 为空 → 同步提示无法检查（不起线程）。
+        - 否则起 daemon 线程跑 ``git ls-remote <url> HEAD``，完成后 emit
+          ``remote_checked`` 信号经 queued 连接回主线程更新 UI（跨线程改 widget 不安全）。
+        - 检查期间禁用按钮，避免重复触发；完成恢复。
+        """
+        url = str(self.repo.get("url") or "").strip()
+        if not url:
+            self.lbl_remote.setText("无法检查远端（无 URL 或命令失败）")
+            return
+
+        self.btn_check_remote.setEnabled(False)
+        self.lbl_remote.setText("检查中…")
+        local_sha = str(self.repo.get("head_sha") or "").strip() or None
+
+        def _worker() -> None:
+            text = self._compute_remote_text(url, local_sha)
+            # emit 信号 → 主线程 queued 槽（Qt 自动投递到主线程事件循环）
+            self.remote_checked.emit(text)
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+        self._remote_thread = t  # 持引用防 GC
+
+    def _finish_remote_check(self, text: str) -> None:
+        """主线程收尾：写入结果并恢复按钮（remote_checked 的槽，主线程执行）。"""
+        self.lbl_remote.setText(text)
+        self.btn_check_remote.setEnabled(True)
+
+    def _compute_remote_text(self, url: str, local_sha: str | None) -> str:
+        """同步执行 ``git ls-remote <url> HEAD`` 并比较本地 HEAD（工作线程内调用）。
+
+        - 命令失败 / 无输出 → 「无法检查远端（无 URL 或命令失败）」
+        - 本地无 HEAD → 「无法比较（本地无 HEAD）」（缺基准无法判断领先/落后）
+        - 相同 → 「已最新」；不同 → 「远端有新提交（本地 head 落后）」
+        """
+        try:
+            r = subprocess.run(
+                ["git", "ls-remote", url, "HEAD"], capture_output=True, text=True, timeout=30,
+            )
+            lines = (r.stdout or "").strip().splitlines()
+            remote_sha = lines[0].split("\t")[0].strip() if lines else ""
+        except Exception:  # noqa: BLE001 - 命令失败统一按无法检查处理
+            return "无法检查远端（无 URL 或命令失败）"
+        if not remote_sha:
+            return "无法检查远端（无 URL 或命令失败）"
+        if not local_sha:
+            return "无法比较（本地无 HEAD）"
+        if local_sha == remote_sha:
+            return "已最新"
+        return "远端有新提交（本地 head 落后）"

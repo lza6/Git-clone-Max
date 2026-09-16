@@ -167,6 +167,32 @@ class MainWindow(QMainWindow):
         # G36-1/G36-9：show() 后单次调度——首次运行向导 + 系统深浅色自适应
         QTimer.singleShot(300, self._maybe_show_onboarding)
         QTimer.singleShot(500, self._maybe_apply_system_theme)
+        # G37-4 自动更新定时器（分钟级；engine 非 busy 时触发一键更新）
+        self._auto_update_timer = QTimer(self)
+        self._auto_update_timer.timeout.connect(self._on_auto_update_tick)
+        self._restart_auto_update_timer()
+
+    def _restart_auto_update_timer(self):
+        """按 settings.auto_update_minutes 重启自动更新定时器（0=关）。"""
+        try:
+            self._auto_update_timer.stop()
+            mins = int(getattr(self.settings, "auto_update_minutes", 0) or 0)
+            if mins > 0:
+                self._auto_update_timer.start(mins * 60 * 1000)
+        except Exception:
+            pass
+
+    def _on_auto_update_tick(self):
+        """G37-4 定时触发：engine 非 busy 时一键更新全部（busy 跳过顺延下轮）。"""
+        if self.busy:
+            self._emit_log(_fmt_dt(), LogLevel.INFO, "自动更新跳过：任务运行中")
+            return
+        self._emit_log(_fmt_dt(), LogLevel.SYSTEM,
+                       f"自动更新触发（每 {self.settings.auto_update_minutes} 分钟）")
+        try:
+            self.update_all()
+        except Exception as e:
+            self._emit_log(_fmt_dt(), LogLevel.WARN, f"自动更新失败：{e}")
 
     # ------------------------------------------------------------ G36-1 首次运行向导
     def _maybe_show_onboarding(self):
@@ -777,6 +803,12 @@ class MainWindow(QMainWindow):
         """G36-6 保存任务完成动效开关。"""
         self.settings.animations = bool(checked)
         self.settings_store.save(self.settings)
+
+    def _save_auto_update(self, value):
+        """G37-4 保存自动更新间隔并按新间隔重启定时器。"""
+        self.settings.auto_update_minutes = int(value or 0)
+        self.settings_store.save(self.settings)
+        self._restart_auto_update_timer()
 
     def _on_clipboard_url(self, url: str):
         """剪贴板检测到仓库地址：写日志 + 状态栏提示 + 填入输入框（不自动启动）。"""

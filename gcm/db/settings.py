@@ -153,6 +153,7 @@ class Settings:
     geometry: str = ""                # G36-4 主窗口几何（"WxH+X+Y"，记忆上次窗口尺寸/位置）
     animations: bool = True           # G36-6 完成动效（成功绿/失败红背景色 1.2s 消隐；低配/offscreen 自动关）
     first_run_done: bool = False      # G36-1 首次运行向导已完成（跳过也置 True）
+    auto_update_minutes: int = 0      # G37-4 自动更新间隔（分钟，0=关；非 busy 时触发一键更新）
     font_scale: float = 1.0           # G10-1 字号缩放（0.8 ~ 1.6）
     rate_limit_kbps: int = 0          # G04-4 下载限速 KiB/s（0=不限）
 

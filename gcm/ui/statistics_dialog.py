@@ -1,20 +1,90 @@
-"""G07-1 统计中心对话框：全局同步聚合（仓库/次数/成功失败/host 分布）。"""
+"""G07-1/G37-1/G37-5 统计中心对话框：全局聚合 + 30 天趋势 + 用量统计。
+
+- G37-1：最近 30 天同步趋势（QPainter 自绘柱状，成功绿/失败红/冲突橙）
+- G37-5：累计克隆/更新次数（来自 stats_overview 与 action 聚合）
+"""
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+from PyQt6.QtCore import QRectF, Qt
+from PyQt6.QtGui import QColor, QPainter, QPen
+from PyQt6.QtWidgets import (
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
-from .theme import QSS
+from .theme import PALETTE, QSS
+
+# 趋势柱配色（与主题色板联动：成功/失败/冲突）
+_TREND_COLORS = {
+    "success": (PALETTE["accent2"], PALETTE["accent2"]),
+    "failed": (PALETTE["error"], PALETTE["error"]),
+    "conflict": (PALETTE["warning"], PALETTE["warning"]),
+}
+
+
+class _TrendCanvas(QWidget):
+    """QPainter 自绘 30 天趋势柱状图（纯 Qt，无图表库依赖）。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._data: list[dict] = []
+        self.setMinimumSize(460, 120)
+        self.setToolTip("最近 30 天每日同步：绿=成功 红=失败 橙=冲突")
+
+    def set_data(self, data: list[dict]) -> None:
+        self._data = data or []
+        self.update()
+
+    def paintEvent(self, e):
+        from PyQt6.QtGui import QBrush
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+        painter.fillRect(self.rect(), QColor(PALETTE["panel"]))
+        if not self._data:
+            painter.setPen(QColor(PALETTE["text_dim"]))
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter,
+                             "（暂无同步数据）")
+            painter.end()
+            return
+        n = len(self._data)
+        max_v = max((max(d.get("success", 0), d.get("failed", 0),
+                         d.get("conflict", 0)) for d in self._data), default=1)
+        max_v = max(max_v, 1)
+        slot = w / n
+        bar_w = max(slot * 0.55, 2.0)
+        for i, d in enumerate(self._data):
+            x = i * slot + (slot - bar_w) / 2
+            # 三序列从下往上堆叠
+            y_cursor = h - 6
+            for key in ("success", "failed", "conflict"):
+                v = int(d.get(key, 0))
+                if v <= 0:
+                    continue
+                bh = max(1.0, (v / max_v) * (h - 16))
+                color = _TREND_COLORS[key][0]
+                painter.fillRect(QRectF(x, y_cursor - bh, bar_w, bh),
+                                 QBrush(QColor(color)))
+                y_cursor -= bh
+        # 横轴边框
+        painter.setPen(QPen(QColor(PALETTE["border"]), 1))
+        painter.drawLine(0, h - 4, w, h - 4)
+        painter.end()
 
 
 class StatisticsDialog(QDialog):
-    """统计中心：展示 Database.stats_overview() 的全局聚合。"""
+    """统计中心：全局聚合 + 30 天趋势 + 用量统计。"""
 
     def __init__(self, db, parent=None):
         super().__init__(parent)
         self.db = db
         self.setWindowTitle("统计中心")
-        self.resize(520, 320)
-        self.setMinimumSize(420, 240)
+        self.resize(560, 460)
+        self.setMinimumSize(460, 380)
         self.setStyleSheet(QSS)
         self._build_ui()
         self._refresh()
@@ -36,6 +106,17 @@ class StatisticsDialog(QDialog):
         self.lbl_hosts.setObjectName("muted")
         self.lbl_hosts.setWordWrap(True)
         v.addWidget(self.lbl_hosts)
+
+        # G37-5 用量统计（累计克隆/更新/新增提交）
+        self.lbl_usage = QLabel("")
+        self.lbl_usage.setObjectName("muted")
+        self.lbl_usage.setWordWrap(True)
+        v.addWidget(self.lbl_usage)
+
+        # G37-1 30 天趋势
+        v.addWidget(QLabel("最近 30 天同步趋势（绿=成功 红=失败 橙=冲突）"))
+        self.trend_canvas = _TrendCanvas(self)
+        v.addWidget(self.trend_canvas)
 
         self.lbl_note = QLabel("数据来自 sync_history 全量聚合；每次同步自动记录。")
         self.lbl_note.setObjectName("muted")
@@ -70,3 +151,19 @@ class StatisticsDialog(QDialog):
                 "平台分布：" + " · ".join(f"{h}: {c}" for h, c in by_host.items()))
         else:
             self.lbl_hosts.setText("平台分布：（暂无仓库）")
+
+        # G37-5 用量统计：累计克隆/更新（按 action 聚合）
+        try:
+            usage = self.db.stats_usage()
+            self.lbl_usage.setText(
+                f"累计克隆 {usage.get('clones', 0)} 次 · "
+                f"累计更新 {usage.get('updates', 0)} 次 · "
+                f"累计新增提交 {usage.get('commits', 0)} 个")
+        except Exception:
+            self.lbl_usage.setText("用量统计：（不可用）")
+
+        # G37-1 30 天趋势
+        try:
+            self.trend_canvas.set_data(self.db.stats_daily(days=30))
+        except Exception:
+            self.trend_canvas.set_data([])
