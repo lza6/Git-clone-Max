@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -144,6 +145,112 @@ class TestRepoDetailDialog(unittest.TestCase):
             QApplication.clipboard().text(),
             "git clone https://github.com/o/r",
         )
+        dlg.close()
+
+    # ------------------------------------------------------------ G37-2 检查远端
+    @staticmethod
+    def _remote_out(sha: str) -> subprocess.CompletedProcess:
+        """构造 git ls-remote <url> HEAD 的 stdout。"""
+        return subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=f"{sha}\tHEAD\n", stderr="",
+        )
+
+    @staticmethod
+    def _pump_until(cond, timeout_ms: int = 3000) -> bool:
+        """轮询 Qt 事件循环直到条件成立（让 singleShot 回主线程执行）。"""
+        from PyQt6.QtCore import QElapsedTimer
+
+        t = QElapsedTimer()
+        t.start()
+        while t.elapsed() < timeout_ms:
+            QApplication.processEvents()
+            if cond():
+                return True
+        return False
+
+    def test_check_remote_up_to_date(self):
+        """remote HEAD == 本地 head_sha → lbl_remote 显示「已最新」。"""
+        dlg = RepoDetailDialog(_repo(self.tmp), [])
+        dlg.show()
+        with mock.patch(
+            "gcm.ui.repo_detail_dialog.subprocess.run",
+            return_value=self._remote_out("0123456789abcdef"),
+        ):
+            dlg.btn_check_remote.click()
+            self.assertTrue(
+                self._pump_until(lambda: "已最新" in dlg.lbl_remote.text()),
+                f"lbl_remote 应为已最新，实际: {dlg.lbl_remote.text()!r}",
+            )
+        dlg.close()
+
+    def test_check_remote_behind(self):
+        """remote HEAD != 本地 head_sha → lbl_remote 显示「远端有新提交」。"""
+        dlg = RepoDetailDialog(_repo(self.tmp), [])
+        dlg.show()
+        with mock.patch(
+            "gcm.ui.repo_detail_dialog.subprocess.run",
+            return_value=self._remote_out("fedcba9876543210"),
+        ):
+            dlg.btn_check_remote.click()
+            self.assertTrue(
+                self._pump_until(lambda: "远端有新提交" in dlg.lbl_remote.text()),
+                f"lbl_remote 应为远端有新提交，实际: {dlg.lbl_remote.text()!r}",
+            )
+        dlg.close()
+
+    def test_check_remote_no_local_head(self):
+        """本地 head_sha 为空 → lbl_remote 显示「无法比较」。"""
+        dlg = RepoDetailDialog(_repo(self.tmp) | {"head_sha": ""}, [])
+        dlg.show()
+        with mock.patch(
+            "gcm.ui.repo_detail_dialog.subprocess.run",
+            return_value=self._remote_out("fedcba9876543210"),
+        ):
+            dlg.btn_check_remote.click()
+            self.assertTrue(
+                self._pump_until(lambda: "无法比较" in dlg.lbl_remote.text()),
+                f"lbl_remote 应为无法比较，实际: {dlg.lbl_remote.text()!r}",
+            )
+        dlg.close()
+
+    def test_check_remote_command_failure(self):
+        """ls-remote 抛异常 → lbl_remote 显示「无法检查远端」。"""
+        dlg = RepoDetailDialog(_repo(self.tmp), [])
+        dlg.show()
+        with mock.patch(
+            "gcm.ui.repo_detail_dialog.subprocess.run", side_effect=OSError("boom"),
+        ):
+            dlg.btn_check_remote.click()
+            self.assertTrue(
+                self._pump_until(lambda: "无法检查远端" in dlg.lbl_remote.text()),
+                f"lbl_remote 应为无法检查远端，实际: {dlg.lbl_remote.text()!r}",
+            )
+        dlg.close()
+
+    def test_check_remote_no_url(self):
+        """url 为空 → 同步直接显示「无法检查远端」，不起线程。"""
+        dlg = RepoDetailDialog(_repo(self.tmp) | {"url": ""}, [])
+        dlg.show()
+        dlg.btn_check_remote.click()
+        self.assertIn("无法检查远端", dlg.lbl_remote.text())
+        dlg.close()
+
+    def test_check_remote_non_blocking(self):
+        """点击立即返回（异步）+ 完成后按钮恢复可用，不冻结 UI。"""
+        dlg = RepoDetailDialog(_repo(self.tmp), [])
+        dlg.show()
+        with mock.patch(
+            "gcm.ui.repo_detail_dialog.subprocess.run",
+            return_value=self._remote_out("fedcba9876543210"),
+        ):
+            dlg.btn_check_remote.click()
+            # 未 pump 事件循环前，后台线程尚未回主线程 → 标签停留在「检查中…」
+            self.assertIn("检查中", dlg.lbl_remote.text())
+            self.assertTrue(
+                self._pump_until(lambda: dlg.btn_check_remote.isEnabled()),
+                "检查完成后按钮应恢复可用",
+            )
+            self.assertIn("远端有新提交", dlg.lbl_remote.text())
         dlg.close()
 
 
