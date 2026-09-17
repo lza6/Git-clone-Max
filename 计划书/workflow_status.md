@@ -96,3 +96,20 @@
 - 无未解决 P0/P1
 - P2-2 日志过滤 / P2-7 仓库详情页 / P3 多平台·CI·私有仓库·worktree·i18n 未做（按路线图下一里程碑）
 - GitHub Actions CI（可选增强，未配置）
+
+
+## M0 v7.3.1（G50 收口）— 2026-09-18 主控执行记录
+
+| 节点 | 状态 | 关键证据 |
+|------|------|----------|
+| G50-1 测试隔离修复 | ✅ | `tests/test_updater_retry.py` 模块级 QApplication；单文件 Ran 3 OK / 30 OK 相邻 G38 测试 |
+| G50-7 覆盖率补齐 | ✅ | 新增 29 用例；statistics_dialog 63%→100% · single_instance 59%→96% |
+| G50-4 spec 入库 | ✅ | `.gitignore` 去 *.spec；`git ls-files` 含 Git-clone-Max.spec |
+| G50-5 README 同步 | ✅ | 功能表 28 行能力矩阵（含 G38 网络设置） |
+| G50-8 根目录收敛 | ✅ | workflow_status.md → 计划书/ |
+| G50-9 RELEASE_BODY | ✅ | docs/RELEASE_BODY.md 模板（{version}/{sha256_exe}/{sha256_zip}） |
+| G50-3 慢测定位 | ✅ | docs/慢测定位.md：全量 944s 基线 + Top10 慢文件 + 提速路径 |
+| 全量回归 | ✅ | `Ran 590 tests in 944.035s OK`；TOTAL 83%（门禁 82）；ruff gcm 0 error；mypy 通过 |
+| G38 真实 E2E | ✅ | 本地裸仓 file:// 12/12：满量克隆/浅克隆(is-shallow=true)/增量更新(+1)/@tag 精确检出/host_tokens 加密无明文/镜像/预检/凭据头/IPv4 |
+| 版本 | ✅ | `__version__` 7.3.1 + changelog 追加（30→31 行） |
+| 打包/发布 | 进行中 | PyInstaller 构建 7.3.1 双产物；随后 tag/push/Release |
