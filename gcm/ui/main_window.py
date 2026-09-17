@@ -82,6 +82,11 @@ class MainWindow(QMainWindow):
             retries=self.settings.retries,
             proxy=self.settings.proxy,
             token=self.settings.token,
+            host_tokens=getattr(self.settings, "host_tokens", None) or {},  # G38-1
+            mirror_prefix=getattr(self.settings, "mirror_prefix", None) or {},  # G38-2
+            precheck_remote=bool(getattr(self.settings, "precheck_remote", False)),  # G38-3
+            single_branch=bool(getattr(self.settings, "single_branch", False)),  # G38-4
+            force_ipv4=bool(getattr(self.settings, "force_ipv4", False)),  # G38-6
         )
         self.engine.line.connect(self._on_engine_line)
         self.engine.progress.connect(self._on_worker_progress)
@@ -440,14 +445,15 @@ class MainWindow(QMainWindow):
         g2 = QGroupBox("克隆模式")
         l2 = QHBoxLayout(g2)
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["满量克隆（完整历史）", "浅克隆（最新代码）"])
+        self.mode_combo.addItems(["满量克隆（完整历史）", "浅克隆（最新代码）",
+                                  "单分支浅克隆（--single-branch）"])
         self.depth_spin = QSpinBox()
         self.depth_spin.setRange(1, 10000)
         self.depth_spin.setValue(1)
         self.depth_spin.setSuffix(" 层")
         self.depth_spin.setEnabled(False)
         self.mode_combo.currentIndexChanged.connect(
-            lambda i: self.depth_spin.setEnabled(i == 1))
+            lambda i: self.depth_spin.setEnabled(i in (1, 2)))
         l2.addWidget(self.mode_combo)
         l2.addWidget(self.depth_spin)
         opts.addWidget(g2)
@@ -767,6 +773,60 @@ class MainWindow(QMainWindow):
         self.settings.token = self.edit_token.text().strip()
         self.settings_store.save(self.settings)
 
+    # --------------------------------------------------------- G38-1~7 网络设置保存
+    def _save_host_tokens(self):
+        """G38-1 保存按 host 凭据映射：多行 `host=token` → settings.host_tokens。
+
+        - 逐行按首个 `=` 拆分；key 小写归一、value 去空白
+        - value 为空的行 = 删除该 host 条目
+        - 无 `=`/空行忽略（用户删除行即移除凭据）
+        """
+        self.settings.host_tokens = self._parse_kv_text(self.edit_host_tokens.text())
+        self.settings_store.save(self.settings)
+
+    def _save_mirror(self):
+        """G38-2 保存镜像前缀映射：多行 `host=prefix` → settings.mirror_prefix。"""
+        self.settings.mirror_prefix = self._parse_kv_text(self.edit_mirror.text())
+        self.settings_store.save(self.settings)
+
+    def _save_custom_hosts(self):
+        """G38-7 保存常用主机白名单：逗号/换行分隔 → tuple（小写归一，去空）。"""
+        text = self.edit_custom_hosts.text() or ""
+        parts = [p.strip().lower() for p in text.replace("\n", ",").split(",")]
+        self.settings.custom_hosts = tuple(p for p in parts if p)
+        self.settings_store.save(self.settings)
+
+    def _save_precheck(self, checked):
+        """G38-3 保存远端可达性预检开关。"""
+        self.settings.precheck_remote = bool(checked)
+        self.settings_store.save(self.settings)
+
+    def _save_single_branch(self, checked):
+        """G38-4 保存单分支浅克隆开关。"""
+        self.settings.single_branch = bool(checked)
+        self.settings_store.save(self.settings)
+
+    def _save_force_ipv4(self, checked):
+        """G38-6 保存强制 HTTP/1.1 开关。"""
+        self.settings.force_ipv4 = bool(checked)
+        self.settings_store.save(self.settings)
+
+    @staticmethod
+    def _parse_kv_text(text: str) -> dict:
+        """解析多行 `key=value` 文本 → dict；空 value 行删除条目，非法行忽略。"""
+        out: dict = {}
+        for line in (text or "").splitlines():
+            line = line.strip()
+            if not line or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip().lower()
+            value = value.strip()
+            if not key or not value:
+                continue
+            out[key] = value
+        return out
+
     def _save_auto_clear(self, checked):
         self.settings.auto_clear = bool(checked)
         self.settings_store.save(self.settings)
@@ -1067,7 +1127,9 @@ class MainWindow(QMainWindow):
         except OSError as e:
             QMessageBox.warning(self, "提示", f"无法创建下载目录：{e}")
             return
-        shallow = self.mode_combo.currentIndex() == 1
+        # G38-4：模式 1=浅克隆、2=单分支浅克隆（都走 shallow 路径，后者加 --single-branch）
+        mode_idx = self.mode_combo.currentIndex()
+        shallow = mode_idx in (1, 2)
         depth = self.depth_spin.value()
         # 下载完成后自动清空输入框（跟随设置页开关）
         self._launch(specs, target_root=Path(target), shallow=shallow, depth=depth,
@@ -1122,7 +1184,17 @@ class MainWindow(QMainWindow):
                      multi_root_relay=True)
 
     def _launch(self, specs, target_root, shallow, depth, clear_input=False,
-                multi_root_relay=False):
+                multi_root_relay=False, single_branch=None):
+        # G38-4：单分支源 = 显式参数 或 设置页开关 或 UI 下拉「单分支浅克隆」（索引2）。
+        # 缺陷记录：原先只按 UI 索引推断，设置页 ck_single_branch 开启后对 _launch
+        # 重建的 engine 不生效；现三源取或，行为可预测。
+        if single_branch is None:
+            try:
+                ui_mode = self.mode_combo.currentIndex() == 2
+            except Exception:
+                ui_mode = False
+            single_branch = ui_mode or bool(
+                getattr(self.settings, "single_branch", False))
         self.busy = True
         self.btn_start.setEnabled(False)
         self.btn_cancel.setEnabled(True)
@@ -1153,6 +1225,11 @@ class MainWindow(QMainWindow):
             token=self.settings.token,
             submodule=bool(getattr(self.settings, "submodule", False)),
             rate_limit_kbps=int(getattr(self.settings, "rate_limit_kbps", 0) or 0),
+            host_tokens=getattr(self.settings, "host_tokens", None) or {},  # G38-1
+            mirror_prefix=getattr(self.settings, "mirror_prefix", None) or {},  # G38-2
+            precheck_remote=bool(getattr(self.settings, "precheck_remote", False)),  # G38-3
+            single_branch=bool(single_branch),  # G38-4（UI 模式 2 或设置）
+            force_ipv4=bool(getattr(self.settings, "force_ipv4", False)),  # G38-6
         )
         self.engine.line.connect(self._on_engine_line)
         self.engine.progress.connect(self._on_worker_progress)
@@ -1614,7 +1691,7 @@ class MainWindow(QMainWindow):
         self.btn_cancel_manage.setEnabled(False)
         self.repo_input.setEnabled(True)
         self.mode_combo.setEnabled(True)
-        self.depth_spin.setEnabled(self.mode_combo.currentIndex() == 1)
+        self.depth_spin.setEnabled(self.mode_combo.currentIndex() in (1, 2))
 
     def cancel_all(self):
         if hasattr(self, "engine") and self.engine is not None:

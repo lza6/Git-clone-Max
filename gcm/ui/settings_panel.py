@@ -31,6 +31,24 @@ if TYPE_CHECKING:  # 仅类型标注（避免循环导入）
     from .main_window import MainWindow
 
 
+def _host_tokens_text(settings: Settings) -> str:
+    """host_tokens（dict）→ 设置页多行文本 "host=token"。"""
+    ht = getattr(settings, "host_tokens", None) or {}
+    return "\n".join(f"{k}={v}" for k, v in ht.items() if k)
+
+
+def _mirror_text(settings: Settings) -> str:
+    """mirror_prefix（dict）→ 设置页多行文本 "host=prefix"。"""
+    mp = getattr(settings, "mirror_prefix", None) or {}
+    return "\n".join(f"{k}={v}" for k, v in mp.items() if k)
+
+
+def _custom_hosts_text(settings: Settings) -> str:
+    """custom_hosts（tuple）→ 逗号分隔文本。"""
+    ch = getattr(settings, "custom_hosts", None) or ()
+    return ", ".join(str(h) for h in ch)
+
+
 def build_settings_ui(owner: MainWindow) -> QScrollArea:
     """在 owner 上构建设置页全部控件并返回滚动区（挂到 owner.settings_scroll）。
 
@@ -190,6 +208,48 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
         "GitHub 个人访问令牌（Fine-grained/PAT），访问私有仓库时使用；留空不传递")
     owner.edit_token.editingFinished.connect(owner._save_token)
     f3.addRow("GitHub Token：", owner.edit_token)
+
+    # G38-1 按 host 凭据（每行 "host=token"，留空不发送）
+    owner.edit_host_tokens = QLineEdit(_host_tokens_text(settings))
+    owner.edit_host_tokens.setPlaceholderText("gitlab.com=glpat-xxx（每行一个 host=token）")
+    owner.edit_host_tokens.setToolTip(
+        "按平台主机配置私有仓库凭据：每行 `host=token`（gitlab.com 用 PRIVATE-TOKEN 头）")
+    owner.edit_host_tokens.editingFinished.connect(owner._save_host_tokens)
+    f3.addRow("按平台凭据：", owner.edit_host_tokens)
+
+    # G38-2 镜像前缀（每行 "host=prefix"，仅 HTTPS 生效）
+    owner.edit_mirror = QLineEdit(_mirror_text(settings))
+    owner.edit_mirror.setPlaceholderText("github.com=https://ghproxy.com（每行一个）")
+    owner.edit_mirror.setToolTip("按平台配置镜像前缀（仅 https 克隆生效；SSH 不拼）")
+    owner.edit_mirror.editingFinished.connect(owner._save_mirror)
+    f3.addRow("镜像前缀：", owner.edit_mirror)
+
+    # G38-7 常用主机（自建 GitLab 等，短格式可直接解析）
+    owner.edit_custom_hosts = QLineEdit(_custom_hosts_text(settings))
+    owner.edit_custom_hosts.setPlaceholderText("mygit.example.com（逗号或换行分隔）")
+    owner.edit_custom_hosts.setToolTip(
+        "登记自建主机后，短格式 `mygit.example.com/a/b` 可直接解析为 HTTPS 克隆地址")
+    owner.edit_custom_hosts.editingFinished.connect(owner._save_custom_hosts)
+    f3.addRow("常用主机：", owner.edit_custom_hosts)
+
+    # G38-3/4/6 网络兼容开关
+    owner.ck_precheck = QCheckBox("克隆前做远端可达性预检（10s）")
+    owner.ck_precheck.setChecked(bool(getattr(settings, "precheck_remote", False)))
+    owner.ck_precheck.setToolTip("断网时 10s 内明确提示，不白等超时")
+    owner.ck_precheck.stateChanged.connect(owner._save_precheck)
+    f3.addRow("远端预检：", owner.ck_precheck)
+
+    owner.ck_single_branch = QCheckBox("浅克隆只拉目标分支（--single-branch）")
+    owner.ck_single_branch.setChecked(bool(getattr(settings, "single_branch", False)))
+    owner.ck_single_branch.setToolTip("浅克隆时减少 refs 传输量；增量更新兼容")
+    owner.ck_single_branch.stateChanged.connect(owner._save_single_branch)
+    f3.addRow("单分支：", owner.ck_single_branch)
+
+    owner.ck_force_ipv4 = QCheckBox("强制 HTTP/1.1（IPv6 兼容）")
+    owner.ck_force_ipv4.setChecked(bool(getattr(settings, "force_ipv4", False)))
+    owner.ck_force_ipv4.setToolTip("部分网络环境下 HTTP/2 兼容问题可用此项规避")
+    owner.ck_force_ipv4.stateChanged.connect(owner._save_force_ipv4)
+    f3.addRow("HTTP 版本：", owner.ck_force_ipv4)
     sv.addWidget(g3)
     groups.append(g3)
 

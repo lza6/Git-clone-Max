@@ -44,7 +44,11 @@ class SyncEngine(QObject):
                  concurrency: int = 8,
                  fetch_timeout: int = 300, clone_timeout: int = 600,
                  retries: int = 2, proxy: str = "", token: str = "",
-                 submodule: bool = False, rate_limit_kbps: int = 0):
+                 submodule: bool = False, rate_limit_kbps: int = 0,
+                 host_tokens: Optional[dict[str, str]] = None,
+                 mirror_prefix: Optional[dict[str, str]] = None,
+                 precheck_remote: bool = False, single_branch: bool = False,
+                 force_ipv4: bool = False):
         super().__init__()
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -58,6 +62,11 @@ class SyncEngine(QObject):
         self.retries = max(0, retries)
         self.proxy = (proxy or "").strip()
         self.token = (token or "").strip()
+        self.host_tokens: dict[str, str] = dict(host_tokens or {})  # G38-1
+        self.mirror_prefix: dict[str, str] = dict(mirror_prefix or {})  # G38-2
+        self.precheck_remote = bool(precheck_remote)  # G38-3
+        self.single_branch = bool(single_branch)      # G38-4
+        self.force_ipv4 = bool(force_ipv4)            # G38-6
         self._submodule = bool(submodule)   # G08-1 透传给 GitService
         self._rate_limit_kbps = max(0, int(rate_limit_kbps or 0))  # G04-4 限速
 
@@ -226,6 +235,11 @@ class SyncEngine(QObject):
             unshallow=self._unshallow,
             submodule=getattr(self, "_submodule", False),
             rate_limit_kbps=getattr(self, "_rate_limit_kbps", 0),
+            host_tokens=getattr(self, "host_tokens", None) or {},  # G38-1
+            mirror_prefix=getattr(self, "mirror_prefix", None) or {},  # G38-2
+            precheck_remote=getattr(self, "precheck_remote", False),  # G38-3
+            single_branch=getattr(self, "single_branch", False),  # G38-4
+            force_ipv4=getattr(self, "force_ipv4", False),  # G38-6
         )
         # 进度附加文本（速率/对象数）注入点：解析 git 行并统一经引擎信号转发到 UI
         svc.send_progress_detail = self._emit_progress_detail

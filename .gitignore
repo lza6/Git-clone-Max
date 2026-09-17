@@ -11,6 +11,6 @@ data/
 *.log
 build/
 dist/
-*.spec
+# *.spec  # G50-4: 打包配置入库，随仓库版本化
 .coverage
 _archive_v1/

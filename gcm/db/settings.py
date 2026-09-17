@@ -10,7 +10,7 @@ import base64
 import json
 import os
 import threading
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 # token 加密封装：优先平台密钥环，缺失时用 DPAPI（Windows）或简单掩码。
@@ -146,6 +146,12 @@ class Settings:
     theme: str = "deep"               # G05-1 主题：deep/light/nord
     clipboard_watch: bool = False     # G09-1 剪贴板监听（检测到仓库地址提示）
     finish_sound: bool = True         # G35-2 全部任务完成时提示音（QApplication.beep）
+    host_tokens: dict = field(default_factory=dict)  # G38-1 按 host 映射凭据（如 {"gitlab.com": "glpat-xxx"}；落盘逐条目加密）
+    mirror_prefix: dict = field(default_factory=dict)  # G38-2 镜像前缀（如 {"github.com": "https://ghproxy.com"}）
+    precheck_remote: bool = False     # G38-3 远端可达性预检（clone/fetch 前 10s ls-remote）
+    single_branch: bool = False       # G38-4 浅克隆时只拉目标分支（--single-branch）
+    force_ipv4: bool = False          # G38-6 强制 HTTP/1.1（IPv6 兼容修复）
+    custom_hosts: tuple = ()          # G38-7 常用主机白名单（自建 GitLab 等，短格式可直接解析）
     quick_repos: tuple = (            # G35-7 下载中心「快捷填充」按钮仓库列表（可编辑持久化）
         "vercel-labs/skills", "anthropics/skills", "microsoft/azure-skills",
         "remotion-dev/skills", "slidevjs/slidev", "openmeterio/openmeter",
@@ -191,6 +197,11 @@ class SettingsStore:
             s = Settings(**merged)
             # G06-1：token 读回解密（掩码/损坏 → 空串，不崩）
             s.token = _decrypt_token(s.token)
+            # G38-1：host_tokens 逐条目解密（损坏条目→空，不崩）
+            ht = getattr(s, "host_tokens", None) or {}
+            if isinstance(ht, dict):
+                s.host_tokens = {str(k): _decrypt_token(str(v))
+                                 for k, v in ht.items()}
             return s
 
     def _try_restore_backup(self) -> dict:
@@ -214,6 +225,11 @@ class SettingsStore:
             # G06-1：token 落盘前加密（绝不明文）
             if payload.get("token"):
                 payload["token"] = _encrypt_token(payload["token"])
+            # G38-1：host_tokens 逐条目加密（杜绝任一 host 凭据明文落盘）
+            ht = payload.get("host_tokens") or {}
+            if isinstance(ht, dict):
+                ht = {str(k): _encrypt_token(str(v)) for k, v in ht.items() if str(k)}
+                payload["host_tokens"] = ht
             tmp.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2),
                 encoding="utf-8",
@@ -246,6 +262,11 @@ def _coerce(key: str, val):
     if isinstance(default, str):
         # None（如用户清空代理）→ 空字符串，避免出现字面 "None"
         return str(val) if val is not None else ""
+    if isinstance(default, dict):
+        # 字典字段（G38-1 host_tokens）：非 dict → 空 dict
+        if not isinstance(val, dict):
+            return {}
+        return {str(k): v for k, v in val.items()}
     if isinstance(default, (tuple, list)):
         # 序列字段（G35-7 quick_repos）：list/tuple 互通，逐项转 str
         if not isinstance(val, (tuple, list)):

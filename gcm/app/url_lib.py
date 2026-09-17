@@ -54,6 +54,46 @@ def _is_known_host(host: str) -> bool:
     return (host or "").lower() in KNOWN_HOSTS
 
 
+def _extra_hosts() -> tuple[str, ...]:
+    """G38-7 用户「常用主机」白名单（settings.custom_hosts）。
+
+    惰性读取 settings.json（避免 url_lib 依赖 settings 造成循环导入）；
+    读取失败/无配置 → 空元组（行为与旧版一致）。
+    """
+    try:
+        import json
+        import os
+        from pathlib import Path
+        # 数据目录：与 __main__.get_data_dir 同一规则（GCM_DATA_DIR 覆盖优先）
+        env = os.environ.get("GCM_DATA_DIR")
+        if env:
+            base = Path(env)
+        else:
+            import sys as _sys
+            if getattr(_sys, "frozen", False):
+                base = Path(_sys.executable).parent / "data"
+            else:
+                base = Path(__file__).resolve().parent.parent.parent / "data"
+        p = base / "settings.json"
+        if not p.exists():
+            return ()
+        raw = json.loads(p.read_text(encoding="utf-8"))
+        hosts = raw.get("custom_hosts") or []
+        if not isinstance(hosts, (list, tuple)):
+            return ()
+        return tuple(str(h).lower().strip() for h in hosts if str(h).strip())
+    except Exception:
+        return ()
+
+
+def is_supported_host(host: str) -> bool:
+    """G38-7 host 是否受支持（内置白名单 或 用户常用主机）。"""
+    h = (host or "").lower().strip()
+    if not h:
+        return False
+    return h in KNOWN_HOSTS or h in _extra_hosts()
+
+
 # G08-2 @tag 合法性校验（F3）：拒绝空白/控制字符/路径穿越/前缀 - /git 保留前缀
 _INVALID_REF_RE = re.compile(
     r"[\x00-\x1f\x7f\s~^:?*\[\\]|^\.\.|\.\.$|^\.$|^git$|^refs/|^-"
@@ -216,8 +256,9 @@ def parse_any_repo_url(raw: str) -> RepoSpec | None:
         return None
     host, segments = got
     # F1 安全加固：仅接受白名单 host（token 不会发给未知域名）。
-    # 自建主机的合法仓库仍可通过「本地扫描导入」纳入管理，不走此白名单入口。
-    if not _is_known_host(host):
+    # G38-7：用户「常用主机」（settings.custom_hosts）同样受支持（显式登记即信任）。
+    # 自建主机的合法仓库仍可通过「本地扫描导入」纳入管理。
+    if not is_supported_host(host):
         return None
     if len(segments) < 2:
         return None
@@ -340,3 +381,19 @@ def host_of(raw: str) -> str:
     p = urlparse(raw if "://" in raw else "https://" + raw)
     host = (p.hostname or "").lower().replace("www.", "")
     return host
+
+
+def apply_mirror_prefix(url: str, prefix: str) -> str:
+    """G38-2 给 HTTPS 克隆 URL 拼接镜像前缀（仅 HTTPS；SSH/本地路径不拼）。
+
+    - prefix 为空 → 原样返回
+    - url 以 https:// 开头 → prefix + url（如 `https://ghproxy.com/https://github.com/a/b`）
+    - 其它（ssh:// git@ 本地路径）→ 原样返回
+    """
+    url = (url or "").strip()
+    prefix = (prefix or "").strip().rstrip("/")
+    if not url or not prefix:
+        return url
+    if url.lower().startswith("https://"):
+        return f"{prefix}/{url}"
+    return url

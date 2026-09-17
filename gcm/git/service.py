@@ -382,7 +382,12 @@ class GitService:
                  fetch_timeout: float = 300, clone_timeout: float = 600,
                  retries: int = 0, backoff: tuple[float, ...] = (1.0, 3.0, 8.0),
                  proxy: str = "", fetch_depth: int = 0, unshallow: bool = False,
-                 token: str = "", submodule: bool = False, rate_limit_kbps: int = 0):
+                 token: str = "", submodule: bool = False, rate_limit_kbps: int = 0,
+                 host_tokens: Optional[dict[str, str]] = None,
+                 mirror_prefix: Optional[dict[str, str]] = None,
+                 precheck_remote: bool = False,
+                 single_branch: bool = False,
+                 force_ipv4: bool = False):
         self.root = Path(root_dir)
         self.root.mkdir(parents=True, exist_ok=True)
         self.on_line = on_line or (lambda c: None)
@@ -393,10 +398,26 @@ class GitService:
         self._backoff = backoff
         self.proxy = proxy.strip()
         self.token = (token or "").strip()
+        # G38-1 按 host 映射凭据（每 host 一个 token；键为 host，值原样传递）
+        self.host_tokens: dict[str, str] = dict(host_tokens or {})
+        self.mirror_prefix: dict[str, str] = dict(mirror_prefix or {})  # G38-2
+        self.precheck_remote = bool(precheck_remote)  # G38-3 远端可达性预检（默认关）
+        self.single_branch = bool(single_branch)      # G38-4 单分支浅克隆
+        self.force_ipv4 = bool(force_ipv4)            # G38-6 强制 HTTP/1.1（IPv6 兼容修复）
         self.fetch_depth = max(0, int(fetch_depth))   # >0 时浅层仓库 fetch 带 --depth
         self.unshallow = bool(unshallow)              # True 时浅层仓库 fetch --unshallow 拉全量
         self._submodule = bool(submodule)             # G08-1 True 时 clone 带子模块
         self.rate_limit_kbps = max(0, int(rate_limit_kbps or 0))  # G04-4 限速
+
+    def _host_token(self) -> str:
+        """G38-1 取当前 host 对应的凭据：host_tokens 映射优先，其次全局 token。
+
+        host 判断：_current_host 为 None/空 → 视为 github（向后兼容本工具 github 主战场）。
+        """
+        host = (getattr(self, "_current_host", "") or "").lower().replace("www.", "")
+        if not host:
+            return self.token  # 未知/空 host 默认用全局 token（历史行为仅 github）
+        return (self.host_tokens.get(host) or "").strip() or self.token
 
     def _env(self, extra: Optional[dict[str, str]] = None) -> Optional[dict[str, str]]:
         """构造 subprocess 环境。
@@ -406,7 +427,8 @@ class GitService:
           `http.extraHeader=Authorization: Bearer <token>`（纯 git 支持、免临时脚本，
           仅对本次 git 子进程生效，不污染全局配置）。
         """
-        if not self.proxy and not self.token and not self.rate_limit_kbps:
+        if (not self.proxy and not self._any_token()
+                and not self.rate_limit_kbps and not self.force_ipv4):
             return extra
         env = dict(os.environ)
         if extra:
@@ -414,22 +436,95 @@ class GitService:
         if self.proxy:
             env.setdefault("http_proxy", self.proxy)
             env.setdefault("https_proxy", self.proxy)
-        # F1 安全加固：token 只发给 github.com（本工具默认 GitHub 私有仓库认证）。
-        # 非 github host（gitlab/gitee 等）不注入，避免 PAT 外泄到未知域名。
+        # 认证头注入（G38-1 按 host 映射凭据；host 白名单安全语义保持）：
+        # - github.com / 空 host（本工具 github 主战场）→ Authorization: Bearer（全局或映射值）
+        # - gitlab.com → PRIVATE-TOKEN
+        # - 其余 host：仅当 host_tokens 显式登记该 host 时才注入其映射值；
+        #   未登记 host 一律不发凭据（F1 安全加固：凭据不外泄到未登记域名）。
         host = (getattr(self, "_current_host", "") or "").lower().replace("www.", "")
+        host = host.rstrip("/")
         cfg = []
-        if self.token and (not host or host == "github.com"):
-            cfg.append(("http.extraHeader", f"Authorization: Bearer {self.token}"))
+        if host in ("", "github.com"):
+            tok = self._token_for_host(host)
+            if tok:
+                cfg.append(("http.extraHeader", f"Authorization: Bearer {tok}"))
+        elif host in ("gitlab.com", "gitlab"):
+            tok = self._token_for_host(host)
+            if tok:
+                cfg.append(("http.extraHeader", f"PRIVATE-TOKEN: {tok}"))
+        else:
+            # 白名单外 host：仅 host_tokens 显式登记时发送（映射值），否则不发
+            mapped = (self.host_tokens.get(host) or "").strip()
+            if mapped:
+                cfgtok = mapped
+                # 未知主机平台类型：gitlab 类头按其 feature 前缀？这里按通用 Authorization Bearer
+                # 但为避免误发全局 token，未登记一律不发——已在上面过滤，此处 mapped 存在即登记。
+                cfg.append(("http.extraHeader", f"Authorization: Bearer {cfgtok}"))
         # G04-4 下载限速：低于 lowSpeedLimit KiB/s 持续 lowSpeedTime 秒 → 中止
         if self.rate_limit_kbps > 0:
             cfg.append(("http.lowSpeedLimit", str(self.rate_limit_kbps)))
             cfg.append(("http.lowSpeedTime", "30"))
+        # G38-6 强制 HTTP/1.1（IPv6 兼容问题常见修复）
+        if self.force_ipv4:
+            cfg.append(("http.version", "HTTP/1.1"))
         if cfg:
             env["GIT_CONFIG_COUNT"] = str(len(cfg))
             for i, (k, v) in enumerate(cfg):
                 env[f"GIT_CONFIG_KEY_{i}"] = k
                 env[f"GIT_CONFIG_VALUE_{i}"] = v
         return env
+
+    def _any_token(self) -> bool:
+        """是否存在任一可用凭据（host_tokens 或全局 token）。"""
+        return any(v.strip() for v in self.host_tokens.values()) or bool(self.token)
+
+    def _token_for_host(self, host: str) -> str:
+        """G38-1 取指定 host 的凭据：host_tokens 精确命中优先，其次全局 token。
+
+        安全语义（F1）：全局 token 默认只用于 github/空 host（本工具 github 主战场）；
+        其它 host 必须显式登记在 host_tokens 才发送，否则返回空（不发任何凭据）。
+        """
+        host = (host or "").lower().replace("www.", "").rstrip("/")
+        mapped = (self.host_tokens.get(host) or "").strip()
+        if mapped:
+            return mapped
+        if host in ("", "github.com"):
+            return self.token
+        return ""
+
+    def _mirror_url(self, url: str) -> str:
+        """G38-2 按当前 host 拼接镜像前缀（仅 HTTPS；SSH/本地原样）。
+
+        从 self.mirror_prefix[host] 取前缀；无前缀/SSH → 原样返回。
+        """
+        if not url or not self.mirror_prefix:
+            return url
+        if not url.lower().startswith("https://"):
+            return url
+        host = (getattr(self, "_current_host", "") or "").lower().replace("www.", "").rstrip("/")
+        prefix = (self.mirror_prefix.get(host) or "").strip().rstrip("/")
+        if not prefix:
+            return url
+        return f"{prefix}/{url}"
+
+    def _precheck_reachable(self, url: str) -> tuple[bool, str]:
+        """G38-3 远端可达性预检：git ls-remote --exit-code <url> HEAD（10s 超时）。
+
+        返回 (可达, 错误文本)。任何异常/非 0 退出码 → 不可达。
+        """
+        import subprocess as _sp
+        try:
+            proc = _sp.run(
+                ["git", "ls-remote", "--exit-code", url, "HEAD"],
+                capture_output=True, text=True, timeout=10,
+                encoding="utf-8", errors="replace", env=self._env(),
+            )
+            if proc.returncode == 0:
+                return True, ""
+            tail = (proc.stderr or proc.stdout or "").strip().splitlines()
+            return False, (tail[-1] if tail else f"git ls-remote 退出码 {proc.returncode}")
+        except Exception as e:
+            return False, str(e)
 
     # ------------------------------------------------------------ 工具
     def _safe_rmtree_partial(self, repo_dir: Path) -> None:
@@ -516,6 +611,19 @@ class GitService:
         except Exception:
             self._current_host = ""
 
+        # G38-3 远端可达性预检（可选开启）：断网/坏 host 时 10s 内明确失败，
+        # 不必等满 clone/fetch 超时。仅对含远端 URL 的仓库执行。
+        if self.precheck_remote and not spec.is_local and spec.url_https:
+            ok, err = self._precheck_reachable(spec.url_https)
+            if not ok:
+                res.status = SyncStatus.FAILED
+                res.action = SyncAction.FAILED
+                res.message = "远端不可达（10s 预检），检查网络/代理"
+                res.detail = err
+                res.ended = time.time()
+                res.duration_ms = int((res.ended - res.started) * 1000)
+                return res
+
         try:
             if repo_dir.exists() and (repo_dir / ".git").exists():
                 # 纯本地仓库（无远端）：不做 fetch/merge，仅记录已是最新
@@ -564,7 +672,12 @@ class GitService:
         if getattr(spec, "ref", ""):
             # G08-2 指定分支/标签：clone -b <ref>（选项必须在 <repo> 之前）
             cmd += ["-b", spec.ref]
-        cmd += [spec.url_https, str(repo_dir)]
+        # G38-4 单分支浅克隆：浅克隆模式下只拉目标分支（--depth N --single-branch）
+        if self.fetch_depth and self.single_branch:
+            cmd += [f"--depth={self.fetch_depth}", "--single-branch"]
+        # G38-2 镜像：按 host 拼前缀（仅 HTTPS），clone 用镜像 URL
+        clone_url = self._mirror_url(spec.url_https)
+        cmd += [clone_url, str(repo_dir)]
         if self._submodule:
             # 追加在末尾（git clone 的选项插在 <repo> 前后均可，末尾最安全）
             cmd.append("--recurse-submodules")
@@ -605,12 +718,31 @@ class GitService:
                 treeless_cmd = ["git", "clone", "--progress", "--filter=blob:none"]
                 if getattr(spec, "ref", ""):
                     treeless_cmd += ["-b", spec.ref]
-                treeless_cmd += [spec.url_https, str(repo_dir)]
+                treeless_cmd += [self._mirror_url(spec.url_https), str(repo_dir)]
                 rc, prog = run_git_ui(treeless_cmd, str(self.root), _collate,
                                       cancelled=self.cancelled, env=self._env(),
                                       timeout=self.clone_timeout, retries=0,
                                       backoff=self._backoff,
                                       progress_detail=getattr(self, "send_progress_detail", None))
+                # G38-5 降级链终档：treeless 仍失败 → depth1 单分支「保命模式」
+                if rc != 0 and not self.cancelled():
+                    self._emit(f"{spec.display} treeless 仍失败，尝试 depth1 单分支"
+                               "保命模式（完整历史未拉取）…", "warn")
+                    self._safe_rmtree_partial(repo_dir)
+                    shallow_cmd = ["git", "clone", "--progress",
+                                   "--depth=1", "--single-branch"]
+                    if getattr(spec, "ref", ""):
+                        shallow_cmd += ["-b", spec.ref]
+                    shallow_cmd += [self._mirror_url(spec.url_https), str(repo_dir)]
+                    rc, prog = run_git_ui(
+                        shallow_cmd, str(self.root), _collate,
+                        cancelled=self.cancelled, env=self._env(),
+                        timeout=self.clone_timeout, retries=0,
+                        backoff=self._backoff,
+                        progress_detail=getattr(self, "send_progress_detail", None))
+                    if rc == 0:
+                        self._emit("[提示] 已用 depth1 单分支克隆，完整历史未拉取；"
+                                   "可用设置→浅克隆更新（unshallow）补全。", "warn")
         if rc != 0:
             # 克隆失败：分类给出人类可读提示（平台限制 / 目录占用 / 通用）
             tail = "\n".join(self._last_clone_tail[-8:])
