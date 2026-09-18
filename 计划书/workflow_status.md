@@ -112,4 +112,6 @@
 | 全量回归 | ✅ | `Ran 590 tests in 944.035s OK`；TOTAL 83%（门禁 82）；ruff gcm 0 error；mypy 通过 |
 | G38 真实 E2E | ✅ | 本地裸仓 file:// 12/12：满量克隆/浅克隆(is-shallow=true)/增量更新(+1)/@tag 精确检出/host_tokens 加密无明文/镜像/预检/凭据头/IPv4 |
 | 版本 | ✅ | `__version__` 7.3.1 + changelog 追加（30→31 行） |
-| 打包/发布 | 进行中 | PyInstaller 构建 7.3.1 双产物；随后 tag/push/Release |
+
+| 打包/发布 | ✅ | **v7.3.1 发布闭环完成**：tag 已 push · Release 已创建 · exe+zip 双产物上传成功（服务端 digest 与本地 sha256 全等）· 独立下载复验双 MATCH |
+
