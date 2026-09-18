@@ -95,13 +95,56 @@ def clear_url_history(owner, fmt_dt) -> None:
         pass
 
 
+def _is_sensitive_dir(d: str) -> bool:
+    """G44-2：是否位于敏感系统目录（Windows 系统根 / Program Files）。"""
+    import os
+    dd = (d or "").strip().rstrip("\\/").lower()
+    if not dd:
+        return False
+    sensitive = []
+    windir = os.environ.get("WINDIR") or r"C:\Windows"
+    pf = os.environ.get("PROGRAMFILES") or r"C:\Program Files"
+    pfx86 = os.environ.get("PROGRAMFILES(X86)") or r"C:\Program Files (x86)"
+    sensitive.extend([windir.lower(), pf.lower(), pfx86.lower()])
+    return any(dd == s or dd.startswith(s + "\\") for s in sensitive)
+
+
+def _classify_mkdir_error(e: BaseException) -> str:
+    """G44-2：mkdir 失败给人类可读分类（权限/占用/盘符不存在/其它）。"""
+    import errno
+    eno = getattr(e, "errno", None)
+    if eno in (errno.EACCES, errno.EPERM, errno.EROFS):
+        return "权限不足：无法在当前位置创建目录（请换用用户目录）"
+    if eno == errno.ENOTDIR:
+        return "路径无效：上级路径不是目录"
+    if eno == errno.ENOENT:
+        return "盘符或路径不存在：请检查目标路径"
+    if eno == errno.EMFILE or eno == errno.ENFILE:
+        return "系统文件句柄已用尽：请稍后重试"
+    return f"目录创建失败：{e}"
+
+
 def choose_target(owner) -> None:
     d = _fd().getExistingDirectory(owner, "选择下载目录", owner.target_edit.text())
     if d:
+        # G44-2 敏感目录警告：改到系统根/Program Files 会污染系统区，弹确认
+        if _is_sensitive_dir(d):
+            ret = _msgbox().warning(
+                owner, "敏感目录",
+                "你选择的是 Windows 系统目录（%SystemRoot%/Program Files），"
+                "在此下载可能触发权限/杀软问题。\n\n仍要继续吗？")
+            if ret != _msgbox().StandardButton.Yes:
+                return
         owner.target_edit.setText(d)
         # 记住用户选择，下次启动恢复
         owner.settings.download_dir = d
         owner.settings_store.save(owner.settings)
+        # G44-2 mkdir 失败分类提示（尽力而为，不阻塞保存设置）
+        try:
+            from pathlib import Path
+            Path(d).mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            _msgbox().warning(owner, "目录不可用", _classify_mkdir_error(e))
 
 
 def open_target(owner) -> None:

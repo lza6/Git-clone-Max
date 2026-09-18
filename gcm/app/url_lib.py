@@ -242,6 +242,51 @@ def _match_generic(raw: str):
     return None
 
 
+_SENSITIVE_QPARAMS = frozenset({
+    "access_token", "token", "oauth_token", "x-oauth-basic", "private_token"})
+
+
+def strip_embedded_credentials(raw: str) -> tuple[str, bool]:
+    """G44-5 剥离 URL 内嵌凭据，返回 (clean_url, had_cred)。
+
+    - userinfo（`https://user:pass@host/...` / `https://token@host/...`）→ 移除用户信息；
+    - query 中敏感参数（access_token/token/oauth_token/x-oauth-basic/private_token）→ 移除该参数；
+    - 无凭据 → 原样返回 (raw, False)。
+    纯函数，不触发网络；SSH SCP 形式（git@host:path）无 scheme 不误判。
+    """
+    if not isinstance(raw, str) or not raw:
+        return (raw if isinstance(raw, str) else "", False)
+    text = raw.strip()
+    if not text:
+        return text, False
+    # SSH SCP 风格：无 scheme，不以 // 开头 → 不处理 userinfo（git@ 是用户不是凭据）
+    if "://" not in text and not text.startswith("//"):
+        return text, False
+    from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+    try:
+        p = urlparse(text if "://" in text else "//" + text)
+    except Exception:
+        return text, False
+    had = False
+    # 1) userinfo 剥离
+    if p.username or p.password:
+        had = True
+        netloc = p.hostname or ""
+        if p.port:
+            netloc += f":{p.port}"
+        p = p._replace(netloc=netloc)
+    # 2) query 敏感参数剥离
+    if p.query:
+        qs = parse_qsl(p.query, keep_blank_values=True)
+        kept = [(k, v) for k, v in qs if k.lower() not in _SENSITIVE_QPARAMS]
+        if len(kept) != len(qs):
+            had = True
+        p = p._replace(query=urlencode(kept))
+    if not had:
+        return text, False
+    return urlunparse(p), True
+
+
 def parse_any_repo_url(raw: str) -> RepoSpec | None:
     """解析任意 Git 托管平台仓库地址 → RepoSpec；非法返回 None。
 

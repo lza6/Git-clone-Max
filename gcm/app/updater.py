@@ -47,6 +47,56 @@ def _parse_version(v: str) -> tuple:
     return (major, minor, patch, 0)
 
 
+def extract_release_sha256(body: str) -> str:
+    """G44-3 从 Release body 提取首个 sha256（64 位 hex），无则返回空串。
+
+    通用正则（不绑定固定前缀），可命中 `sha256: `XXXX`` / `exe sha256=...` 等写法。
+    """
+    if not isinstance(body, str) or not body:
+        return ""
+    m = re.search(r"[0-9a-f]{64}", body, re.IGNORECASE)
+    return m.group(0).lower() if m else ""
+
+
+def check_latest_with_sha(fetcher=None, timeout: int = _TIMEOUT) -> tuple:
+    """G44-3 更新检查 + Release body sha256 提取（五元组，含最新 Release body）。
+
+    返回 (has_new, latest_version, download_url, error, sha256)：
+    - sha256 从 Release body 提取（发布方公布值，供用户手动核对）；
+    - fetcher 注入时须返回 Release JSON 文本（含 body 字段），便于测试。
+    """
+    if fetcher is None or getattr(fetcher, "__gcm_plain__", False):
+        # 无注入：先用标准流程，再补一次带 body 的抓取
+        has_new, ver, url, err = check_latest(fetcher=fetcher, timeout=timeout)
+        sha = ""
+        if not err and url:
+            # Release API 响应含 body：复用默认 fetcher 拿 JSON 提取
+            try:
+                import urllib.request
+                req = urllib.request.Request(_URI, headers={
+                    "Accept": "application/vnd.github+json", "User-Agent": "Git-clone-Max"})
+                tok = _gh_token()
+                if tok:
+                    req.add_header("Authorization", f"Bearer {tok}")
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    raw = resp.read().decode("utf-8", "replace")
+                body = (json.loads(raw) or {}).get("body") or ""
+                sha = extract_release_sha256(body)
+            except Exception:
+                sha = ""
+        return (has_new, ver, url, err, sha)
+    # 注入 fetcher：直接解析 JSON 的 body 字段
+    try:
+        raw = fetcher()
+        data = json.loads(raw) if isinstance(raw, str) else raw
+        body = (data or {}).get("body") or ""
+        sha = extract_release_sha256(body)
+        has_new, ver, url, err = check_latest(fetcher=lambda: raw, timeout=timeout)
+        return (has_new, ver, url, err, sha)
+    except Exception as e:
+        return (False, "", "", f"检查更新失败：{e}", "")
+
+
 def check_latest(fetcher=None, timeout: int = _TIMEOUT) -> tuple:
     """查询最新 Release。fetcher 可注入（测试用）。
 

@@ -203,6 +203,7 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
 
     owner.edit_token = QLineEdit(settings.token)
     owner.edit_token.setPlaceholderText("私有仓库认证令牌（可选，留空不传递）")
+    # G44-1：token 输入框默认掩码（Password），防旁人/截图泄露
     owner.edit_token.setEchoMode(QLineEdit.EchoMode.Password)
     owner.edit_token.setToolTip(
         "GitHub 个人访问令牌（Fine-grained/PAT），访问私有仓库时使用；留空不传递")
@@ -214,8 +215,23 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     owner.edit_host_tokens.setPlaceholderText("gitlab.com=glpat-xxx（每行一个 host=token）")
     owner.edit_host_tokens.setToolTip(
         "按平台主机配置私有仓库凭据：每行 `host=token`（gitlab.com 用 PRIVATE-TOKEN 头）")
+    # G44-1：host=token 多行文本域同样默认掩码（Password），避免凭据明文可见
+    owner.edit_host_tokens.setEchoMode(QLineEdit.EchoMode.Password)
     owner.edit_host_tokens.editingFinished.connect(owner._save_host_tokens)
     f3.addRow("按平台凭据：", owner.edit_host_tokens)
+
+    # G44-1：显示明文开关——勾选时 host_tokens 明文显示、取消恢复掩码（新控件 ck_show_host_tokens）
+    owner.ck_show_host_tokens = QCheckBox("显示明文")
+    owner.ck_show_host_tokens.setToolTip("勾选后按平台凭据明文显示；默认掩码，防止旁人看到 token")
+    owner.ck_show_host_tokens.setChecked(False)
+
+    def _toggle_host_tokens_echo(checked: bool) -> None:
+        """G44-1 按「显示明文」勾选状态切换 host_tokens 输入框掩码。"""
+        owner.edit_host_tokens.setEchoMode(
+            QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password)
+
+    owner.ck_show_host_tokens.toggled.connect(_toggle_host_tokens_echo)
+    f3.addRow("", owner.ck_show_host_tokens)
 
     # G38-2 镜像前缀（每行 "host=prefix"，仅 HTTPS 生效）
     owner.edit_mirror = QLineEdit(_mirror_text(settings))

@@ -61,6 +61,50 @@ def _get_backend():
     return _enc_backend
 
 
+def is_data_dir_private(data_dir, home: str | None = None) -> bool:
+    """G44-6：数据目录是否位于用户私有目录（%USERPROFILE% / %APPDATA% 下）。
+
+    加密凭据（token/host_tokens）默认落盘于 data/，若目录位于系统公共区
+    （如 exe 同级 Program Files / C:\\），同机其它用户可读 → 建议迁移。
+    返回 True=私有（安全）；False=公开（需提示）。
+    """
+    import os
+    from pathlib import Path
+    d = Path(data_dir).resolve()
+    h = Path(home or os.environ.get("USERPROFILE") or os.path.expanduser("~")).resolve()
+    if d == h or h in d.parents:
+        return True
+    ap = os.environ.get("APPDATA")
+    if ap:
+        ap_p = Path(ap).resolve()
+        if d == ap_p or ap_p in d.parents:
+            return True
+    return False
+
+
+def migrate_data_dir(src, dst) -> tuple[bool, str]:
+    """G44-6：把数据目录内容迁移到 dst（幂等，不删除 src 目录本身）。
+
+    返回 (是否成功, 错误信息/空串)。已存在的目标文件不覆盖（跳过），
+    目录结构保留；失败不抛异常。
+    """
+    import shutil
+    from pathlib import Path
+    src_p, dst_p = Path(src), Path(dst)
+    try:
+        dst_p.mkdir(parents=True, exist_ok=True)
+        moved = 0
+        for item in src_p.iterdir():
+            target = dst_p / item.name
+            if target.exists():
+                continue  # 目标已存在：不覆盖，避免数据竞争
+            shutil.move(str(item), str(target))
+            moved += 1
+        return True, f"已迁移 {moved} 项"
+    except Exception as e:
+        return False, str(e)
+
+
 def _encrypt_token(plain: str) -> str:
     """加密 token 字符串；返回带前缀的密文。空输入原样返回。"""
     if not plain:

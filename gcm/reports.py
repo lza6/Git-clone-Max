@@ -3,6 +3,9 @@
 数据源：repos JOIN sync_history 全量。CSV 用 utf-8-sig 保证 Excel 中文不乱码。
 G37-3：新增可选 filters 筛选（start/end 日期范围、host、status），
 参数化查询（? 占位）防注入；None/空值不筛，向后兼容既有调用。
+G44-1：导出列固定为仓库/同步元数据（owner/repo/host/status/action/message/
+commits/duration_ms/started_at），不包含 token / host_tokens / editor 等敏感列
+（凭据只存在于 settings.json 加密存储，不进入报表导出）。
 """
 from __future__ import annotations
 
@@ -10,6 +13,12 @@ import csv
 import time
 from datetime import datetime
 from pathlib import Path
+
+# G44-1：CSV/Markdown 导出行列（不含 token/host_tokens/editor 等敏感字段，仅供展示元数据）
+EXPORT_COLUMNS: tuple[str, ...] = (
+    "owner", "repo", "host", "status", "action",
+    "message", "commits", "duration_ms", "started_at",
+)
 
 
 def _parse_date(s: str) -> datetime | None:
@@ -85,8 +94,7 @@ def export_csv(db, out_path: str | Path, filters: dict | None = None) -> int:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["owner", "repo", "host", "status", "action",
-                    "message", "commits", "duration_ms", "started_at"])
+        w.writerow(list(EXPORT_COLUMNS))  # G44-1 导出列不含凭据
         for r in rows:
             w.writerow([
                 r.get("owner") or "", r.get("repo") or "", r.get("host") or "",
@@ -103,7 +111,7 @@ def export_markdown(db, out_path: str | Path, filters: dict | None = None) -> in
     path = Path(out_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
-        "# Git-clone-Max 同步报表",
+        "# Git-clone-Max 同步报表",  # G44-1 表头列同 EXPORT_COLUMNS，不含凭据
         "",
         f"生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
         "",
