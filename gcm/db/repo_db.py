@@ -417,6 +417,72 @@ class Database:
         with self._lock:
             return int(self._conn.execute("SELECT COUNT(*) AS c FROM repos").fetchone()["c"])
 
+    # ------------------------------------------------------------ G43-3 慢仓 TopN
+    def stats_slow_repos(self, limit: int = 10) -> list[dict]:
+        """G43-3 平均耗时 TopN 慢仓库（帮助定位网络/大仓问题）。
+
+        按仓库聚合 sync_history.duration_ms 平均耗时降序取 TopN；
+        返回 [{owner_repo, url, avg_ms, count, last_sync}]；空库返回 []。
+        """
+        limit = max(1, min(int(limit or 10), 100))
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT (r.owner || '/' || r.repo) AS owner_repo,
+                       r.url AS url,
+                       ROUND(AVG(h.duration_ms), 1) AS avg_ms,
+                       COUNT(*) AS count,
+                       MAX(h.started_at) AS last_sync
+                FROM sync_history h
+                JOIN repos r ON r.id = h.repo_id
+                WHERE h.duration_ms > 0
+                GROUP BY h.repo_id
+                ORDER BY avg_ms DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "owner_repo": str(r["owner_repo"] or ""),
+                "url": str(r["url"] or ""),
+                "avg_ms": float(r["avg_ms"] or 0),
+                "count": int(r["count"] or 0),
+                "last_sync": str(r["last_sync"] or ""),
+            }
+            for r in rows
+        ]
+
+    # ------------------------------------------------------------ G43-7 WAL 维护
+    def wal_checkpoint(self) -> dict:
+        """G43-7 执行 PRAGMA wal_checkpoint(PASSIVE)，返回统计。
+
+        返回 {"busy": bool, "log": int, "checkpointed": int}；
+        非 WAL/异常时返回 {"busy": True, "log": 0, "checkpointed": 0}，不抛异常。
+        """
+        try:
+            with self._lock:
+                row = self._conn.execute("PRAGMA wal_checkpoint(PASSIVE);").fetchone()
+            if not row:
+                return {"busy": True, "log": 0, "checkpointed": 0}
+            # row: (busy, log_frames, checkpointed_frames)
+            return {
+                "busy": bool(row[0]),
+                "log": int(row[1] or 0),
+                "checkpointed": int(row[2] or 0),
+            }
+        except Exception:
+            return {"busy": True, "log": 0, "checkpointed": 0}
+
+    def wal_autocheckpoint(self, pages: int = 1000) -> None:
+        """G43-7 设置连接级 wal_autocheckpoint（页数阈值，幂等）。"""
+        try:
+            pages = max(0, int(pages))
+            with self._lock:
+                self._conn.execute(f"PRAGMA wal_autocheckpoint={pages};")
+        except Exception:
+            pass
+
     # ------------------------------------------------------------ G33-3 备份
     def backup_to(self, dest: str | Path) -> int:
         """备份数据库到 dest，返回备份时的仓库总数（self.count()）。

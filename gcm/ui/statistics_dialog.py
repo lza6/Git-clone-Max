@@ -118,6 +118,13 @@ class StatisticsDialog(QDialog):
         self.trend_canvas = _TrendCanvas(self)
         v.addWidget(self.trend_canvas)
 
+        # G43-3 平均耗时 Top10 慢仓库（帮助定位网络/大仓问题）
+        v.addWidget(QLabel("平均耗时 Top10 慢仓库（秒）"))
+        self.lbl_slow = QLabel("")
+        self.lbl_slow.setObjectName("muted")
+        self.lbl_slow.setWordWrap(True)
+        v.addWidget(self.lbl_slow)
+
         self.lbl_note = QLabel("数据来自 sync_history 全量聚合；每次同步自动记录。")
         self.lbl_note.setObjectName("muted")
         v.addWidget(self.lbl_note)
@@ -167,3 +174,20 @@ class StatisticsDialog(QDialog):
             self.trend_canvas.set_data(self.db.stats_daily(days=30))
         except Exception:
             self.trend_canvas.set_data([])
+
+        # G43-3 平均耗时 Top10 慢仓库
+        try:
+            slow = self.db.stats_slow_repos(limit=10) if hasattr(self.db, "stats_slow_repos") else []
+        except Exception:
+            slow = []
+        if not isinstance(slow, (list, tuple)) or not slow:
+            self.lbl_slow.setText("（暂无同步数据）")
+        else:
+            lines = []
+            for i, it in enumerate(slow, 1):
+                avg_s = it.get("avg_ms", 0) / 1000.0
+                lines.append(
+                    f"{i}. {it.get('owner_repo', '')}  "
+                    f"{avg_s:.1f}s × {it.get('count', 0)}  "
+                    f"{it.get('last_sync', '')}")
+            self.lbl_slow.setText("\n".join(lines))

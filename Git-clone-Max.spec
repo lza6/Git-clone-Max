@@ -13,8 +13,25 @@ from PyInstaller.utils.hooks import collect_all
 datas = [('gcm', 'gcm')]
 binaries = []
 hiddenimports = []
-tmp_ret = collect_all('PyQt6')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+# G43-4 打包瘦身：只收集实际使用的 Qt 模块（QtCore/QtGui/QtWidgets），
+# 排除 QtMultimedia/QtQml/QtQuick/QtNetwork/QtCharts/QtWebEngine 等未用大模块，
+# 显著减小 exe/zip 体积（实测 93.9MB → 预期 -20%+）。
+for _qt in ('PyQt6.QtCore', 'PyQt6.QtGui', 'PyQt6.QtWidgets'):
+    _r = collect_all(_qt)
+    datas += _r[0]; binaries += _r[1]; hiddenimports += _r[2]
+_EXCLUDES = [
+    'PyQt6.QtMultimedia', 'PyQt6.QtMultimediaWidgets', 'PyQt6.QtQml', 'PyQt6.QtQuick',
+    'PyQt6.QtQuickWidgets', 'PyQt6.QtNetwork', 'PyQt6.QtCharts', 'PyQt6.QtWebEngine',
+    'PyQt6.QtWebEngineCore', 'PyQt6.QtWebEngineWidgets', 'PyQt6.QtPositioning',
+    'PyQt6.QtLocation', 'PyQt6.QtPrintSupport', 'PyQt6.QtSql', 'PyQt6.QtTest',
+    'PyQt6.QtXml', 'PyQt6.QtXmlPatterns', 'PyQt6.QtDBus', 'PyQt6.QtOpenGL',
+    'PyQt6.QtOpenGLWidgets', 'PyQt6.QtSvg', 'PyQt6.QtSvgWidgets', 'PyQt6.QtDesigner',
+    'PyQt6.QtHelp', 'PyQt6.QtUiTools', 'PyQt6.QtBluetooth', 'PyQt6.QtNfc',
+    'PyQt6.QtWebSockets', 'PyQt6.QtPdf', 'PyQt6.QtPdfWidgets', 'PyQt6.Qt3DCore',
+    'PyQt6.QtDataVisualization', 'PyQt6.QtRemoteObjects', 'PyQt6.QtScxml',
+    'PyQt6.QtSensors', 'PyQt6.QtSerialPort', 'PyQt6.QtTextToSpeech',
+    'PyQt6.QtWebChannel', 'PyQt6.QtStateMachine', 'PyQt6.QtGraphs',
+]
 
 # G05-5 Windows 版本资源（VERSIONINFO）
 version_info = None
@@ -25,8 +42,8 @@ try:
     )
     version_info = VSVersionInfo(
         ffi=FixedFileInfo(
-            filevers=(7, 3, 1, 0),
-            prodvers=(7, 3, 1, 0),
+            filevers=(7, 4, 0, 0),
+            prodvers=(7, 4, 0, 0),
             mask=0x3f,
             flags=0x0,
             OS=0x40004,
@@ -39,11 +56,11 @@ try:
                 StringTable('040904B0', [
                     StringStruct('CompanyName', 'Git-clone-Max'),
                     StringStruct('FileDescription', 'GitHub repository batch download tool'),
-                    StringStruct('FileVersion', '7.3.1'),
+                    StringStruct('FileVersion', '7.4.0'),
                     StringStruct('InternalName', 'Git-clone-Max'),
                     StringStruct('OriginalFilename', 'Git-clone-Max.exe'),
                     StringStruct('ProductName', 'Git-clone-Max'),
-                    StringStruct('ProductVersion', '7.3.1'),
+                    StringStruct('ProductVersion', '7.4.0'),
                 ])
             ]),
             VarFileInfo([VarStruct('Translation', [1033, 1200])]),
@@ -62,7 +79,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=_EXCLUDES,
     noarchive=False,
     optimize=0,
 )

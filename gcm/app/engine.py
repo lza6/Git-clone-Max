@@ -12,22 +12,31 @@
 """
 from __future__ import annotations
 
+import threading
 import time
 from collections import OrderedDict
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import QObject, QThreadPool, pyqtSignal
+from PyQt6.QtCore import QObject, QThreadPool, QTimer, pyqtSignal
 
 from ..db.repo_db import Database, load_progress, save_progress
 from ..git.service import GitService
-from ..models import RepoSpec, SyncResult, SyncStatus
+from ..models import RepoSpec, SyncAction, SyncResult, SyncStatus
 from ..util.redact import redact
 from .worker import CancelFlag, CloneWorker, TaskPayload
 
 # 周期落盘间隔（秒）：期间完成的任务先聚在内存，到时统一写一次
 _FLUSH_INTERVAL = 2.0
+
+# G43-1②：git 输出行合并窗口（毫秒）与立即冲刷阈值（行数）
+_LINE_WINDOW_MS = 250
+_LINE_FLUSH_THRESHOLD = 200
+# G43-5：progress / progress_detail 心跳批量 emit 间隔（毫秒）
+_PROGRESS_HEARTBEAT_MS = 100
+# G43-2：批次流控首批入队上限（>64 放入待发队列，完成一个惰性补投一个）
+_BATCH_START_LIMIT = 64
 
 
 class SyncEngine(QObject):
@@ -38,6 +47,7 @@ class SyncEngine(QObject):
     progress_detail = pyqtSignal(int, str)  # index, "rate files" 附加文本（速率/对象数）
     result = pyqtSignal(int, SyncResult)    # index, result
     finished = pyqtSignal()                 # 全部 worker 完成（成功/失败/取消都算）
+    _arm_flush = pyqtSignal()               # G43-1②：worker 线程请求主线程武装合并窗口定时器
 
     def __init__(self, root: Path, db: Optional[Database] = None,
                  progress_path: Optional[Path] = None,
@@ -93,6 +103,25 @@ class SyncEngine(QObject):
         # 内存护栏：完成时释放对 worker 的强引用，避免 QRunnable 队列积压导致 OOM
         self._retired_tasks: list[CloneWorker] = []
 
+        # G43-1②/G43-5：信号批聚合缓冲（worker 线程写入、主线程定时冲刷，锁保护）
+        self._emit_lock = threading.Lock()
+        self._line_buf: dict[int, list[tuple[str, str]]] = {}   # index -> [(text, level)]
+        self._line_count = 0
+        self._progress_buf: dict[int, str] = {}                 # index -> 最新 percent
+        self._progress_detail_buf: dict[int, str] = {}          # index -> 最新附加文本
+        self._line_flush_timer = QTimer(self)
+        self._line_flush_timer.setSingleShot(True)
+        self._line_flush_timer.setInterval(_LINE_WINDOW_MS)
+        self._line_flush_timer.timeout.connect(self._flush_line_buf)
+        self._progress_timer = QTimer(self)
+        self._progress_timer.setInterval(_PROGRESS_HEARTBEAT_MS)
+        self._progress_timer.timeout.connect(self._flush_progress_buf)
+
+        # G43-2：待发队列（>64 的超额 spec 缓存于此，完成一个补投一个）
+        self._pending_queue: list[tuple[int, RepoSpec, CancelFlag]] = []
+
+        self._arm_flush.connect(self._arm_line_flush)
+
     # ------------------------------------------------------------ 并发
     def set_concurrency(self, n: int) -> int:
         """设置线程池并发上限，返回实际生效值（1..32）。"""
@@ -141,11 +170,78 @@ class SyncEngine(QObject):
 
     def _emit_line(self, index: int, text: str, level: str = "info"):
         # G28-1：出口统一打码（git 报错行可能回显含凭据的 remote URL）
-        self.line.emit(index, redact(text), level)
+        text = redact(text)
+        # G43-1②：写入合并窗口缓冲（250ms 或阈值 200 行冲刷），降低信号风暴
+        with self._emit_lock:
+            first = not self._line_buf
+            self._line_buf.setdefault(index, []).append((text, level))
+            self._line_count += 1
+            over = self._line_count >= _LINE_FLUSH_THRESHOLD
+        if over:
+            self._flush_line_buf()          # 超阈值立即冲刷（可被任意线程调用）
+        elif first:
+            self._arm_flush.emit()          # 首批后请求主线程武装 250ms 单次定时器
+
+    def _arm_line_flush(self):
+        """主线程：武装 250ms 合并窗口定时器（缓冲非空且未运行才启动）。"""
+        with self._emit_lock:
+            if not self._line_buf or self._line_flush_timer.isActive():
+                return
+        self._line_flush_timer.start()
+
+    def _flush_line_buf(self):
+        """G43-1②：把缓冲的 git 输出行按 index 聚合并一次 emit（多行一行信号）。"""
+        with self._emit_lock:
+            if not self._line_buf:
+                return
+            buf, self._line_buf = self._line_buf, {}
+            self._line_count = 0
+        for idx, entries in buf.items():
+            for text, level in entries:
+                self.line.emit(idx, text, level)
+
+    def flush_all_buffers(self):
+        """G43-1②/G43-5：finished 前兜底冲刷，保证日志/进度全部送达后再发 finished。"""
+        self._flush_line_buf()
+        self._flush_progress_buf()
+
+    def _stop_buffers(self):
+        """G43-5：停止心跳/合并窗口定时器（幂等，收敛/关闭时调用）。"""
+        try:
+            self._progress_timer.stop()
+        except Exception:
+            pass
+        try:
+            self._line_flush_timer.stop()
+        except Exception:
+            pass
 
     def _emit_progress_detail(self, index: int, text: str):
-        """转发进度附加文本（速率/对象数）到 UI。"""
-        self.progress_detail.emit(index, text)
+        """G43-5：进度附加文本进入缓冲，由 100ms 心跳批量 emit。"""
+        with self._emit_lock:
+            self._progress_detail_buf[index] = text
+
+    def _on_worker_progress(self, index: int, percent: str):
+        """G43-5：worker 进度进入缓冲（保留最新值），心跳批量 emit。"""
+        with self._emit_lock:
+            self._progress_buf[index] = str(percent)
+
+    def _on_worker_progress_detail(self, index: int, text: str):
+        """G43-5：worker 进度详情进入缓冲（保留最新值），心跳批量 emit。"""
+        with self._emit_lock:
+            self._progress_detail_buf[index] = str(text)
+
+    def _flush_progress_buf(self):
+        """G43-5：心跳批量 emit 最新 progress / progress_detail（主线程）。"""
+        with self._emit_lock:
+            if not self._progress_buf and not self._progress_detail_buf:
+                return
+            prog, self._progress_buf = self._progress_buf, {}
+            detail, self._progress_detail_buf = self._progress_detail_buf, {}
+        for idx, pct in prog.items():
+            self.progress.emit(idx, pct)
+        for idx, text in detail.items():
+            self.progress_detail.emit(idx, text)
 
     def flush_progress(self):
         """把内存进度态原子落盘（周期调用；engine 单线程写文件）。"""
@@ -174,6 +270,17 @@ class SyncEngine(QObject):
         self._cancelled = True
         for flag in self.flags.values():
             flag.cancel()
+        # G43-2：待发队列清空且不再补投（逐个合成 CANCELLED 终态，in_progress 收敛）
+        pending, self._pending_queue = self._pending_queue, []
+        for index, spec, flag in pending:
+            try:
+                flag.cancel()
+            except Exception:
+                pass
+            res = SyncResult(spec=spec, status=SyncStatus.CANCELLED,
+                             action=SyncAction.CANCELLED, message="已取消")
+            self._on_result(index, res)
+            self._on_worker_done()
 
     def pause_task(self, index: int) -> bool:
         """暂停单个任务：只取消目标 worker 的 flag，其余任务继续（G02-3）。
@@ -319,6 +426,8 @@ class SyncEngine(QObject):
             self._emit_line(0, f"重复仓库已去重，仅同步一次：{k}", "warn")
 
         if not unique_specs:
+            # G43-1②：提前完成也要先冲刷缓冲（去重/跳过提示可能挂在缓冲里）
+            self.flush_all_buffers()
             self.busy = False
             self.finished.emit()
             return 0
@@ -338,30 +447,50 @@ class SyncEngine(QObject):
                            f"（{'浅克隆 depth=' + str(fetch_depth) if fetch_depth else '满量'}）",
                          "system")
 
+        # G43-2 批次流控：>64 只入队前 64，其余进待发队列，完成一个惰性补投一个。
+        # flags/specs 仍登记全部（取消缓存与落库 host 查询语义不变）；进度表全部行
+        # 仍由 UI 在 launch 后按 specs 预填，PENDING 态等待。
         for i, spec in enumerate(unique_specs):
             flag = CancelFlag()
             self.flags[i] = flag
             self.specs[i] = spec
-            key = f"{spec.owner}/{spec.repo}"
-            host = self._host_by_key.get(key) or "github.com"
-            payload = TaskPayload(spec=spec, flag=flag, host=host)
-            # G02-3: 每个 worker 独占一个 service（带自身 flag 的取消回调），
-            # 支持单任务暂停，其余 worker 互不影响
-            service = self._worker_service(flag)
-            # worker 只负责 git 同步与结果回传；DB 写入与 progress 落盘统一由引擎
-            # 在 _on_result / flush 处理，避免多 worker 并发写同一 SQLite 连接与进度文件
-            worker = CloneWorker(i, payload, service, None, None,
-                                 on_line=lambda c, i=i: self._emit_line(i, c.text, c.level),
-                                 fetch_depth=self._depth if self._depth else 0,
-                                 unshallow=self._unshallow)
-            worker.signals.line.connect(self.line.emit)
-            worker.signals.progress.connect(self.progress.emit)
-            worker.signals.progress_detail.connect(self.progress_detail.emit)
-            worker.signals.result.connect(self._on_result)
-            worker.signals.finished.connect(self._on_worker_done)
-            self.tasks.append(worker)
-            self.pool.start(worker)
+            if i < _BATCH_START_LIMIT:
+                self._start_worker(i, spec, flag)
+            else:
+                self._pending_queue.append((i, spec, flag))
+        # G43-5：进度心跳定时器（主线程批量 emit）
+        self._progress_timer.start()
         return len(unique_specs)
+
+    def _start_worker(self, index: int, spec: RepoSpec, flag: CancelFlag):
+        """构造并启动单个 worker（launch 首批与 _replenish 补投共用）。"""
+        key = f"{spec.owner}/{spec.repo}"
+        host = self._host_by_key.get(key) or "github.com"
+        payload = TaskPayload(spec=spec, flag=flag, host=host)
+        # G02-3: 每个 worker 独占一个 service（带自身 flag 的取消回调），
+        # 支持单任务暂停，其余 worker 互不影响
+        service = self._worker_service(flag)
+        # worker 只负责 git 同步与结果回传；DB 写入与 progress 落盘统一由引擎
+        # 在 _on_result / flush 处理，避免多 worker 并发写同一 SQLite 连接与进度文件
+        worker = CloneWorker(index, payload, service, None, None,
+                             on_line=lambda c, i=index: self._emit_line(i, c.text, c.level),
+                             fetch_depth=self._depth if self._depth else 0,
+                             unshallow=self._unshallow)
+        worker.signals.line.connect(self.line.emit)
+        # G43-5：progress/progress_detail 聚合进缓冲，由 100ms 心跳批量 emit
+        worker.signals.progress.connect(self._on_worker_progress)
+        worker.signals.progress_detail.connect(self._on_worker_progress_detail)
+        worker.signals.result.connect(self._on_result)
+        worker.signals.finished.connect(self._on_worker_done)
+        self.tasks.append(worker)
+        self.pool.start(worker)
+
+    def _replenish(self):
+        """G43-2：完成一个任务 → 从待发队列惰性补投一个（取消/无排队时不做）。"""
+        if self._cancelled or not self._pending_queue:
+            return
+        index, spec, flag = self._pending_queue.pop(0)
+        self._start_worker(index, spec, flag)
 
     # ------------------------------------------------------------ 回调
     def _on_result(self, index: int, res: SyncResult):
@@ -401,10 +530,16 @@ class SyncEngine(QObject):
         # G22-2：每任务结束都周期落盘一次（进程被杀时 in_progress 尽量最新）
         self.flush_progress()
         if self._pending == 0:
-            self.flush_progress()  # 全部完成：强制落盘一次
+            # 全部完成：先冲刷日志/进度缓冲（保证 finished 前送达），再强制落盘一次
+            self.flush_all_buffers()
+            self.flush_progress()
             self.busy = False
             self.finished.emit()
+            self._stop_buffers()
             self._release_tasks()  # 全部结束后集中释放 worker 引用防 OOM
+        else:
+            # G43-2：未全部完成 → 惰性补投一个待发任务
+            self._replenish()
 
     def _release_tasks(self):
         """全部完成时清空活跃任务列表与 flags/specs 引用，降低长时运行内存占用。"""
@@ -415,6 +550,7 @@ class SyncEngine(QObject):
             self.flags.clear()
             self.specs.clear()
             self._host_by_key = {}
+            self._pending_queue = []
         except Exception:
             pass
 
@@ -440,6 +576,7 @@ class SyncEngine(QObject):
             self.pool.waitForDone(200)
         except Exception:
             pass
+        self.flush_all_buffers()  # G43-1②：drain 后冲刷残留缓冲
         return self._pending == 0
 
     def shutdown(self):
@@ -452,6 +589,8 @@ class SyncEngine(QObject):
         except Exception:
             pass
         self.flush_progress()
+        self.flush_all_buffers()  # G43-1②/G43-5：关闭前送达残留缓冲
+        self._stop_buffers()
         try:
             self.pool.clear()
         except Exception:

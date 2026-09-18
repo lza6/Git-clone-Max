@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from collections import deque
 from enum import Enum
 from typing import Optional
 
@@ -230,30 +231,30 @@ class LogModel(QObject):
     def __init__(self, max_entries: int = 3000, parent=None):
         super().__init__(parent)
         self.max_entries = max_entries
-        self._entries: list[LogEvent] = []
+        # G43-1①：deque(maxlen) O(1) 裁剪（替代 list 切片 O(n)），32 并发日志风暴不卡 UI
+        self._entries: deque[LogEvent] = deque(maxlen=max_entries)
         self._dropped = 0
 
     def append(self, time: str, level: LogLevel, text: str):
         entry = LogEvent(time, level, text)
+        if len(self._entries) >= self.max_entries:
+            self._dropped += 1  # deque 满员：队首被挤出
         self._entries.append(entry)
-        self._dropped, n = self._trim()
-        self.appended.emit(n)
+        self.appended.emit(len(self._entries))
 
     def append_many(self, entries):
         """批量追加多条（只 emit 一次，用于日志洪峰节流合并）。"""
         if not entries:
             return
+        before = len(self._entries)
         self._entries.extend(entries)
-        self._dropped, n = self._trim()
-        self.appended.emit(n)
+        dropped = max(0, before + len(entries) - self.max_entries)
+        self._dropped += dropped
+        self.appended.emit(len(self._entries))
 
     def _trim(self) -> tuple:
-        """裁剪超限条目，返回 (dropped, 现条数)。"""
-        n = len(self._entries)
-        if n > self.max_entries:
-            self._entries = self._entries[-self.max_entries:]
-            return self._dropped + (n - self.max_entries), self.max_entries
-        return self._dropped, n
+        """裁剪超限条目，返回 (dropped, 现条数)（deque 恒 ≤ maxlen，保留兼容）。"""
+        return self._dropped, len(self._entries)
 
     def clear(self):
         self._entries.clear()
