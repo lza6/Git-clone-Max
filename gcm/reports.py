@@ -129,3 +129,41 @@ def export_markdown(db, out_path: str | Path, filters: dict | None = None) -> in
             f"{r.get('started_at') or '—'} |")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return len(rows)
+
+# --------------------------------------------------------------- G47-3 xlsx 导出
+EXPORT_COLUMNS_XLSX = ("owner", "repo", "host", "local_path", "folder_name",
+                       "last_sync_at", "status", "action", "commits", "message")
+
+
+def export_xlsx(db, out_path: str | Path, filters: dict | None = None) -> int:
+    """G47-3 导出 xlsx（openpyxl 可选依赖）：自动列宽 + 冻结首行 + 汇总行。
+
+    openpyxl 缺失时抛带安装提示的 RuntimeError（不静默降级，避免用户误以为已导出）。
+    """
+    try:
+        from openpyxl import Workbook
+        from openpyxl.utils import get_column_letter
+    except ImportError as e:  # pragma: no cover - 依赖缺失提示
+        raise RuntimeError(
+            "导出 xlsx 需要 openpyxl，请先执行：pip install openpyxl（或用 CSV/Markdown）"
+        ) from e
+    rows = _fetch_rows(db, filters)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "repos"
+    headers = list(EXPORT_COLUMNS_XLSX)
+    ws.append(headers)
+    for r in rows:
+        ws.append([r.get(k, "") for k in headers])
+    # 自动列宽（中文按 2 倍估算）+ 冻结首行
+    for col_idx, name in enumerate(headers, start=1):
+        width = max(10, min(40, max(
+            (len(str(name)) * 2 + 2),
+            max((len(str(r.get(name, ""))) * 2 + 2) for r in rows if rows) or 12,
+        )))
+        ws.column_dimensions[get_column_letter(col_idx)].width = width
+    ws.freeze_panes = "A2"
+    out = Path(out_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(str(out))
+    return len(rows)

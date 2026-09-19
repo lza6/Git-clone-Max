@@ -50,7 +50,7 @@ CREATE INDEX IF NOT EXISTS idx_sync_history_repo ON sync_history(repo_id, starte
 _BUSY_TIMEOUT_MS = 30000  # SQLite 写锁竞争等待上限，避免高并发直接抛 database is locked
 
 # 数据库 schema 版本（PRAGMA user_version）。每次结构变更，递增此值并补一段迁移。
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 
 
 def _migrate(conn):
@@ -76,6 +76,11 @@ def _migrate(conn):
         cols = [r[1] for r in conn.execute("PRAGMA table_info(repos)")]
         if "note" not in cols:
             conn.execute("ALTER TABLE repos ADD COLUMN note TEXT DEFAULT ''")
+    if v < 3:
+        # v3：repos 增加 ssh_key 列（G48-3 指定 SSH key）
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(repos)")]
+        if "ssh_key" not in cols:
+            conn.execute("ALTER TABLE repos ADD COLUMN ssh_key TEXT DEFAULT ''")
     conn.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
     conn.commit()
 
@@ -505,6 +510,158 @@ class Database:
 
 
 # ---------------------------------------------------------------------------
+
+
+    # ------------------------------------------------------------ G47/G48 数据洞察与深化
+    def repo_health(self, repo_id: int) -> int:
+        """G47-1 健康度评分 0-5：成功率(近20次,50%) + 陈旧度(25%) + 冲突惩罚(25%)。空历史默认 3。"""
+        try:
+            hist = self.history(repo_id, 20)
+            if not hist:
+                return 3
+            terms = [h for h in hist if h.get("status")
+                     in ("success", "failed", "conflict", "cancelled")]
+            if not terms:
+                return 3
+            n = len(terms)
+            ok = sum(1 for h in terms if h.get("status") == "success")
+            conflict = sum(1 for h in terms if h.get("status") == "conflict")
+            score = 3.0 + 2.0 * (ok / n)
+            score -= min(1.0, float(conflict) * 0.5)
+            try:
+                import datetime as _dt
+                now = _dt.datetime.now()
+                last = None
+                for h in terms:
+                    if h.get("ended_at"):
+                        try:
+                            t = _dt.datetime.strptime(str(h["ended_at"])[:19], "%Y-%m-%d %H:%M:%S")
+                            last = max(last or t, t)
+                        except Exception:
+                            pass
+                if last is not None:
+                    days = (now - last).days
+                    score -= min(1.0, max(0.0, days / 60.0))
+            except Exception:
+                pass
+            return int(max(0, min(5, round(score))))
+        except Exception:
+            return 3
+
+    @staticmethod
+    def dir_size(path) -> int:
+        """G47-5 目录总字节数（跳过 reparse point 防 junction 环）。"""
+        import os as _os
+        from pathlib import Path as _P
+        root = _P(path)
+        total = 0
+        try:
+            for entry in _os.scandir(root):
+                try:
+                    if entry.is_dir(follow_symlinks=False):
+                        if getattr(entry, "is_junction", lambda: False)():
+                            continue
+                        total += Database.dir_size(entry.path)
+                    elif entry.is_file(follow_symlinks=False):
+                        try:
+                            total += entry.stat().st_size
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+        except Exception:
+            return 0
+        return total
+
+    def list_repos_tags(self, tags: list[str] | None = None,
+                        mode: str = "and") -> list[dict]:
+        """G47-6 多标签过滤：AND(默认, 全部命中) / OR(任一命中)。"""
+        if not tags:
+            return self.list_repos()
+        wanted = [str(t).strip() for t in tags if str(t).strip()]
+        if not wanted:
+            return self.list_repos()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM repos ORDER BY favorite DESC, owner, repo").fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            row_tags = {t.strip() for t in str(d.get("tags") or "").split("|")
+                        if t.strip()}
+            if mode == "or":
+                hit = bool(set(wanted) & row_tags)
+            else:
+                hit = set(wanted) <= row_tags
+            if hit:
+                out.append(d)
+        return out
+
+    def export_metadata_json(self, out_path) -> int:
+        """G47-7 导出仓库元数据（tags/favorite/note/excluded + 标识字段）。返回条数。"""
+        rows = self.list_repos()
+        payload = []
+        for r in rows:
+            payload.append({
+                "owner": r.get("owner"), "repo": r.get("repo"),
+                "host": r.get("host", "github.com"),
+                "folder_name": r.get("folder_name"), "url": r.get("url"),
+                "local_path": r.get("local_path"),
+                "tags": r.get("tags", ""), "favorite": int(r.get("favorite") or 0),
+                "note": r.get("note", ""), "excluded": int(r.get("excluded") or 0),
+            })
+        out = Path(out_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+        return len(payload)
+
+    def import_metadata_json(self, in_path) -> int:
+        """G47-7 按 owner/repo/host 合并导入元数据（upsert 保留已有字段）。"""
+        data = json.loads(Path(in_path).read_text(encoding="utf-8"))
+        n = 0
+        for item in data:
+            owner = str(item.get("owner") or "")
+            repo = str(item.get("repo") or "")
+            host = str(item.get("host") or "github.com")
+            if not owner or not repo:
+                continue
+            spec = RepoSpec(owner=owner, repo=repo,
+                            url_https=str(item.get("url") or ""),
+                            folder_name=str(item.get("folder_name") or repo),
+                            local_path=str(item.get("local_path") or ""))
+            with self._lock:
+                self._begin_immediate()
+                self._conn.execute(
+                    """
+                    INSERT INTO repos (owner, repo, folder_name, url, local_path, host,
+                                       default_branch, head_sha, last_sync_at)
+                    VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL)
+                    ON CONFLICT(owner, repo, host) DO UPDATE SET
+                        url=excluded.url, local_path=excluded.local_path,
+                        updated_at=datetime('now','localtime')
+                    """,
+                    (owner, repo, spec.folder_name, spec.url_https, spec.local_path, host))
+                rid = self._conn.execute(
+                    "SELECT id FROM repos WHERE owner=? AND repo=? AND host=?",
+                    (owner, repo, host)).fetchone()["id"]
+                self._conn.execute(
+                    "UPDATE repos SET tags=?, favorite=?, note=?, excluded=?, "
+                    "updated_at=datetime('now','localtime') WHERE id=?",
+                    (str(item.get("tags") or ""), int(item.get("favorite") or 0),
+                     str(item.get("note") or ""), int(item.get("excluded") or 0), rid))
+                self._conn.commit()
+            n += 1
+        return n
+
+    # ------------------------------------------------------------ G48-3 指定 SSH key
+    def set_ssh_key(self, repo_id: int, key_path: str) -> None:
+        """G48-3：为仓库指定 SSH key（clone/fetch 时经 GIT_SSH_COMMAND 注入）。"""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE repos SET ssh_key=?, updated_at=datetime('now','localtime') WHERE id=?",
+                (str(key_path or ""), repo_id))
+            self._conn.commit()
+
 # 断点续传：progress.json（含已完任务记录）
 # ---------------------------------------------------------------------------
 # progress.json 的读写需要互斥：多 worker 并发（或未来多实例）写同一 tmp 路径
