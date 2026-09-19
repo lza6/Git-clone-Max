@@ -6,7 +6,7 @@
 
 [project]
 name = "git-clone-max"
-version = "8.0.0"
+version = "8.0.1"
 description = "GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 桌面工具（PyQt6）"
 readme = "README.md"
 requires-python = ">=3.10"

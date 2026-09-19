@@ -1,5 +1,5 @@
 """Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。"""
-__version__ = "8.0.0"
+__version__ = "8.0.1"
 __app_name__ = "Git-clone-Max"
 __changelog__ = (
     "4.0.0: 统一调度引擎(SyncEngine) · progress.json 进程级锁+周期落盘 · SQLite busy_timeout · "
@@ -112,5 +112,8 @@ __changelog__ = (
     "8.0.0: M7 收官 - CLI --dir 克隆输出根目录 · CI 三平台矩阵新增 mypy 类型门禁(0 error) · "
     "Inno 安装器中文语言包集成说明 · G46-1..12 计划状态回填[已落地](M4 交付核对) · "
     "全量 761 绿 · 覆盖 84% · Release 双产物 + health 台账",
+    "8.0.1: 维护版 - publish_release 远端 tag 缺失幂等补建(404→create/422 竞态视为成功, "
+    "含 4 单测) · 计划文档全表清账(G45-G49 状态回填[已落地], 规划总览 M 系列对齐实际交付) · "
+    "全量 761 绿 · 覆盖 84%",
 )
 

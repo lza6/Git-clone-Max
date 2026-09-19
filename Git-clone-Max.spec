@@ -56,11 +56,11 @@ try:
                 StringTable('040904B0', [
                     StringStruct('CompanyName', 'Git-clone-Max'),
                     StringStruct('FileDescription', 'GitHub repository batch download tool'),
-                    StringStruct('FileVersion', '8.0.0'),
+                    StringStruct('FileVersion', '8.0.1'),
                     StringStruct('InternalName', 'Git-clone-Max'),
                     StringStruct('OriginalFilename', 'Git-clone-Max.exe'),
                     StringStruct('ProductName', 'Git-clone-Max'),
-                    StringStruct('ProductVersion', '8.0.0'),
+                    StringStruct('ProductVersion', '8.0.1'),
                 ])
             ]),
             VarFileInfo([VarStruct('Translation', [1033, 1200])]),
