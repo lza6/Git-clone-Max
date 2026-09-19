@@ -45,6 +45,20 @@ class ProgressTable(QWidget):
     def _build_ui(self):
         v = QVBoxLayout(self)
         v.setSpacing(10)
+        # G46-4 批次总览条：已完成 x/总 y · 成功率 %（迷你进度条）
+        overview = QHBoxLayout()
+        overview.setSpacing(8)
+        self.batch_total_lbl = QLabel("批次：—")
+        self.batch_total_lbl.setObjectName("muted")
+        self.batch_bar = QProgressBar()
+        self.batch_bar.setRange(0, 100)
+        self.batch_bar.setValue(0)
+        self.batch_bar.setFixedWidth(180)
+        self.batch_bar.setTextVisible(False)
+        overview.addWidget(self.batch_total_lbl)
+        overview.addWidget(self.batch_bar, 1)
+        overview.addStretch()
+        v.addLayout(overview)
         # 进度表
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(["仓库", "进度", "状态", "本次", "详情"])
@@ -95,6 +109,8 @@ class ProgressTable(QWidget):
         self.table.setRowCount(0)
         self.table.setRowCount(n)
         self.table.setSortingEnabled(was_sorting)
+        # G46-4 批次总览重置
+        self._reset_batch_overview(n)
         # 过滤状态保持
         self._filter_progress_rows(getattr(self, "_progress_filter_text", ""))
         # G36-5 空态引导：无行 → 显示 overlay
@@ -219,25 +235,8 @@ class ProgressTable(QWidget):
         row = self.table.rowAt(pos.y())
         if row < 0:
             return
-        name_item = self.table.item(row, 0)
-        status_item = self.table.item(row, 2)
-        if name_item is None or status_item is None:
-            return
-        from PyQt6.QtWidgets import QMenu
-        menu = QMenu(self)
-        # 用 UserRole 存的原始状态键判断（符号只是视觉后缀，不参与逻辑）
-        status_key = status_item.data(Qt.ItemDataRole.UserRole) or ""
-        if status_key in ("failed", "cancelled"):
-            act_retry = menu.addAction("⟳ 重试此仓库")
-            act_retry.triggered.connect(
-                lambda _=False, r=row: self._retry_table_row(r))
-            menu.addSeparator()
-        act_copy = menu.addAction("复制错误详情")
-        act_copy.triggered.connect(
-            lambda _=False, r=row: self._copy_row_detail(r))
-        act_open = menu.addAction("打开所在目录")
-        act_open.triggered.connect(
-            lambda _=False, r=row: self._open_row_dir(r))
+        # G46-12：统一构建（重试项置灰+tooltip），不再就地拼菜单
+        menu = self._build_progress_menu(row)
         menu.exec(self.table.viewport().mapToGlobal(pos))
 
     def _retry_table_row(self, row: int):
@@ -375,8 +374,10 @@ class ProgressTable(QWidget):
         msg = self.table.item(index, 4)
         msg.setText(res.message)
         msg.setToolTip(res.detail or "")
-        # G36-6 完成动效：成功绿/失败红背景色 1.2s 消隐（设置开关；offscreen 自动关）
+        # G36-6 完成动效：成功绿/失败红背景色 1.2s 消隐
+        # （设置开关；offscreen 自动关；G46-8 prefers_reduced_motion 也关）
         if bool(getattr(self.owner.settings, "animations", True)) and \
+                not self._on_worker_result_motion_guard() and \
                 os.environ.get("QT_QPA_PLATFORM") != "offscreen":
             try:
                 self._animate_result_row(index, res.status)
@@ -391,6 +392,8 @@ class ProgressTable(QWidget):
         # 记录到 DB 由 worker 内部完成
         self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO if res.status == SyncStatus.SUCCESS else LogLevel.WARN,
                         f"[{index}] {label}：{res.message}（{action_label}）")
+        # G46-4 批次总览累加
+        self._on_batch_result(res.status)
 
     def _animate_result_row(self, index: int, status: SyncStatus):
         """G36-6 完成动效：成功绿/失败红背景色 1.2s 淡出到主题底色。
@@ -520,3 +523,73 @@ class ProgressTable(QWidget):
             pass
 
     # ------------------------------------------------------------ 管理页
+
+    # ------------------------------------------------------------ G46-4 批次总览
+    def _reset_batch_overview(self, total: int):
+        """G46-4：新批次开始时重置总览计数。"""
+        self._batch_total = int(total or 0)
+        self._batch_done = 0
+        self._batch_ok = 0
+        self._render_batch_overview()
+
+    def _on_batch_result(self, status: SyncStatus):
+        """G46-4：单个终态结果到达后累加并刷新总览。"""
+        self._batch_done = getattr(self, "_batch_done", 0) + 1
+        if status == SyncStatus.SUCCESS:
+            self._batch_ok = getattr(self, "_batch_ok", 0) + 1
+        self._render_batch_overview()
+
+    def _render_batch_overview(self):
+        """渲染「已完成 x/总 y · 成功率 %」+ 迷你进度条。"""
+        total = getattr(self, "_batch_total", 0)
+        done = getattr(self, "_batch_done", 0)
+        ok = getattr(self, "_batch_ok", 0)
+        try:
+            if total <= 0:
+                self.batch_total_lbl.setText("批次：—")
+                self.batch_bar.setValue(0)
+                return
+            pct = min(100, round(done / total * 100))
+            rate = round(ok / done * 100) if done else 0
+            self.batch_total_lbl.setText(f"已完成 {done}/{total} · 成功率 {rate}%")
+            self.batch_bar.setValue(pct)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------ G46-12 进度右键菜单统一
+    def _build_progress_menu(self, row: int):
+        """构造进度表右键菜单（不 exec，便于离屏测试）。
+
+        重试项始终显示：不可用时置灰 + tooltip 说明（G46-12 统一语义）。
+        """
+        from PyQt6.QtWidgets import QMenu
+        name_item = self.table.item(row, 0)
+        status_item = self.table.item(row, 2)
+        menu = QMenu(self)
+        if name_item is None or status_item is None:
+            return menu
+        status_key = status_item.data(Qt.ItemDataRole.UserRole) or ""
+        act_retry = menu.addAction("⟳ 重试此仓库")
+        retryable = status_key in ("failed", "cancelled")
+        act_retry.setEnabled(retryable)
+        act_retry.setToolTip("仅失败/已取消行可重试" if not retryable else "重新调度该仓库")
+        act_retry.triggered.connect(
+            lambda _=False, r=row: self._retry_table_row(r))
+        menu.addSeparator()
+        act_copy = menu.addAction("复制错误详情")
+        act_copy.triggered.connect(
+            lambda _=False, r=row: self._copy_row_detail(r))
+        act_open = menu.addAction("打开所在目录")
+        act_open.triggered.connect(
+            lambda _=False, r=row: self._open_row_dir(r))
+        return menu
+
+    def _on_worker_result_motion_guard(self) -> bool:
+        """G46-8：prefers_reduced_motion 开启时禁用完成动效。"""
+        try:
+            if bool(getattr(self.owner.settings, "prefers_reduced_motion", False)):
+                return True
+        except Exception:
+            pass
+        return False
+

@@ -5,7 +5,7 @@ MainWindow 保持一致（MainWindow 保留同名转发，行为零变化）。
 """
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
@@ -90,6 +90,9 @@ class ManagePanel(QWidget):
         self.manage_table.setAlternatingRowColors(False)
         self.manage_table.setMinimumHeight(260)
         self.manage_table.setContextMenuPolicy(Qt.ContextMenuPolicy.DefaultContextMenu)
+        self.manage_table.installEventFilter(self)  # G46-6 键盘 Enter 打开详情
+        self.manage_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.manage_table.customContextMenuRequested.connect(self._manage_context_menu)  # G46-12
         self.manage_table.doubleClicked.connect(self.manage_double_clicked.emit)
         # G03-7 末列「查看」按钮委托：每行独立可点击（不再依赖选中行 + 共享按钮）
         from .manage_model import HistoryButtonDelegate
@@ -250,3 +253,47 @@ class ManagePanel(QWidget):
             r = self.manage_model.row_at(i.row())
             if r is not None:
                 self.owner.show_history(r.repo_id)
+
+    # ------------------------------------------------------------ G46-6 键盘导航
+    def eventFilter(self, obj, event):
+        """管理表 ↑↓ 选行已由 Qt 默认处理；Enter 打开当前行同步历史。"""
+        if obj is self.manage_table and event.type() == QEvent.Type.KeyPress:
+            key = getattr(event, "key", lambda: None)()
+            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                idx = self.manage_table.currentIndex()
+                if idx.isValid():
+                    self.manage_double_clicked.emit(idx)
+                return True
+        return super().eventFilter(obj, event)
+
+    # ------------------------------------------------------------ G46-12 管理表右键菜单
+    def _manage_menu(self):
+        """构造管理表右键菜单（不 exec，便于离屏测试）。无选中行时动作置灰+tooltip。"""
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu(self)
+        act_hist = menu.addAction("打开同步历史")
+        act_hist.triggered.connect(lambda _=False: self._history_for_current_row())
+        menu.addSeparator()
+        act_tag = menu.addAction("打标签")
+        act_tag.triggered.connect(lambda _=False: self.batch_tag_selected())
+        act_export = menu.addAction("导出所选 CSV")
+        act_export.triggered.connect(lambda _=False: self.export_selected_csv())
+        act_del = menu.addAction("删除选中记录")
+        act_del.triggered.connect(lambda _=False: self.delete_selected())
+        has_sel = bool(self.manage_table.selectedIndexes())
+        for a in (act_tag, act_export, act_del):
+            a.setEnabled(has_sel)
+            a.setToolTip("请先选择仓库行" if not has_sel else "")
+        return menu
+
+    def _manage_context_menu(self, pos):
+        """G46-12：管理表右键菜单入口。"""
+        menu = self._manage_menu()
+        menu.exec(self.manage_table.viewport().mapToGlobal(pos))
+
+    def _history_for_current_row(self):
+        """为当前行发出管理详情请求（双击 / Enter / 右键历史共用）。"""
+        idx = self.manage_table.currentIndex()
+        if idx.isValid():
+            self.manage_double_clicked.emit(idx)
+

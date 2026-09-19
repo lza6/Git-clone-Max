@@ -117,7 +117,7 @@ class MainWindow(QMainWindow):
         # G05-1 应用持久化主题（默认 deep）+ G10-1 字号缩放
         from ..ui import theme as _th
         _th.apply_theme(getattr(self.settings, "theme", "deep"))
-        self.setStyleSheet(_th.qss_for_scale(getattr(self.settings, "font_scale", 1.0)))
+        self.setStyleSheet(self._themed_qss())
         # G10-1 快捷键 Ctrl+= 放大 / Ctrl+- 缩小 / Ctrl+0 复位
         from PyQt6.QtGui import QKeySequence, QShortcut
         QShortcut(QKeySequence("Ctrl+="), self, activated=self.zoom_in)
@@ -233,8 +233,7 @@ class MainWindow(QMainWindow):
             if target and target in ("light", "deep"):
                 from ..ui import theme as _th
                 _th.apply_theme(target)
-                self.setStyleSheet(
-                    _th.qss_for_scale(getattr(self.settings, "font_scale", 1.0)))
+                self.setStyleSheet(self._themed_qss())
                 self._apply_theme_to_children()
                 self.settings.theme = target
                 self._emit_log(_fmt_dt(), LogLevel.INFO,
@@ -353,6 +352,11 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.tab_download, "下载中心")
         self.tabs.addTab(self.tab_manage, "仓库管理")
         self.tabs.addTab(self.tab_settings, "设置与日志")
+        # G46-2 页签图标化（零资源：复用 std_icon 语义图标）
+        for _i, _key in zip((0, 1, 2), ("arrow_down", "folder", "info"), strict=True):
+            _ic = self._std_icon(_key, self.tabs)
+            if _ic is not None:
+                self.tabs.setTabIcon(_i, _ic)
 
         self._build_download_tab()
         self._build_manage_tab()
@@ -730,10 +734,17 @@ class MainWindow(QMainWindow):
     def _save_theme(self, *args, **kwargs):
         """G45-6 转发 settings_panel.py（行为零变化）。"""
         return self.settings_panel._save_theme(*args, **kwargs)
+    def _themed_qss(self) -> str:
+        """G46-7/G46-8：按当前主题 + 强调色 + 字号 + 动效偏好生成 QSS。"""
+        from ..ui import theme as _th
+        pal = _th.PALETTES.get(getattr(self.settings, "theme", "deep")) or _th.PALETTES["deep"]
+        pal = _th.theme_with_accent(pal, getattr(self.settings, "accent_preset", "blue"))
+        motion = not bool(getattr(self.settings, "prefers_reduced_motion", False))
+        return _th.qss_for_palette(pal, getattr(self.settings, "font_scale", 1.0), motion)
+
     def _apply_font_scale(self):
         try:
-            from ..ui import theme as _th
-            self.setStyleSheet(_th.qss_for_scale(getattr(self.settings, "font_scale", 1.0)))
+            self.setStyleSheet(self._themed_qss())
         except Exception:
             pass
 
