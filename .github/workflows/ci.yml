@@ -8,9 +8,19 @@ on:
   pull_request:
     branches: [main]
 
+# G45-7：三平台矩阵（Windows/Linux/macOS）+ 独立真实 git E2E 冒烟 job。
+# GitHub hosted runner 均自带 git，无需额外安装。
 jobs:
   test:
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    env:
+      # G45-1/G29-1 覆盖率门禁：数值抽成 job 级常量，矩阵内所有平台一致；
+      # 表达式 ${{ env.COVERAGE_FAIL_UNDER }} 由 runner 预替换，pwsh/bash 通用。
+      COVERAGE_FAIL_UNDER: 84
     steps:
       - uses: actions/checkout@v4
 
@@ -25,13 +35,21 @@ jobs:
           python -m pip install PyQt6 coverage
           python -m pip install -r requirements-build.txt
 
-      - name: Setup git identity
+      # Windows：system 级 identity + autocrlf=true（保持原行为）
+      - name: Setup git identity (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
           git config --system user.email "ci@example.com"
           git config --system user.name "CI"
-      - shell: pwsh
-        run: |
           git config --system core.autocrlf true
+
+      # Linux/macOS：global 级 identity（runner 无 /etc 写权限，system 级不可用）
+      - name: Setup git identity (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          git config --global user.email "ci@example.com"
+          git config --global user.name "CI"
 
       - name: Run tests (offscreen)
         env:
@@ -39,10 +57,10 @@ jobs:
         run: |
           python -m coverage run --source=gcm -m unittest discover -s tests
 
-      # G29-1 覆盖率门禁：不达标 CI 变红。过渡期 82%，冲刺 85%。
+      # G29-1 覆盖率门禁：不达标 CI 变红。阈值来自 job env COVERAGE_FAIL_UNDER。
       - name: Coverage gate
         run: |
-          python -m coverage report --fail-under=82
+          python -m coverage report --fail-under=${{ env.COVERAGE_FAIL_UNDER }}
 
       # G29-2 ruff 静态检查：零 error
       - name: Install ruff
@@ -52,7 +70,7 @@ jobs:
         run: |
           ruff check gcm --output-format=github
 
-      # G29-6 模块级覆盖率表格输出到 job summary
+      # G29-6 模块级覆盖率表格输出到 job summary（pwsh 三平台预装）
       - name: Coverage summary
         env:
           QT_QPA_PLATFORM: offscreen
@@ -61,6 +79,7 @@ jobs:
           python -m coverage json > $null
           @"
           import json
+          from pathlib import Path
           with open("coverage.json", encoding="utf-8") as f:
               data = json.load(f)
           total = data["totals"]["percent_covered"]
@@ -75,5 +94,21 @@ jobs:
       - name: Upload summary
         uses: actions/upload-artifact@v4
         with:
-          name: workflow-summary
+          # 矩阵并行 job 必须唯一 artifact 名，避免 upload-artifact@v4 冲突
+          name: workflow-summary-${{ matrix.os }}
           path: .workflow_summary.md
+
+  # G45-7：真实 git E2E 冒烟（本地裸仓 clone/update/conflict 保护），独立红绿灯
+  e2e-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run git E2E smoke
+        run: |
+          python scripts/e2e_smoke.py
