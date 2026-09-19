@@ -6,7 +6,7 @@
 ; 需要先构建 dist\Git-clone-Max.exe（见 README 打包段）。
 
 #define MyAppName "Git-clone-Max"
-#define MyAppVersion "8.0.1"
+#define MyAppVersion "8.0.2"
 #define MyAppExeName "Git-clone-Max.exe"
 #define MyAppPublisher "lza6"
 #define MyAppURL "https://github.com/lza6/Git-clone-Max"

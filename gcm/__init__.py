@@ -1,5 +1,5 @@
 """Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。"""
-__version__ = "8.0.1"
+__version__ = "8.0.2"
 __app_name__ = "Git-clone-Max"
 __changelog__ = (
     "4.0.0: 统一调度引擎(SyncEngine) · progress.json 进程级锁+周期落盘 · SQLite busy_timeout · "
@@ -115,5 +115,9 @@ __changelog__ = (
     "8.0.1: 维护版 - publish_release 远端 tag 缺失幂等补建(404→create/422 竞态视为成功, "
     "含 4 单测) · 计划文档全表清账(G45-G49 状态回填[已落地], 规划总览 M 系列对齐实际交付) · "
     "全量 761 绿 · 覆盖 84%",
+    "8.0.2: P-perf 本地扫描提速 - scanner 纯文件读 remote/HEAD(config/HEAD/packed-refs,"
+    "0 子进程+线程池并发+scandir 跳 junction) · 裸仓/worktree 完整性 · local_repos_dialog "
+    "O(1) 预载+item checkState+批量写库 · 实测 300 仓 149.4s→1.6s(约95x) · "
+    "全量 770 绿 · 覆盖 84%",
 )
 
