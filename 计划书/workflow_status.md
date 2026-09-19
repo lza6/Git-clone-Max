@@ -2,6 +2,22 @@
 
 > 只记录事实与证据。
 
+## 参考库扫描 · 优点提炼 · 差距分析 · 优化规划（本次会话）
+
+| 节点 | 状态 | 证据 |
+|------|------|------|
+| 参考根全量盘存 | ✅ | `D:\参考项目` 共 **1178 个项目**（`计划书/参考扫描证据/_inventory.txt`） |
+| 自动聚类（两轮） | ✅ | 15+ 聚类（dev_tools 228 / agent_skill 201 / web_scraper_download 177 / agent_framework 131 / video 74 / mcp 71 / security 54 / ppt_docs 39 / image_gen 26 / ecommerce_ads 18 等；`_clusters2.json`） |
+| 同类筛选 + 56 项深读 | ✅ | 短名单 README 摘要（`_shortlist_readme.json`、`_deep2.md`）；直接同行：Website-downloader / web-check / 9router-Max / VideoHub / xl-converter / zvec-grep |
+| 优化方案设计 | ✅ | `参考结果计划指南.md`（P0/P1/P2 分层 + 验收 + 决策点） |
+| 实施 | ⏳ **待用户确认** | P0-1 一键体检 / P0-2 Webhook 审计台账 / P0-3 CLI --json 待授权后按节点实施+验收 |
+
+> 本节点为只读分析规划，未改动主项目/参考项目任何代码；实施需用户确认后进入 P0 节点闭环。
+
+# 任务推进日志（主控代理）— Git-clone-Max 升级交付
+
+> 只记录事实与证据。
+
 ## v4.1.0 增量交付
 
 | 节点 | 状态 | 关键证据 |
