@@ -1,5 +1,5 @@
 """Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。"""
-__version__ = "7.6.0"
+__version__ = "7.7.0"
 __app_name__ = "Git-clone-Max"
 __changelog__ = (
     "4.0.0: 统一调度引擎(SyncEngine) · progress.json 进程级锁+周期落盘 · SQLite busy_timeout · "
@@ -83,8 +83,15 @@ __changelog__ = (
     "URL 内嵌凭据剥离 · 敏感目录警告 · 数据目录私有性检查+迁移 · G44 专项 30+ · 全量 652 绿",
     "7.6.0: M3 工程与结构 G45 - main_window 拆分(manage_panel/progress_table/settings_panel, "
     "1791→1214 行) · G45-2 引擎并发压力测试(固定种子 x 2-32 并发 x 20% 失败注入/120s 防死锁) · "
-    "G45-3 test_main/single_instance 覆盖率补齐(96%/80%) · G45-4 发布 body 模板化(RELEASE_BODY.md) · "
+    "G45-3 test_main/single_instance 覆盖率补齐(96%/80%) · "
+    "G45-4 发布 body 模板化(RELEASE_BODY.md) · "
     "G45-5 build 依赖锁精确版本 · G45-7 CI 三平台矩阵+真实 git E2E 冒烟 job · "
     "G45-8 发布版本一致性校验(tag==__version__/changelog) · G45-9 产物健康检查脚本(JSON 台账) · "
     "全量绿 · 覆盖 84%（门禁 82→84）",
+    "7.7.0: M4 UI/UX 设计系统 G46 - 设计 token 层(TOKENS/qss_for_theme) · "
+    "控件状态 QSS(hover/focus/disabled/pressed) · 字体栈+字号下限(FONT_SCALE_MIN_UI 0.9) · "
+    "HC 高对比主题(WCAG AAA ≥7:1 断言) · 强调色 3 档预设(即时生效) · reduced-motion 开关 · "
+    "页签图标 · 批次总览条(已完成/成功率) · 表格键盘 Enter 开详情 · 右键菜单统一(置灰+tooltip) · "
+    "托盘菜单丰富(统计/更新/自启) · 使用说明对话框 · 设置卡片+恢复默认(token 保留) · "
+    "全量 702 绿 · 覆盖 85%(门禁 84→85)",
 )

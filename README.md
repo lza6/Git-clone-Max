@@ -118,7 +118,7 @@ python -m unittest discover -s tests -v
 ```powershell
 $env:QT_QPA_PLATFORM = "offscreen"
 python -m coverage run --source=gcm -m unittest discover -s tests
-python -m coverage report --fail-under=84
+python -m coverage report --fail-under=85
 ```
 
 - 覆盖率门禁阈值与 CI 一致（`ci.yml` 的 `COVERAGE_FAIL_UNDER`），三平台矩阵跑同一门禁。
