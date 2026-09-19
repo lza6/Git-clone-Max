@@ -9,6 +9,7 @@
 - **多平台**：GitHub / GitLab / Gitee / Codeberg / Bitbucket / 自建主机；短格式 / 子组 / @tag / 镜像前缀。
 - **数据洞察**：统计中心（全局 + host 分布 + 30 天趋势 + 用量）、报表筛选导出（CSV/Markdown）、每仓库备注、远端检查。
 - **UI/UX**：三套主题 + 跟随系统深浅色、首启三步向导、状态符号、标准图标体系、完成动效、全局热键、设置搜索、窗口尺寸记忆。
+- **生态与体验**：轻量 i18n（中文/English，重启生效）· 数据目录策略（`--portable` / 默认 %APPDATA% / 旧 data 沿用）· CLI 批量克隆（`python -m gcm --cli`，离屏复用引擎）· uv 现代环境 · 开机自启真实写入任务计划 + 启动最小化到托盘（`--minimized`）· 完成通知 Webhook（显式开启+URL，payload 打码）· Inno 安装器脚本 · 打开数据目录入口。
 - **工程**：ruff 零 error / mypy 通过 / 覆盖率门禁 / Release 双产物 sha256 校验。
 
 ## 校验信息

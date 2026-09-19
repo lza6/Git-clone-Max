@@ -6,12 +6,35 @@
 
 [project]
 name = "git-clone-max"
-version = "7.8.0"
+version = "7.9.0"
 description = "GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 桌面工具（PyQt6）"
+readme = "README.md"
 requires-python = ">=3.10"
+keywords = ["github", "git", "clone", "download", "pyqt6", "批量下载", "增量更新"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Version Control :: Git",
+    "Topic :: Utilities",
+]
 dependencies = [
     "PyQt6>=6.6",
 ]
+
+[project.urls]
+Homepage = "https://github.com/lza6/Git-clone-Max"
+Repository = "https://github.com/lza6/Git-clone-Max"
+Issues = "https://github.com/lza6/Git-clone-Max/issues"
 
 [project.scripts]
 git-clone-max = "gcm.__main__:main"
@@ -37,6 +60,9 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "gcm/ui/*.py" = ["E501"]
 "gcm/db/settings.py" = ["E501"]
+# G49-1 生成文案字典：长行豁免（自动生成，非手写）
+"gcm/i18n/zh.py" = ["E501"]
+"gcm/i18n/en.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.10"

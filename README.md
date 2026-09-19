@@ -37,6 +37,20 @@ pip install -r requirements.txt
 python -m gcm
 ```
 
+## uv 现代环境（G49-4）
+
+> uv 自动解析 pyproject.toml（readme/urls/classifiers 元数据已补全），零手动 venv。
+```bash
+# GUI 启动
+uv run python -m gcm
+
+# CLI 批量克隆（无 GUI 离屏；地址来自 stdin（-）或文件）
+printf 'https://github.com/lza6/Git-clone-Max\nhttps://github.com/vercel-labs/skills\n' | uv run python -m gcm --cli -
+
+# 便携模式：数据目录固定在可执行文件同级 data/（默认非便携走 %APPDATA%/Git-clone-Max，旧 data 沿用）
+uv run python -m gcm --portable
+```
+
 > 注：`QT_QPA_PLATFORM=offscreen` 仅用于**无显示器环境 / CI**（如 `QT_QPA_PLATFORM=offscreen python -m gcm`），正常桌面环境无需设置。
 
 ## 功能
