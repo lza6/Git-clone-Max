@@ -8,7 +8,9 @@ from __future__ import annotations
 from PyQt6.QtCore import QRectF, Qt
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import (
+    QComboBox,
     QDialog,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -37,7 +39,32 @@ class _TrendCanvas(QWidget):
 
     def set_data(self, data: list[dict]) -> None:
         self._data = data or []
+        self._hover_idx = -1
         self.update()
+
+    def data_at(self, x: float) -> int:
+        """G47-4：按 x 坐标返回命中的日期索引（无数据/越界返回 -1）。"""
+        if not self._data:
+            return -1
+        n = len(self._data)
+        slot = self.width() / n if n else 0
+        idx = int(x // slot) if slot > 0 else -1
+        return idx if 0 <= idx < n else -1
+
+    def mouseMoveEvent(self, e):
+        """G47-4：hover 显示当日成功/失败/冲突 tooltip。"""
+        try:
+            idx = self.data_at(e.position().x())
+            if idx >= 0:
+                d = self._data[idx]
+                tip = (f"{d.get('date', '')}：成功 {d.get('success', 0)} · "
+                       f"失败 {d.get('failed', 0)} · 冲突 {d.get('conflict', 0)}")
+                self.setToolTip(tip)
+                self._hover_idx = idx
+                self.update()
+        except Exception:
+            pass
+        super().mouseMoveEvent(e)
 
     def paintEvent(self, e):
         from PyQt6.QtGui import QBrush
@@ -86,6 +113,7 @@ class StatisticsDialog(QDialog):
         self.resize(560, 460)
         self.setMinimumSize(460, 380)
         self.setStyleSheet(QSS)
+        self._days = 30  # G47-4 趋势周期（7/30/90）
         self._build_ui()
         self._refresh()
 
@@ -113,8 +141,21 @@ class StatisticsDialog(QDialog):
         self.lbl_usage.setWordWrap(True)
         v.addWidget(self.lbl_usage)
 
-        # G37-1 30 天趋势
-        v.addWidget(QLabel("最近 30 天同步趋势（绿=成功 红=失败 橙=冲突）"))
+        # G37-1/G47-4 同步趋势（周期可切 7/30/90，可导出 PNG）
+        h_trend = QHBoxLayout()
+        h_trend.addWidget(QLabel("同步趋势（绿=成功 红=失败 橙=冲突）"))
+        self.period_combo = QComboBox()
+        for _d, _lbl in ((7, "近 7 天"), (30, "近 30 天"), (90, "近 90 天")):
+            self.period_combo.addItem(_lbl, _d)
+        self.period_combo.setCurrentIndex(1)
+        self.period_combo.currentIndexChanged.connect(
+            lambda _i: self._on_period_changed())
+        h_trend.addWidget(self.period_combo)
+        h_trend.addStretch()
+        self.btn_export_png = QPushButton("导出 PNG")
+        self.btn_export_png.clicked.connect(self._export_png)
+        h_trend.addWidget(self.btn_export_png)
+        v.addLayout(h_trend)
         self.trend_canvas = _TrendCanvas(self)
         v.addWidget(self.trend_canvas)
 
@@ -171,7 +212,8 @@ class StatisticsDialog(QDialog):
 
         # G37-1 30 天趋势
         try:
-            self.trend_canvas.set_data(self.db.stats_daily(days=30))
+            self.trend_canvas.set_data(
+                self.db.stats_daily(days=int(getattr(self, "_days", 30))))
         except Exception:
             self.trend_canvas.set_data([])
 
@@ -191,3 +233,27 @@ class StatisticsDialog(QDialog):
                     f"{avg_s:.1f}s × {it.get('count', 0)}  "
                     f"{it.get('last_sync', '')}")
             self.lbl_slow.setText("\n".join(lines))
+
+    # ------------------------------------------------------------ G47-4 周期/PNG
+    def _on_period_changed(self):
+        """G47-4：切换 7/30/90 天周期并重算趋势。"""
+        try:
+            self._days = int(self.period_combo.currentData() or 30)
+        except Exception:
+            self._days = 30
+        self._refresh()
+
+    def _export_png(self):
+        """G47-4：导出趋势图为 PNG。"""
+        from pathlib import Path
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出趋势图", str(Path.home() / "trend.png"), "PNG (*.png)")
+        if not path:
+            return
+        try:
+            ok = self.trend_canvas.grab().save(path)
+            if not ok:
+                raise RuntimeError("保存失败")
+        except Exception as e:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "导出失败", str(e))

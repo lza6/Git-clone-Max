@@ -182,6 +182,14 @@ class RepoDetailDialog(QDialog):
         self.table.setColumnWidth(3, 70)
         self.table.setMinimumHeight(200)
 
+        if not self.history:
+            # G47-2 空态占位
+            self.table.setRowCount(1)
+            item = QTableWidgetItem("（暂无同步记录）")
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.table.setItem(0, 0, item)
+            self.table.setSpan(0, 0, 1, 5)
+            return self.table
         self.table.setRowCount(len(self.history))
         for i, h in enumerate(self.history):
             self._set_row(i, h)

@@ -5,7 +5,10 @@ MainWindow 保持一致（MainWindow 保留同名转发，行为零变化）。
 """
 from __future__ import annotations
 
-from PyQt6.QtCore import QEvent, Qt, pyqtSignal
+import os
+import threading
+
+from PyQt6.QtCore import QEvent, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
@@ -66,6 +69,15 @@ class ManagePanel(QWidget):
         self.btn_export_selected.setToolTip("把选中的仓库导出为 CSV 报表")
         self.btn_export_selected.clicked.connect(self.export_selected_csv)
         self.btn_export_selected.setIcon(self.owner._std_icon("save", self.btn_export_selected))
+        # G47-7 元数据导入/导出
+        self.btn_export_meta = QPushButton("导出元数据")
+        self.btn_export_meta.setToolTip("导出仓库元数据(标签/收藏/备注/黑名单)为 JSON")
+        self.btn_export_meta.clicked.connect(self._export_metadata)
+        self.btn_import_meta = QPushButton("导入元数据")
+        self.btn_import_meta.setToolTip("从 JSON 合并导入仓库元数据(按 owner/repo/host upsert)")
+        self.btn_import_meta.clicked.connect(self._import_metadata)
+        top.addWidget(self.btn_export_meta)
+        top.addWidget(self.btn_import_meta)
         top.addWidget(self.btn_import_local)
         top.addWidget(self.btn_update_all)
         top.addWidget(self.btn_cancel_manage)
@@ -77,9 +89,11 @@ class ManagePanel(QWidget):
 
         # 模型化视图：数据与视图解耦，大批量行不卡（共享按钮 + 懒加载）
         from .manage_model import ManageModel
-        self.manage_model = ManageModel(parent=self)
+        self.manage_model = ManageModel(parent=self, db=self.owner.db)
         self.manage_table = QTableView()
         self.manage_table.setModel(self.manage_model)
+        # G47-1/5 健康 + 大小列（末两列，原 0-5 列语义不变）
+        # 表头标签由 ManageModel.headerData 提供（G47-1/5 健康/大小列）
         self.manage_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft)
         self.manage_table.horizontalHeader().setStretchLastSection(True)
         self.manage_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -149,6 +163,8 @@ class ManagePanel(QWidget):
                     ov.raise_()
         except Exception:
             pass
+        # G47-5 懒加载磁盘大小
+        self._start_size_loader()
 
     def _refresh_manage(self):
         self.owner._load_db_into_grid()
@@ -297,3 +313,80 @@ class ManagePanel(QWidget):
         if idx.isValid():
             self.manage_double_clicked.emit(idx)
 
+    # ------------------------------------------------------------ G47-5/7
+    @staticmethod
+    def _human_size(n: int) -> str:
+        """字节数 → 人类可读（B/KB/MB/GB）。"""
+        n = int(n or 0)
+        for unit in ("B", "KB", "MB", "GB"):
+            if n < 1024 or unit == "GB":
+                return f"{n:.1f} {unit}" if unit != "B" else f"{n} B"
+            n /= 1024
+        return f"{n:.1f} GB"
+
+    def _start_size_loader(self):
+        """G47-5：后台线程懒加载各仓库目录大小，主线程回填模型（节流防重复）。"""
+        try:
+            if getattr(self, "_size_thread", None) is not None and \
+                    self._size_thread.is_alive():
+                return
+            model = self.manage_model
+            targets = [(r.repo_id, str(r.local_path)) for r in model._rows
+                       if r.local_path and os.path.isdir(r.local_path)]
+            if not targets:
+                return
+            db = self.owner.db
+
+            def _run():
+                out = []
+                for rid, path in targets:
+                    try:
+                        out.append((rid, self._human_size(db.dir_size(path))))
+                    except Exception:
+                        out.append((rid, ""))
+                self._pending_sizes = out
+
+            self._size_thread = threading.Thread(target=_run, daemon=True)
+            self._size_thread.start()
+            QTimer.singleShot(600, self._apply_pending_sizes)
+        except Exception:
+            pass
+
+    def _apply_pending_sizes(self):
+        try:
+            for rid, text in getattr(self, "_pending_sizes", []) or []:
+                self.manage_model.set_size(rid, text)
+        except Exception:
+            pass
+
+    def _export_metadata(self):
+        """G47-7：导出仓库元数据 JSON。"""
+        from PyQt6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getSaveFileName(
+            self.owner, "导出仓库元数据", str(self.owner.data_dir / "repos_meta.json"),
+            "JSON (*.json)")
+        if not path:
+            return
+        try:
+            n = self.owner.db.export_metadata_json(path)
+            self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO,
+                                 f"已导出 {n} 条仓库元数据：{path}")
+            self.owner.statusBar().showMessage(f"已导出 {n} 条元数据")
+        except Exception as e:
+            _mw.QMessageBox.warning(self.owner, "导出失败", str(e))
+
+    def _import_metadata(self):
+        """G47-7：从 JSON 合并导入仓库元数据。"""
+        from PyQt6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getOpenFileName(
+            self.owner, "导入仓库元数据", str(self.owner.data_dir), "JSON (*.json)")
+        if not path:
+            return
+        try:
+            n = self.owner.db.import_metadata_json(path)
+            self._load_db_into_grid()
+            self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO,
+                                 f"已导入 {n} 条仓库元数据：{path}")
+            self.owner.statusBar().showMessage(f"已导入 {n} 条元数据")
+        except Exception as e:
+            _mw.QMessageBox.warning(self.owner, "导入失败", str(e))

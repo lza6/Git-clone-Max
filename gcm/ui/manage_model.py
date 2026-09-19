@@ -31,6 +31,9 @@ class ManageRow:
     tags: str = ""
     favorite: int = 0
     excluded: int = 0
+    # G47-1/5 数据洞察：健康度(0-5) 与磁盘大小（懒加载）
+    health: int = 3
+    size: str = ""
 
 
 class ManageModel(QAbstractItemModel):
@@ -42,10 +45,12 @@ class ManageModel(QAbstractItemModel):
     rowsChanged = pyqtSignal()
     visChanged = pyqtSignal()
 
-    def __init__(self, rows: Optional[list[dict]] = None, parent=None):
+    def __init__(self, rows: Optional[list[dict]] = None, parent=None, db=None):
         super().__init__(parent)
         self._rows: list[ManageRow] = []
         self._vis: list[bool] = []
+        self.db = db  # G47-1 健康度懒加载数据源
+        self._health_cache: dict[int, int] = {}
         if rows:
             self.set_rows(rows)
         else:
@@ -73,6 +78,7 @@ class ManageModel(QAbstractItemModel):
                 excluded=int(r.get("excluded") or 0),
             ))
         self.endResetModel()
+        self._health_cache = {}
         self.rowsChanged.emit()
         self._sync_vis()
 
@@ -146,7 +152,7 @@ class ManageModel(QAbstractItemModel):
 
     # ------------------------------------------------------------ Qt 模型接口
     def index(self, row: int, column: int, parent: QModelIndex = QModelIndex()) -> QModelIndex:
-        if parent.isValid() or not (0 <= row < len(self._rows)) or not (0 <= column < 6):
+        if parent.isValid() or not (0 <= row < len(self._rows)) or not (0 <= column < 8):
             return QModelIndex()
         return self.createIndex(row, column)
 
@@ -157,7 +163,17 @@ class ManageModel(QAbstractItemModel):
         return 0 if parent.isValid() else len(self._rows)
 
     def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
-        return 6
+        return 8
+
+    _HEADERS = ("仓库", "作者/仓库", "本地路径", "上次同步", "HEAD", "历史", "健康", "大小")
+
+    def headerData(self, section, orientation=Qt.Orientation.Horizontal,
+                   role=Qt.ItemDataRole.DisplayRole):
+        if (orientation == Qt.Orientation.Horizontal
+                and role == Qt.ItemDataRole.DisplayRole
+                and 0 <= section < len(self._HEADERS)):
+            return self._HEADERS[section]
+        return None
 
     def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):
         if not index.isValid() or not (0 <= index.row() < len(self._rows)):
@@ -165,6 +181,10 @@ class ManageModel(QAbstractItemModel):
         r = self._rows[index.row()]
         col = index.column()
         if role == Qt.ItemDataRole.DisplayRole:
+            if col == 6:
+                return f"⭐{self.health_value(index.row())}"
+            if col == 7:
+                return r.size or ""
             return (r.folder_name if col == 0 else
                     (f"{r.owner}/{r.repo}" if col == 1 else
                      (r.local_path if col == 2 else
@@ -175,6 +195,28 @@ class ManageModel(QAbstractItemModel):
         return None
 
 
+    # ------------------------------------------------------------ G47-1/5 数据洞察
+    def health_value(self, row: int) -> int:
+        """G47-1：该行健康度（复用 db.repo_health，带缓存；无 db 时用行内默认 3）。"""
+        r = self.row_at(row)
+        if r is None:
+            return 3
+        if self.db is None:
+            return r.health
+        cached = self._health_cache.get(r.repo_id)
+        if cached is None:
+            cached = self.db.repo_health(r.repo_id)
+            self._health_cache[r.repo_id] = cached
+        return cached
+
+    def set_size(self, repo_id: int, text: str) -> None:
+        """G47-5：懒加载回填某行磁盘大小并刷新视图。"""
+        for row, r in enumerate(self._rows):
+            if r.repo_id == repo_id:
+                r.size = str(text)
+                idx = self.index(row, 7)
+                self.dataChanged.emit(idx, idx, [Qt.ItemDataRole.DisplayRole])
+                return
 class HistoryButtonDelegate(QStyledItemDelegate):
     """G03-7 末列「查看」按钮委托：每行独立可点击（替代共享按钮）。
 
