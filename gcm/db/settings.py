@@ -211,6 +211,10 @@ class Settings:
     auto_update_minutes: int = 0      # G37-4 自动更新间隔（分钟，0=关；非 busy 时触发一键更新）
     font_scale: float = 1.0           # G10-1 字号缩放（0.8 ~ 1.6）
     rate_limit_kbps: int = 0          # G04-4 下载限速 KiB/s（0=不限）
+    start_minimized: bool = False      # G49-6 启动时最小化到托盘（需托盘可用；自启命令追加 --minimized）
+    notify_webhook_enabled: bool = False  # G49-7 完成通知 Webhook 显式开关（与 URL 非空共同决定是否发送）
+    notify_webhook_url: str = ""       # G49-7 完成通知 Webhook URL（仅显式开启且非空才发送）
+    notify_webhook_token: str = ""     # G49-7 Webhook Token（可选；落盘前加密）
 
 
 _DEFAULTS: dict = asdict(Settings())
@@ -251,6 +255,9 @@ class SettingsStore:
             if isinstance(ht, dict):
                 s.host_tokens = {str(k): _decrypt_token(str(v))
                                  for k, v in ht.items()}
+            # G49-7：Webhook token 读回解密（掩码/损坏 → 空串）
+            nwt = getattr(s, "notify_webhook_token", "") or ""
+            s.notify_webhook_token = _decrypt_token(str(nwt))
             return s
 
     def _try_restore_backup(self) -> dict:
@@ -279,6 +286,9 @@ class SettingsStore:
             if isinstance(ht, dict):
                 ht = {str(k): _encrypt_token(str(v)) for k, v in ht.items() if str(k)}
                 payload["host_tokens"] = ht
+            # G49-7：Webhook token 与主 token 同策略加密落盘
+            if payload.get("notify_webhook_token"):
+                payload["notify_webhook_token"] = _encrypt_token(payload["notify_webhook_token"])
             tmp.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2),
                 encoding="utf-8",
