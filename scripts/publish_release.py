@@ -36,40 +36,32 @@ PORTABLE_NAME = "Git-clone-Max-portable.zip"
 
 
 def _build_body() -> str:
-    """根据当前 gcm.__version__ 动态生成 Release body。
+    """G45-4：读取 docs/RELEASE_BODY.md 模板并替换占位符生成 Release body。
 
-    版本号写死在常量里会随发版漂移落后，这里运行时读取，保证 tag 与 body
-    始终同版本。BODY 常量保留并指向同一模板，兼容旧测试对 pr.BODY 的引用。
+    占位符：{version}、{sha256_exe}、{sha256_zip}（缺失/读取失败置空，不阻断发布）。
+    BODY 常量保留并指向同一模板结果，兼容旧测试对 pr.BODY 的引用。
     """
     from gcm import __version__  # 脚本入口已把 ROOT 加入 sys.path
-    sha256_note = ""
+
+    def _sum(path: Path) -> str:
+        try:
+            if path.is_file():
+                return hashlib.sha256(path.read_bytes()).hexdigest()
+        except Exception:
+            pass
+        return ""
+
+    template_path = ROOT / "docs" / "RELEASE_BODY.md"
     try:
-        z = ROOT / "dist" / "Git-clone-Max-portable.zip"
-        if z.exists():
-            zh = hashlib.sha256(z.read_bytes()).hexdigest()
-            sha256_note = f"  \n- portable zip sha256: `{zh}`"
-    except Exception:
-        pass
-    try:
-        exe_sha = hashlib.sha256(
-            (ROOT / "dist" / "Git-clone-Max.exe").read_bytes()).hexdigest()
-    except Exception:
-        exe_sha = ""
+        template = template_path.read_text(encoding="utf-8")
+    except Exception as e:
+        raise RuntimeError(
+            f"无法读取 Release body 模板 {template_path}：{e}") from e
     return (
-        "GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 桌面工具（PyQt6）。\n\n"
-        f"## 版本 {__version__}\n"
-        "- 并发 1–32（设置页可调），重复地址自动去重\n"
-        "- 统一调度引擎：SQLite busy_timeout + progress.json 进程级锁，高并发不闪退/锁死\n"
-        "- 增量更新（fetch → merge --ff-only → rebase）+ 冲突保护（本地改动绝不覆盖）\n"
-        "- 断点续传、断网自动重试、全局超时、HTTP 代理、GitHub Token（私有仓库）\n"
-        "- 仓库详情对话框 + 同步历史；系统托盘 + 检查更新\n"
-        "- 单文件自包含 exe（双击即用，无需安装 Python）\n"
-        "- 便携版 zip（onedir，启动更快）（G23-7）\n\n"
-        f"## 校验\n- 本版 onefile exe sha256：`{exe_sha or '构建后生成'}`"
-        f"{sha256_note}\n\n"
-        "## 使用\n"
-        "- 直接下载 `Git-clone-Max.exe` 双击运行\n"
-        "- 需系统已安装 git（https://git-scm.com/download/win）\n"
+        template
+        .replace("{version}", str(__version__))
+        .replace("{sha256_exe}", _sum(DIST))
+        .replace("{sha256_zip}", _sum(PORTABLE_ZIP))
     )
 
 
@@ -184,6 +176,29 @@ def _upload_portable(rel, started: float) -> None:
     print(f"[OK] 便携包上传成功 id={asset.id} size={asset.size}")
 
 
+def _validate_version(tag: str, version: str, changelog) -> str | None:
+    """G45-8：tag 与 gcm.__version__/__changelog__ 一致性校验（不触网）。
+
+    - tag（未传时默认 v+version）必须等于 v+version.lstrip("v")，否则 [FAIL]；
+    - __changelog__（gcm/__init__.py 元组）必须存在一个以 "version:" 前缀的条目
+      （所有条目均按 "X.Y.Z: 描述" 书写；find 前缀匹配同时兼容元组 旧→新 / 新→旧
+      两种排列，避免"包含但非本版条目"误判）；
+    - 失败返回 None（调用方 return 1），成功返回规范化 tag。
+    """
+    expected_tag = "v" + str(version).lstrip("v")
+    if not tag:
+        tag = expected_tag
+    if tag != expected_tag:
+        print(f"[FAIL] tag 不一致：传入 {tag!r}，期望 {expected_tag!r}（gcm.__version__={version!r}）")
+        return None
+    matched = [e for e in changelog if e.startswith(str(version) + ":")]
+    if not matched:
+        latest = changelog[-1] if changelog else ""
+        print(f"[FAIL] __changelog__ 缺少版本 {version} 条目（最新：{latest[:60]!r}...）")
+        return None
+    return expected_tag
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="发布 Git-clone-Max Release")
     ap.add_argument("--dry-run", action="store_true", help="仅校验，不上传")
@@ -198,6 +213,13 @@ def main() -> int:
     sha = _sha256(DIST)
     size = DIST.stat().st_size
     print(f"[OK] 本地产物 {ARTIFACT_NAME} {size} bytes  sha256={sha[:16]}…")
+
+    # G45-8 版本一致性校验（不触网）：dry-run 与实发都生效，失败直接返回。
+    from gcm import __version__, __changelog__  # noqa
+    tag = _validate_version(args.tag, str(__version__), __changelog__)
+    if tag is None:
+        return 1
+    print(f"[INFO] tag = {tag}")
 
     try:
         from github import Auth, Github  # PyGithub
@@ -223,13 +245,6 @@ def main() -> int:
     except Exception as e:
         print(f"[FAIL] 初始化失败：{e}")
         return 1
-
-    # 默认 tag：从 gcm.__init__ 读版本
-    tag = args.tag
-    if not tag:
-        from gcm import __version__
-        tag = "v" + __version__.lstrip("v")
-    print(f"[INFO] tag = {tag}")
 
     cur = [None]
 
@@ -300,6 +315,13 @@ def main() -> int:
                           f"{'一致' if a.size == size else '不一致'}")
         else:
             print(f"[DRY] Release {tag} 不存在，将新建并上传 {size} bytes")
+        _preview = _build_body()
+        _plines = _preview.splitlines()
+        print("[DRY] Release body 预览（前 8 行）：")
+        for _line in _plines[:8]:
+            print(f"    | {_line}")
+        if len(_plines) > 8:
+            print(f"    | ...（共 {len(_plines)} 行，其余省略）")
         print("[DRY] 校验通过，未做任何修改。")
         return 0
 

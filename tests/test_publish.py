@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
+import gcm  # noqa: E402
 import publish_release as pr  # noqa: E402
 
 
@@ -109,7 +110,11 @@ class PublishTestCase(unittest.TestCase):
         pr.time = _make_fake_time()
         self.addCleanup(self._restore_time)
 
+        # G45-8：版本一致性校验基于 gcm.__version__/__changelog__，
+        # setUp 统一 patch 成与用例 tag 一致（v4.2.0），旧用例无需改 tag。
         self._patchers = [
+            mock.patch.object(gcm, "__version__", "4.2.0"),
+            mock.patch.object(gcm, "__changelog__", ("4.2.0: G45-8 测试条目",)),
             mock.patch.object(pr, "_get_token", return_value="t" * 40),
             # urllib 保持真实模块：服务端下载校验读 asset.browser_download_url
             # （example.com 替身 URL），真实 urlopen 失败仅 [WARN] 跳过不影响断言。
@@ -188,9 +193,23 @@ class TestNewReleaseCreated(PublishTestCase):
         self.repo._rel = None
         rc = self._run_main("--tag", "v4.2.0")
         self.assertEqual(rc, 0)
-        self.repo.create_git_release.assert_called_once_with(
-            tag="v4.2.0", name="Git-clone-Max v4.2.0",
-            message=pr.BODY, draft=False, prerelease=False)
+        self.repo.create_git_release.assert_called_once()
+        call = self.repo.create_git_release.call_args
+        kwargs = call.kwargs
+        if not kwargs:
+            kwargs = {
+                "tag": call.args[0], "name": call.args[1],
+                "message": call.args[2],
+                "draft": call.args[3] if len(call.args) > 3 else False,
+                "prerelease": call.args[4] if len(call.args) > 4 else False,
+            }
+        self.assertEqual(kwargs.get("tag"), "v4.2.0")
+        self.assertEqual(kwargs.get("name"), "Git-clone-Max v4.2.0")
+        msg = kwargs.get("message", "")
+        self.assertIn("4.2.0", msg, "body 应含当前版本")
+        self.assertNotIn("{version}", msg, "占位符应被替换")
+        self.assertNotIn("{sha256_exe}", msg)
+        self.assertNotIn("{sha256_zip}", msg)
         self.assertEqual(len(self.repo._rel._uploaded), 1)
 
 
@@ -207,3 +226,74 @@ class TestNetworkRetryThenFail(PublishTestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+class TestBuildBodyFromTemplate(PublishTestCase):
+    """G45-4：body 从 docs/RELEASE_BODY.md 模板读取并替换占位符。"""
+
+    def test_template_placeholders_replaced(self):
+        import hashlib as _hl
+        tmp_tpl = self.tmp / "docs"
+        tmp_tpl.mkdir()
+        (tmp_tpl / "RELEASE_BODY.md").write_text(
+            "# v{version}\n- exe: {sha256_exe}\n- zip: {sha256_zip}\n",
+            encoding="utf-8")
+        exe = self.tmp / "app.exe"
+        exe.write_bytes(b"X")
+        z = self.tmp / "app.zip"
+        z.write_bytes(b"ZZ")
+        with mock.patch.object(pr, "ROOT", self.tmp), \
+             mock.patch.object(pr, "DIST", exe), \
+             mock.patch.object(pr, "PORTABLE_ZIP", z):
+            body = pr._build_body()
+        self.assertIn("# v4.2.0", body)
+        self.assertIn(_hl.sha256(b"X").hexdigest(), body)
+        self.assertIn(_hl.sha256(b"ZZ").hexdigest(), body)
+        self.assertNotIn("{version}", body)
+        self.assertNotIn("{sha256_exe}", body)
+        self.assertNotIn("{sha256_zip}", body)
+
+    def test_missing_artifacts_empty_sha(self):
+        import hashlib as _hl
+        tmp_tpl = self.tmp / "docs"
+        tmp_tpl.mkdir()
+        (tmp_tpl / "RELEASE_BODY.md").write_text(
+            "exe={sha256_exe} zip={sha256_zip}", encoding="utf-8")
+        with mock.patch.object(pr, "ROOT", self.tmp), \
+             mock.patch.object(pr, "PORTABLE_ZIP", self.tmp / "missing.zip"):
+            body = pr._build_body()
+        # DIST 存在（setUp 的 3 字节 "EXE"），zip 缺失 → 置空
+        expected = f"exe={_hl.sha256(b'EXE').hexdigest()} zip="
+        self.assertEqual(body, expected)
+
+
+class TestVersionConsistency(PublishTestCase):
+    """G45-8：tag/__version__/__changelog__ 一致性校验（不触网、失败即 [FAIL] rc=1）。"""
+
+    def test_tag_mismatch_fails(self):
+        buf = io.StringIO()
+        with mock.patch.object(sys, "stdout", buf):
+            rc = self._run_main("--dry-run", "--tag", "v9.9.9")
+        self.assertEqual(rc, 1)
+        self.assertIn("[FAIL]", buf.getvalue())
+        self.assertIn("tag", buf.getvalue())
+        # 校验在网络之前：不应访问远端
+        self.repo.get_release.assert_not_called()
+
+    def test_changelog_missing_version_fails(self):
+        with mock.patch.object(gcm, "__changelog__", ("4.1.0: old",)):
+            buf = io.StringIO()
+            with mock.patch.object(sys, "stdout", buf):
+                rc = self._run_main("--dry-run", "--tag", "v4.2.0")
+        self.assertEqual(rc, 1)
+        self.assertIn("[FAIL]", buf.getvalue())
+        self.assertIn("__changelog__", buf.getvalue())
+        self.repo.get_release.assert_not_called()
+
+    def test_default_tag_matches_version(self):
+        """未传 --tag：默认 v+__version__，且通过校验。"""
+        self.repo._rel = None
+        buf = io.StringIO()
+        with mock.patch.object(sys, "stdout", buf):
+            rc = self._run_main("--dry-run")
+        self.assertEqual(rc, 0)
+        self.assertIn("v4.2.0", buf.getvalue())
