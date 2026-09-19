@@ -46,6 +46,7 @@ class SyncEngine(QObject):
     progress = pyqtSignal(int, str)         # index, percent
     progress_detail = pyqtSignal(int, str)  # index, "rate files" 附加文本（速率/对象数）
     result = pyqtSignal(int, SyncResult)    # index, result
+    adapt_changed = pyqtSignal(int, str)     # G48-1 并发自适应：当前并发, 说明
     finished = pyqtSignal()                 # 全部 worker 完成（成功/失败/取消都算）
     _arm_flush = pyqtSignal()               # G43-1②：worker 线程请求主线程武装合并窗口定时器
 
@@ -58,7 +59,11 @@ class SyncEngine(QObject):
                  host_tokens: Optional[dict[str, str]] = None,
                  mirror_prefix: Optional[dict[str, str]] = None,
                  precheck_remote: bool = False, single_branch: bool = False,
-                 force_ipv4: bool = False):
+                 force_ipv4: bool = False,
+                 lfs_enabled: bool = False,
+                 post_clone_hook: str = "",
+                 ssh_key: str = "",
+                 mirror: bool = False):
         super().__init__()
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -79,6 +84,16 @@ class SyncEngine(QObject):
         self.force_ipv4 = bool(force_ipv4)            # G38-6
         self._submodule = bool(submodule)   # G08-1 透传给 GitService
         self._rate_limit_kbps = max(0, int(rate_limit_kbps or 0))  # G04-4 限速
+        # G48 深化透传
+        self._lfs = bool(lfs_enabled)
+        self._post_clone_hook = (post_clone_hook or "").strip()
+        self._ssh_key_global = (ssh_key or "").strip()
+        self._mirror_launch = bool(mirror)
+        # G48-1 并发自适应状态
+        self._adapt_max = max(1, min(32, int(concurrency)))
+        self._adapt_current = self._adapt_max
+        self._net_fail_streak = 0
+        self._net_ok_streak = 0
 
         self.tasks: list[CloneWorker] = []
         self.flags: dict[int, CancelFlag] = {}
@@ -253,6 +268,38 @@ class SyncEngine(QObject):
         except Exception:
             pass  # 落盘失败不致命，下次周期再试
 
+    # ------------------------------------------------------------ G48-1 并发自适应
+    def _adapt_result(self, status: SyncStatus, message: str) -> None:
+        """G48-1：连续网络类失败 → 并发减半(下限 1)；连续成功 K 次 → 回升至设置上限。
+
+        状态经 adapt_changed 信号通知 UI（状态栏提示当前并发）。
+        """
+        try:
+            msg = (message or "").lower()
+            nw_kw = ("timeout", "refused", "resolve", "peer", "connection",
+                     "network", "unable to access", "could not resolve",
+                     "timed out", "502", "503", "early eof", "remote end")
+            if status == SyncStatus.FAILED and any(k in msg for k in nw_kw):
+                self._net_fail_streak += 1
+                self._net_ok_streak = 0
+                if self._net_fail_streak >= 3:
+                    nxt = max(1, self._adapt_current // 2)
+                    if nxt < self._adapt_current:
+                        self._adapt_current = nxt
+                        self.set_concurrency(nxt)
+                        self.adapt_changed.emit(
+                            nxt, f"网络抖动，并发已自动降至 {nxt}")
+            else:
+                self._net_ok_streak += 1
+                self._net_fail_streak = 0
+                if self._net_ok_streak >= 3 and self._adapt_current < self._adapt_max:
+                    self._adapt_current = self._adapt_max
+                    self.set_concurrency(self._adapt_max)
+                    self.adapt_changed.emit(
+                        self._adapt_max, f"网络恢复，并发已回升至 {self._adapt_max}")
+        except Exception:
+            pass
+
     def _mark_done(self, key: str, status: SyncStatus, message: str):
         finished = self._progress.setdefault("finished", [])
         finished = [x for x in finished if x.get("key") != key]
@@ -264,6 +311,7 @@ class SyncEngine(QObject):
         })
         self._progress["finished"] = finished
         self._dirty = True
+        self._adapt_result(status, message)
 
     # ------------------------------------------------------------ 取消
     def cancel_all(self):
@@ -342,6 +390,10 @@ class SyncEngine(QObject):
             unshallow=self._unshallow,
             submodule=getattr(self, "_submodule", False),
             rate_limit_kbps=getattr(self, "_rate_limit_kbps", 0),
+            lfs_enabled=getattr(self, "_lfs", False),
+            mirror=getattr(self, "_mirror_launch", False),
+            post_clone_hook=getattr(self, "_post_clone_hook", ""),
+            ssh_key=getattr(self, "_ssh_key_global", ""),
             host_tokens=getattr(self, "host_tokens", None) or {},  # G38-1
             mirror_prefix=getattr(self, "mirror_prefix", None) or {},  # G38-2
             precheck_remote=getattr(self, "precheck_remote", False),  # G38-3
@@ -381,7 +433,8 @@ class SyncEngine(QObject):
 
     def launch(self, specs: Iterable[RepoSpec], host_by_key: Optional[dict[str, str]] = None,
                fetch_depth: int = 0, unshallow: bool = False,
-               clear_input: bool = False, check_existing: bool = True) -> int:
+               clear_input: bool = False, check_existing: bool = True,
+               mirror: bool = False) -> int:
         """启动一组仓库的并行同步。返回实际调度数量（去重后）。
 
         - specs: 待同步仓库列表（可含重复，内部去重）
@@ -393,6 +446,7 @@ class SyncEngine(QObject):
         if self.busy:
             return 0
         self._cancelled = False
+        self._mirror_launch = bool(mirror)  # G48-6 本次批次镜像模式
         self._clear_input = clear_input
         self._skip_done = check_existing
 

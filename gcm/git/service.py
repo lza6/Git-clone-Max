@@ -387,7 +387,11 @@ class GitService:
                  mirror_prefix: Optional[dict[str, str]] = None,
                  precheck_remote: bool = False,
                  single_branch: bool = False,
-                 force_ipv4: bool = False):
+                 force_ipv4: bool = False,
+                 lfs_enabled: bool = False,
+                 mirror: bool = False,
+                 post_clone_hook: str = "",
+                 ssh_key: str = ""):
         self.root = Path(root_dir)
         self.root.mkdir(parents=True, exist_ok=True)
         self.on_line = on_line or (lambda c: None)
@@ -408,6 +412,42 @@ class GitService:
         self.unshallow = bool(unshallow)              # True 时浅层仓库 fetch --unshallow 拉全量
         self._submodule = bool(submodule)             # G08-1 True 时 clone 带子模块
         self.rate_limit_kbps = max(0, int(rate_limit_kbps or 0))  # G04-4 限速
+        # G48 深化
+        self._lfs_enabled = bool(lfs_enabled)          # G48-2 Git LFS
+        self._mirror = bool(mirror)                    # G48-6 镜像克隆(--mirror)
+        self._post_clone_hook = (post_clone_hook or "").strip()  # G48-5
+        self._ssh_key = (ssh_key or "").strip()        # G48-3 指定 SSH key
+
+    @staticmethod
+    def slow_remote_hint(duration_s: float, threshold: float = 3.0) -> str:
+        """G48-9：ls-remote 预检耗时超过阈值 → 建议切换浅克隆/镜像。"""
+        if duration_s >= threshold:
+            return (f"远端响应偏慢（{duration_s:.1f}s ≥ {threshold:g}s），"
+                    "建议本次使用「浅克隆」或「镜像克隆」以提速")
+        return ""
+
+    def _lfs_flag(self) -> list[str]:
+        """G48-2：LFS 开关开启时 clone/fetch 追加 -c filter.lfs.required=false。"""
+        if self._lfs_enabled:
+            return ["-c", "filter.lfs.required=false"]
+        return []
+
+    @staticmethod
+    def resolve_host_token(host_tokens: dict | None, host: str,
+                           account: str | None = None) -> str:
+        """G48-4：host_tokens[host] 值支持 `user:token` 多账号（每行一个）→ 按账号取。
+
+        无账号 / 值无 `:` → 返回原值（兼容单 token）。
+        """
+        raw = ((host_tokens or {}).get(host or "", "") or "").strip()
+        if not raw:
+            return ""
+        if raw and ":" in raw and account:
+            for line in raw.splitlines():
+                line = line.strip()
+                if line.startswith(account + ":"):
+                    return line.split(":", 1)[1].strip()
+        return raw
 
     def _host_token(self) -> str:
         """G38-1 取当前 host 对应的凭据：host_tokens 映射优先，其次全局 token。
@@ -428,11 +468,15 @@ class GitService:
           仅对本次 git 子进程生效，不污染全局配置）。
         """
         if (not self.proxy and not self._any_token()
-                and not self.rate_limit_kbps and not self.force_ipv4):
+                and not self.rate_limit_kbps and not self.force_ipv4
+                and not self._ssh_key):
             return extra
         env = dict(os.environ)
         if extra:
             env.update(extra)
+        if self._ssh_key:
+            # G48-3 指定 SSH key：多账号/公司内网
+            env["GIT_SSH_COMMAND"] = f'ssh -i "{self._ssh_key}"'
         if self.proxy:
             env.setdefault("http_proxy", self.proxy)
             env.setdefault("https_proxy", self.proxy)
@@ -655,6 +699,39 @@ class GitService:
             res.duration_ms = int((res.ended - res.started) * 1000)
 
     # ------------------------------------------------------------ clone
+    def build_clone_cmd(self, spec: RepoSpec, repo_dir=None) -> list[str]:
+        """G48-2/6：拼装 clone 命令（含 LFS -c 选项与 --mirror）。
+
+        独立方法便于单测直接断言命令内容，无需跑真实 git。
+        """
+        repo_dir = repo_dir or self._repo_dir(spec)
+        cmd = ["git"] + self._lfs_flag() + ["clone", "--progress"]
+        if getattr(spec, "ref", ""):
+            cmd += ["-b", spec.ref]
+        if self.fetch_depth and self.single_branch:
+            cmd += [f"--depth={self.fetch_depth}", "--single-branch"]
+        if self._mirror:
+            # G48-6 镜像克隆（--mirror 自带 --bare）
+            cmd.append("--mirror")
+        cmd += [self._mirror_url(spec.url_https), str(repo_dir)]
+        if self._submodule:
+            cmd.append("--recurse-submodules")
+        return cmd
+
+    def _run_post_clone_hook(self, repo_dir) -> None:
+        """G48-5：成功克隆后运行用户钩子命令（%PATH% 替换为仓库路径；失败仅日志）。"""
+        if not self._post_clone_hook:
+            return
+        import subprocess as _sp
+        from pathlib import Path as _P
+        cmd = self._post_clone_hook.replace("%PATH%", str(_P(repo_dir)))
+        try:
+            self._emit(f"执行克隆后钩子：{cmd}")
+            _sp.run(cmd, shell=True, cwd=str(self.root),
+                    capture_output=True, text=True, timeout=60)
+        except Exception as e:
+            self._emit(f"克隆后钩子执行失败（仅记录）：{e}", "warn")
+
     def _clone(self, spec: RepoSpec, res: SyncResult) -> SyncResult:
         repo_dir = self._repo_dir(spec)
         self._emit(f"开始克隆 {spec.display} …")
@@ -668,19 +745,7 @@ class GitService:
                 self._last_clone_tail = self._last_clone_tail[-8:]
             prev_on_line(c)
 
-        cmd = ["git", "clone", "--progress"]
-        if getattr(spec, "ref", ""):
-            # G08-2 指定分支/标签：clone -b <ref>（选项必须在 <repo> 之前）
-            cmd += ["-b", spec.ref]
-        # G38-4 单分支浅克隆：浅克隆模式下只拉目标分支（--depth N --single-branch）
-        if self.fetch_depth and self.single_branch:
-            cmd += [f"--depth={self.fetch_depth}", "--single-branch"]
-        # G38-2 镜像：按 host 拼前缀（仅 HTTPS），clone 用镜像 URL
-        clone_url = self._mirror_url(spec.url_https)
-        cmd += [clone_url, str(repo_dir)]
-        if self._submodule:
-            # 追加在末尾（git clone 的选项插在 <repo> 前后均可，末尾最安全）
-            cmd.append("--recurse-submodules")
+        cmd = self.build_clone_cmd(spec, repo_dir)
         rc, prog = run_git_ui(cmd, str(self.root), _collate,
                               cancelled=self.cancelled, env=self._env(),
                               timeout=self.clone_timeout, retries=self.retries,
@@ -768,6 +833,11 @@ class GitService:
             res.action = SyncAction.EMPTY
             res.message = "空仓库（暂无提交）"
             return res
+        # G48-5 克隆后钩子
+        try:
+            self._run_post_clone_hook(repo_dir)
+        except Exception:
+            pass
         res.action = SyncAction.CLONED
         res.message = "克隆完成"
         res.commits = 0
@@ -785,9 +855,24 @@ class GitService:
             res.message = "空仓库（暂无提交）"
             return res
 
-        # 1) fetch：浅克隆仓库需显式 depth 语义，全量仓库保持原样
+        # 1) fetch：浅克隆仓库需显式 depth 语义，全量仓库保持原样（G48-2 LFS 追加 -c）
         self._emit(f"检查 {spec.display} 远端更新 …")
-        fetch_cmd = ["git", "fetch", "--progress", "--prune", "origin"]
+        fetch_cmd = ["git"] + self._lfs_flag() + ["fetch", "--progress", "--prune", "origin"]
+        if self._mirror:
+            # G48-6 镜像仓库（bare）：仅更新远端 refs，无工作树不 merge
+            mr_rc, _ = run_git_ui(
+                fetch_cmd, str(repo_dir), self.on_line, cancelled=self.cancelled,
+                env=self._env(), timeout=self.fetch_timeout, retries=self.retries,
+                backoff=self._backoff)
+            if mr_rc == 0:
+                res.status = SyncStatus.SUCCESS
+                res.action = SyncAction.FETCHED
+                res.message = "镜像已同步远端 refs"
+            else:
+                res.status = SyncStatus.FAILED
+                res.action = SyncAction.FAILED
+                res.message = "镜像 remote fetch 失败"
+            return res
         used_unshallow = False
         if self.unshallow and self._is_shallow_repo(repo_dir):
             fetch_cmd = ["git", "fetch", "--progress", "--prune", "--unshallow", "origin"]
