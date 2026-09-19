@@ -65,7 +65,12 @@ jobs:
           python -m coverage run --source=gcm -m unittest discover -s tests
 
       # G29-1 覆盖率门禁：不达标 CI 变红。阈值来自 job env COVERAGE_FAIL_UNDER。
+      # G50-3 平台分支差异：Windows 专属分支（msvcrt/ctypes/schtasks/startfile/winreg）
+      # 在 Linux/macOS 上天然不可执行，可移植代码覆盖率一致但语句级 % 差 ~1。
+      # Windows 保持 84 门禁；POSIX 用 83（均 ≥ G45-1 要求 82），差异在 coverage report 中可见。
       - name: Coverage gate
+        env:
+          COVERAGE_FAIL_UNDER: ${{ runner.os == 'Windows' && 84 || 83 }}
         run: |
           python -m coverage report --fail-under=${{ env.COVERAGE_FAIL_UNDER }}
 
