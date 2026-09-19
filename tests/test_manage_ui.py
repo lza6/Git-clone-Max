@@ -113,7 +113,7 @@ class TestManageUi(unittest.TestCase):
     def test_open_target_missing_warns(self):
         """目标目录不存在 → 弹「目录不存在」警告，不调 os.startfile。"""
         self.w.target_edit.setText(str(self.tmp / "does_not_exist"))
-        with mock.patch("os.startfile") as m_start, _msgbox_patch() as m_msg:
+        with mock.patch("os.startfile", create=True) as m_start, _msgbox_patch() as m_msg:
             self.w.open_target()
         m_start.assert_not_called()
         m_msg.warning.assert_called_once()

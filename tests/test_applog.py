@@ -53,6 +53,18 @@ class TestApplog(unittest.TestCase):
         a = applog.get_logger()
         b = applog.get_logger()
         self.assertIs(a, b)
+    def test_multi_path_switches_handler(self):
+        """G50-3：显式不同 log_path 也挂新 handler（单例已有 handler 不吞新路径）。"""
+        p1 = self.tmp / "a.log"
+        applog.info("msg-1", p1)
+        self.assertTrue(p1.exists())
+        applog.info("msg-1b", p1)  # 同路径：复用已挂 handler
+        self.assertTrue(p1.exists())
+        p2 = self.tmp / "b.log"
+        applog.info("msg-2", p2)   # 不同路径：另挂 handler 并落盘
+        self.assertTrue(p2.exists(), "不同路径应挂新 handler 并落盘")
+        self.assertIn("msg-2", p2.read_text(encoding="utf-8"))
+
 
 
 if __name__ == "__main__":

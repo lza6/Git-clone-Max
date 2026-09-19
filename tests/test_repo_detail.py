@@ -260,5 +260,27 @@ class TestRepoDetailDialog(unittest.TestCase):
         dlg.close()
 
 
+    def test_open_dir_posix_opener_via_mock(self):
+        """G50-3：os.name 掩为 posix 时走系统打开器（open/xdg-open）分支。"""
+        dlg = RepoDetailDialog(_repo(self.tmp), [])
+        dlg.show()
+        with mock.patch("os.name", "posix"), \
+                mock.patch("shutil.which", return_value="/usr/bin/open"), \
+                mock.patch("subprocess.Popen") as m_pop:
+            dlg.btn_open_dir.click()
+        m_pop.assert_called_once_with(["/usr/bin/open", str(self.tmp)])
+        dlg.close()
+
+    def test_open_dir_nt_startfile_via_mock(self):
+        """G50-3：os.name 掩为 nt 时走 startfile 分支（POSIX 上亦覆盖该行）。"""
+        dlg = RepoDetailDialog(_repo(self.tmp), [])
+        dlg.show()
+        with mock.patch("os.name", "nt"), \
+                mock.patch("os.startfile", create=True) as m_start:
+            dlg.btn_open_dir.click()
+        m_start.assert_called_once_with(str(self.tmp))
+        dlg.close()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
