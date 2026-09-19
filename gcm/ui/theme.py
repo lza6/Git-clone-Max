@@ -94,7 +94,210 @@ PALETTES = {
         "console": "#232830",
         "console_fg": "#d8dee9",
     },
+    # G46-7 高对比（HC）主题：WCAG AAA（文本/背景 ≥7:1）
+    "hc": {
+        "bg": "#000000",
+        "panel": "#0b0b0b",
+        "panel2": "#1a1a1a",
+        "border": "#ffffff",
+        "accent": "#00e5ff",
+        "accent2": "#7cff6b",
+        "warning": "#ffe14d",
+        "error": "#ff6b6b",
+        "text": "#ffffff",
+        "text_dim": "#e0e0e0",
+        "console": "#000000",
+        "console_fg": "#ffffff",
+    },
 }
+
+# G46-1 设计 token 表：三主题共用布局 token（仅色板不同）
+TOKENS = {
+    "radius": {"card": 8, "control": 6, "bar": 5, "tab": 8, "checkbox": 4, "chip": 10},
+    "spacing": {"xs": 4, "sm": 6, "md": 8, "lg": 12, "xl": 18},
+    "border": {"default": 1, "focus": 2},
+    # Qt QSS 不支持 box-shadow / transition：以 border/outline + hover 状态色表达反馈
+    "shadow": {"focus": "outline"},
+}
+
+# G46-5 字体栈（中文优先）+ UI 层字号下限（qss_for_scale 底层仍保持 [0.8,1.6] 兼容旧测试）
+FONT_STACK = '"Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", sans-serif'
+FONT_SCALE_MIN_UI = 0.9
+
+# G46-7 强调色预设（3 档，覆盖 accent/accent2）
+ACCENT_PRESETS = {
+    "blue": {"accent": "#0969da", "accent2": "#1a7f37"},
+    "violet": {"accent": "#8250df", "accent2": "#1a7f37"},
+    "teal": {"accent": "#007f7f", "accent2": "#1a7f37"},
+}
+
+
+def theme_with_accent(palette: dict, preset) -> dict:
+    """G46-7：返回换用指定强调色后的色板副本（key 取 ACCENT_PRESETS 或直接 dict）。"""
+    pal = dict(palette)
+    if isinstance(preset, dict):
+        pal.update({k: v for k, v in preset.items() if k in ("accent", "accent2")})
+    else:
+        p = ACCENT_PRESETS.get(preset)
+        if p:
+            pal.update(p)
+    return pal
+
+
+def _luminance(hex_color: str) -> float:
+    """WCAG 相对亮度。"""
+    c = QColor(hex_color)
+    rgb = [v / 255.0 for v in (c.red(), c.green(), c.blue())]
+    def _f(v):
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+    return 0.2126 * _f(rgb[0]) + 0.0722 * _f(rgb[1]) + 0.7152 * _f(rgb[2])
+
+
+def contrast_ratio(c1: str, c2: str) -> float:
+    """WCAG 对比度（1..21）。"""
+    l1, l2 = _luminance(c1), _luminance(c2)
+    hi, lo = max(l1, l2), min(l1, l2)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def hc_contrast_ratio(palette: dict) -> float:
+    """G46-7：文本 vs 背景对比度（HC 主题应 ≥7）。"""
+    return contrast_ratio(palette["text"], palette["bg"])
+
+
+def _shade(hex_color: str, factor: int) -> str:
+    """用 QColor.darker/lighter 生成按压/悬浮底色（factor>100 变暗）。"""
+    try:
+        return QColor(hex_color).darker(factor).name()
+    except Exception:
+        return hex_color
+
+
+def _build_qss(palette: dict, scale: float = 1.0, motion: bool = True) -> str:
+    """G46-1：由色板 + 设计 token 统一生成 QSS（三主题共用布局，仅换色板）。
+
+    - 状态色：hover 用 accent，disabled 用 text_dim/border，pressed 用 panel2 变暗；
+    - motion=False（reduced-motion）时去掉 hover/pressed 颜色变化块（Qt QSS 无 transition）；
+    - scale 钳制 [0.8, 1.6]（与旧测试兼容）；UI 层下限 FONT_SCALE_MIN_UI 由设置页负责。
+    """
+    try:
+        scale = float(scale)
+    except Exception:
+        scale = 1.0
+    scale = max(0.8, min(1.6, scale))
+    px = round(FONT_BASE_PX * scale)
+    bg = palette["bg"]
+    panel = palette["panel"]
+    panel2 = palette["panel2"]
+    border = palette["border"]
+    accent = palette["accent"]
+    err = palette["error"]
+    text = palette["text"]
+    dim = palette["text_dim"]
+    cons = palette["console"]
+    cons_fg = palette["console_fg"]
+    r_card = TOKENS["radius"]["card"]
+    r_ctl = TOKENS["radius"]["control"]
+    r_bar = TOKENS["radius"]["bar"]
+    r_tab = TOKENS["radius"]["tab"]
+    r_cb = TOKENS["radius"]["checkbox"]
+    b_def = TOKENS["border"]["default"]
+    b_fmt = TOKENS["border"]["focus"]
+    pressed = _shade(panel2, 118)
+    hover_bg = _shade(panel2, 108)
+    if not motion:
+        hover_motion = ""
+    else:
+        hover_motion = (
+            f"QPushButton:hover {{ background: {hover_bg}; border-color: {accent}; }}"
+        )
+        pressed_motion = f"QPushButton:pressed {{ background: {pressed}; }}"
+    return f"""
+QWidget {{ background: {bg}; color: {text};
+            font-size: {px}px; font-family: {FONT_STACK}; }}
+QMainWindow, QDialog {{ background: {bg}; }}
+QLabel#pageTitle {{ font-size: 20px; font-weight: 700; color: {text}; }}
+QLabel#accent {{ color: {accent}; font-weight: 600; }}
+QLabel#muted {{ color: {dim}; }}
+QGroupBox {{
+  border: {b_def}px solid {border}; border-radius: {r_card}px;
+  margin-top: 12px; padding-top: 8px; background: {panel};
+  font-weight: 600; color: {text};
+}}
+QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 0 6px; }}
+QPlainTextEdit, QTextEdit, QLineEdit, QSpinBox, QComboBox {{
+  background: {panel2}; border: {b_def}px solid {border};
+  border-radius: {r_ctl}px; padding: 6px; selection-background-color: {accent};
+}}
+QLineEdit:focus, QSpinBox:focus, QComboBox:focus, QPlainTextEdit:focus, QTextEdit:focus {{
+  border: {b_fmt}px solid {accent};
+}}
+QLineEdit:disabled, QSpinBox:disabled, QComboBox:disabled, QPlainTextEdit:disabled {{
+  color: {dim}; background: {panel};
+}}
+QPushButton {{
+  background: {panel2}; border: {b_def}px solid {border};
+  border-radius: {r_ctl}px; padding: 6px 14px; color: {text};
+}}
+QPushButton:focus {{ border: {b_fmt}px solid {accent}; }}
+QPushButton:disabled {{ color: {dim}; border-color: {border}; background: {panel}; }}
+{hover_motion}
+{pressed_motion if motion else ""}
+QPushButton#primary {{
+  background: {accent}; border: {b_def}px solid {accent}; color: #ffffff; font-weight: 700;
+}}
+QPushButton#primary:disabled {{ background: {_shade(accent, 200)}; color: {dim}; }}
+QPushButton#primary:hover {{ background: {_shade(accent, 108)}; }}
+QPushButton#danger {{ background: {_shade(err, 260)}; border-color: {_shade(err, 160)}; color: {err}; }}
+QPushButton#danger:hover {{ background: {_shade(err, 200)}; }}
+QTableWidget {{
+  background: {panel}; alternate-background-color: {_shade(panel, 125) if palette.get("bg") == "#0d1117" else _shade(panel, 96)};
+  gridline-color: {border}; border: {b_def}px solid {border}; border-radius: {r_ctl}px;
+}}
+QHeaderView::section {{
+  background: {panel2}; color: {text}; border: none;
+  border-right: {b_def}px solid {border}; padding: 6px; font-weight: 700;
+}}
+QTextEdit#console {{
+  background: {cons}; color: {cons_fg};
+  font-family: Consolas, "Courier New", monospace; font-size: 12px;
+  border: {b_def}px solid {border}; border-radius: {r_ctl}px;
+}}
+QTextEdit#pane {{
+  background: {cons}; color: {cons_fg};
+  font-family: Consolas, "Courier New", monospace; font-size: 12px;
+  border: {b_def}px solid {border}; border-radius: {r_ctl}px;
+}}
+QProgressBar {{
+  border: {b_def}px solid {border}; border-radius: {r_bar}px;
+  background: {panel2}; text-align: center; color: {text};
+  font-size: 11px; min-height: 16px; max-height: 16px;
+}}
+QProgressBar::chunk {{ background: {accent}; border-radius: 4px; }}
+QStatusBar {{ color: {dim}; }}
+QCheckBox::indicator {{ width: 16px; height: 16px; border: {b_def}px solid {border};
+  border-radius: {r_cb}px; background: {panel2}; }}
+QCheckBox::indicator:checked {{ background: {accent}; border-color: {accent}; }}
+QScrollBar:vertical {{ background: {bg}; width: 12px; }}
+QScrollBar::handle:vertical {{ background: {border}; border-radius: {r_bar}px; min-height: 24px; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
+QTabs::pane {{ border: {b_def}px solid {border}; border-radius: {r_tab}px; background: {bg}; }}
+QTabBar::tab {{ padding: 8px 18px; background: {panel}; color: {dim};
+  border: {b_def}px solid {border}; border-bottom: none; }}
+QTabBar::tab:selected {{ background: {panel2}; color: {text}; border-top: 2px solid {accent}; }}
+QTabBar::tab:hover {{ color: {text}; }}
+"""
+
+
+def qss_for_theme(name: str, scale: float = 1.0, motion: bool = True) -> str:
+    """G46-1：按主题名生成其 QSS（未知回退 deep）。"""
+    pal = PALETTES.get(name) or PALETTES["deep"]
+    return _build_qss(pal, scale, motion)
+
+
+def qss_for_palette(palette: dict, scale: float = 1.0, motion: bool = True) -> str:
+    """G46-7：按任意色板（可含强调色覆盖）生成 QSS。"""
+    return _build_qss(palette, scale, motion)
 
 # 当前激活主题
 _current_theme = "deep"
@@ -103,15 +306,13 @@ _current_theme = "deep"
 FONT_BASE_PX = 13
 
 
-def qss_for_scale(scale: float = 1.0) -> str:
-    """按缩放比例生成 QSS（替换基础字号）。比例钳制在 [0.8, 1.6]。"""
-    try:
-        scale = float(scale)
-    except Exception:
-        scale = 1.0
-    scale = max(0.8, min(1.6, scale))
-    px = round(FONT_BASE_PX * scale)
-    return QSS.replace("font-size: 13px;", f"font-size: {px}px;")
+def qss_for_scale(scale: float = 1.0, motion: bool = True) -> str:
+    """按当前主题与缩放生成 QSS（比例钳制 [0.8, 1.6]；motion=False 走 reduced-motion）。
+
+    旧版仅替换深色模板字号；G46-1 起按当前主题色板生成，light/nord/hc 真正换色。
+    """
+    from PyQt6.QtGui import QColor as _QC  # noqa: F401  — _build_qss 内部已引用 QColor
+    return _build_qss(current_palette(), scale, motion)
 
 
 def apply_theme(name: str) -> None:
@@ -133,78 +334,13 @@ THEMES = {
     "deep": "深色 (Deep)",
     "light": "浅色 (Light)",
     "nord": "Nord 极简",
+    "hc": "高对比 (HC)",
 }
 
 # 兼容：默认主题 = Deep（历史引用 PALETTE 的代码不受影响）
 PALETTE = PALETTES["deep"]
 
-QSS = f"""
-QWidget {{ background: {PALETTE['bg']}; color: {PALETTE['text']};
-            font-size: 13px; font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif; }}
-QMainWindow, QDialog {{ background: {PALETTE['bg']}; }}
-QLabel#pageTitle {{ font-size: 20px; font-weight: 700; color: #e6edf3; }}
-QLabel#accent {{ color: {PALETTE['accent']}; font-weight: 600; }}
-QLabel#muted {{ color: {PALETTE['text_dim']}; }}
-QGroupBox {{
-  border: 1px solid {PALETTE['border']}; border-radius: 8px;
-  margin-top: 12px; padding-top: 8px; background: {PALETTE['panel']};
-  font-weight: 600; color: #e6edf3;
-}}
-QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 0 6px; }}
-QPlainTextEdit, QTextEdit, QLineEdit, QSpinBox, QComboBox {{
-  background: {PALETTE['panel2']}; border: 1px solid {PALETTE['border']};
-  border-radius: 6px; padding: 6px; selection-background-color: #264f78;
-}}
-QPushButton {{
-  background: {PALETTE['panel2']}; border: 1px solid {PALETTE['border']};
-  border-radius: 6px; padding: 6px 14px; color: {PALETTE['text']};
-}}
-QPushButton:hover {{ border-color: {PALETTE['accent']}; color: #e6edf3; }}
-QPushButton:disabled {{ color: #4d5563; border-color: #232a38; }}
-QPushButton#primary {{
-  background: #1f6feb; border: 1px solid #1f6feb; color: #fff; font-weight: 700;
-}}
-QPushButton#primary:hover {{ background: #388bfd; }}
-QPushButton#primary:disabled {{ background: #1a3b63; color: #8ea6c9; }}
-QPushButton#danger {{ background: #3d1d22; border-color: #7d3d44; color: #ffa198; }}
-QPushButton#danger:hover {{ background: #512e35; }}
-QTableWidget {{
-  background: {PALETTE['panel']}; alternate-background-color: #10151d;
-  gridline-color: {PALETTE['border']}; border: 1px solid {PALETTE['border']}; border-radius: 6px;
-}}
-QHeaderView::section {{
-  background: {PALETTE['panel2']}; color: #e6edf3; border: none;
-  border-right: 1px solid {PALETTE['border']}; padding: 6px; font-weight: 700;
-}}
-QTextEdit#console {{
-  background: {PALETTE['console']}; color: {PALETTE['console_fg']};
-  font-family: Consolas, "Courier New", monospace; font-size: 12px;
-  border: 1px solid {PALETTE['border']}; border-radius: 6px;
-}}
-QTextEdit#pane {{
-  background: {PALETTE['console']}; color: {PALETTE['console_fg']};
-  font-family: Consolas, "Courier New", monospace; font-size: 12px;
-  border: 1px solid {PALETTE['border']}; border-radius: 6px;
-}}
-QProgressBar {{
-  border: 1px solid {PALETTE['border']}; border-radius: 5px;
-  background: {PALETTE['panel2']}; text-align: center; color: {PALETTE['text']};
-  font-size: 11px; min-height: 16px; max-height: 16px;
-}}
-QProgressBar::chunk {{ background: {PALETTE['accent']}; border-radius: 4px; }}
-QStatusBar {{ color: {PALETTE['text_dim']}; }}
-QCheckBox::indicator {{ width: 16px; height: 16px; border: 1px solid {PALETTE['border']};
-  border-radius: 4px; background: {PALETTE['panel2']}; }}
-QCheckBox::indicator:checked {{ background: {PALETTE['accent']}; border-color: {PALETTE['accent']}; }}
-QScrollBar:vertical {{ background: {PALETTE['bg']}; width: 12px; }}
-QScrollBar::handle:vertical {{ background: {PALETTE['border']}; border-radius: 6px; min-height: 24px; }}
-QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
-QTabs::pane {{ border: 1px solid {PALETTE['border']}; border-radius: 8px; background: {PALETTE['bg']}; }}
-QTabBar::tab {{ padding: 8px 18px; background: {PALETTE['panel']}; color: {PALETTE['text_dim']};
-  border: 1px solid {PALETTE['border']}; border-bottom: none; }}
-QTabBar::tab:selected {{ background: {PALETTE['panel2']}; color: #e6edf3; border-top: 2px solid {PALETTE['accent']}; }}
-QTabBar::tab:hover {{ color: #e6edf3; }}
-"""
+QSS = _build_qss(PALETTES["deep"])
 
 
 class LogLevel(str, Enum):
