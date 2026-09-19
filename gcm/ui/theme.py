@@ -112,7 +112,7 @@ PALETTES = {
 }
 
 # G46-1 设计 token 表：三主题共用布局 token（仅色板不同）
-TOKENS = {
+TOKENS: dict[str, dict[str, object]] = {
     "radius": {"card": 8, "control": 6, "bar": 5, "tab": 8, "checkbox": 4, "chip": 10},
     "spacing": {"xs": 4, "sm": 6, "md": 8, "lg": 12, "xl": 18},
     "border": {"default": 1, "focus": 2},

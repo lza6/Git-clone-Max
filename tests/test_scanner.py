@@ -134,7 +134,7 @@ class TestManageModel(unittest.TestCase):
              "url": "https://github.com/o/r.git", "id": 7, "default_branch": "main"},
         ])
         self.assertEqual(model.rowCount(), 1)
-        self.assertEqual(model.columnCount(), 6)
+        self.assertEqual(model.columnCount(), 8)
         from PyQt6.QtCore import Qt
         idx = model.index(0, 0)
         self.assertEqual(model.data(idx, Qt.ItemDataRole.DisplayRole), "o__r")
@@ -144,6 +144,11 @@ class TestManageModel(unittest.TestCase):
         self.assertEqual(model.data(idx2, Qt.ItemDataRole.DisplayRole), "2026-01-01 12:00:00")
         idx4 = model.index(0, 4)
         self.assertEqual(model.data(idx4, Qt.ItemDataRole.DisplayRole), "abcdef01")
+        # G47-1/5：健康(6)/大小(7) 新列；无 db 时健康取行内默认 3，大小懒加载前为空
+        idx6 = model.index(0, 6)
+        self.assertEqual(model.data(idx6, Qt.ItemDataRole.DisplayRole), "⭐3")
+        idx7 = model.index(0, 7)
+        self.assertEqual(model.data(idx7, Qt.ItemDataRole.DisplayRole), "")
         self.assertEqual(model.row_at(0).repo_id, 7)
         self.assertIsNone(model.row_at(99))
 

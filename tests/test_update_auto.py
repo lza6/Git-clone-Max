@@ -41,8 +41,8 @@ class TestBuildBody(unittest.TestCase):
         self.assertIn("并行下载", body)
         self.assertIn("增量更新", body)
         self.assertIn("冲突保护", body)
-        # 模板应包含"## 版本 {__version__}" 小节头
-        self.assertIn(f"## 版本 {__version__}", body)
+        # G48 模板 H1 为 "# Git-clone-Max v{version} 发布说明"，版本号在标题中
+        self.assertIn(f"Git-clone-Max v{__version__}", body)
 
     def test_main_uses_build_body(self):
         """Release 新建路径：create_git_release 收到的 message 来自 _build_body。"""

@@ -125,10 +125,16 @@ class PublishTestCase(unittest.TestCase):
             p.start()
         self.addCleanup(self._stop)
 
+        # 先保存原值再替换，tearDown 还原，避免模块级常量泄漏污染后续测试模块
+        # （test_update_auto 的 pr.BODY 在 import 期用真实 dist 冻结，这里不还原
+        #   会让后续 _build_body() 读到残留临时假产物，导致顺序依赖失败）
+        self._pr_dist_saved = pr.DIST
+        self._pr_zip_saved = pr.PORTABLE_ZIP
         pr.DIST = self.dist  # 脚本常量，测试内赋值真实 Path
         # G23-7 便携包常量：测试内赋值临时路径且不生成 zip（隔离主产物断言）
         self.portable = self.tmp / pr.PORTABLE_NAME
         pr.PORTABLE_ZIP = self.portable
+        self.addCleanup(self._restore_pr_paths)
 
     def _restore_github(self):
         if self._shadow_saved is not None:
@@ -138,6 +144,10 @@ class PublishTestCase(unittest.TestCase):
 
     def _restore_time(self):
         pr.time = self._time_saved
+
+    def _restore_pr_paths(self):
+        pr.DIST = self._pr_dist_saved
+        pr.PORTABLE_ZIP = self._pr_zip_saved
 
     def _stop(self):
         for p in self._patchers:
