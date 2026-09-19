@@ -291,6 +291,30 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
         owner.theme_combo.setCurrentIndex(idx)
     owner.theme_combo.currentIndexChanged.connect(owner._save_theme)
     f5.addRow("界面主题：", owner.theme_combo)
+    # G46-7 强调色预设
+    owner.accent_combo = QComboBox()
+    for _k, _lbl in (("blue", "蓝色（默认）"), ("violet", "紫色"), ("teal", "青色")):
+        owner.accent_combo.addItem(_lbl, _k)
+    _acc = getattr(settings, "accent_preset", "blue")
+    _ai = owner.accent_combo.findData(_acc)
+    if _ai >= 0:
+        owner.accent_combo.setCurrentIndex(_ai)
+    owner.accent_combo.currentIndexChanged.connect(owner.settings_panel._save_accent_preset)
+    f5.addRow("强调色：", owner.accent_combo)
+    # G46-8 减少动态效果
+    owner.ck_reduced_motion = QCheckBox("减少动态效果（关闭完成动效/过渡）")
+    owner.ck_reduced_motion.setChecked(bool(getattr(settings, "prefers_reduced_motion", False)))
+    owner.ck_reduced_motion.stateChanged.connect(owner.settings_panel._save_reduced_motion)
+    f5.addRow("动效：", owner.ck_reduced_motion)
+    # G46-5 恢复默认字号
+    owner.btn_font_reset = QPushButton("恢复默认字号")
+    owner.btn_font_reset.clicked.connect(owner.settings_panel._reset_font_scale)
+    f5.addRow("字号：", owner.btn_font_reset)
+    # G46-10 恢复默认设置（token/窗口位置保留）
+    owner.btn_reset_defaults = QPushButton("恢复默认设置（token 保留）")
+    owner.btn_reset_defaults.setToolTip("除 token 与窗口位置外全部回默认值")
+    owner.btn_reset_defaults.clicked.connect(owner.settings_panel._reset_defaults)
+    f5.addRow("重置：", owner.btn_reset_defaults)
     sv.addWidget(g5)
     groups.append(g5)
 
@@ -330,6 +354,18 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     h4.addWidget(owner.btn_export)
     h4.addStretch()
     f4.addRow("环境自检：", h4)
+    # G46-11 使用说明 + 打开数据目录
+    h_help = QHBoxLayout()
+    owner.btn_help = QPushButton("📖 使用说明")
+    owner.btn_help.setToolTip("语法速查：@tag / host=token / 镜像 / 快捷键 / 拖拽 / 清单 / Star 导入")
+    owner.btn_help.clicked.connect(owner.settings_panel._open_help)
+    h_help.addWidget(owner.btn_help)
+    owner.btn_open_data = QPushButton("打开数据目录")
+    owner.btn_open_data.setToolTip("日志 / 备份 / 任务清单 所在目录")
+    owner.btn_open_data.clicked.connect(owner.settings_panel._open_data_dir)
+    h_help.addWidget(owner.btn_open_data)
+    h_help.addStretch()
+    f4.addRow("帮助：", h_help)
     sv.addWidget(g4)
     groups.append(g4)
 
@@ -504,6 +540,78 @@ class SettingsPanel(QWidget):
         self.owner.settings.auto_update_minutes = int(value or 0)
         self.owner.settings_store.save(self.owner.settings)
         self.owner._restart_auto_update_timer()
+
+    # ------------------------------------------------------------ G46-5/7/8/10/11
+    def _save_accent_preset(self, index):
+        """G46-7：保存强调色预设并即时应用（QSS 重生成）。"""
+        self.owner.settings.accent_preset = self.owner.accent_combo.itemData(index) or "blue"
+        self.owner.settings_store.save(self.owner.settings)
+        try:
+            self.owner.setStyleSheet(self.owner._themed_qss())
+            self.owner._apply_theme_to_children()
+        except Exception:
+            pass
+
+    def _save_reduced_motion(self, checked):
+        """G46-8：减少动态效果开关。"""
+        self.owner.settings.prefers_reduced_motion = bool(checked)
+        self.owner.settings_store.save(self.owner.settings)
+        try:
+            self.owner.setStyleSheet(self.owner._themed_qss())
+        except Exception:
+            pass
+
+    def _reset_font_scale(self):
+        """G46-5：字号回 1.0 并即时应用。"""
+        self.owner.settings.font_scale = 1.0
+        self.owner.settings_store.save(self.owner.settings)
+        try:
+            self.owner.setStyleSheet(self.owner._themed_qss())
+        except Exception:
+            pass
+
+    def _reset_defaults(self):
+        """G46-10：恢复默认设置（token/geometry 保留），同步可见控件。"""
+        from ..db.settings import Settings as _Settings
+        old_token = getattr(self.owner.settings, "token", "")
+        old_geometry = getattr(self.owner.settings, "geometry", "")
+        fresh = _Settings()
+        fresh.token = old_token
+        fresh.geometry = old_geometry
+        self.owner.settings = fresh
+        self.owner.settings_store.save(fresh)
+        try:
+            self.owner.theme_combo.setCurrentIndex(
+                self.owner.theme_combo.findData(fresh.theme))
+            self.owner.ck_animations.setChecked(bool(fresh.animations))
+            self.owner.ck_reduced_motion.setChecked(bool(fresh.prefers_reduced_motion))
+            self.owner.accent_combo.setCurrentIndex(
+                self.owner.accent_combo.findData(fresh.accent_preset) or 0)
+            self.owner.setStyleSheet(self.owner._themed_qss())
+        except Exception:
+            pass
+        try:
+            self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO,
+                                 "已恢复默认设置（token/窗口位置保留）")
+        except Exception:
+            pass
+
+    def _open_help(self):
+        """G46-11：打开「使用说明」对话框。"""
+        try:
+            from .help_dialog import HelpDialog
+            HelpDialog(self.owner).exec()
+        except Exception:
+            pass
+
+    def _open_data_dir(self):
+        """打开数据目录（QDesktopServices.openUrl）。"""
+        from PyQt6.QtCore import QUrl
+        from PyQt6.QtGui import QDesktopServices
+        try:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.owner.data_dir)))
+        except Exception:
+            pass
 
     def _save_theme(self, index):
         """G05-1 保存主题选择并即时应用到主窗口。"""
