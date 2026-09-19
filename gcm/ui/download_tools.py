@@ -12,6 +12,7 @@ import os
 import sys
 from pathlib import Path
 
+from ..i18n import tr  # G49-1
 from .theme import LogLevel
 
 
@@ -34,20 +35,20 @@ def _msgbox():
 def save_log(owner, fmt_dt) -> None:
     """导出黑匣子日志到文本文件。"""
     path, _ = _fd().getSaveFileName(
-        owner, "导出日志", str(owner.data_dir / "clone_log.txt"), "文本文件 (*.txt)")
+        owner, tr("导出日志"), str(owner.data_dir / "clone_log.txt"), "文本文件 (*.txt)")
     if not path:
         return
     try:
         Path(path).write_text(owner.log.to_plain_text(), encoding="utf-8")
         owner._emit_log(fmt_dt(), LogLevel.INFO, f"日志已导出：{path}")
     except Exception as e:
-        _msgbox().critical(owner, "导出失败", str(e))
+        _msgbox().critical(owner, tr("导出失败"), str(e))
 
 
 def export_report(owner, fmt_dt) -> None:
     """G07-3 导出 CSV/Markdown 报表（弹文件选择；CSV 为 Excel 友好 utf-8-sig）。"""
     path, _ = _fd().getSaveFileName(
-        owner, "导出报表", str(owner.data_dir / "sync_report.csv"),
+        owner, tr("导出报表"), str(owner.data_dir / "sync_report.csv"),
         "CSV (*.csv);;Markdown (*.md)")
     if not path:
         return
@@ -61,7 +62,7 @@ def export_report(owner, fmt_dt) -> None:
                         f"报表已导出：{path}（{n} 行）")
         owner.statusBar().showMessage(f"报表已导出：{path}（{n} 行）")
     except Exception as e:
-        _msgbox().critical(owner, "导出失败", str(e))
+        _msgbox().critical(owner, tr("导出失败"), str(e))
 
 
 def repo_input_menu(owner, pos, fmt_dt, extra_actions=None) -> None:
@@ -71,17 +72,17 @@ def repo_input_menu(owner, pos, fmt_dt, extra_actions=None) -> None:
         menu = QMenu(owner)
         items = getattr(owner, "url_history", None).items() if hasattr(owner, "url_history") else []
         if items:
-            sub = menu.addMenu("从历史粘贴…")
+            sub = menu.addMenu(tr("从历史粘贴…"))
             for u in items[:15]:
                 act = sub.addAction(u)
                 act.triggered.connect(
                     lambda _=False, url=u: owner.repo_input.appendPlainText(url + "\n"))
             menu.addSeparator()
-            act_clear = menu.addAction("清空历史")
+            act_clear = menu.addAction(tr("清空历史"))
             act_clear.triggered.connect(
                 lambda: clear_url_history(owner, fmt_dt))
         else:
-            menu.addAction("（暂无历史）")
+            menu.addAction(tr("（暂无历史）"))
         if extra_actions is not None:
             try:
                 menu.addSeparator()
@@ -120,25 +121,25 @@ def _classify_mkdir_error(e: BaseException) -> str:
     import errno
     eno = getattr(e, "errno", None)
     if eno in (errno.EACCES, errno.EPERM, errno.EROFS):
-        return "权限不足：无法在当前位置创建目录（请换用用户目录）"
+        return tr("权限不足：无法在当前位置创建目录（请换用用户目录）")
     if eno == errno.ENOTDIR:
-        return "路径无效：上级路径不是目录"
+        return tr("路径无效：上级路径不是目录")
     if eno == errno.ENOENT:
-        return "盘符或路径不存在：请检查目标路径"
+        return tr("盘符或路径不存在：请检查目标路径")
     if eno == errno.EMFILE or eno == errno.ENFILE:
-        return "系统文件句柄已用尽：请稍后重试"
+        return tr("系统文件句柄已用尽：请稍后重试")
     return f"目录创建失败：{e}"
 
 
 def choose_target(owner) -> None:
-    d = _fd().getExistingDirectory(owner, "选择下载目录", owner.target_edit.text())
+    d = _fd().getExistingDirectory(owner, tr("选择下载目录"), owner.target_edit.text())
     if d:
         # G44-2 敏感目录警告：改到系统根/Program Files 会污染系统区，弹确认
         if _is_sensitive_dir(d):
             ret = _msgbox().warning(
-                owner, "敏感目录",
-                "你选择的是 Windows 系统目录（%SystemRoot%/Program Files），"
-                "在此下载可能触发权限/杀软问题。\n\n仍要继续吗？")
+                owner, tr("敏感目录"),
+                tr("你选择的是 Windows 系统目录（%SystemRoot%/Program Files），")
+                + tr("在此下载可能触发权限/杀软问题。\n\n仍要继续吗？"))
             if ret != _msgbox().StandardButton.Yes:
                 return
         owner.target_edit.setText(d)
@@ -150,13 +151,13 @@ def choose_target(owner) -> None:
             from pathlib import Path
             Path(d).mkdir(parents=True, exist_ok=True)
         except Exception as e:
-            _msgbox().warning(owner, "目录不可用", _classify_mkdir_error(e))
+            _msgbox().warning(owner, tr("目录不可用"), _classify_mkdir_error(e))
 
 
 def open_target(owner) -> None:
     path = owner.target_edit.text().strip()
     if not os.path.isdir(path):
-        _msgbox().warning(owner, "目录不存在", path)
+        _msgbox().warning(owner, tr("目录不存在"), path)
         return
     if sys.platform == "win32":
         os.startfile(path)  # noqa

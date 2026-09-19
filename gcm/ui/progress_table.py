@@ -477,6 +477,34 @@ class ProgressTable(QWidget):
                     f"成功 {ok} · 冲突 {conflict} · 失败 {fail}")
         except Exception:
             pass
+        # G49-7 完成通知 Webhook：显式开启 + URL 非空才发送；后台线程，失败不影响主流程
+        try:
+            failed_names = []
+            for i in range(self.table.rowCount()):
+                it0 = self.table.item(i, 0)
+                it2 = self.table.item(i, 2)
+                if it2 and (it2.data(Qt.ItemDataRole.UserRole) or it2.text()) == "failed" and it0:
+                    failed_names.append(it0.text())
+            _s = getattr(self.owner, "settings", None)
+            if _s is not None:
+                _params = (ok, fail, conflict, 0, ok + fail + conflict, failed_names)
+
+                def _kl():
+                    try:
+                        from ..app.notify import maybe_notify as _mn
+                        if _mn(_s, *_params):
+                            try:
+                                self.owner.statusBar().showMessage(
+                                    "完成通知 Webhook 已发送", 5000)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+
+                import threading
+                threading.Thread(target=_kl, daemon=True).start()
+        except Exception:
+            pass
         # G35-2 完成提示音（设置开关默认开；QApplication.beep 无 UI 影响）
         try:
             if bool(getattr(self.owner.settings, "finish_sound", True)):

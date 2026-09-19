@@ -30,6 +30,7 @@ from ..app.url_lib import parse_urls
 from ..app.worker import CancelFlag
 from ..db.repo_db import Database
 from ..db.settings import SettingsStore
+from ..i18n import tr  # G49-1
 from ..models import RepoSpec, SyncResult, SyncStatus
 from .log_buffer import LogBuffer
 from .repo_detail_dialog import RepoDetailDialog
@@ -56,10 +57,13 @@ class MainWindow(QMainWindow):
     """Git-clone-Max 主窗口。"""
 
     def __init__(self, data_dir: str | Path, db: Database | None = None,
-                 settings: SettingsStore | None = None):
+                 settings: SettingsStore | None = None,
+                 start_hidden: bool = False):
         super().__init__()
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        # G49-6：--minimized 启动标记（托盘可用时隐入托盘不弹主窗）
+        self.start_hidden = bool(start_hidden)
         self.db = db or Database(self.data_dir / "repos.db")
         self.settings_store = settings or SettingsStore(self.data_dir / "settings.json")
         self.settings = self.settings_store.load()
@@ -352,9 +356,9 @@ class MainWindow(QMainWindow):
         self.tab_download = QWidget()
         self.tab_manage = QWidget()
         self.tab_settings = QWidget()
-        self.tabs.addTab(self.tab_download, "下载中心")
-        self.tabs.addTab(self.tab_manage, "仓库管理")
-        self.tabs.addTab(self.tab_settings, "设置与日志")
+        self.tabs.addTab(self.tab_download, tr("下载中心"))
+        self.tabs.addTab(self.tab_manage, tr("仓库管理"))
+        self.tabs.addTab(self.tab_settings, tr("设置与日志"))
         # G46-2 页签图标化（零资源：复用 std_icon 语义图标）
         for _i, _key in zip((0, 1, 2), ("arrow_down", "folder", "info"), strict=True):
             _ic = self._std_icon(_key, self.tabs)
@@ -382,16 +386,16 @@ class MainWindow(QMainWindow):
         v = QVBoxLayout(self.tab_download)
         v.setSpacing(10)
 
-        box = QGroupBox("仓库地址（每行一个）")
+        box = QGroupBox(tr("仓库地址（每行一个）"))
         b = QVBoxLayout(box)
         self.repo_input = QPlainTextEdit()
         self.repo_input.setPlaceholderText(
-            "每行一个仓库地址，例如：\n"
-            "https://github.com/vercel-labs/skills\n"
-            "git@github.com:microsoft/azure-skills.git\n"
-            "vercel-labs/agent-skills\n"
-            "https://gitlab.com/grp/repo@v1.2.0  （@后指定分支/标签）\n"
-            "（地址中的 作者/仓库名 将自动作为文件夹名：作者__仓库）"
+            tr("每行一个仓库地址，例如：\n")
+            + "https://github.com/vercel-labs/skills\n"
+            + "git@github.com:microsoft/azure-skills.git\n"
+            + "vercel-labs/agent-skills\n"
+            + tr("https://gitlab.com/grp/repo@v1.2.0  （@后指定分支/标签）\n")
+            + tr("（地址中的 作者/仓库名 将自动作为文件夹名：作者__仓库）")
         )
         self.repo_input.setMinimumHeight(150)
         b.addWidget(self.repo_input)
@@ -403,7 +407,7 @@ class MainWindow(QMainWindow):
         self.repo_input.dragEnterEvent = self._repo_input_drag_enter
         self.repo_input.dropEvent = self._repo_input_drop
         quick = QHBoxLayout()
-        quick.addWidget(QLabel("快捷填充："))
+        quick.addWidget(QLabel(tr("快捷填充：")))
         # G35-7 快捷填充可配置：跟随 settings.quick_repos（持久化，可编辑）
         for repo in getattr(self.settings, "quick_repos", None) or ():
             btn = QPushButton(repo)
@@ -412,14 +416,14 @@ class MainWindow(QMainWindow):
             quick.addWidget(btn)
         quick.addStretch()
         # G35-4 任务清单：保存当前输入区为命名清单 / 下拉载入（分享用 data/lists/*.json）
-        self.btn_save_list = QPushButton("💾 保存清单")
-        self.btn_save_list.setToolTip("把当前输入区的地址保存为命名任务清单（data/lists/*.json）")
+        self.btn_save_list = QPushButton(tr("💾 保存清单"))
+        self.btn_save_list.setToolTip(tr("把当前输入区的地址保存为命名任务清单（data/lists/*.json）"))
         self.btn_save_list.clicked.connect(self._save_task_list)
         self.combo_load_list = QComboBox()
-        self.combo_load_list.setToolTip("选择已保存的清单一键载入")
+        self.combo_load_list.setToolTip(tr("选择已保存的清单一键载入"))
         self.combo_load_list.setMinimumWidth(180)
-        self.btn_load_list = QPushButton("载入")
-        self.btn_load_list.setToolTip("把所选清单的地址填入输入区")
+        self.btn_load_list = QPushButton(tr("载入"))
+        self.btn_load_list.setToolTip(tr("把所选清单的地址填入输入区"))
         self.btn_load_list.clicked.connect(self._load_task_list)
         quick.addWidget(self.btn_save_list)
         quick.addWidget(self.combo_load_list)
@@ -428,23 +432,23 @@ class MainWindow(QMainWindow):
         v.addWidget(box)
 
         opts = QHBoxLayout()
-        g1 = QGroupBox("下载位置")
+        g1 = QGroupBox(tr("下载位置"))
         l1 = QHBoxLayout(g1)
         # 恢复上次选择（settings.download_dir），否则默认 data/clones
         default_dir = str(self.settings.download_dir or (self.data_dir / "clones"))
         self.target_edit = QLineEdit(default_dir)
-        btn_browse = QPushButton("浏览…")
+        btn_browse = QPushButton(tr("浏览…"))
         btn_browse.clicked.connect(self.choose_target)
         l1.addWidget(self.target_edit, 1)
         l1.addWidget(btn_browse)
         opts.addWidget(g1, 1)
 
-        g2 = QGroupBox("克隆模式")
+        g2 = QGroupBox(tr("克隆模式"))
         l2 = QHBoxLayout(g2)
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["满量克隆（完整历史）", "浅克隆（最新代码）",
-                                  "单分支浅克隆（--single-branch）",
-                                  "镜像克隆（--mirror）"])
+        self.mode_combo.addItems([tr("满量克隆（完整历史）"), tr("浅克隆（最新代码）"),
+                                  tr("单分支浅克隆（--single-branch）"),
+                                  tr("镜像克隆（--mirror）")])
         self.depth_spin = QSpinBox()
         self.depth_spin.setRange(1, 10000)
         self.depth_spin.setValue(1)
@@ -458,18 +462,18 @@ class MainWindow(QMainWindow):
         v.addLayout(opts)
 
         btns = QHBoxLayout()
-        self.btn_start = QPushButton("开始并行下载 / 更新")
+        self.btn_start = QPushButton(tr("开始并行下载 / 更新"))
         self.btn_start.setObjectName("primary")
         self.btn_start.setMinimumHeight(38)
         self.btn_start.clicked.connect(self.start_all)
         self.btn_start.setIcon(self._std_icon("play", self.btn_start))
-        self.btn_cancel = QPushButton("取消全部")
+        self.btn_cancel = QPushButton(tr("取消全部"))
         self.btn_cancel.setEnabled(False)
         self.btn_cancel.clicked.connect(self.cancel_all)
         self.btn_cancel.setIcon(self._std_icon("stop", self.btn_cancel))
-        self.btn_clear = QPushButton("清空列表")
+        self.btn_clear = QPushButton(tr("清空列表"))
         self.btn_clear.clicked.connect(self.repo_input.clear)
-        self.btn_open = QPushButton("打开克隆目录")
+        self.btn_open = QPushButton(tr("打开克隆目录"))
         self.btn_open.clicked.connect(self.open_target)
         self.btn_open.setIcon(self._std_icon("open_dir", self.btn_open))
         btns.addWidget(self.btn_start, 2)
@@ -1371,6 +1375,15 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         super().resizeEvent(e)
+
+    # ------------------------------------------------------------ G49-6 启动隐入托盘
+    def should_auto_hide(self) -> bool:
+        """--minimized 启动且系统托盘已安装 → 主窗不弹出（托盘常驻）。"""
+        try:
+            return bool(self.start_hidden) and \
+                getattr(self.tray, "tray", None) is not None
+        except Exception:  # noqa: BLE001
+            return False
 
     # ------------------------------------------------------------ 关闭
     def closeEvent(self, e: QCloseEvent):

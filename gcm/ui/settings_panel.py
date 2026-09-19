@@ -26,12 +26,13 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ..i18n import tr  # G49-1
 from . import main_window as _mw  # noqa: F401 - 迁移回调引用 main_window 模块级符号
 from .theme import LogLevel
 
 if TYPE_CHECKING:  # 仅类型标注（避免循环导入）
     from ..db.settings import Settings
-    from .main_window import MainWindow
+from .main_window import MainWindow
 
 
 def _host_tokens_text(settings: Settings) -> str:
@@ -71,9 +72,9 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
 
     # ---- G36-7 设置搜索：顶部搜索框，输入关键字隐藏不匹配分组
     search_row = QHBoxLayout()
-    search_row.addWidget(QLabel("🔍 设置搜索"))
+    search_row.addWidget(QLabel(tr("🔍 设置搜索")))
     owner.settings_search = QLineEdit()
-    owner.settings_search.setPlaceholderText("搜索设置项（分组标题 / 行内标签）…")
+    owner.settings_search.setPlaceholderText(tr("搜索设置项（分组标题 / 行内标签）…"))
     owner.settings_search.setClearButtonEnabled(True)
     search_row.addWidget(owner.settings_search, 1)
     sv.addLayout(search_row)
@@ -97,30 +98,42 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     owner.settings_search.textChanged.connect(_apply_settings_filter)
 
     # ---- 启动与后台运行
-    g1 = QGroupBox("启动与后台运行（开机自启 / 托盘）")
-    g1.setToolTip("开机自启、下载完成后自动清空输入框 等启动行为")
+    g1 = QGroupBox(tr("启动与后台运行（开机自启 / 托盘）"))
+    g1.setToolTip(tr("开机自启、下载完成后自动清空输入框 等启动行为"))
     l1 = QHBoxLayout(g1)
-    owner.ck_autostart = QCheckBox("开机自启（写入任务计划：登录时启动一次）")
+    owner.ck_autostart = QCheckBox(tr("开机自启（写入任务计划：登录时启动一次）"))
+    # G49-6：初始回填任务计划真实状态；变更时写入任务计划（联动 start_minimized）
+    try:
+        from ..app.autostart import autostart_enabled
+        owner.ck_autostart.setChecked(autostart_enabled())
+    except Exception:
+        pass
+    owner.ck_autostart.stateChanged.connect(owner.settings_panel._toggle_autostart_task)
     l1.addWidget(owner.ck_autostart)
-    owner.ck_auto_clear = QCheckBox("下载完成后自动清空输入框")
+    owner.ck_start_min = QCheckBox(tr("启动时最小化到托盘"))
+    owner.ck_start_min.setChecked(bool(getattr(settings, "start_minimized", False)))
+    owner.ck_start_min.setToolTip(tr("启动后隐藏主窗口（仅托盘常驻；需托盘可用）"))
+    owner.ck_start_min.stateChanged.connect(owner.settings_panel._save_start_minimized)
+    l1.addWidget(owner.ck_start_min)
+    owner.ck_auto_clear = QCheckBox(tr("下载完成后自动清空输入框"))
     owner.ck_auto_clear.setChecked(bool(settings.auto_clear))
     owner.ck_auto_clear.stateChanged.connect(owner._save_auto_clear)
     l1.addWidget(owner.ck_auto_clear)
     # G09-1 剪贴板监听：检测到 git 地址提示加入队列
-    owner.ck_clipboard = QCheckBox("监听剪贴板（检测到仓库地址自动提示）")
+    owner.ck_clipboard = QCheckBox(tr("监听剪贴板（检测到仓库地址自动提示）"))
     owner.ck_clipboard.setChecked(bool(getattr(settings, "clipboard_watch", False)))
     owner.ck_clipboard.stateChanged.connect(owner._save_clipboard_watch)
     l1.addWidget(owner.ck_clipboard)
     # G35-2 完成提示音：全部任务结束响一声（挂机用户感知「跑完了」）
-    owner.ck_finish_sound = QCheckBox("任务完成提示音")
+    owner.ck_finish_sound = QCheckBox(tr("任务完成提示音"))
     owner.ck_finish_sound.setChecked(bool(getattr(settings, "finish_sound", True)))
-    owner.ck_finish_sound.setToolTip("全部任务完成时响一声提示音（QApplication.beep）")
+    owner.ck_finish_sound.setToolTip(tr("全部任务完成时响一声提示音（QApplication.beep）"))
     owner.ck_finish_sound.stateChanged.connect(owner._save_finish_sound)
     l1.addWidget(owner.ck_finish_sound)
     # G36-6 完成动效：成功绿/失败红背景淡出（低配/离屏自动关）
-    owner.ck_animations = QCheckBox("任务完成动效")
+    owner.ck_animations = QCheckBox(tr("任务完成动效"))
     owner.ck_animations.setChecked(bool(getattr(settings, "animations", True)))
-    owner.ck_animations.setToolTip("任务结束时行背景色 1.2s 淡出（成功绿/失败红）")
+    owner.ck_animations.setToolTip(tr("任务结束时行背景色 1.2s 淡出（成功绿/失败红）"))
     owner.ck_animations.stateChanged.connect(owner._save_animations)
     l1.addWidget(owner.ck_animations)
     l1.addStretch()
@@ -128,8 +141,8 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     groups.append(g1)
 
     # ---- 并行与网络设置（持久化到 settings.json）
-    g3 = QGroupBox("并行与网络（并发 / 超时 / 重试 / 代理 / Token）")
-    g3.setToolTip("并发数、超时、重试、代理与私有仓库认证 等网络相关设置")
+    g3 = QGroupBox(tr("并行与网络（并发 / 超时 / 重试 / 代理 / Token）"))
+    g3.setToolTip(tr("并发数、超时、重试、代理与私有仓库认证 等网络相关设置"))
     f3 = QFormLayout(g3)
     f3.setContentsMargins(10, 10, 10, 10)
     f3.setHorizontalSpacing(16)
@@ -145,30 +158,30 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     owner.spin_concurrency.setToolTip(
         f"同时并行下载/更新的仓库数（1–{_MAX_C}）")
     owner.spin_concurrency.valueChanged.connect(owner._save_concurrency)
-    f3.addRow("并发数（1–32）：", owner.spin_concurrency)
+    f3.addRow(tr("并发数（1–32）："), owner.spin_concurrency)
 
     owner.spin_fetch_timeout = QSpinBox()
     owner.spin_fetch_timeout.setRange(10, 3600)
     owner.spin_fetch_timeout.setValue(int(settings.fetch_timeout))
-    owner.spin_fetch_timeout.setToolTip("访问仓库远程信息（fetch/克隆）的超时时间，单位秒")
+    owner.spin_fetch_timeout.setToolTip(tr("访问仓库远程信息（fetch/克隆）的超时时间，单位秒"))
     owner.spin_fetch_timeout.valueChanged.connect(owner._save_fetch_timeout)
-    f3.addRow("fetch 超时（秒）：", owner.spin_fetch_timeout)
+    f3.addRow(tr("fetch 超时（秒）："), owner.spin_fetch_timeout)
 
     owner.spin_retries = QSpinBox()
     owner.spin_retries.setRange(0, 5)
     owner.spin_retries.setValue(int(settings.retries))
-    owner.spin_retries.setToolTip("网络故障时自动重试次数（0 = 只尝试一次）")
+    owner.spin_retries.setToolTip(tr("网络故障时自动重试次数（0 = 只尝试一次）"))
     owner.spin_retries.valueChanged.connect(owner._save_retries)
-    f3.addRow("自动重试（次）：", owner.spin_retries)
+    f3.addRow(tr("自动重试（次）："), owner.spin_retries)
 
     owner.edit_proxy = QLineEdit(settings.proxy)
-    owner.edit_proxy.setPlaceholderText("http://127.0.0.1:7890（留空不代理）")
-    owner.edit_proxy.setToolTip("网络代理地址，形如 http://127.0.0.1:7890；留空则不使用代理")
+    owner.edit_proxy.setPlaceholderText(tr("http://127.0.0.1:7890（留空不代理）"))
+    owner.edit_proxy.setToolTip(tr("网络代理地址，形如 http://127.0.0.1:7890；留空则不使用代理"))
     owner.edit_proxy.editingFinished.connect(owner._save_proxy)
-    f3.addRow("HTTP 代理：", owner.edit_proxy)
+    f3.addRow(tr("HTTP 代理："), owner.edit_proxy)
     # G04-3 自动检测系统代理（环境变量 / Windows 注册表）
-    owner.btn_detect_proxy = QPushButton("自动检测")
-    owner.btn_detect_proxy.setToolTip("读取系统代理（环境变量 / Windows 注册表）填入")
+    owner.btn_detect_proxy = QPushButton(tr("自动检测"))
+    owner.btn_detect_proxy.setToolTip(tr("读取系统代理（环境变量 / Windows 注册表）填入"))
     owner.btn_detect_proxy.clicked.connect(owner._detect_proxy_now)
     f3.addRow("", owner.btn_detect_proxy)
 
@@ -177,59 +190,59 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     owner.spin_rate.setRange(0, 100000)
     owner.spin_rate.setValue(int(getattr(settings, "rate_limit_kbps", 0) or 0))
     owner.spin_rate.setSuffix(" KiB/s")
-    owner.spin_rate.setSpecialValueText("不限速")
-    owner.spin_rate.setToolTip("低于该速率持续 30s 视为卡死中止（0 = 不限速）")
+    owner.spin_rate.setSpecialValueText(tr("不限速"))
+    owner.spin_rate.setToolTip(tr("低于该速率持续 30s 视为卡死中止（0 = 不限速）"))
     owner.spin_rate.valueChanged.connect(owner._save_rate_limit)
-    f3.addRow("限速：", owner.spin_rate)
+    f3.addRow(tr("限速："), owner.spin_rate)
 
-    owner.ck_unshallow = QCheckBox("浅克隆仓库更新时拉全量历史")
+    owner.ck_unshallow = QCheckBox(tr("浅克隆仓库更新时拉全量历史"))
     owner.ck_unshallow.setChecked(bool(settings.fetch_unshallow))
-    owner.ck_unshallow.setToolTip("浅克隆仓库增量 fetch 时拉取全量历史，避免后续增量因深度不足失败")
+    owner.ck_unshallow.setToolTip(tr("浅克隆仓库增量 fetch 时拉取全量历史，避免后续增量因深度不足失败"))
     owner.ck_unshallow.stateChanged.connect(owner._save_fetch_unshallow)
-    f3.addRow("浅克隆更新：", owner.ck_unshallow)
+    f3.addRow(tr("浅克隆更新："), owner.ck_unshallow)
 
-    owner.ck_submodule = QCheckBox("克隆时拉取子模块（--recurse-submodules）")
+    owner.ck_submodule = QCheckBox(tr("克隆时拉取子模块（--recurse-submodules）"))
     owner.ck_submodule.setChecked(bool(getattr(settings, "submodule", False)))
-    owner.ck_submodule.setToolTip("含子模块的仓库克隆后工作区完整；开启会增加克隆耗时")
+    owner.ck_submodule.setToolTip(tr("含子模块的仓库克隆后工作区完整；开启会增加克隆耗时"))
     owner.ck_submodule.stateChanged.connect(owner._save_submodule)
-    f3.addRow("子模块：", owner.ck_submodule)
+    f3.addRow(tr("子模块："), owner.ck_submodule)
 
-    owner.ck_lfs = QCheckBox("Git LFS（-c filter.lfs.required=false）")
+    owner.ck_lfs = QCheckBox(tr("Git LFS（-c filter.lfs.required=false）"))
     owner.ck_lfs.setChecked(bool(getattr(settings, "lfs_enabled", False)))
-    owner.ck_lfs.setToolTip("G48-2：克隆/更新时追加 -c filter.lfs.required=false；LFS 文件需另行 lfs pull")
+    owner.ck_lfs.setToolTip(tr("G48-2：克隆/更新时追加 -c filter.lfs.required=false；LFS 文件需另行 lfs pull"))
     owner.ck_lfs.stateChanged.connect(owner.settings_panel._save_lfs)
     # G37-4 自动更新间隔（分钟，0=关）
     owner.spin_auto_update = QSpinBox()
     owner.spin_auto_update.setRange(0, 10080)  # 0 或 1 分钟 ~ 7 天
     owner.spin_auto_update.setValue(int(getattr(settings, "auto_update_minutes", 0) or 0))
     owner.spin_auto_update.setSuffix(" 分钟")
-    owner.spin_auto_update.setSpecialValueText("关闭")
-    owner.spin_auto_update.setToolTip("定时自动一键更新全部（任务运行中自动跳过）；0=关闭")
+    owner.spin_auto_update.setSpecialValueText(tr("关闭"))
+    owner.spin_auto_update.setToolTip(tr("定时自动一键更新全部（任务运行中自动跳过）；0=关闭"))
     owner.spin_auto_update.valueChanged.connect(owner._save_auto_update)
-    f3.addRow("自动更新：", owner.spin_auto_update)
+    f3.addRow(tr("自动更新："), owner.spin_auto_update)
 
     owner.edit_token = QLineEdit(settings.token)
-    owner.edit_token.setPlaceholderText("私有仓库认证令牌（可选，留空不传递）")
+    owner.edit_token.setPlaceholderText(tr("私有仓库认证令牌（可选，留空不传递）"))
     # G44-1：token 输入框默认掩码（Password），防旁人/截图泄露
     owner.edit_token.setEchoMode(QLineEdit.EchoMode.Password)
     owner.edit_token.setToolTip(
-        "GitHub 个人访问令牌（Fine-grained/PAT），访问私有仓库时使用；留空不传递")
+        tr("GitHub 个人访问令牌（Fine-grained/PAT），访问私有仓库时使用；留空不传递"))
     owner.edit_token.editingFinished.connect(owner._save_token)
-    f3.addRow("GitHub Token：", owner.edit_token)
+    f3.addRow(tr("GitHub Token："), owner.edit_token)
 
     # G38-1 按 host 凭据（每行 "host=token"，留空不发送）
     owner.edit_host_tokens = QLineEdit(_host_tokens_text(settings))
-    owner.edit_host_tokens.setPlaceholderText("gitlab.com=glpat-xxx（每行一个 host=token）")
+    owner.edit_host_tokens.setPlaceholderText(tr("gitlab.com=glpat-xxx（每行一个 host=token）"))
     owner.edit_host_tokens.setToolTip(
-        "按平台主机配置私有仓库凭据：每行 `host=token`（gitlab.com 用 PRIVATE-TOKEN 头）")
+        tr("按平台主机配置私有仓库凭据：每行 `host=token`（gitlab.com 用 PRIVATE-TOKEN 头）"))
     # G44-1：host=token 多行文本域同样默认掩码（Password），避免凭据明文可见
     owner.edit_host_tokens.setEchoMode(QLineEdit.EchoMode.Password)
     owner.edit_host_tokens.editingFinished.connect(owner._save_host_tokens)
-    f3.addRow("按平台凭据：", owner.edit_host_tokens)
+    f3.addRow(tr("按平台凭据："), owner.edit_host_tokens)
 
     # G44-1：显示明文开关——勾选时 host_tokens 明文显示、取消恢复掩码（新控件 ck_show_host_tokens）
-    owner.ck_show_host_tokens = QCheckBox("显示明文")
-    owner.ck_show_host_tokens.setToolTip("勾选后按平台凭据明文显示；默认掩码，防止旁人看到 token")
+    owner.ck_show_host_tokens = QCheckBox(tr("显示明文"))
+    owner.ck_show_host_tokens.setToolTip(tr("勾选后按平台凭据明文显示；默认掩码，防止旁人看到 token"))
     owner.ck_show_host_tokens.setChecked(False)
 
     def _toggle_host_tokens_echo(checked: bool) -> None:
@@ -242,42 +255,42 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
 
     # G38-2 镜像前缀（每行 "host=prefix"，仅 HTTPS 生效）
     owner.edit_mirror = QLineEdit(_mirror_text(settings))
-    owner.edit_mirror.setPlaceholderText("github.com=https://ghproxy.com（每行一个）")
-    owner.edit_mirror.setToolTip("按平台配置镜像前缀（仅 https 克隆生效；SSH 不拼）")
+    owner.edit_mirror.setPlaceholderText(tr("github.com=https://ghproxy.com（每行一个）"))
+    owner.edit_mirror.setToolTip(tr("按平台配置镜像前缀（仅 https 克隆生效；SSH 不拼）"))
     owner.edit_mirror.editingFinished.connect(owner._save_mirror)
-    f3.addRow("镜像前缀：", owner.edit_mirror)
+    f3.addRow(tr("镜像前缀："), owner.edit_mirror)
 
     # G38-7 常用主机（自建 GitLab 等，短格式可直接解析）
     owner.edit_custom_hosts = QLineEdit(_custom_hosts_text(settings))
-    owner.edit_custom_hosts.setPlaceholderText("mygit.example.com（逗号或换行分隔）")
+    owner.edit_custom_hosts.setPlaceholderText(tr("mygit.example.com（逗号或换行分隔）"))
     owner.edit_custom_hosts.setToolTip(
-        "登记自建主机后，短格式 `mygit.example.com/a/b` 可直接解析为 HTTPS 克隆地址")
+        tr("登记自建主机后，短格式 `mygit.example.com/a/b` 可直接解析为 HTTPS 克隆地址"))
     owner.edit_custom_hosts.editingFinished.connect(owner._save_custom_hosts)
-    f3.addRow("常用主机：", owner.edit_custom_hosts)
+    f3.addRow(tr("常用主机："), owner.edit_custom_hosts)
 
     # G38-3/4/6 网络兼容开关
-    owner.ck_precheck = QCheckBox("克隆前做远端可达性预检（10s）")
+    owner.ck_precheck = QCheckBox(tr("克隆前做远端可达性预检（10s）"))
     owner.ck_precheck.setChecked(bool(getattr(settings, "precheck_remote", False)))
-    owner.ck_precheck.setToolTip("断网时 10s 内明确提示，不白等超时")
+    owner.ck_precheck.setToolTip(tr("断网时 10s 内明确提示，不白等超时"))
     owner.ck_precheck.stateChanged.connect(owner._save_precheck)
-    f3.addRow("远端预检：", owner.ck_precheck)
+    f3.addRow(tr("远端预检："), owner.ck_precheck)
 
-    owner.ck_single_branch = QCheckBox("浅克隆只拉目标分支（--single-branch）")
+    owner.ck_single_branch = QCheckBox(tr("浅克隆只拉目标分支（--single-branch）"))
     owner.ck_single_branch.setChecked(bool(getattr(settings, "single_branch", False)))
-    owner.ck_single_branch.setToolTip("浅克隆时减少 refs 传输量；增量更新兼容")
+    owner.ck_single_branch.setToolTip(tr("浅克隆时减少 refs 传输量；增量更新兼容"))
     owner.ck_single_branch.stateChanged.connect(owner._save_single_branch)
-    f3.addRow("单分支：", owner.ck_single_branch)
+    f3.addRow(tr("单分支："), owner.ck_single_branch)
 
-    owner.ck_force_ipv4 = QCheckBox("强制 HTTP/1.1（IPv6 兼容）")
+    owner.ck_force_ipv4 = QCheckBox(tr("强制 HTTP/1.1（IPv6 兼容）"))
     owner.ck_force_ipv4.setChecked(bool(getattr(settings, "force_ipv4", False)))
-    owner.ck_force_ipv4.setToolTip("部分网络环境下 HTTP/2 兼容问题可用此项规避")
+    owner.ck_force_ipv4.setToolTip(tr("部分网络环境下 HTTP/2 兼容问题可用此项规避"))
     owner.ck_force_ipv4.stateChanged.connect(owner._save_force_ipv4)
-    f3.addRow("HTTP 版本：", owner.ck_force_ipv4)
+    f3.addRow(tr("HTTP 版本："), owner.ck_force_ipv4)
     sv.addWidget(g3)
     groups.append(g3)
 
     # ---- 外观（G05-1 多主题）
-    g5 = QGroupBox("外观（主题）")
+    g5 = QGroupBox(tr("外观（主题）"))
     f5 = QFormLayout(g5)
     f5.setContentsMargins(10, 10, 10, 10)
     f5.setHorizontalSpacing(16)
@@ -288,43 +301,53 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     for key, label in _THEMES.items():
         owner.theme_combo.addItem(label, key)
     # G36-9 跟随系统深浅色（auto = 启动/系统变化时按注册表自动切 light/deep）
-    owner.theme_combo.addItem("跟随系统（自动）", "auto")
+    owner.theme_combo.addItem(tr("跟随系统（自动）"), "auto")
     cur = getattr(settings, "theme", "deep")
     idx = owner.theme_combo.findData(cur)
     if idx >= 0:
         owner.theme_combo.setCurrentIndex(idx)
     owner.theme_combo.currentIndexChanged.connect(owner._save_theme)
-    f5.addRow("界面主题：", owner.theme_combo)
+    f5.addRow(tr("界面主题："), owner.theme_combo)
+    # G49-1 语言（重启后生效）
+    owner.lang_combo = QComboBox()
+    owner.lang_combo.addItem(tr("中文"), "zh")
+    owner.lang_combo.addItem(tr("English"), "en")
+    _lang = getattr(settings, "language", "zh") or "zh"
+    _li = owner.lang_combo.findData(_lang)
+    if _li >= 0:
+        owner.lang_combo.setCurrentIndex(_li)
+    owner.lang_combo.currentIndexChanged.connect(owner.settings_panel._save_language)
+    f5.addRow(tr("语言（重启后生效）："), owner.lang_combo)
     # G46-7 强调色预设
     owner.accent_combo = QComboBox()
-    for _k, _lbl in (("blue", "蓝色（默认）"), ("violet", "紫色"), ("teal", "青色")):
+    for _k, _lbl in (("blue", tr("蓝色（默认）")), ("violet", tr("紫色")), ("teal", tr("青色"))):
         owner.accent_combo.addItem(_lbl, _k)
     _acc = getattr(settings, "accent_preset", "blue")
     _ai = owner.accent_combo.findData(_acc)
     if _ai >= 0:
         owner.accent_combo.setCurrentIndex(_ai)
     owner.accent_combo.currentIndexChanged.connect(owner.settings_panel._save_accent_preset)
-    f5.addRow("强调色：", owner.accent_combo)
+    f5.addRow(tr("强调色："), owner.accent_combo)
     # G46-8 减少动态效果
-    owner.ck_reduced_motion = QCheckBox("减少动态效果（关闭完成动效/过渡）")
+    owner.ck_reduced_motion = QCheckBox(tr("减少动态效果（关闭完成动效/过渡）"))
     owner.ck_reduced_motion.setChecked(bool(getattr(settings, "prefers_reduced_motion", False)))
     owner.ck_reduced_motion.stateChanged.connect(owner.settings_panel._save_reduced_motion)
-    f5.addRow("动效：", owner.ck_reduced_motion)
+    f5.addRow(tr("动效："), owner.ck_reduced_motion)
     # G46-5 恢复默认字号
-    owner.btn_font_reset = QPushButton("恢复默认字号")
+    owner.btn_font_reset = QPushButton(tr("恢复默认字号"))
     owner.btn_font_reset.clicked.connect(owner.settings_panel._reset_font_scale)
-    f5.addRow("字号：", owner.btn_font_reset)
+    f5.addRow(tr("字号："), owner.btn_font_reset)
     # G46-10 恢复默认设置（token/窗口位置保留）
-    owner.btn_reset_defaults = QPushButton("恢复默认设置（token 保留）")
-    owner.btn_reset_defaults.setToolTip("除 token 与窗口位置外全部回默认值")
+    owner.btn_reset_defaults = QPushButton(tr("恢复默认设置（token 保留）"))
+    owner.btn_reset_defaults.setToolTip(tr("除 token 与窗口位置外全部回默认值"))
     owner.btn_reset_defaults.clicked.connect(owner.settings_panel._reset_defaults)
-    f5.addRow("重置：", owner.btn_reset_defaults)
+    f5.addRow(tr("重置："), owner.btn_reset_defaults)
     sv.addWidget(g5)
     groups.append(g5)
 
     # ---- 关于与更新
-    g4 = QGroupBox("关于与更新")
-    g4.setToolTip("版本信息与自检工具")
+    g4 = QGroupBox(tr("关于与更新"))
+    g4.setToolTip(tr("版本信息与自检工具"))
     f4 = QFormLayout(g4)
     f4.setContentsMargins(10, 10, 10, 10)
     f4.setHorizontalSpacing(16)
@@ -337,45 +360,70 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
         _ver = "unknown"
     owner.lbl_version = QLabel(_ver)
     owner.lbl_version.setObjectName("muted")
-    f4.addRow("当前版本：", owner.lbl_version)
+    f4.addRow(tr("当前版本："), owner.lbl_version)
     h4 = QHBoxLayout()
-    owner.btn_check_update = QPushButton("检查更新")
+    owner.btn_check_update = QPushButton(tr("检查更新"))
     owner.btn_check_update.clicked.connect(owner.check_update_now)
     h4.addWidget(owner.btn_check_update)
-    owner.btn_selftest = QPushButton("自检环境")
-    owner.btn_selftest.setToolTip("检测 git / PyQt6 / 数据目录 / 当前并发 是否正常可用")
+    owner.btn_selftest = QPushButton(tr("自检环境"))
+    owner.btn_selftest.setToolTip(tr("检测 git / PyQt6 / 数据目录 / 当前并发 是否正常可用"))
     owner.btn_selftest.clicked.connect(owner._run_selftest)
     h4.addWidget(owner.btn_selftest)
     # G07-1 统计中心入口
-    owner.btn_diag = QPushButton("🩺 网络诊断")
-    owner.btn_diag.setToolTip("G48-8：串行探测 git / TCP / GitHub API / 代理，输出分级报告")
+    owner.btn_diag = QPushButton(tr("🩺 网络诊断"))
+    owner.btn_diag.setToolTip(tr("G48-8：串行探测 git / TCP / GitHub API / 代理，输出分级报告"))
     owner.btn_diag.clicked.connect(owner.settings_panel._run_diag)
     h4.addWidget(owner.btn_diag)
-    owner.btn_statistics = QPushButton("📊 统计中心")
-    owner.btn_statistics.setToolTip("查看仓库总数 / 同步次数 / 成功率 / 平台分布")
+    owner.btn_statistics = QPushButton(tr("📊 统计中心"))
+    owner.btn_statistics.setToolTip(tr("查看仓库总数 / 同步次数 / 成功率 / 平台分布"))
     owner.btn_statistics.clicked.connect(owner.show_statistics)
     h4.addWidget(owner.btn_statistics)
     # G07-3 报表导出入口
-    owner.btn_export = QPushButton("📄 导出报表")
-    owner.btn_export.setToolTip("导出 CSV（Excel 友好）或 Markdown 报表")
+    owner.btn_export = QPushButton(tr("📄 导出报表"))
+    owner.btn_export.setToolTip(tr("导出 CSV（Excel 友好）或 Markdown 报表"))
     owner.btn_export.clicked.connect(owner.export_report)
     h4.addWidget(owner.btn_export)
     h4.addStretch()
-    f4.addRow("环境自检：", h4)
+    f4.addRow(tr("环境自检："), h4)
     # G46-11 使用说明 + 打开数据目录
     h_help = QHBoxLayout()
-    owner.btn_help = QPushButton("📖 使用说明")
-    owner.btn_help.setToolTip("语法速查：@tag / host=token / 镜像 / 快捷键 / 拖拽 / 清单 / Star 导入")
+    owner.btn_help = QPushButton(tr("📖 使用说明"))
+    owner.btn_help.setToolTip(tr("语法速查：@tag / host=token / 镜像 / 快捷键 / 拖拽 / 清单 / Star 导入"))
     owner.btn_help.clicked.connect(owner.settings_panel._open_help)
     h_help.addWidget(owner.btn_help)
-    owner.btn_open_data = QPushButton("打开数据目录")
-    owner.btn_open_data.setToolTip("日志 / 备份 / 任务清单 所在目录")
+    owner.btn_open_data = QPushButton(tr("打开数据目录"))
+    owner.btn_open_data.setToolTip(tr("日志 / 备份 / 任务清单 所在目录"))
     owner.btn_open_data.clicked.connect(owner.settings_panel._open_data_dir)
     h_help.addWidget(owner.btn_open_data)
     h_help.addStretch()
-    f4.addRow("帮助：", h_help)
+    f4.addRow(tr("帮助："), h_help)
     sv.addWidget(g4)
     groups.append(g4)
+
+    # ---- G49-7 完成通知 Webhook（显式开启 + URL 非空才发送）
+    g6 = QGroupBox(tr("完成通知 Webhook"))
+    g6.setToolTip(tr("仅显式开启 + 填写 URL 时才发送，失败不影响主流程"))
+    f6 = QFormLayout(g6)
+    f6.setContentsMargins(10, 10, 10, 10)
+    f6.setHorizontalSpacing(16)
+    f6.setVerticalSpacing(10)
+    f6.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+    f6.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+    owner.ck_notify = QCheckBox(tr("启用完成通知 Webhook"))
+    owner.ck_notify.setChecked(bool(getattr(settings, "notify_webhook_enabled", False)))
+    owner.ck_notify.toggled.connect(owner.settings_panel._save_notify_enable)
+    f6.addRow("", owner.ck_notify)
+    owner.edit_webhook_url = QLineEdit(getattr(settings, "notify_webhook_url", "") or "")
+    owner.edit_webhook_url.setPlaceholderText(tr("https://sctapi.ftqq.com/KEY.send（Server酱 / Telegram Bot 接口）"))
+    owner.edit_webhook_url.editingFinished.connect(owner.settings_panel._save_notify_webhook)
+    f6.addRow(tr("Webhook URL："), owner.edit_webhook_url)
+    owner.edit_webhook_token = QLineEdit(getattr(settings, "notify_webhook_token", "") or "")
+    owner.edit_webhook_token.setEchoMode(QLineEdit.EchoMode.Password)
+    owner.edit_webhook_token.setPlaceholderText(tr("Webhook Token（可选）："))
+    owner.edit_webhook_token.editingFinished.connect(owner.settings_panel._save_notify_webhook)
+    f6.addRow(tr("Webhook Token（可选）："), owner.edit_webhook_token)
+    sv.addWidget(g6)
+    groups.append(g6)
 
     sv.addStretch()
     return settings_scroll
@@ -383,18 +431,18 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
 
 def build_log_box(owner: MainWindow) -> QGroupBox:
     """构建黑匣子日志区（固定在下，控件挂 owner.log_count/log_view/btn_save_log/btn_clear_log）。"""
-    g2 = QGroupBox("黑匣子日志（实时）")
-    g2.setToolTip("应用运行日志实时输出；可导出为文本文件排查问题")
+    g2 = QGroupBox(tr("黑匣子日志（实时）"))
+    g2.setToolTip(tr("应用运行日志实时输出；可导出为文本文件排查问题"))
     l2 = QVBoxLayout(g2)
     tb = QHBoxLayout()
-    owner.log_count = QLabel("0 条")
+    owner.log_count = QLabel(tr("0 条"))
     owner.log_count.setObjectName("muted")
     tb.addWidget(owner.log_count)
     tb.addStretch()
-    owner.btn_save_log = QPushButton("导出日志…")
-    owner.btn_save_log.setToolTip("把当前日志内容导出为文本文件")
+    owner.btn_save_log = QPushButton(tr("导出日志…"))
+    owner.btn_save_log.setToolTip(tr("把当前日志内容导出为文本文件"))
     owner.btn_save_log.clicked.connect(owner.save_log)
-    owner.btn_clear_log = QPushButton("清空日志")
+    owner.btn_clear_log = QPushButton(tr("清空日志"))
     owner.btn_clear_log.clicked.connect(owner.clear_log)
     tb.addWidget(owner.btn_save_log)
     tb.addWidget(owner.btn_clear_log)
@@ -624,6 +672,51 @@ class SettingsPanel(QWidget):
     def _save_lfs(self, checked):
         """G48-2：Git LFS 开关保存。"""
         self.owner.settings.lfs_enabled = bool(checked)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _toggle_autostart_task(self, checked):
+        """G49-6：勾选开机自启 → 写入/删除 Windows 任务计划（联动 start_minimized）。"""
+        try:
+            from ..app.autostart import set_autostart
+            ok, msg = set_autostart(
+                bool(checked),
+                minimized=bool(getattr(self.owner.settings, "start_minimized", False)))
+            self.owner.statusBar().showMessage(msg, 6000)
+        except Exception:
+            pass
+
+    def _save_start_minimized(self, checked):
+        """G49-6：保存「启动时最小化到托盘」；自启已开则刷新任务命令（追加 --minimized）。"""
+        self.owner.settings.start_minimized = bool(checked)
+        self.owner.settings_store.save(self.owner.settings)
+        try:
+            if getattr(self.owner, "ck_autostart", None) is not None \
+                    and self.owner.ck_autostart.isChecked():
+                self._toggle_autostart_task(True)
+        except Exception:
+            pass
+
+    def _save_language(self, index):
+        """G49-1：保存语言（重启后生效）。"""
+        key = self.owner.lang_combo.itemData(index) if index >= 0 else "zh"
+        key = key or "zh"
+        self.owner.settings.language = key
+        self.owner.settings_store.save(self.owner.settings)
+        try:
+            self.owner.statusBar().showMessage(
+                "语言已保存，重启后生效（Language saved, restart to apply）", 6000)
+        except Exception:
+            pass
+
+    def _save_notify_enable(self, checked):
+        """G49-7：Webhook 显式开关。"""
+        self.owner.settings.notify_webhook_enabled = bool(checked)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_notify_webhook(self):
+        """G49-7：Webhook URL/Token 保存（URL 留空即关闭发送）。"""
+        self.owner.settings.notify_webhook_url = self.owner.edit_webhook_url.text().strip()
+        self.owner.settings.notify_webhook_token = self.owner.edit_webhook_token.text().strip()
         self.owner.settings_store.save(self.owner.settings)
 
     def _run_diag(self):
