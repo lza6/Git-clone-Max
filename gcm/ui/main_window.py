@@ -2,30 +2,24 @@
 from __future__ import annotations
 
 import os
-import sys
 import time
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSlot
-from PyQt6.QtGui import QCloseEvent, QColor
+from PyQt6.QtGui import QCloseEvent
 from PyQt6.QtWidgets import (
     QComboBox,
     QFileDialog,  # noqa: F401  — 测试 mock 引用（download_tools 经本模块访问）
     QGroupBox,
     QHBoxLayout,
-    QHeaderView,
     QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
-    QProgressBar,
     QPushButton,
     QSpinBox,
-    QTableView,
-    QTableWidget,
-    QTableWidgetItem,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -39,7 +33,7 @@ from ..db.settings import SettingsStore
 from ..models import RepoSpec, SyncResult, SyncStatus
 from .log_buffer import LogBuffer
 from .repo_detail_dialog import RepoDetailDialog
-from .theme import PALETTE, LogLevel, LogModel
+from .theme import LogLevel, LogModel
 
 DOMAIN = "github.com"
 MAX_CONCURRENCY = 32  # 并发上限：拉满速度（设置 SpinBox 同源）
@@ -105,11 +99,7 @@ class MainWindow(QMainWindow):
         self._startup_start = time.perf_counter()
         self._startup_ms = 0
 
-        # 高频进度详情节流：速率/对象数批量刷新（32 并发时不阻塞主线程）
-        self._detail_batch: dict = {}
-        self._detail_timer = QTimer(self)
-        self._detail_timer.setInterval(300)
-        self._detail_timer.timeout.connect(self._flush_detail_batch)
+        # G45-6：进度详情节流定时器已迁入 progress_table.py（ProgressTable）
         # 日志模型
         self.log = LogModel(max_entries=3000)
         self.log.appended.connect(self._on_log_appended)
@@ -481,138 +471,49 @@ class MainWindow(QMainWindow):
         btns.addStretch()
         v.addLayout(btns)
 
-        # 进度表
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["仓库", "进度", "状态", "本次", "详情"])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        for col in (1, 2, 3, 4):
-            self.table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setMinimumHeight(200)
-        # G02-2 表头点击排序（状态列优先级：运行>等待>成功>冲突>失败>取消>跳过）
-        self.table.setSortingEnabled(True)
-        self.table.horizontalHeader().sortIndicatorChanged.connect(self._on_sort_changed)
-        # G35-1 进度表右键菜单：重试此仓库 / 复制错误详情 / 打开所在目录
-        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.table.customContextMenuRequested.connect(self._progress_table_menu)
-        v.addWidget(self.table, 3)
-        # G36-5 下载中心空态引导：overlay 标签（绝对定位在表格上，有数据时隐藏）
-        self._empty_download = QLabel("⬇ 粘贴仓库地址开始下载\n（支持多行 / 拖入 txt 文件）")
-        self._empty_download.setObjectName("muted")
-        self._empty_download.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty_download.setWordWrap(True)
-        self._empty_download.setVisible(False)
-        self._empty_download.setParent(self.table)
-        self._empty_download.raise_()
-
-        # G02-1 搜索过滤框（防抖 200ms）+ 进度表右键「暂停此项」（G02-3）
-        row_tools = QHBoxLayout()
-        row_tools.addWidget(QLabel("搜索："))
-        self.progress_filter = QLineEdit()
-        self.progress_filter.setPlaceholderText("按仓库名过滤…")
-        self.progress_filter.setClearButtonEnabled(True)
-        self.progress_filter.textChanged.connect(self._schedule_progress_filter)
-        row_tools.addWidget(self.progress_filter, 1)
-        btn_pause_selected = QPushButton("⏸ 暂停选中")
-        btn_pause_selected.clicked.connect(self.pause_selected)
-        row_tools.addWidget(btn_pause_selected)
-        row_tools.addStretch()
-        v.addLayout(row_tools)
+        # G45-6：进度表/空态/过滤框/暂停 收敛到 progress_table.py（ProgressTable）
+        from .progress_table import ProgressTable
+        self.progress_panel = ProgressTable(owner=self, parent=self.tab_download)
+        v.addWidget(self.progress_panel, 3)
+        # 镜像控件（兼容外部引用/测试）
+        self.table = self.progress_panel.table
+        self._empty_download = self.progress_panel._empty_download
+        self.progress_filter = self.progress_panel.progress_filter
 
     # ---------------- 仓库管理
     def _build_manage_tab(self):
+        # G45-6：管理页 UI/动作收敛到 manage_panel.py（ManagePanel），信号回传
+        from .manage_panel import ManagePanel
         v = QVBoxLayout(self.tab_manage)
-        top = QHBoxLayout()
-        self.manage_stats = QLabel("共 0 个仓库")
-        self.manage_stats.setObjectName("muted")
-        top.addWidget(self.manage_stats)
-        top.addStretch()
-        self.btn_update_all = QPushButton("一键更新全部")
-        self.btn_update_all.setObjectName("primary")
-        self.btn_update_all.clicked.connect(self.update_all)
-        self.btn_update_all.setIcon(self._std_icon("refresh", self.btn_update_all))
-        self.btn_cancel_manage = QPushButton("取消全部")
-        self.btn_cancel_manage.setEnabled(False)
-        self.btn_cancel_manage.clicked.connect(self.cancel_all)
-        self.btn_cancel_manage.setIcon(self._std_icon("stop", self.btn_cancel_manage))
-        self.btn_refresh = QPushButton("刷新列表")
-        self.btn_refresh.clicked.connect(self._refresh_manage)
-        self.btn_refresh.setIcon(self._std_icon("refresh", self.btn_refresh))
-        self.btn_import_local = QPushButton("导入本地已有仓库")
-        self.btn_import_local.clicked.connect(self.import_local_repos)
-        self.btn_import_local.setIcon(self._std_icon("folder", self.btn_import_local))
-        self.btn_delete = QPushButton("删除选中记录")
-        self.btn_delete.clicked.connect(self.delete_selected)
-        self.btn_delete.setIcon(self._std_icon("trash", self.btn_delete))
-        self.btn_batch_tag = QPushButton("打标签")
-        self.btn_batch_tag.setToolTip("给选中的仓库追加标签（多选批量）")
-        self.btn_batch_tag.clicked.connect(self.batch_tag_selected)
-        self.btn_export_selected = QPushButton("导出所选")
-        self.btn_export_selected.setToolTip("把选中的仓库导出为 CSV 报表")
-        self.btn_export_selected.clicked.connect(self.export_selected_csv)
-        self.btn_export_selected.setIcon(self._std_icon("save", self.btn_export_selected))
-        top.addWidget(self.btn_import_local)
-        top.addWidget(self.btn_update_all)
-        top.addWidget(self.btn_cancel_manage)
-        top.addWidget(self.btn_refresh)
-        top.addWidget(self.btn_delete)
-        top.addWidget(self.btn_batch_tag)
-        top.addWidget(self.btn_export_selected)
-        v.addLayout(top)
-
-        # 模型化视图：数据与视图解耦，大批量行不卡（共享按钮 + 懒加载）
-        from .manage_model import ManageModel
-        self.manage_model = ManageModel(parent=self)
-        self.manage_table = QTableView()
-        self.manage_table.setModel(self.manage_model)
-        self.manage_table.horizontalHeader().setDefaultAlignment(
-            Qt.AlignmentFlag.AlignLeft)
-        self.manage_table.horizontalHeader().setStretchLastSection(True)
-        self.manage_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch)
-        self.manage_table.verticalHeader().setVisible(False)
-        self.manage_table.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
-        self.manage_table.setSelectionBehavior(
-            QTableView.SelectionBehavior.SelectRows)
-        self.manage_table.setSelectionMode(
-            QTableView.SelectionMode.ExtendedSelection)
-        self.manage_table.setAlternatingRowColors(False)
-        self.manage_table.setMinimumHeight(260)
-        self.manage_table.setContextMenuPolicy(Qt.ContextMenuPolicy.DefaultContextMenu)
-        self.manage_table.doubleClicked.connect(self._on_manage_double_clicked)
-        # G03-7 末列「查看」按钮委托：每行独立可点击（不再依赖选中行 + 共享按钮）
-        from .manage_model import HistoryButtonDelegate
-        self._hist_delegate = HistoryButtonDelegate(self.manage_table)
-        self._hist_delegate.clicked.connect(self._on_hist_row_clicked)
-        self.manage_table.setItemDelegateForColumn(5, self._hist_delegate)
-        v.addWidget(self.manage_table, 3)
-        # G36-5 管理页空态引导：overlay 标签（有仓库时隐藏）
-        self._empty_manage = QLabel("📁 尚未导入仓库\n点击「导入本地已有仓库」开始")
-        self._empty_manage.setObjectName("muted")
-        self._empty_manage.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty_manage.setWordWrap(True)
-        self._empty_manage.setVisible(False)
-        self._empty_manage.setParent(self.manage_table)
-        self._empty_manage.raise_()
-
-        self.manage_desc = QLabel(
-            "「一键更新全部」会按 作者__仓库 命名找到每个仓库目录，"
-            "已存在则 git fetch 增量更新；本地有改动冲突时保留本地、标记冲突，绝不覆盖。\n"
-            "「导入本地已有仓库」能扫描任意目录下已存在的 git 仓库，一并纳入管理。")
-        self.manage_desc.setObjectName("muted")
-        self.manage_desc.setWordWrap(True)
-
-        self.manage_table.verticalHeader().setDefaultSectionSize(34)
-        v.addWidget(self.manage_desc)
-
-        # 保持状态栏"历史"列宽固定
-        self.manage_table.setColumnWidth(5, 70)
-        v.addWidget(self.manage_table)
+        self.manage_panel = ManagePanel(owner=self, parent=self.tab_manage)
+        v.addWidget(self.manage_panel)
+        # 镜像控件（兼容外部引用/测试）
+        self.manage_stats = self.manage_panel.manage_stats
+        self.manage_model = self.manage_panel.manage_model
+        self.manage_table = self.manage_panel.manage_table
+        self._hist_delegate = self.manage_panel._hist_delegate
+        self._empty_manage = self.manage_panel._empty_manage
+        self.manage_desc = self.manage_panel.manage_desc
+        self.btn_update_all = self.manage_panel.btn_update_all
+        self.btn_cancel_manage = self.manage_panel.btn_cancel_manage
+        self.btn_refresh = self.manage_panel.btn_refresh
+        self.btn_import_local = self.manage_panel.btn_import_local
+        self.btn_delete = self.manage_panel.btn_delete
+        self.btn_batch_tag = self.manage_panel.btn_batch_tag
+        self.btn_export_selected = self.manage_panel.btn_export_selected
+        # 面板信号 → 窗口动作
+        self.manage_panel.update_all_requested.connect(self.update_all)
+        self.manage_panel.cancel_all_requested.connect(self.cancel_all)
+        self.manage_panel.import_local_requested.connect(self.import_local_repos)
+        self.manage_panel.manage_double_clicked.connect(self._on_manage_double_clicked)
+        self.manage_panel.history_row_clicked.connect(self._on_hist_row_clicked)
 
     # ---------------- 设置与日志
     def _build_settings_tab(self):
+        # G45-6：设置回调收敛到 settings_panel.SettingsPanel（MainWindow 保留同名转发）
+        from .settings_panel import SettingsPanel
+        if not hasattr(self, "settings_panel"):
+            self.settings_panel = SettingsPanel(owner=self, parent=self.tab_settings)
         """G33-8 拆分：设置页控件构建委托给 settings_panel.py / log_buffer.py。
 
         控件名（self.spin_concurrency / self.log_view 等）仍挂载在本窗口，
@@ -728,73 +629,44 @@ class MainWindow(QMainWindow):
         self.log_view.clear()
 
     # ------------------------------------------------------------ 设置持久化
-    def _save_concurrency(self, value):
-        self.settings.concurrency = int(value)
-        if hasattr(self, "engine") and self.engine is not None:
-            self.engine.set_concurrency(int(value))
-            self.thread_lbl.setText(f"并行线程 {self.engine.concurrency}")
-        self.settings_store.save(self.settings)
+    def _save_concurrency(self, *args, **kwargs):
+        """G45-6 转发 settings_panel.py（行为零变化）。"""
+        return self.settings_panel._save_concurrency(*args, **kwargs)
 
-    def _save_fetch_timeout(self, value):
-        self.settings.fetch_timeout = int(value)
-        self.settings_store.save(self.settings)
+    def _save_fetch_timeout(self, *args, **kwargs):
+        """G45-6 转发 settings_panel.py（行为零变化）。"""
+        return self.settings_panel._save_fetch_timeout(*args, **kwargs)
 
-    def _save_retries(self, value):
-        self.settings.retries = int(value)
-        self.settings_store.save(self.settings)
+    def _save_retries(self, *args, **kwargs):
+        """G45-6 转发 settings_panel.py（行为零变化）。"""
+        return self.settings_panel._save_retries(*args, **kwargs)
 
-    def _save_proxy(self):
-        self.settings.proxy = self.edit_proxy.text().strip()
-        self.settings_store.save(self.settings)
+    def _save_proxy(self, *args, **kwargs):
+        """G45-6 转发 settings_panel.py（行为零变化）。"""
+        return self.settings_panel._save_proxy(*args, **kwargs)
 
-    def _detect_proxy_now(self):
-        """G04-3 一键自动检测系统代理并填入（可保存）。"""
-        try:
-            from ..app.proxy import detect_system_proxy
-            val = detect_system_proxy()
-            if val:
-                self.edit_proxy.setText(val)
-                self.settings.proxy = val
-                self.settings_store.save(self.settings)
-                self._emit_log(_fmt_dt(), LogLevel.INFO, f"已自动检测到代理：{val}")
-                self.statusBar().showMessage(f"代理已填入：{val}")
-            else:
-                self._emit_log(_fmt_dt(), LogLevel.WARN, "未检测到系统代理。")
-                self.statusBar().showMessage("未检测到系统代理")
-        except Exception as e:
-            self._emit_log(_fmt_dt(), LogLevel.WARN, f"自动检测代理失败：{e}")
+    def _detect_proxy_now(self, *args, **kwargs):
+        """G45-6 转发 settings_panel.py（行为零变化）。"""
+        return self.settings_panel._detect_proxy_now(*args, **kwargs)
 
-    def _save_rate_limit(self, value):
-        """G04-4 保存下载限速（KiB/s，0=不限）。"""
-        self.settings.rate_limit_kbps = int(value or 0)
-        self.settings_store.save(self.settings)
+    def _save_rate_limit(self, *args, **kwargs):
+        """G45-6 转发 settings_panel.py（行为零变化）。"""
+        return self.settings_panel._save_rate_limit(*args, **kwargs)
 
-    def _save_token(self):
-        self.settings.token = self.edit_token.text().strip()
-        self.settings_store.save(self.settings)
+    def _save_token(self, *args, **kwargs):
+        """G45-6 转发 settings_panel.py（行为零变化）。"""
+        return self.settings_panel._save_token(*args, **kwargs)
+    def _save_host_tokens(self, *args, **kwargs):
+        """G45-6 转发 settings_panel.py（行为零变化）。"""
+        return self.settings_panel._save_host_tokens(*args, **kwargs)
 
-    # --------------------------------------------------------- G38-1~7 网络设置保存
-    def _save_host_tokens(self):
-        """G38-1 保存按 host 凭据映射：多行 `host=token` → settings.host_tokens。
+    def _save_mirror(self, *args, **kwargs):
+        """G45-6 转发 settings_panel.py（行为零变化）。"""
+        return self.settings_panel._save_mirror(*args, **kwargs)
 
-        - 逐行按首个 `=` 拆分；key 小写归一、value 去空白
-        - value 为空的行 = 删除该 host 条目
-        - 无 `=`/空行忽略（用户删除行即移除凭据）
-        """
-        self.settings.host_tokens = self._parse_kv_text(self.edit_host_tokens.text())
-        self.settings_store.save(self.settings)
-
-    def _save_mirror(self):
-        """G38-2 保存镜像前缀映射：多行 `host=prefix` → settings.mirror_prefix。"""
-        self.settings.mirror_prefix = self._parse_kv_text(self.edit_mirror.text())
-        self.settings_store.save(self.settings)
-
-    def _save_custom_hosts(self):
-        """G38-7 保存常用主机白名单：逗号/换行分隔 → tuple（小写归一，去空）。"""
-        text = self.edit_custom_hosts.text() or ""
-        parts = [p.strip().lower() for p in text.replace("\n", ",").split(",")]
-        self.settings.custom_hosts = tuple(p for p in parts if p)
-        self.settings_store.save(self.settings)
+    def _save_custom_hosts(self, *args, **kwargs):
+        """G45-6 转发 settings_panel.py（行为零变化）。"""
+        return self.settings_panel._save_custom_hosts(*args, **kwargs)
 
     def _save_precheck(self, checked):
         """G38-3 保存远端可达性预检开关。"""
@@ -812,63 +684,39 @@ class MainWindow(QMainWindow):
         self.settings_store.save(self.settings)
 
     @staticmethod
+    @staticmethod
     def _parse_kv_text(text: str) -> dict:
-        """解析多行 `key=value` 文本 → dict；空 value 行删除条目，非法行忽略。"""
-        out: dict = {}
-        for line in (text or "").splitlines():
-            line = line.strip()
-            if not line or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key = key.strip().lower()
-            value = value.strip()
-            if not key or not value:
-                continue
-            out[key] = value
-        return out
+        """G45-6 转发 settings_panel.py（行为零变化）。"""
+        from .settings_panel import SettingsPanel
+        return SettingsPanel._parse_kv_text(text)
 
-    def _save_auto_clear(self, checked):
-        self.settings.auto_clear = bool(checked)
-        self.settings_store.save(self.settings)
+    def _save_auto_clear(self, *args, **kwargs):
+        """G45-6 转发 settings_panel.py（行为零变化）。"""
+        return self.settings_panel._save_auto_clear(*args, **kwargs)
 
-    def _save_fetch_unshallow(self, checked):
-        self.settings.fetch_unshallow = bool(checked)
-        self.settings_store.save(self.settings)
+    def _save_fetch_unshallow(self, *args, **kwargs):
+        """G45-6 转发 settings_panel.py（行为零变化）。"""
+        return self.settings_panel._save_fetch_unshallow(*args, **kwargs)
 
-    def _save_submodule(self, checked):
-        self.settings.submodule = bool(checked)
-        self.settings_store.save(self.settings)
+    def _save_submodule(self, *args, **kwargs):
+        """G45-6 转发 settings_panel.py（行为零变化）。"""
+        return self.settings_panel._save_submodule(*args, **kwargs)
 
-    def _save_clipboard_watch(self, checked):
-        """G09-1 保存剪贴板监听开关并启停 watcher。"""
-        self.settings.clipboard_watch = bool(checked)
-        self.settings_store.save(self.settings)
-        try:
-            self.clipboard_watcher._enabled_flag = bool(checked)
-            if checked:
-                self.clipboard_watcher.start()
-                self._emit_log(_fmt_dt(), LogLevel.INFO, "剪贴板监听已开启。")
-            else:
-                self.clipboard_watcher.stop()
-                self._emit_log(_fmt_dt(), LogLevel.INFO, "剪贴板监听已关闭。")
-        except Exception:
-            pass
+    def _save_clipboard_watch(self, *args, **kwargs):
+        """G45-6 转发 settings_panel.py（行为零变化）。"""
+        return self.settings_panel._save_clipboard_watch(*args, **kwargs)
 
-    def _save_finish_sound(self, checked):
-        """G35-2 保存任务完成提示音开关。"""
-        self.settings.finish_sound = bool(checked)
-        self.settings_store.save(self.settings)
+    def _save_finish_sound(self, *args, **kwargs):
+        """G45-6 转发 settings_panel.py（行为零变化）。"""
+        return self.settings_panel._save_finish_sound(*args, **kwargs)
 
-    def _save_animations(self, checked):
-        """G36-6 保存任务完成动效开关。"""
-        self.settings.animations = bool(checked)
-        self.settings_store.save(self.settings)
+    def _save_animations(self, *args, **kwargs):
+        """G45-6 转发 settings_panel.py（行为零变化）。"""
+        return self.settings_panel._save_animations(*args, **kwargs)
 
-    def _save_auto_update(self, value):
-        """G37-4 保存自动更新间隔并按新间隔重启定时器。"""
-        self.settings.auto_update_minutes = int(value or 0)
-        self.settings_store.save(self.settings)
-        self._restart_auto_update_timer()
+    def _save_auto_update(self, *args, **kwargs):
+        """G45-6 转发 settings_panel.py（行为零变化）。"""
+        return self.settings_panel._save_auto_update(*args, **kwargs)
 
     def _on_clipboard_url(self, url: str):
         """剪贴板检测到仓库地址：写日志 + 状态栏提示 + 填入输入框（不自动启动）。"""
@@ -879,21 +727,9 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-    def _save_theme(self, index):
-        """G05-1 保存主题选择并即时应用到主窗口。"""
-        key = self.theme_combo.itemData(index) if index >= 0 else "deep"
-        key = key or "deep"
-        self.settings.theme = key
-        self.settings_store.save(self.settings)
-        try:
-            from ..ui import theme as _th
-            _th.apply_theme(key)
-            self.setStyleSheet(_th.qss_for_scale(getattr(self.settings, "font_scale", 1.0)))
-            self._apply_theme_to_children()
-        except Exception:
-            pass
-
-    # --------------------------------------------------------- G10-1 字号缩放
+    def _save_theme(self, *args, **kwargs):
+        """G45-6 转发 settings_panel.py（行为零变化）。"""
+        return self.settings_panel._save_theme(*args, **kwargs)
     def _apply_font_scale(self):
         try:
             from ..ui import theme as _th
@@ -1291,407 +1127,89 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------ 槽
     def _on_engine_line(self, index, text, level):
-        self._emit_log(_fmt_dt(), LogLevel(level or "info"),
-                       f"[{index}] {text}" if index is not None else text)
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._on_engine_line(index, text, level)
 
     def _prepare_table(self, n):
-        # 排序开启下先关掉再重建，避免插入行时被自动重排打乱 index
-        was_sorting = self.table.isSortingEnabled()
-        self.table.setSortingEnabled(False)
-        self.table.setRowCount(0)
-        self.table.setRowCount(n)
-        self.table.setSortingEnabled(was_sorting)
-        # 过滤状态保持
-        self._filter_progress_rows(getattr(self, "_progress_filter_text", ""))
-        # G36-5 空态引导：无行 → 显示 overlay
-        self._update_empty_download()
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._prepare_table(n)
 
     def _update_empty_download(self):
-        """G36-5 下载中心空态：进度表无可见行时显示引导 overlay。"""
-        try:
-            ov = getattr(self, "_empty_download", None)
-            if ov is None:
-                return
-            visible = self.table.rowCount() == 0
-            ov.setVisible(visible)
-            if visible:
-                ov.setGeometry(self.table.rect())
-                ov.raise_()
-        except Exception:
-            pass
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._update_empty_download()
 
     def _add_table_row(self, index, spec: RepoSpec):
-        # 关闭排序再插入行，保证 index 与行号对齐（引擎回调按 index 定位）
-        was_sorting = self.table.isSortingEnabled()
-        if was_sorting:
-            self.table.setSortingEnabled(False)
-        name_item = QTableWidgetItem(spec.folder_name)
-        name_item.setToolTip(spec.url_https)
-        name_item.setData(Qt.ItemDataRole.UserRole, spec.folder_name)  # 供过滤
-        # G21-1：行内保存 engine index，排序/过滤后暂停仍能定位正确任务
-        name_item.setData(Qt.ItemDataRole.UserRole + 1, int(index))
-        self.table.setItem(index, 0, name_item)
-        prog = QProgressBar()
-        prog.setRange(0, 0)
-        prog.setFormat("%p%")
-        self.table.setCellWidget(index, 1, prog)
-        status_item = QTableWidgetItem("等待中")
-        status_item.setData(Qt.ItemDataRole.UserRole, "pending")  # 供排序
-        status_item.setForeground(QColor(PALETTE["text_dim"]))
-        self.table.setItem(index, 2, status_item)
-        act_item = QTableWidgetItem("—")
-        act_item.setForeground(QColor(PALETTE["text_dim"]))
-        self.table.setItem(index, 3, act_item)
-        msg_item = QTableWidgetItem("—")
-        msg_item.setForeground(QColor(PALETTE["text_dim"]))
-        self.table.setItem(index, 4, msg_item)
-        if was_sorting:
-            self.table.setSortingEnabled(True)
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._add_table_row(index, spec)
 
-    # --------------------------------------------------------- G02-1/2 搜索与排序
     def _schedule_progress_filter(self, text=""):
-        """防抖：停止上一个定时器，200ms 后应用过滤。"""
-        self._progress_filter_text = text
-        if not hasattr(self, "_pf_timer"):
-            from PyQt6.QtCore import QTimer
-            self._pf_timer = QTimer(self)
-            self._pf_timer.setSingleShot(True)
-            self._pf_timer.setInterval(200)
-            self._pf_timer.timeout.connect(lambda: self._filter_progress_rows(text))
-        self._pf_timer.start()
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._schedule_progress_filter(text)
 
     def _filter_progress_rows(self, text=""):
-        """按仓库名校验过滤进度表行；返回可见行数（供测试）。"""
-        q = (text or "").strip().lower()
-        hidden = 0
-        for r in range(self.table.rowCount()):
-            it = self.table.item(r, 0)
-            name = it.text() if it else ""
-            if q and q not in name.lower():
-                self.table.hideRow(r)
-                hidden += 1
-            else:
-                self.table.showRow(r)
-        return self.table.rowCount() - hidden
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._filter_progress_rows(text)
 
     def _on_sort_changed(self, section, order):
-        """状态列排序：用 UserRole 存的优先级；其余列默认字典序。"""
-        try:
-            order_map = {"running": 0, "pending": 1, "success": 2,
-                         "conflict": 3, "failed": 4, "cancelled": 5, "skipped": 6}
-            if section == 2:
-                for r in range(self.table.rowCount()):
-                    it = self.table.item(r, 2)
-                    if it is not None:
-                        # 显示文本含符号后缀（G36-2），按 UserRole 原始状态值映射优先级
-                        base = it.data(Qt.ItemDataRole.UserRole) or it.text()
-                        pri = order_map.get(base, 99)
-                        it.setData(Qt.ItemDataRole.UserRole + 1, pri)
-        except Exception:
-            pass
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._on_sort_changed(section, order)
 
-    # --------------------------------------------------------- G02-3 单仓库暂停
     def pause_selected(self):
-        """暂停进度表中选中的行（仅取消该 worker，其余继续）。
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel.pause_selected()
 
-        G21-1：行号只是视觉位置（排序/过滤后与 engine index 脱钩），
-        必须从行数据读回真实 index 再暂停。
-        """
-        rows = sorted({i.row() for i in self.table.selectedIndexes()})
-        if not rows:
-            return
-        paused = 0
-        for r in rows:
-            it = self.table.item(r, 0)
-            idx = it.data(Qt.ItemDataRole.UserRole + 1) if it is not None else None
-            if idx is None:
-                idx = r  # 兼容：无标记行退化为旧行为
-            if (hasattr(self, "engine") and self.engine is not None
-                    and self.engine.pause_task(int(idx))):
-                paused += 1
-        self._emit_log(_fmt_dt(), LogLevel.WARN,
-                       f"已请求暂停 {paused} 个任务（其余继续）…")
-        self.statusBar().showMessage(f"正在暂停 {paused} 个任务…")
-
-    # --------------------------------------------------------- G35-1 进度表右键菜单
     def _progress_table_menu(self, pos):
-        """进度表右键菜单：重试此仓库 / 复制错误详情 / 打开所在目录。
-
-        FAILED/CANCELLED 行可用「重试此仓库」；其余动作对所有行可用。
-        """
-        row = self.table.rowAt(pos.y())
-        if row < 0:
-            return
-        name_item = self.table.item(row, 0)
-        status_item = self.table.item(row, 2)
-        if name_item is None or status_item is None:
-            return
-        from PyQt6.QtWidgets import QMenu
-        menu = QMenu(self)
-        # 用 UserRole 存的原始状态键判断（符号只是视觉后缀，不参与逻辑）
-        status_key = status_item.data(Qt.ItemDataRole.UserRole) or ""
-        if status_key in ("failed", "cancelled"):
-            act_retry = menu.addAction("⟳ 重试此仓库")
-            act_retry.triggered.connect(
-                lambda _=False, r=row: self._retry_table_row(r))
-            menu.addSeparator()
-        act_copy = menu.addAction("复制错误详情")
-        act_copy.triggered.connect(
-            lambda _=False, r=row: self._copy_row_detail(r))
-        act_open = menu.addAction("打开所在目录")
-        act_open.triggered.connect(
-            lambda _=False, r=row: self._open_row_dir(r))
-        menu.exec(self.table.viewport().mapToGlobal(pos))
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._progress_table_menu(pos)
 
     def _retry_table_row(self, row: int):
-        """单仓库重试：把该行 spec 经 _launch 重新调度（其余任务不受影响）。"""
-        if self.busy:
-            QMessageBox.information(self, "提示", "有任务正在运行，请等本轮结束后重试。")
-            return
-        idx = self._row_engine_index(row)
-        spec = self.row_specs.get(idx)
-        if spec is None:
-            return
-        target = self.target_edit.text().strip() or str(self.data_dir / "clones")
-        self._launch([spec], target_root=Path(target),
-                     shallow=False, depth=self.depth_spin.value(), clear_input=False)
-        self._emit_log(_fmt_dt(), LogLevel.WARN, f"已重试仓库：{spec.display}")
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._retry_table_row(row)
 
     def _copy_row_detail(self, row: int):
-        """复制该行错误详情（message + detail）到剪贴板。"""
-        msg_item = self.table.item(row, 4)
-        detail = ""
-        if msg_item is not None:
-            detail = msg_item.toolTip() or msg_item.text()
-        from PyQt6.QtWidgets import QApplication as _QApp
-        _QApp.clipboard().setText(detail)
-        self.statusBar().showMessage("错误详情已复制")
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._copy_row_detail(row)
 
     def _open_row_dir(self, row: int):
-        """打开该行仓库所在目录（Windows startfile / POSIX 打开器）。"""
-        idx = self._row_engine_index(row)
-        spec = self.row_specs.get(idx)
-        if spec is None:
-            return
-        if spec.local_path:
-            p = Path(spec.local_path)
-        else:
-            p = Path(self.target_edit.text().strip() or self.data_dir / "clones") / spec.folder_name
-        if not p.is_dir():
-            QMessageBox.warning(self, "目录不存在", str(p))
-            return
-        if sys.platform == "win32":
-            os.startfile(str(p))  # noqa
-        else:
-            import shutil
-            openers = ("xdg-open", "open")
-            for op in openers:
-                if shutil.which(op):
-                    import subprocess
-                    subprocess.Popen([op, str(p)])
-                    break
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._open_row_dir(row)
 
-    def _row_engine_index(self, row: int) -> int:
-        """从表格行读回 engine index（UserRole+1；排序/过滤后仍精确）。"""
-        it = self.table.item(row, 0)
-        idx = it.data(Qt.ItemDataRole.UserRole + 1) if it is not None else None
-        return int(idx) if idx is not None else row
+    def _row_engine_index(self, row: int):
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._row_engine_index(row)
 
     @pyqtSlot(int, str)
     def _on_worker_progress(self, index, percent):
-        if not (0 <= index < self.table.rowCount()):
-            return
-        bar = self.table.cellWidget(index, 1)
-        if isinstance(bar, QProgressBar) and percent:
-            try:
-                bar.setRange(0, 100)
-                bar.setValue(int(percent))
-            except Exception:
-                pass
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._on_worker_progress(index, percent)
 
-    # 高频进度详情（速率/对象数）节流：合并为 300ms 批量刷新，32 并发不刷屏主线程
     @pyqtSlot(int, str)
     def _on_worker_progress_detail(self, index, text):
-        if not (0 <= index < self.table.rowCount()):
-            return
-        self._detail_batch[index] = text
-        if not self._detail_timer.isActive():
-            self._detail_timer.start()
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._on_worker_progress_detail(index, text)
 
     def _flush_detail_batch(self):
-        if not getattr(self, "_detail_batch", None):
-            return
-        batch, self._detail_batch = self._detail_batch, {}
-        for idx, text in batch.items():
-            w = self.table.cellWidget(idx, 1)
-            if isinstance(w, QProgressBar):
-                try:
-                    w.setFormat(f"%p%  {text}")
-                except Exception:
-                    pass
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._flush_detail_batch()
 
     @pyqtSlot(int, SyncResult)
     def _on_worker_result(self, index, res: SyncResult):
-        bar = self.table.cellWidget(index, 1)
-        if isinstance(bar, QProgressBar):
-            bar.setRange(0, 1)
-            bar.setValue(1)
-        status_map = {
-            SyncStatus.SUCCESS: (PALETTE["accent2"], "成功 ✓"),
-            SyncStatus.FAILED: (PALETTE["error"], "失败 ✕"),
-            SyncStatus.CANCELLED: (PALETTE["warning"], "已取消 ⊘"),
-            SyncStatus.CONFLICT: (PALETTE["warning"], "冲突 ⚠"),
-            SyncStatus.SKIPPED: (PALETTE["text_dim"], "跳过 →"),
-            SyncStatus.RUNNING: (PALETTE["accent"], "更新中…"),
-        }
-        color, label = status_map.get(res.status, (PALETTE["text"], str(res.status.value)))
-        # G22-4：托盘计数（成功/失败分流；冲突/失败归 bad，其余终态归 ok）
-        try:
-            if getattr(self, "tray", None) is not None:
-                if res.status in (SyncStatus.FAILED, SyncStatus.CONFLICT):
-                    self.tray.update_counts(bad_delta=1)
-                else:
-                    self.tray.update_counts(ok_delta=1)
-        except Exception:
-            pass
-        st = self.table.item(index, 2)
-        st.setText(label)
-        st.setForeground(QColor(color))
-        # 状态原始值存 UserRole：排序/右键/统计按原始值判断（符号仅视觉）
-        st.setData(Qt.ItemDataRole.UserRole, res.status.value)
-        # G35-8 状态格 tooltip：message + detail 拼接（与详情列 tooltip 互补）
-        st.setToolTip(f"{res.message or ''}" + (f"\n{res.detail or ''}" if res.detail else ""))
-        act = self.table.item(index, 3)
-        action_label = {
-            "cloned": "新建克隆",
-            "updated": f"增量 +{res.commits}",
-            "fetched": "已最新",
-            "empty": "空仓库",
-            "skipped": "跳过",
-            "conflict": "冲突保留",
-            "cancelled": "取消",
-            "failed": "失败",
-        }.get(res.action.value, res.action.value)
-        act.setText(action_label)
-        act.setForeground(QColor(color))
-        msg = self.table.item(index, 4)
-        msg.setText(res.message)
-        msg.setToolTip(res.detail or "")
-        # G36-6 完成动效：成功绿/失败红背景色 1.2s 消隐（设置开关；offscreen 自动关）
-        if bool(getattr(self.settings, "animations", True)) and \
-                os.environ.get("QT_QPA_PLATFORM") != "offscreen":
-            try:
-                self._animate_result_row(index, res.status)
-            except Exception:
-                pass
-        # 同步成功 → 地址入 URL 历史（G02-4）
-        try:
-            if res.status == SyncStatus.SUCCESS:
-                self.url_history.add(res.spec.url_https)
-        except Exception:
-            pass
-        # 记录到 DB 由 worker 内部完成
-        self._emit_log(_fmt_dt(), LogLevel.INFO if res.status == SyncStatus.SUCCESS else LogLevel.WARN,
-                        f"[{index}] {label}：{res.message}（{action_label}）")
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._on_worker_result(index, res)
 
     def _animate_result_row(self, index: int, status: SyncStatus):
-        """G36-6 完成动效：成功绿/失败红背景色 1.2s 淡出到主题底色。
-
-        仅在非 offscreen（有真实渲染）且设置开启时由 _on_worker_result 调用。
-        动效结束后背景复位为主题面板色，不影响排序/过滤的 UserRole 数据。
-        """
-        try:
-            from PyQt6.QtCore import QVariantAnimation
-            from PyQt6.QtGui import QBrush
-            st = self.table.item(index, 2)
-            if st is None:
-                return
-            flash = PALETTE["accent2"] if status == SyncStatus.SUCCESS else PALETTE["error"]
-            start_color = QColor(flash)
-            base_color = QColor(PALETTE["panel"])
-            anim = QVariantAnimation(self)
-            anim.setDuration(1200)
-            anim.setStartValue(start_color)
-            anim.setEndValue(base_color)
-            anim.valueChanged.connect(
-                lambda c: st.setBackground(QBrush(QColor(c))))
-            anim.finished.connect(
-                lambda: st.setBackground(QBrush(base_color)))
-            # 保留引用防止被 GC（存到窗口级列表）
-            if not hasattr(self, "_row_anims"):
-                self._row_anims = []
-            self._row_anims.append(anim)
-            anim.finished.connect(lambda: self._row_anims.remove(anim))
-            anim.start()
-        except Exception:
-            pass
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._animate_result_row(index, status)
 
     # ------------------------------------------------------------ 槽
     @pyqtSlot()
     def _on_engine_finished(self):
-        if not self.busy:
-            return
-        done = 0
-        ok = fail = conflict = 0
-        for i in range(self.table.rowCount()):
-            it = self.table.item(i, 2)
-            if not it:
-                continue
-            # 用 UserRole 存的原始状态值统计（显示文本含符号后缀，不再做字符串匹配）
-            t = it.data(Qt.ItemDataRole.UserRole) or it.text()
-            if t in ("success", "failed", "cancelled", "conflict", "skipped"):
-                done += 1
-                if t == "success":
-                    ok += 1
-                elif t == "conflict":
-                    conflict += 1
-                elif t == "failed":
-                    fail += 1
-        self.busy = False
-        self._reset_buttons()
-        try:
-            if getattr(self, "tray", None) is not None:
-                self.tray.update_counts(reset=True)  # 空闲态 tooltip（G22-4）
-        except Exception:
-            pass
-        self.statusBar().showMessage(
-            f"完成：成功 {ok} · 冲突 {conflict} · 失败 {fail}")
-        completed = f"成功 {ok} · 冲突 {conflict} · 失败 {fail}"
-        self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"全部任务结束：{completed}")
-        # 下载完成自动清空输入框
-        if getattr(self, "_clear_after_finish", False):
-            self.repo_input.clear()
-            self._emit_log(_fmt_dt(), LogLevel.SYSTEM, "下载完成，已自动清空输入框。")
-        self._load_db_into_grid()
-        # 全部完成系统通知（托盘存在时）
-        try:
-            if getattr(self, "tray", None) is not None:
-                self.tray.notify(
-                    "全部任务完成",
-                    f"成功 {ok} · 冲突 {conflict} · 失败 {fail}")
-        except Exception:
-            pass
-        # G35-2 完成提示音（设置开关默认开；QApplication.beep 无 UI 影响）
-        try:
-            if bool(getattr(self.settings, "finish_sound", True)):
-                from PyQt6.QtWidgets import QApplication as _QApp
-                _QApp.beep()
-        except Exception:
-            pass
-        # 多根目录继任：还有下一组则继续（QTimer 调度避免嵌套重入）
-        if getattr(self, "_multi_root_relay", False) and self._multi_root_update:
-            QTimer.singleShot(0, self._update_next_root)
-        else:
-            self._multi_root_relay = False
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._on_engine_finished()
 
     def _reset_buttons(self):
-        self.btn_start.setEnabled(True)
-        self.btn_cancel.setEnabled(False)
-        self.btn_update_all.setEnabled(True)
-        self.btn_cancel_manage.setEnabled(False)
-        self.repo_input.setEnabled(True)
-        self.mode_combo.setEnabled(True)
-        self.depth_spin.setEnabled(self.mode_combo.currentIndex() in (1, 2))
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._reset_buttons()
 
     def cancel_all(self):
         if hasattr(self, "engine") and self.engine is not None:
@@ -1700,77 +1218,35 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("正在取消…")
         # 由结果槽统一复位
 
-    def _any_cancel(self) -> bool:
-        if hasattr(self, "engine") and self.engine is not None:
-            return self.engine.is_cancelled()
-        return any(f() for f in getattr(self, "flags", {}).values())
-
-    # --------------------------------------------------------- G36-8 全局热键
+    def _any_cancel(self):
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._any_cancel()
     def _hotkey_start_cancel(self):
-        """Ctrl+Alt+S：空闲→开始全部；运行中→取消全部。"""
-        if self.busy:
-            self.cancel_all()
-        else:
-            self.start_all()
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._hotkey_start_cancel()
 
     def _hotkey_show_window(self):
-        """Ctrl+Alt+M：显示并激活主窗口（托盘最小化后可唤回）。"""
-        try:
-            self.show()
-            self.raise_()
-            self.activateWindow()
-        except Exception:
-            pass
-
-    # ------------------------------------------------------------ 管理页
+        """G45-6 转发 progress_table.py（行为零变化）。"""
+        return self.progress_panel._hotkey_show_window()
     def _load_db_into_grid(self):
-        """从 DB 加载仓库列表到模型（全 host，含本地导入仓库；批量懒渲染）。"""
-        self.manage_model.set_rows(self.db.list_repos())
-        base = f"共 {self.manage_model.rowCount()} 个仓库"
-        # G35-6 平台分布：内存聚合（host_summary 由 manage_model 提供）
-        try:
-            hs = self.manage_model.host_summary()
-            if hs:
-                base += f" ｜ {hs}"
-        except Exception:
-            pass
-        self.manage_stats.setText(base)
-        # G36-5 管理页空态：无仓库时显示引导 overlay
-        try:
-            ov = getattr(self, "_empty_manage", None)
-            if ov is not None:
-                visible = self.manage_model.rowCount() == 0
-                ov.setVisible(visible)
-                if visible:
-                    ov.setGeometry(self.manage_table.rect())
-                    ov.raise_()
-        except Exception:
-            pass
+        """G45-6 转发 manage_panel.py（行为零变化）。"""
+        return self.manage_panel._load_db_into_grid()
 
     def _refresh_manage(self):
-        self._load_db_into_grid()
+        """G45-6 转发 manage_panel.py（行为零变化）。"""
+        return self.manage_panel._refresh_manage()
 
     def _on_manage_double_clicked(self, index):
-        row = index.row()
-        r = self.manage_model.row_at(row)
-        if r is not None:
-            self.show_history(r.repo_id)
+        """G45-6 转发 manage_panel.py（行为零变化）。"""
+        return self.manage_panel._on_manage_double_clicked(index)
 
     def _on_hist_row_clicked(self, row: int):
-        """G03-7 行内「查看」按钮委托回调：直接打开该行历史（无需先选中）。"""
-        r = self.manage_model.row_at(row)
-        if r is not None:
-            self.show_history(r.repo_id)
+        """G45-6 转发 manage_panel.py（行为零变化）。"""
+        return self.manage_panel._on_hist_row_clicked(row)
 
     def _on_hist_btn(self):
-        """兼容入口：对当前选中的行打开历史（多选场景仍可用）。"""
-        idx = self.manage_table.selectionModel().selectedRows()
-        if not idx:
-            return
-        for i in idx:
-            r = self.manage_model.row_at(i.row())
-            if r is not None:
-                self.show_history(r.repo_id)
+        """G45-6 转发 manage_panel.py（行为零变化）。"""
+        return self.manage_panel._on_hist_btn()
 
     def import_local_repos(self):
         """打开「导入本地已有仓库」对话框。"""
@@ -1811,82 +1287,15 @@ class MainWindow(QMainWindow):
         RepoDetailDialog(repo=repo, history=hist, parent=self).exec()
 
     def delete_selected(self):
-        rows = sorted({i.row() for i in self.manage_table.selectedIndexes()})
-        if not rows:
-            QMessageBox.information(self, "提示", "请先选择要删除的记录。")
-            return
-        if QMessageBox.question(self, "确认删除",
-                                f"将从数据库中删除 {len(rows)} 条记录（不影响已下载的仓库目录）。\n继续？") != QMessageBox.StandardButton.Yes:
-            return
-        repo_ids = set()
-        for r in rows:
-            row = self.manage_model.row_at(r)
-            if row is not None:
-                rec = self.db.get_repo(row.owner, row.repo, row.host)
-                if rec:
-                    repo_ids.add(rec["id"])
-        for rid in repo_ids:
-            self.db.delete_repo(rid)
-        self._load_db_into_grid()
-        self._emit_log(_fmt_dt(), LogLevel.INFO, f"已删除 {len(repo_ids)} 条数据库记录")
-
-    # --------------------------------------------------------- G35-9 批量操作
+        """G45-6 转发 manage_panel.py（行为零变化）。"""
+        return self.manage_panel.delete_selected()
     def batch_tag_selected(self):
-        """给选中的仓库追加标签（多选批量，覆盖式设置指定标签）。"""
-        rows = sorted({i.row() for i in self.manage_table.selectedIndexes()})
-        if not rows:
-            QMessageBox.information(self, "提示", "请先选择要打标签的仓库。")
-            return
-        tag, ok = QInputDialog.getText(
-            self, "批量打标签", "输入标签名（多个用逗号分隔，将覆盖原标签）：")
-        if not ok:
-            return
-        tags = [t.strip() for t in tag.split(",") if t.strip()]
-        if not tags:
-            return
-        n = 0
-        for r in rows:
-            row = self.manage_model.row_at(r)
-            if row is not None:
-                rec = self.db.get_repo(row.owner, row.repo, row.host)
-                if rec:
-                    self.db.set_tags(rec["id"], tags)
-                    n += 1
-        self._load_db_into_grid()
-        self._emit_log(_fmt_dt(), LogLevel.INFO, f"已为 {n} 个仓库设置标签：{', '.join(tags)}")
-        self.statusBar().showMessage(f"已为 {n} 个仓库设置标签")
+        """G45-6 转发 manage_panel.py（行为零变化）。"""
+        return self.manage_panel.batch_tag_selected()
 
     def export_selected_csv(self):
-        """把选中的仓库导出为 CSV（仅所选行；无历史则同样导出元数据）。"""
-        rows = sorted({i.row() for i in self.manage_table.selectedIndexes()})
-        if not rows:
-            QMessageBox.information(self, "提示", "请先选择要导出的仓库。")
-            return
-        path, _ = QFileDialog.getSaveFileName(
-            self, "导出所选仓库", str(self.data_dir / "selected_repos.csv"),
-            "CSV (*.csv)")
-        if not path:
-            return
-        try:
-            import csv as _csv
-            sel = []
-            for r in rows:
-                row = self.manage_model.row_at(r)
-                if row is not None:
-                    sel.append({
-                        "owner": row.owner, "repo": row.repo, "host": row.host,
-                        "local_path": row.local_path, "folder_name": row.folder_name,
-                        "tags": row.tags,
-                    })
-            with open(path, "w", newline="", encoding="utf-8-sig") as f:
-                w = _csv.DictWriter(f, fieldnames=["owner", "repo", "host",
-                                                   "local_path", "folder_name", "tags"])
-                w.writeheader()
-                w.writerows(sel)
-            self._emit_log(_fmt_dt(), LogLevel.INFO, f"已导出所选 {len(sel)} 个仓库：{path}")
-            self.statusBar().showMessage(f"已导出 {len(sel)} 个仓库")
-        except Exception as e:
-            QMessageBox.critical(self, "导出失败", str(e))
+        """G45-6 转发 manage_panel.py（行为零变化）。"""
+        return self.manage_panel.export_selected_csv()
 
     def resizeEvent(self, e):
         """G36-5 空态 overlay 跟随表格尺寸重定位。"""

@@ -26,6 +26,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from . import main_window as _mw  # noqa: F401 - 迁移回调引用 main_window 模块级符号
+from .theme import LogLevel
+
 if TYPE_CHECKING:  # 仅类型标注（避免循环导入）
     from ..db.settings import Settings
     from .main_window import MainWindow
@@ -359,3 +362,161 @@ def build_log_box(owner: MainWindow) -> QGroupBox:
     owner.log_view.setMinimumHeight(100)
     l2.addWidget(owner.log_view, 1)
     return g2
+
+
+
+class SettingsPanel(QWidget):
+    """G45-6 设置回调面板：_save_* 等设置持久化回调迁入（MainWindow 保留同名转发）。
+
+    设置控件仍构建在 MainWindow 上（build_settings_ui(owner)）；本面板仅持有回调，
+    经 owner 访问窗口属性（settings / settings_store / engine / edit_proxy 等）。
+    对外方法名与 MainWindow 保持一致。
+    """
+
+    def __init__(self, owner, parent=None):
+        super().__init__(parent)
+        self.owner = owner
+
+    @staticmethod
+    def _parse_kv_text(text: str) -> dict:
+        """解析多行 `key=value` 文本 → dict；空 value 行删除条目，非法行忽略。"""
+        out: dict = {}
+        for line in (text or "").splitlines():
+            line = line.strip()
+            if not line or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip().lower()
+            value = value.strip()
+            if not key or not value:
+                continue
+            out[key] = value
+        return out
+
+    def _save_concurrency(self, value):
+        self.owner.settings.concurrency = int(value)
+        if hasattr(self.owner, "engine") and self.owner.engine is not None:
+            self.owner.engine.set_concurrency(int(value))
+            self.owner.thread_lbl.setText(f"并行线程 {self.owner.engine.concurrency}")
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_fetch_timeout(self, value):
+        self.owner.settings.fetch_timeout = int(value)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_retries(self, value):
+        self.owner.settings.retries = int(value)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_proxy(self):
+        self.owner.settings.proxy = self.owner.edit_proxy.text().strip()
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _detect_proxy_now(self):
+        """G04-3 一键自动检测系统代理并填入（可保存）。"""
+        try:
+            from ..app.proxy import detect_system_proxy
+            val = detect_system_proxy()
+            if val:
+                self.owner.edit_proxy.setText(val)
+                self.owner.settings.proxy = val
+                self.owner.settings_store.save(self.owner.settings)
+                self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO, f"已自动检测到代理：{val}")
+                self.owner.statusBar().showMessage(f"代理已填入：{val}")
+            else:
+                self.owner._emit_log(_mw._fmt_dt(), LogLevel.WARN, "未检测到系统代理。")
+                self.owner.statusBar().showMessage("未检测到系统代理")
+        except Exception as e:
+            self.owner._emit_log(_mw._fmt_dt(), LogLevel.WARN, f"自动检测代理失败：{e}")
+
+    def _save_rate_limit(self, value):
+        """G04-4 保存下载限速（KiB/s，0=不限）。"""
+        self.owner.settings.rate_limit_kbps = int(value or 0)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_token(self):
+        self.owner.settings.token = self.owner.edit_token.text().strip()
+        self.owner.settings_store.save(self.owner.settings)
+
+    # --------------------------------------------------------- G38-1~7 网络设置保存
+
+    def _save_host_tokens(self):
+        """G38-1 保存按 host 凭据映射：多行 `host=token` → settings.host_tokens。
+
+        - 逐行按首个 `=` 拆分；key 小写归一、value 去空白
+        - value 为空的行 = 删除该 host 条目
+        - 无 `=`/空行忽略（用户删除行即移除凭据）
+        """
+        self.owner.settings.host_tokens = self._parse_kv_text(self.owner.edit_host_tokens.text())
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_mirror(self):
+        """G38-2 保存镜像前缀映射：多行 `host=prefix` → settings.mirror_prefix。"""
+        self.owner.settings.mirror_prefix = self._parse_kv_text(self.owner.edit_mirror.text())
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_custom_hosts(self):
+        """G38-7 保存常用主机白名单：逗号/换行分隔 → tuple（小写归一，去空）。"""
+        text = self.owner.edit_custom_hosts.text() or ""
+        parts = [p.strip().lower() for p in text.replace("\n", ",").split(",")]
+        self.owner.settings.custom_hosts = tuple(p for p in parts if p)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_auto_clear(self, checked):
+        self.owner.settings.auto_clear = bool(checked)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_fetch_unshallow(self, checked):
+        self.owner.settings.fetch_unshallow = bool(checked)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_submodule(self, checked):
+        self.owner.settings.submodule = bool(checked)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_clipboard_watch(self, checked):
+        """G09-1 保存剪贴板监听开关并启停 watcher。"""
+        self.owner.settings.clipboard_watch = bool(checked)
+        self.owner.settings_store.save(self.owner.settings)
+        try:
+            self.owner.clipboard_watcher._enabled_flag = bool(checked)
+            if checked:
+                self.owner.clipboard_watcher.start()
+                self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO, "剪贴板监听已开启。")
+            else:
+                self.owner.clipboard_watcher.stop()
+                self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO, "剪贴板监听已关闭。")
+        except Exception:
+            pass
+
+    def _save_finish_sound(self, checked):
+        """G35-2 保存任务完成提示音开关。"""
+        self.owner.settings.finish_sound = bool(checked)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_animations(self, checked):
+        """G36-6 保存任务完成动效开关。"""
+        self.owner.settings.animations = bool(checked)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_auto_update(self, value):
+        """G37-4 保存自动更新间隔并按新间隔重启定时器。"""
+        self.owner.settings.auto_update_minutes = int(value or 0)
+        self.owner.settings_store.save(self.owner.settings)
+        self.owner._restart_auto_update_timer()
+
+    def _save_theme(self, index):
+        """G05-1 保存主题选择并即时应用到主窗口。"""
+        key = self.owner.theme_combo.itemData(index) if index >= 0 else "deep"
+        key = key or "deep"
+        self.owner.settings.theme = key
+        self.owner.settings_store.save(self.owner.settings)
+        try:
+            from ..ui import theme as _th
+            _th.apply_theme(key)
+            self.owner.setStyleSheet(_th.qss_for_scale(getattr(self.owner.settings, "font_scale", 1.0)))
+            self.owner._apply_theme_to_children()
+        except Exception:
+            pass
+
+    # --------------------------------------------------------- G10-1 字号缩放

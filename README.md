@@ -111,6 +111,21 @@ python -m unittest discover -s tests -v
 
 （`tests/test_core.py` 内置本地裸仓库全程 E2E：克隆 → 增量子提交 → 已最新 → 冲突保留 → 残留目录重建。）
 
+## 覆盖率与回归（G45-1）
+
+本地复现 CI 门禁（全量约 16-20 分钟；Windows 需把 git 加入 PATH，自定义安装如 scoop 请先发行 `$env:PATH="<git 安装目录>\cmd;$env:PATH"`）：
+
+```powershell
+$env:QT_QPA_PLATFORM = "offscreen"
+python -m coverage run --source=gcm -m unittest discover -s tests
+python -m coverage report --fail-under=84
+```
+
+- 覆盖率门禁阈值与 CI 一致（`ci.yml` 的 `COVERAGE_FAIL_UNDER`），三平台矩阵跑同一门禁。
+- v7.6.0（G45-6）起 `gcm/ui/main_window.py` 已拆分（1791→1214 行）：
+  `manage_panel.py`（管理页 UI/动作+信号回传）、`progress_table.py`（进度表/过滤/结果回填/引擎收尾）、
+  `settings_panel.py`（设置回调）；控件名/方法名/信号全兼容，行为零变化。
+
 ## 后台挂机 / 长期运行
 
 - **内存**：日志环形缓冲上限 3000 条自动裁剪；worker 任务完成后自动释放；不用全局定时器轮询。
