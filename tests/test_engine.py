@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import subprocess
 import sys
 import tempfile
@@ -289,6 +290,105 @@ class TestEngineConcurrencyExtra(unittest.TestCase):
         self.assertEqual(errors, [], f"并发写 progress 不应抛异常: {errors}")
         data = load_progress(pp)
         self.assertIn("finished", data)
+
+
+
+
+class TestEngineParametrizedStress(unittest.TestCase):
+    """G45-2：参数化并发压力测试（固定种子 x 随机并发/仓库数 x 20% 失败注入）。
+
+    覆盖：结果集合一致（不丢任务、不重复完成）、失败仓库标记 FAILED、其余成功、
+    无死锁（每 seed 120s 超时护栏）、progress.json 与数据库落盘一致。
+    随机种子固定：seeds = [1, 7, 42]，每个 seed 一个 subTest，结果可复现。
+    参数范围：并发 2..32（引擎允许上限 32），仓库数 3..12（控制真实 git 时长），
+    失败注入约 20%（至少 1 个，用不存在/非法远端保证 clone 必失败）。
+    """
+
+    SEEDS = [1, 7, 42]
+    CONCURRENCY_MIN = 2
+    CONCURRENCY_MAX = 32
+    REPOS_MIN = 3
+    REPOS_MAX = 12
+    FAIL_RATIO = 0.2
+    SEED_TIMEOUT = 120.0
+
+    def test_stress_parametrized_seeds(self):
+        for seed in self.SEEDS:
+            rng = random.Random(seed)
+            concurrency = rng.randint(self.CONCURRENCY_MIN, self.CONCURRENCY_MAX)
+            n = rng.randint(self.REPOS_MIN, self.REPOS_MAX)
+            fail_count = max(1, int(round(n * self.FAIL_RATIO)))
+            bad_indices = set(rng.sample(range(n), fail_count))
+            with self.subTest(seed=seed, concurrency=concurrency, repos=n,
+                              fail_count=fail_count):
+                self._assert_seed(seed, concurrency, n, bad_indices)
+
+    def _assert_seed(self, seed: int, concurrency: int, n: int,
+                     bad_indices: set[int]):
+        base = Path(tempfile.mkdtemp(prefix=f"g45_{seed}_"))
+        remotes = {i: _init_remote(base, f"r{seed}_{i}") for i in range(n)}
+        specs = [_spec(f"s{seed}", f"r{i}", remotes[i]) for i in range(n)]
+        for i in bad_indices:
+            # 失败注入：换成不存在/非法远端，clone 必失败（仓库类错误，不重试）
+            specs[i] = _spec(f"s{seed}", f"bad{i}",
+                             base / "nonexistent_remote_zzz")
+
+        d = base / "data"
+        d.mkdir()
+        db = Database(d / "t.db")
+        pp = d / "progress.json"
+        engine = SyncEngine(base / "clones", db=db, progress_path=pp,
+                            concurrency=concurrency)
+        seen: dict[int, list] = {}
+        ended = []
+        engine.result.connect(lambda i, r: seen.setdefault(i, []).append(r))
+        engine.finished.connect(lambda: ended.append(True))
+
+        try:
+            launched = engine.launch(specs)
+            self.assertEqual(launched, n, "spec 无重复，应全部调度")
+            deadline = time.time() + self.SEED_TIMEOUT
+            while not ended and time.time() < deadline:
+                _pump()
+            self.assertTrue(
+                ended,
+                f"seed={seed} {self.SEED_TIMEOUT:.0f}s 内未收到 finished 信号（疑似死锁）")
+            self.assertEqual(len(ended), 1, "finished 应恰好触发一次")
+
+            # 不丢任务、不重复完成、结果集合与预期一致
+            self.assertEqual(sorted(seen.keys()), list(range(n)),
+                             f"seed={seed} 结果索引集合应恰好为 0..n-1")
+            self.assertTrue(all(len(v) == 1 for v in seen.values()),
+                            f"seed={seed} 同一索引不应重复完成")
+            for i, res_list in seen.items():
+                res = res_list[0]
+                if i in bad_indices:
+                    self.assertEqual(res.status, SyncStatus.FAILED,
+                                     f"seed={seed} idx={i} 应失败: {res.message}")
+                else:
+                    self.assertEqual(res.status, SyncStatus.SUCCESS,
+                                     f"seed={seed} idx={i} 应成功: {res.message}")
+                    self.assertTrue(
+                        (base / "clones" / res.spec.folder_name / "a.txt").exists(),
+                        f"seed={seed} idx={i} 克隆目录应存在")
+
+            # progress 落盘：finished 恰好 n 条且状态一致，failed 恰好 fail_count 条
+            data = json.loads(Path(pp).read_text(encoding="utf-8"))
+            self.assertEqual(len(data["finished"]), n,
+                             f"seed={seed} progress.finished 应恰好 n 条")
+            expect_status = {f"s{seed}/bad{i}": "failed" for i in bad_indices}
+            for item in data["finished"]:
+                expect = expect_status.get(item.get("key"), "success")
+                self.assertEqual(item.get("status"), expect,
+                                 f"seed={seed} progress {item.get('key')} 状态不符")
+            self.assertEqual(len(data.get("failed", [])), len(bad_indices),
+                             f"seed={seed} progress.failed 应记录 {len(bad_indices)} 条")
+
+            # 数据库：成功与失败均落库，共 n 条
+            self.assertEqual(db.count(), n, f"seed={seed} 数据库应记录 n 条")
+        finally:
+            db.close()
+            engine.shutdown()
 
 
 if __name__ == "__main__":
