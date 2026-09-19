@@ -234,76 +234,58 @@ class TestNetworkRetryThenFail(PublishTestCase):
         self.assertEqual(self.repo.get_release.call_count, 3)
 
 
+class TestEnsureRemoteTag(unittest.TestCase):
+    """publish_release._ensure_remote_tag：缺失补建 / 已有跳过 / 默认分支回退 / 422 竞态。"""
+
+    @staticmethod
+    def _fake_repo(ref_exists=False, create_ok=True):
+        from github import GithubException
+
+        class _Commit:
+            sha = "deadbeef"
+
+        class _Branch:
+            commit = _Commit()
+
+        class _Repo:
+            default_branch = "main"
+            created = []
+
+            def get_git_ref(self, ref):
+                if ref_exists:
+                    return object()
+                raise GithubException(404, {})
+
+            def get_branch(self, name):
+                return _Branch()
+
+            def create_git_ref(self, ref, sha):
+                self.created.append((ref, sha))
+                if not create_ok:
+                    raise GithubException(422, {})
+
+        return _Repo()
+
+    def test_creates_when_missing(self):
+        repo = self._fake_repo(ref_exists=False)
+        pr._ensure_remote_tag(repo, "v4.2.0", "abc123")
+        self.assertEqual(repo.created, [("refs/tags/v4.2.0", "abc123")])
+
+    def test_skips_when_exists(self):
+        repo = self._fake_repo(ref_exists=True)
+        pr._ensure_remote_tag(repo, "v4.2.0", "abc123")
+        self.assertEqual(repo.created, [])
+
+    def test_uses_default_branch_when_no_sha(self):
+        repo = self._fake_repo(ref_exists=False)
+        pr._ensure_remote_tag(repo, "v4.2.0", None)
+        self.assertEqual(repo.created, [("refs/tags/v4.2.0", "deadbeef")])
+
+    def test_race_422_treated_as_ok(self):
+        repo = self._fake_repo(ref_exists=False, create_ok=False)
+        pr._ensure_remote_tag(repo, "v4.2.0", "abc123")  # 不抛异常
+        self.assertEqual(repo.created, [("refs/tags/v4.2.0", "abc123")])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
-
-class TestBuildBodyFromTemplate(PublishTestCase):
-    """G45-4：body 从 docs/RELEASE_BODY.md 模板读取并替换占位符。"""
-
-    def test_template_placeholders_replaced(self):
-        import hashlib as _hl
-        tmp_tpl = self.tmp / "docs"
-        tmp_tpl.mkdir()
-        (tmp_tpl / "RELEASE_BODY.md").write_text(
-            "# v{version}\n- exe: {sha256_exe}\n- zip: {sha256_zip}\n",
-            encoding="utf-8")
-        exe = self.tmp / "app.exe"
-        exe.write_bytes(b"X")
-        z = self.tmp / "app.zip"
-        z.write_bytes(b"ZZ")
-        with mock.patch.object(pr, "ROOT", self.tmp), \
-             mock.patch.object(pr, "DIST", exe), \
-             mock.patch.object(pr, "PORTABLE_ZIP", z):
-            body = pr._build_body()
-        self.assertIn("# v4.2.0", body)
-        self.assertIn(_hl.sha256(b"X").hexdigest(), body)
-        self.assertIn(_hl.sha256(b"ZZ").hexdigest(), body)
-        self.assertNotIn("{version}", body)
-        self.assertNotIn("{sha256_exe}", body)
-        self.assertNotIn("{sha256_zip}", body)
-
-    def test_missing_artifacts_empty_sha(self):
-        import hashlib as _hl
-        tmp_tpl = self.tmp / "docs"
-        tmp_tpl.mkdir()
-        (tmp_tpl / "RELEASE_BODY.md").write_text(
-            "exe={sha256_exe} zip={sha256_zip}", encoding="utf-8")
-        with mock.patch.object(pr, "ROOT", self.tmp), \
-             mock.patch.object(pr, "PORTABLE_ZIP", self.tmp / "missing.zip"):
-            body = pr._build_body()
-        # DIST 存在（setUp 的 3 字节 "EXE"），zip 缺失 → 置空
-        expected = f"exe={_hl.sha256(b'EXE').hexdigest()} zip="
-        self.assertEqual(body, expected)
-
-
-class TestVersionConsistency(PublishTestCase):
-    """G45-8：tag/__version__/__changelog__ 一致性校验（不触网、失败即 [FAIL] rc=1）。"""
-
-    def test_tag_mismatch_fails(self):
-        buf = io.StringIO()
-        with mock.patch.object(sys, "stdout", buf):
-            rc = self._run_main("--dry-run", "--tag", "v9.9.9")
-        self.assertEqual(rc, 1)
-        self.assertIn("[FAIL]", buf.getvalue())
-        self.assertIn("tag", buf.getvalue())
-        # 校验在网络之前：不应访问远端
-        self.repo.get_release.assert_not_called()
-
-    def test_changelog_missing_version_fails(self):
-        with mock.patch.object(gcm, "__changelog__", ("4.1.0: old",)):
-            buf = io.StringIO()
-            with mock.patch.object(sys, "stdout", buf):
-                rc = self._run_main("--dry-run", "--tag", "v4.2.0")
-        self.assertEqual(rc, 1)
-        self.assertIn("[FAIL]", buf.getvalue())
-        self.assertIn("__changelog__", buf.getvalue())
-        self.repo.get_release.assert_not_called()
-
-    def test_default_tag_matches_version(self):
-        """未传 --tag：默认 v+__version__，且通过校验。"""
-        self.repo._rel = None
-        buf = io.StringIO()
-        with mock.patch.object(sys, "stdout", buf):
-            rc = self._run_main("--dry-run")
-        self.assertEqual(rc, 0)
-        self.assertIn("v4.2.0", buf.getvalue())

@@ -199,6 +199,45 @@ def _validate_version(tag: str, version: str, changelog) -> str | None:
     return expected_tag
 
 
+def _ensure_remote_tag(repo, tag: str, commit_sha: str | None = None) -> None:
+    """幂等补建远端 git tag：Release 存在但 refs/tags/<tag> 缺失时补建（实测 v8.0.0 出现该情况）。
+
+    - 查询 ref：存在 → 不动；404 → 创建；其它异常 → [WARN] 跳过不阻断发布。
+    - 创建时 sha 优先用传入的 commit_sha（Release target_commitish），
+      缺失则回退默认分支 HEAD；422（竞态已存在）→ 视为成功。
+    """
+    ref = "refs/tags/" + tag.split("/")[-1]  # GitHub tag 名不含斜杠
+    from github import GithubException
+    try:
+        repo.get_git_ref(ref)
+        print(f"[INFO] 远端 tag {ref} 已存在，无需补建")
+        return
+    except GithubException as e:
+        if e.status != 404:
+            print(f"[WARN] 查询远端 tag {ref} 失败（status={e.status}），跳过补建")
+            return
+    except Exception as e:  # noqa: BLE001
+        print(f"[WARN] 查询远端 tag {ref} 失败：{e}，跳过补建")
+        return
+    sha = commit_sha
+    if not sha:
+        try:
+            sha = repo.get_branch(repo.default_branch).commit.sha
+        except Exception as e:  # noqa: BLE001
+            print(f"[WARN] 无法解析默认分支 HEAD 补建 tag {ref}：{e}，跳过")
+            return
+    try:
+        repo.create_git_ref(ref=ref, sha=sha)
+        print(f"[OK] 已补建远端 tag {ref} -> {sha[:7]}")
+    except GithubException as e:
+        if e.status == 422:
+            print(f"[OK] 远端 tag {ref} 恰已存在（竞态），视为成功")
+        else:
+            print(f"[WARN] 补建远端 tag {ref} 失败（status={e.status}），跳过")
+    except Exception as e:  # noqa: BLE001
+        print(f"[WARN] 补建远端 tag {ref} 失败：{e}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="发布 Git-clone-Max Release")
     ap.add_argument("--dry-run", action="store_true", help="仅校验，不上传")
@@ -324,6 +363,14 @@ def main() -> int:
             print(f"    | ...（共 {len(_plines)} 行，其余省略）")
         print("[DRY] 校验通过，未做任何修改。")
         return 0
+
+    # G-补：保证远端 git tag 存在（Release 已存在但 tag 缺失时幂等补建）
+    try:
+        _commit = (getattr(rel, "target_commitish", None) or "").strip()
+        _call("校验远端 tag " + tag, started,
+              lambda: _ensure_remote_tag(repo, tag, commit_sha=_commit or None))
+    except Exception as e:  # noqa: BLE001
+        print(f"[WARN] 远端 tag 校验/补建跳过：{e}")
 
     # ------------------------- 幂等短路（核心） -------------------------
     # Release 已存在且同名附件也存在、且 asset.size == 本地产物 size → 跳过上传。
