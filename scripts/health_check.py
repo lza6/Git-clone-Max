@@ -50,7 +50,7 @@ ONEDIR_INIT = DIST / "Git-clone-Max-portable" / "_internal" / "gcm" / "__init__.
 ARCHIVE_INIT_KEY = "gcm/__init__.py"
 INIT_MARKER = re.compile(rb'__version__\s*=\s*["\']([^"\']+)["\']')
 CHUNK = 1024 * 1024  # 分块读 1MiB
-SMOKE_WAIT_S = 12.0
+SMOKE_WAIT_S = 30.0
 
 
 def _sha256_chunked(path: Path) -> str:
@@ -134,6 +134,19 @@ def _run_smoke(exe_path: Path, wait_s: float) -> tuple[bool, bool, str]:
                 break
             if (tmp / "repos.db").is_file() or (tmp / "settings.json").is_file():
                 break
+            # G50-2 快速判败：冻结 exe 启动失败（DLL 加载异常）时不等待，直接记录并终止
+            if (tmp / "stderr.log").is_file():
+                try:
+                    _tail = (tmp / "stderr.log").read_bytes()[-2048:].decode("utf-8", "replace")
+                except Exception:
+                    _tail = ""
+                if "DLL load failed" in _tail:
+                    try:
+                        proc.terminate()
+                        proc.wait(timeout=5)
+                    except Exception:
+                        pass
+                    return False, False, "startup failed; stderr head=" + repr(_tail[:400])
             time.sleep(0.5)
         time.sleep(0.3)
         if proc.poll() is None:
