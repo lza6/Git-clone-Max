@@ -1,5 +1,5 @@
 """Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。"""
-__version__ = "7.9.0"
+__version__ = "8.0.0"
 __app_name__ = "Git-clone-Max"
 __changelog__ = (
     "4.0.0: 统一调度引擎(SyncEngine) · progress.json 进程级锁+周期落盘 · SQLite busy_timeout · "
@@ -102,12 +102,15 @@ __changelog__ = (
     "归档下载(zip, 免入库) · 网络诊断(分级报告) · 慢速预提示 · "
     "全量 722 绿 · 覆盖 84%(门禁 85→84 对齐实测, ≥82 底盘)",
     "7.9.0: M6 长期演进 + 生态 - G49-1 轻量 i18n(zh/en 字典 + tr() + 设置页语言下拉重启生效) · "
-    "G49-2 数据目录策略(--portable 可执行同级 data / 默认 %APPDATA%/Git-clone-Max / 旧 data 沿用) · "
+    "G49-2 数据目录策略(--portable 同级 data / 默认 %APPDATA% / 旧 data 沿用) · "
     "G49-3 CLI 批量克隆(uv run python -m gcm --cli, 复用引擎离屏, URL/本地裸仓) · "
     "G49-4 README uv 现代环境 + pyproject 元数据(readme/urls/classifiers) · "
     "G49-5 Inno 安装器脚本(packaging/installer.iss) · "
     "G49-6 开机自启真实写入(任务计划) + 启动时最小化到托盘(--minimized) · "
     "G49-7 完成通知 Webhook(显式开启+URL, payload redact, 后台线程) · "
     "G49-8 打开数据目录入口 · 全量 760 绿 · 覆盖 84%(门禁 84 保持)",
+    "8.0.0: M7 收官 - CLI --dir 克隆输出根目录 · CI 三平台矩阵新增 mypy 类型门禁(0 error) · "
+    "Inno 安装器中文语言包集成说明 · G46-1..12 计划状态回填[已落地](M4 交付核对) · "
+    "全量 761 绿 · 覆盖 84% · Release 双产物 + health 台账",
 )
 
