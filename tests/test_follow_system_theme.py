@@ -51,12 +51,13 @@ class TestDetectSystemLightTheme(unittest.TestCase):
     def test_default_no_reg_calls_winreg_on_windows(self):
         # 不注入 reg 时：Windows 走 winreg，非 Windows 返回 None。
         # 用 mock.patch 掩盖真实平台，验证 winreg 调用路径本身（不碰真实注册表）。
-        with mock.patch("sys.platform", "win32"), \
-                mock.patch("winreg.OpenKey") as m_open, \
-                mock.patch("winreg.QueryValueEx", return_value=(1, 1)):
-            m_open.return_value.__enter__.return_value = object()
+        fake_winreg = mock.MagicMock()
+        fake_winreg.OpenKey.return_value.__enter__.return_value = object()
+        fake_winreg.QueryValueEx.return_value = (1, 1)
+        with mock.patch.dict(sys.modules, {"winreg": fake_winreg}), \
+                mock.patch("sys.platform", "win32"):
             self.assertIs(detect_system_light_theme(), True)
-            m_open.assert_called_once()
+            fake_winreg.OpenKey.assert_called_once()
 
     def test_default_no_reg_non_windows_returns_none(self):
         # 非 Windows 平台：不碰 winreg（winreg 不会在函数外被加载），返回 None

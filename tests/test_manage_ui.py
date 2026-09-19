@@ -101,10 +101,11 @@ class TestManageUi(unittest.TestCase):
         self.assertEqual(self.w.target_edit.text(), original)
 
     # ------------------------------------------------------------ open_target
+    @unittest.skipUnless(os.name == "nt", "os.startfile 仅 Windows")
     def test_open_target_dir_exists_calls_startfile(self):
         """目标目录存在 → os.startfile 被调用，不弹警告。"""
         self.w.target_edit.setText(str(self.tmp))
-        with mock.patch("os.startfile") as m_start, _msgbox_patch() as m_msg:
+        with mock.patch("os.startfile", create=True) as m_start, _msgbox_patch() as m_msg:
             self.w.open_target()
         m_start.assert_called_once_with(str(self.tmp))
         m_msg.warning.assert_not_called()

@@ -138,7 +138,7 @@ class TestDownloadTools(unittest.TestCase):
     def test_open_target_missing_warns(self):
         """目录不存在 → 警告，不调 startfile。"""
         self.w.target_edit.setText(str(self.tmp / "nope"))
-        with mock.patch("os.startfile") as m_start, \
+        with mock.patch("os.startfile", create=True) as m_start, \
                 mock.patch("gcm.ui.main_window.QMessageBox") as m_msg:
             self.w.open_target()
         m_start.assert_not_called()

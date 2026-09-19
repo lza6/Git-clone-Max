@@ -26,8 +26,13 @@ def get_logger(log_path: str | Path | None = None) -> logging.Logger:
         logger.propagate = False
         _logger = logger
     if log_path is not None:
-        has_file_handler = any(isinstance(h, RotatingFileHandler)
-                               for h in _logger.handlers)
+        # G50-3 多路径：显式给定不同 log_path 时也挂新 handler（避免单例夺吃新路径导致无法落盘）
+        _target = str(Path(log_path).resolve())
+        has_file_handler = any(
+            isinstance(h, RotatingFileHandler)
+            and str(Path(h.baseFilename).resolve()) == _target
+            for h in _logger.handlers
+        )
         if not has_file_handler:
             try:
                 Path(log_path).parent.mkdir(parents=True, exist_ok=True)

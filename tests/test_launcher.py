@@ -14,6 +14,7 @@ BAT = ROOT / "scripts" / "启动Git-clone-Max.bat"
 
 
 class TestLauncher(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "cmd.exe/.bat 仅 Windows")
     def test_bat_reaches_launch(self):
         env = dict(os.environ)
         env["QT_QPA_PLATFORM"] = "offscreen"

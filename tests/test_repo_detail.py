@@ -93,7 +93,7 @@ class TestRepoDetailDialog(unittest.TestCase):
     def test_open_dir_missing_warns(self):
         dlg = RepoDetailDialog(_repo(Path(tempfile.mkdtemp()) / "no_such_dir"), [])
         dlg.show()
-        with mock.patch("os.startfile") as m_start, \
+        with mock.patch("os.startfile", create=True) as m_start, \
                 mock.patch("gcm.ui.repo_detail_dialog.QMessageBox.warning") as m_warn:
             dlg.btn_open_dir.click()  # 不抛异常
         m_start.assert_not_called()
@@ -103,9 +103,15 @@ class TestRepoDetailDialog(unittest.TestCase):
     def test_open_dir_exists_calls_startfile(self):
         dlg = RepoDetailDialog(_repo(self.tmp), [])
         dlg.show()
-        with mock.patch("os.startfile") as m_start:
-            dlg.btn_open_dir.click()
-        m_start.assert_called_once()
+        if os.name == "nt":
+            with mock.patch("os.startfile", create=True) as m_start:
+                dlg.btn_open_dir.click()
+            m_start.assert_called_once()
+        else:
+            with mock.patch("subprocess.Popen") as m_pop, \
+                    mock.patch("shutil.which", return_value="/usr/bin/open"):
+                dlg.btn_open_dir.click()
+            m_pop.assert_called_once()
         dlg.close()
 
     # ------------------------------------------------------------ G35-5 复制克隆命令

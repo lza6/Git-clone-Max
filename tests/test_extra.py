@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 ROOT = Path(__file__).resolve().parent.parent
@@ -166,6 +167,7 @@ class TestServiceExtra(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertTrue(any("git version" in L for L in lines))
 
+    @unittest.skipUnless(os.name == "nt", "cmd.exe 取消路径仅 Windows")
     def test_run_git_ui_cancelled(self):
         flag = {"v": False}
         rc, _ = run_git_ui(["cmd.exe", "/c", "echo hi && exit 0"], str(self.tmp),
@@ -236,6 +238,7 @@ class TestServiceExtra(unittest.TestCase):
         svc.sync(spec)
         self.assertEqual(svc.current_branch(self.tmp / "c__r"), "main")
 
+    @unittest.skipUnless(os.name == "nt", "cmd.exe 进程树仅 Windows")
     def test_kill_tree_real_proc(self):
         proc = subprocess.Popen(["cmd.exe", "/c", "ping -n 30 127.0.0.1"],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -335,11 +338,15 @@ class TestGetDataDir(unittest.TestCase):
 
     def test_default_dir_created(self):
         import gcm.__main__ as m
-        # 清掉环境变量，默认应落在包上级 data/
+        # G50-3 固定 base+清环境：默认落在 base/data（G49-2 兆底分支，亏台确定性，不受 CI APPDATA/XDG 影响）
         os.environ.pop("GCM_DATA_DIR", None)
-        got = m.get_data_dir()
+        os.environ.pop("APPDATA", None)
+        os.environ.pop("XDG_DATA_HOME", None)
+        base = Path(tempfile.mkdtemp())
+        with mock.patch.object(m, "_default_base", return_value=base):
+            got = m.get_data_dir()
+        self.assertEqual(got, base / "data")
         self.assertTrue(got.is_dir())
-        self.assertEqual(got.name, "data")
 
 
 # ---------------------------------------------------------------- MainWindow 补充
