@@ -70,6 +70,12 @@ jobs:
         run: |
           ruff check gcm --output-format=github
 
+      # M7 收官：mypy 类型门禁（本地已 0 error，纳入矩阵防回归）
+      - name: Type check (mypy)
+        run: |
+          python -m pip install mypy
+          mypy gcm
+
       # G29-6 模块级覆盖率表格输出到 job summary（pwsh 三平台预装）
       - name: Coverage summary
         env:

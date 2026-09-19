@@ -6,7 +6,7 @@
 ; 需要先构建 dist\Git-clone-Max.exe（见 README 打包段）。
 
 #define MyAppName "Git-clone-Max"
-#define MyAppVersion "7.9.0"
+#define MyAppVersion "8.0.0"
 #define MyAppExeName "Git-clone-Max.exe"
 #define MyAppPublisher "lza6"
 #define MyAppURL "https://github.com/lza6/Git-clone-Max"
@@ -36,7 +36,9 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 
 [Languages]
-; Inno Setup 6 默认仅带 Default.isl（中文语言文件需另行安装），此处用 English。
+; 中文向导集成（可选）：从 https://jrsoftware.org/files/istrans/ 下载
+;   ChineseSimplified.isl 放入 <Inno>/Languages/ 后取消下行注释即可：
+; Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
