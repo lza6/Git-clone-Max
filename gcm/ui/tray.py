@@ -39,19 +39,66 @@ class TrayController:
         tray = QSystemTrayIcon(self.parent)
         tray.setIcon(self._app_icon())
         tray.setToolTip(title)
-        menu = QMenu()
-        act_show = menu.addAction("显示主窗口")
-        act_quit = menu.addAction("退出")
-        menu.addSeparator()
-        act_show.triggered.connect(lambda: self._show_window())
-        # G21-4：「退出」必须走主窗 closeEvent，统一优雅收尾
-        # （engine.drain + 落盘 + 锁释放），不能直接 QApplication.quit 硬退
-        act_quit.triggered.connect(self._quit_gracefully)
+        menu = self._build_menu()
         tray.setContextMenu(menu)
         tray.activated.connect(self._on_activated)
         tray.show()
         self.tray = tray
         return tray
+
+    # ------------------------------------------------------------ G46-9 托盘菜单
+    def _build_menu(self) -> QMenu:
+        """构建托盘右键菜单（离屏可测：QMenu 构造不弹窗）。
+
+        G46-9：显示主窗 / 打开统计中心 / 检查更新 / 开机自启(勾选) / 退出。
+        回调经 hasattr 守卫，测试可用 mock parent 注入；开机自启勾选项与设置页
+        ck_autostart（任务计划写入）联动。
+        """
+        menu = QMenu()
+        act_show = menu.addAction("显示主窗口")
+        act_stats = menu.addAction("打开统计中心")
+        act_update = menu.addAction("检查更新")
+        act_auto = menu.addAction("开机自启（登录时启动）")
+        act_auto.setCheckable(True)
+        try:
+            if self.parent is not None and hasattr(self.parent, "ck_autostart"):
+                act_auto.setChecked(bool(self.parent.ck_autostart.isChecked()))
+        except Exception:
+            pass
+        menu.addSeparator()
+        act_quit = menu.addAction("退出")
+        act_show.triggered.connect(lambda: self._show_window())
+        act_stats.triggered.connect(lambda: self._show_stats())
+        act_update.triggered.connect(lambda: self._check_update())
+        act_auto.toggled.connect(self._toggle_autostart)
+        # G21-4：「退出」必须走主窗 closeEvent，统一优雅收尾
+        # （engine.drain + 落盘 + 锁释放），不能直接 QApplication.quit 硬退
+        act_quit.triggered.connect(self._quit_gracefully)
+        return menu
+
+    def _show_stats(self):
+        """打开统计中心（parent.show_statistics）。"""
+        try:
+            if self.parent is not None and hasattr(self.parent, "show_statistics"):
+                self.parent.show_statistics()
+        except Exception:
+            pass
+
+    def _check_update(self):
+        """检查更新（parent.check_update_now）。"""
+        try:
+            if self.parent is not None and hasattr(self.parent, "check_update_now"):
+                self.parent.check_update_now()
+        except Exception:
+            pass
+
+    def _toggle_autostart(self, checked: bool):
+        """开机自启勾选：联动设置页 ck_autostart，触发任务计划写入逻辑。"""
+        try:
+            if self.parent is not None and hasattr(self.parent, "ck_autostart"):
+                self.parent.ck_autostart.setChecked(bool(checked))
+        except Exception:
+            pass
 
     # ------------------------------------------------------------ G22-4 进度
     def update_counts(self, running_delta: int = 0, ok_delta: int = 0, bad_delta: int = 0,
