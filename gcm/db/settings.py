@@ -204,6 +204,9 @@ class Settings:
     animations: bool = True           # G36-6 完成动效（成功绿/失败红背景色 1.2s 消隐；低配/offscreen 自动关）
     prefers_reduced_motion: bool = False  # G46-8 减少动态效果（关闭完成动效与 hover 过渡）
     accent_preset: str = "blue"           # G46-7 强调色预设（blue/violet/teal）
+    lfs_enabled: bool = False          # G48-2 Git LFS：clone/fetch 追加 -c filter.lfs.required=false
+    mirror_default: bool = False       # G48-6 克隆模式第 4 项「镜像克隆(--mirror)」
+    post_clone_hook: str = ""           # G48-5 克隆后钩子命令模板（%PATH% 替换为仓库路径）
     first_run_done: bool = False      # G36-1 首次运行向导已完成（跳过也置 True）
     auto_update_minutes: int = 0      # G37-4 自动更新间隔（分钟，0=关；非 busy 时触发一键更新）
     font_scale: float = 1.0           # G10-1 字号缩放（0.8 ~ 1.6）

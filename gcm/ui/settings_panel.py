@@ -194,6 +194,10 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     owner.ck_submodule.stateChanged.connect(owner._save_submodule)
     f3.addRow("子模块：", owner.ck_submodule)
 
+    owner.ck_lfs = QCheckBox("Git LFS（-c filter.lfs.required=false）")
+    owner.ck_lfs.setChecked(bool(getattr(settings, "lfs_enabled", False)))
+    owner.ck_lfs.setToolTip("G48-2：克隆/更新时追加 -c filter.lfs.required=false；LFS 文件需另行 lfs pull")
+    owner.ck_lfs.stateChanged.connect(owner.settings_panel._save_lfs)
     # G37-4 自动更新间隔（分钟，0=关）
     owner.spin_auto_update = QSpinBox()
     owner.spin_auto_update.setRange(0, 10080)  # 0 或 1 分钟 ~ 7 天
@@ -343,6 +347,10 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     owner.btn_selftest.clicked.connect(owner._run_selftest)
     h4.addWidget(owner.btn_selftest)
     # G07-1 统计中心入口
+    owner.btn_diag = QPushButton("🩺 网络诊断")
+    owner.btn_diag.setToolTip("G48-8：串行探测 git / TCP / GitHub API / 代理，输出分级报告")
+    owner.btn_diag.clicked.connect(owner.settings_panel._run_diag)
+    h4.addWidget(owner.btn_diag)
     owner.btn_statistics = QPushButton("📊 统计中心")
     owner.btn_statistics.setToolTip("查看仓库总数 / 同步次数 / 成功率 / 平台分布")
     owner.btn_statistics.clicked.connect(owner.show_statistics)
@@ -612,6 +620,31 @@ class SettingsPanel(QWidget):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.owner.data_dir)))
         except Exception:
             pass
+
+    def _save_lfs(self, checked):
+        """G48-2：Git LFS 开关保存。"""
+        self.owner.settings.lfs_enabled = bool(checked)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _run_diag(self):
+        """G48-8：后台运行网络诊断，QMessageBox 展示分级报告。"""
+        import threading
+
+        from PyQt6.QtWidgets import QMessageBox as _QMB
+
+        def _run():
+            try:
+                from gcm.app.diag import grade, run_diagnostics
+                reports = run_diagnostics(proxy=str(getattr(self.owner.settings, "proxy", "") or ""))
+                lines = [f"[{r['status']}] {r['name']}: {r['detail']}" for r in reports]
+                title = "网络诊断：" + grade(reports)
+            except Exception as e:
+                lines, title = [f"诊断失败：{e}"], "网络诊断：失败"
+            try:
+                _QMB.information(self.owner, title, "\n".join(lines))
+            except Exception:
+                pass
+        threading.Thread(target=_run, daemon=True).start()
 
     def _save_theme(self, index):
         """G05-1 保存主题选择并即时应用到主窗口。"""

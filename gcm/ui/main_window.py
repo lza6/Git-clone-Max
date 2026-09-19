@@ -81,12 +81,15 @@ class MainWindow(QMainWindow):
             precheck_remote=bool(getattr(self.settings, "precheck_remote", False)),  # G38-3
             single_branch=bool(getattr(self.settings, "single_branch", False)),  # G38-4
             force_ipv4=bool(getattr(self.settings, "force_ipv4", False)),  # G38-6
+            lfs_enabled=bool(getattr(self.settings, "lfs_enabled", False)),  # G48-2
+            post_clone_hook=str(getattr(self.settings, "post_clone_hook", "")),  # G48-5
         )
         self.engine.line.connect(self._on_engine_line)
         self.engine.progress.connect(self._on_worker_progress)
         self.engine.progress_detail.connect(self._on_worker_progress_detail)
         self.engine.result.connect(self._on_worker_result)
         self.engine.finished.connect(self._on_engine_finished)
+        self.engine.adapt_changed.connect(self._on_adapt_changed)  # G48-1
         # 兼容旧引用（测试/托盘可能读 pool）
         self.pool = self.engine.pool
 
@@ -440,7 +443,8 @@ class MainWindow(QMainWindow):
         l2 = QHBoxLayout(g2)
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["满量克隆（完整历史）", "浅克隆（最新代码）",
-                                  "单分支浅克隆（--single-branch）"])
+                                  "单分支浅克隆（--single-branch）",
+                                  "镜像克隆（--mirror）"])
         self.depth_spin = QSpinBox()
         self.depth_spin.setRange(1, 10000)
         self.depth_spin.setValue(1)
@@ -830,9 +834,50 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------ 动作
     def _repo_input_menu(self, pos):
-        """输入框右键菜单：从最近 URL 历史回填 / 清空历史（G02-4）。"""
+        """输入框右键菜单：历史回填 / 清空 / G48-7 归档下载。"""
         from .download_tools import repo_input_menu as _rim
-        _rim(self, pos, _fmt_dt)
+
+        def _extra(menu):
+            act = menu.addAction("📦 归档下载（zip，免入库）")
+            act.triggered.connect(lambda _=False: self._archive_current_line())
+        _rim(self, pos, _fmt_dt, extra_actions=_extra)
+
+    def _archive_current_line(self):
+        """G48-7：对输入区光标所在行地址执行归档下载到 data/archives/。"""
+        text = self.repo_input.toPlainText()
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        if not lines:
+            self._emit_log(_fmt_dt(), LogLevel.WARN, "输入区为空，无法归档下载。")
+            return
+        url = lines[0]
+        try:
+            from gcm.git.archive import download_archive
+        except Exception:
+            self._emit_log(_fmt_dt(), LogLevel.WARN, "归档模块不可用。")
+            return
+        dest_dir = self.data_dir / "archives"
+        dest = dest_dir / (url.rstrip("/").split("/")[-1].removesuffix(".git") + ".zip")
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        def _run():
+            try:
+                download_archive(url, dest)
+                self._emit_log(_fmt_dt(), LogLevel.INFO, f"归档下载完成：{dest}")
+                self.statusBar().showMessage(f"归档已保存：{dest}")
+            except Exception as e:
+                self._emit_log(_fmt_dt(), LogLevel.WARN, f"归档下载失败：{e}")
+
+        import threading
+        threading.Thread(target=_run, daemon=True).start()
+        self.statusBar().showMessage("归档下载中…")
+
+    def _on_adapt_changed(self, n: int, text: str):
+        """G48-1：并发自适应状态栏提示。"""
+        try:
+            self.statusBar().showMessage(text)
+            self._emit_log(_fmt_dt(), LogLevel.WARN, text)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------ G35-3 拖拽导入
     def _repo_input_drag_enter(self, e):
@@ -977,10 +1022,11 @@ class MainWindow(QMainWindow):
         # G38-4：模式 1=浅克隆、2=单分支浅克隆（都走 shallow 路径，后者加 --single-branch）
         mode_idx = self.mode_combo.currentIndex()
         shallow = mode_idx in (1, 2)
+        mirror = mode_idx == 3  # G48-6 镜像克隆
         depth = self.depth_spin.value()
         # 下载完成后自动清空输入框（跟随设置页开关）
         self._launch(specs, target_root=Path(target), shallow=shallow, depth=depth,
-                     clear_input=self.settings.auto_clear)
+                     clear_input=self.settings.auto_clear, mirror=mirror)
 
     @staticmethod
     def _rows_to_specs(rows):
@@ -1031,7 +1077,7 @@ class MainWindow(QMainWindow):
                      multi_root_relay=True)
 
     def _launch(self, specs, target_root, shallow, depth, clear_input=False,
-                multi_root_relay=False, single_branch=None):
+                multi_root_relay=False, single_branch=None, mirror=False):
         # G38-4：单分支源 = 显式参数 或 设置页开关 或 UI 下拉「单分支浅克隆」（索引2）。
         # 缺陷记录：原先只按 UI 索引推断，设置页 ck_single_branch 开启后对 _launch
         # 重建的 engine 不生效；现三源取或，行为可预测。
@@ -1077,8 +1123,12 @@ class MainWindow(QMainWindow):
             precheck_remote=bool(getattr(self.settings, "precheck_remote", False)),  # G38-3
             single_branch=bool(single_branch),  # G38-4（UI 模式 2 或设置）
             force_ipv4=bool(getattr(self.settings, "force_ipv4", False)),  # G38-6
+            lfs_enabled=bool(getattr(self.settings, "lfs_enabled", False)),  # G48-2
+            post_clone_hook=str(getattr(self.settings, "post_clone_hook", "")),  # G48-5
+            mirror=bool(mirror),  # G48-6
         )
         self.engine.line.connect(self._on_engine_line)
+        self.engine.adapt_changed.connect(self._on_adapt_changed)  # G48-1
         self.engine.progress.connect(self._on_worker_progress)
         self.engine.progress_detail.connect(self._on_worker_progress_detail)
         self.engine.result.connect(self._on_worker_result)
@@ -1117,6 +1167,7 @@ class MainWindow(QMainWindow):
             unshallow=getattr(self.settings, "fetch_unshallow", False),
             clear_input=clear_input,
             check_existing=True,
+            mirror=bool(mirror),  # G48-6
         )
         if launched == 0:
             self.busy = False

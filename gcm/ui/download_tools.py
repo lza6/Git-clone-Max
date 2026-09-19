@@ -64,8 +64,8 @@ def export_report(owner, fmt_dt) -> None:
         _msgbox().critical(owner, "导出失败", str(e))
 
 
-def repo_input_menu(owner, pos, fmt_dt) -> None:
-    """输入框右键菜单：从最近 URL 历史回填 / 清空历史（G02-4）。"""
+def repo_input_menu(owner, pos, fmt_dt, extra_actions=None) -> None:
+    """输入框右键菜单：从最近 URL 历史回填 / 清空历史（G02-4）；extra_actions 可选追加。"""
     try:
         from PyQt6.QtWidgets import QMenu
         menu = QMenu(owner)
@@ -82,6 +82,12 @@ def repo_input_menu(owner, pos, fmt_dt) -> None:
                 lambda: clear_url_history(owner, fmt_dt))
         else:
             menu.addAction("（暂无历史）")
+        if extra_actions is not None:
+            try:
+                menu.addSeparator()
+                extra_actions(menu)
+            except Exception:
+                pass
         menu.exec(owner.repo_input.mapToGlobal(pos))
     except Exception:
         pass
