@@ -19,7 +19,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from PyQt6.QtWidgets import QApplication, QCheckBox
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QApplication
 
 from gcm.app.scanner import RepoInfo, _name_to_owner_repo, _remote_url
 from gcm.db.repo_db import Database
@@ -212,9 +213,9 @@ class TestLocalReposDialog(unittest.TestCase):
             dlg._apply_filter("")
             # Assert
             self.assertEqual(dlg.table.rowCount(), 2)
-            chk = dlg.table.cellWidget(0, 0)
-            self.assertIsInstance(chk, QCheckBox)
-            self.assertTrue(chk.isChecked(), "默认应勾选")
+            it0 = dlg.table.item(0, 0)
+            self.assertIsNotNone(it0)
+            self.assertEqual(it0.checkState(), Qt.CheckState.Checked, "默认应勾选")
             self.assertEqual(dlg.table.item(0, 1).text(), "o/r")
             self.assertEqual(dlg.table.item(0, 2).text(), "https://github.com/o/r.git")
             self.assertEqual(dlg.table.item(1, 2).text(), "（无远端）")
@@ -243,7 +244,7 @@ class TestLocalReposDialog(unittest.TestCase):
             dlg._select_all()
             self.assertEqual(len(dlg._checked()), 2)
             # Act：手动取消第 0 行
-            dlg.table.cellWidget(0, 0).setChecked(False)
+            dlg.table.item(0, 0).setCheckState(Qt.CheckState.Unchecked)
             self.assertEqual(len(dlg._checked()), 1)
             self.assertEqual(dlg._checked()[0].path, "/x/b")
         finally:
@@ -385,14 +386,17 @@ class TestLocalReposDialog(unittest.TestCase):
             dlg._rows = infos
             dlg._apply_filter("")
             # Assert：已入库行灰标
-            chk = dlg.table.cellWidget(0, 0)
-            self.assertIsInstance(chk, QCheckBox)
-            self.assertFalse(chk.isEnabled(), "已入库行 checkbox 应禁用")
-            self.assertFalse(chk.isChecked(), "已入库行不应默认勾选")
+            it0 = dlg.table.item(0, 0)
+            self.assertIsNotNone(it0)
+            self.assertFalse(it0.flags() & Qt.ItemFlag.ItemIsEnabled,
+                             "已入库行勾选应禁用")
+            self.assertEqual(it0.checkState(), Qt.CheckState.Unchecked,
+                             "已入库行不应默认勾选")
             self.assertEqual(dlg.table.item(0, 1).text(), "o/r（已入库）")
             # Assert：未入库行不受影响
-            self.assertTrue(dlg.table.cellWidget(1, 0).isEnabled())
-            self.assertTrue(dlg.table.cellWidget(1, 0).isChecked())
+            it1 = dlg.table.item(1, 0)
+            self.assertTrue(it1.flags() & Qt.ItemFlag.ItemIsEnabled)
+            self.assertEqual(it1.checkState(), Qt.CheckState.Checked)
             self.assertEqual(dlg.table.item(1, 1).text(), "plain")
             # Assert：过滤关键字命中「o/r」（用 UserRole 原显示名，忽略「（已入库）」后缀）
             dlg.filter_edit.setText("o/r")
@@ -450,8 +454,9 @@ class TestLocalReposDialog(unittest.TestCase):
             dlg._rows = infos
             dlg._apply_filter("")
             # Assert：无 DB 不灰标
-            self.assertTrue(dlg.table.cellWidget(0, 0).isEnabled())
-            self.assertTrue(dlg.table.cellWidget(0, 0).isChecked())
+            it0 = dlg.table.item(0, 0)
+            self.assertTrue(it0.flags() & Qt.ItemFlag.ItemIsEnabled)
+            self.assertEqual(it0.checkState(), Qt.CheckState.Checked)
             self.assertEqual(dlg.table.item(0, 1).text(), "o/r")
             # Assert：无 DB 时 _is_imported 恒为 False
             self.assertFalse(dlg._is_imported(infos[0]))
