@@ -58,6 +58,15 @@ def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args and args[0] == "--cli":
         args = args[1:]
+    # M7：--dir <目录> 指定克隆输出根目录（默认当前目录/clones）
+    root = Path.cwd() / "clones"
+    if "--dir" in args:
+        _i = args.index("--dir")
+        if _i + 1 >= len(args):
+            print("[CLI] --dir 缺少目录参数")
+            return 2
+        root = Path(args[_i + 1])
+        del args[_i:_i + 2]
     src = args[0] if args else "-"
     try:
         lines = _load_urls(src)
@@ -73,12 +82,11 @@ def main(argv: list[str] | None = None) -> int:
     if not specs:
         print("[CLI] 无有效仓库地址")
         return 2
-    print(f"[CLI] 开始并行克隆 {len(specs)} 个仓库（目标根：当前目录/clones）…")
+    print(f"[CLI] 开始并行克隆 {len(specs)} 个仓库（目标根：{root}）…")
 
     from PyQt6.QtCore import QCoreApplication, QEventLoop, QTimer
     app = QCoreApplication.instance() or QCoreApplication([])
     from gcm.app.engine import SyncEngine
-    root = Path.cwd() / "clones"
     root.mkdir(parents=True, exist_ok=True)
     engine = SyncEngine(root=root, db=None, progress_path=None)
     results: list = []

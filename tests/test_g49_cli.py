@@ -45,17 +45,12 @@ class TestCliE2E(unittest.TestCase):
         urls_file = tmp / "urls.txt"
         urls_file.write_text("\n".join(str(r) for r in remotes) + "\n",
                             encoding="utf-8")
-        old_cwd = os.getcwd()
-        os.chdir(tmp)  # CLI 克隆根 = cwd/clones
-        try:
-            from gcm.cli import main as cli_main
-            rc = cli_main(["--cli", str(urls_file)])
-        finally:
-            os.chdir(old_cwd)
+        out_dir = tmp / "out"
+        from gcm.cli import main as cli_main
+        rc = cli_main(["--cli", "--dir", str(out_dir), str(urls_file)])
         self.assertEqual(rc, 0, "CLI 应全部成功退出 0")
-        clones = tmp / "clones"
         for r in remotes:
-            folder = clones / r.stem
+            folder = out_dir / r.stem
             self.assertTrue((folder / ".git").is_dir(), f"未克隆 {r.stem}")
             self.assertTrue((folder / "a.txt").is_file())
         # 空输入（仅注释）应退出码 2
@@ -67,3 +62,9 @@ class TestCliE2E(unittest.TestCase):
         except SystemExit:
             pass
         self.assertEqual(rc_empty, 2, "空输入应退出 2")
+
+    def test_dir_missing_argument_exits_2(self):
+        """--dir 缺少目录参数 → 退出码 2（不触网不建窗）。"""
+        from gcm.cli import main as cli_main
+        rc = cli_main(["--cli", "--dir"])
+        self.assertEqual(rc, 2)

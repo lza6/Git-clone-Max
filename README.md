@@ -46,6 +46,8 @@ uv run python -m gcm
 
 # CLI 批量克隆（无 GUI 离屏；地址来自 stdin（-）或文件）
 printf 'https://github.com/lza6/Git-clone-Max\nhttps://github.com/vercel-labs/skills\n' | uv run python -m gcm --cli -
+# 指定克隆输出根目录：--dir <dir>（默认 当前目录/clones）
+uv run python -m gcm --cli --dir D:/repos urls.txt
 
 # 便携模式：数据目录固定在可执行文件同级 data/（默认非便携走 %APPDATA%/Git-clone-Max，旧 data 沿用）
 uv run python -m gcm --portable
