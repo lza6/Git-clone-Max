@@ -29,17 +29,25 @@ def _mock_module(name: str, **attrs) -> types.ModuleType:
 
 
 class TestGetDataDir(unittest.TestCase):
-    """get_data_dir() 三分支。"""
+    """G49-2 get_data_dir() 分支：GCM_DATA_DIR 优先 / portable / 默认 APPDATA / 旧 data 沿用。"""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="gcm_main_"))
-        self._old = os.environ.pop("GCM_DATA_DIR", None)
+        self._old_env = os.environ.pop("GCM_DATA_DIR", None)
+        self._old_app = os.environ.get("APPDATA")
+        os.environ.pop("APPDATA", None)
+        os.environ.pop("XDG_DATA_HOME", None)
 
     def tearDown(self):
-        if self._old is not None:
-            os.environ["GCM_DATA_DIR"] = self._old
+        if self._old_env is not None:
+            os.environ["GCM_DATA_DIR"] = self._old_env
         else:
             os.environ.pop("GCM_DATA_DIR", None)
+        if self._old_app is not None:
+            os.environ["APPDATA"] = self._old_app
+        else:
+            os.environ.pop("APPDATA", None)
+        os.environ.pop("XDG_DATA_HOME", None)
 
     def test_env_var_branch(self):
         """GCM_DATA_DIR 优先：创建目录并返回。"""
@@ -49,23 +57,38 @@ class TestGetDataDir(unittest.TestCase):
         self.assertEqual(out, target)
         self.assertTrue(target.is_dir())
 
-    def test_frozen_branch(self):
-        """sys.frozen=True：取 sys.executable 同级 data。"""
+    def test_portable_branch(self):
+        """portable=True：取 exe 同级 data（随程序移动的现状默认）。"""
         fake_exe = self.tmp / "bin" / "Git-clone-Max.exe"
         fake_exe.parent.mkdir(parents=True)
         with mock.patch.object(main_mod.sys, "frozen", True, create=True), \
              mock.patch.object(main_mod.sys, "executable", str(fake_exe)):
-            out = main_mod.get_data_dir()
-        expected = fake_exe.parent / "data"
-        self.assertEqual(out, expected)
-        self.assertTrue(expected.is_dir())
+            out = main_mod.get_data_dir(portable=True)
+        self.assertEqual(out, fake_exe.parent / "data")
+        self.assertTrue((fake_exe.parent / "data").is_dir())
 
-    def test_source_branch(self):
-        """源码模式：项目根/data（按模块 __file__ 计算）。"""
+    def test_default_appdata(self):
+        """默认（非 portable、无旧 data）：%APPDATA%/Git-clone-Max。"""
         fake_root = self.tmp / "project"
         fake_main = fake_root / "gcm" / "__main__.py"
         fake_main.parent.mkdir(parents=True)
         fake_main.write_text("", encoding="utf-8")
+        appdata = self.tmp / "AppData"
+        os.environ["APPDATA"] = str(appdata)
+        with mock.patch.object(main_mod, "__file__", str(fake_main)):
+            out = main_mod.get_data_dir()
+        self.assertEqual(out, appdata / "Git-clone-Max")
+        self.assertTrue((appdata / "Git-clone-Max").is_dir())
+        self.assertFalse((fake_root / "data").exists())
+
+    def test_legacy_data_fallback(self):
+        """默认但旧版 data 已存在 → 沿用（升级不丢数据）。"""
+        fake_root = self.tmp / "project"
+        (fake_root / "data").mkdir(parents=True)
+        fake_main = fake_root / "gcm" / "__main__.py"
+        fake_main.parent.mkdir(parents=True)
+        fake_main.write_text("", encoding="utf-8")
+        os.environ["APPDATA"] = str(self.tmp / "AppData")
         with mock.patch.object(main_mod, "__file__", str(fake_main)):
             out = main_mod.get_data_dir()
         self.assertEqual(out, fake_root.resolve() / "data")
@@ -113,6 +136,7 @@ class _MainSmokeBase(unittest.TestCase):
         self.settings = mock.MagicMock()
         self.win = mock.MagicMock()
         self.win.show.side_effect = lambda: self.events.append("win.show")
+        self.win.should_auto_hide.return_value = False  # G49-6 默认弹主窗
 
         def _db_cls(*a, **k):
             self.events.append("Database")
@@ -172,7 +196,8 @@ class TestMainSmoke(_MainSmokeBase):
         self.exc_mod.install_excepthook.assert_called_once_with(
             self.tmp / "error.log")
         self.mw_mod.MainWindow.assert_called_once_with(
-            data_dir=self.tmp, db=self.db, settings=self.settings)
+            data_dir=self.tmp, db=self.db, settings=self.settings,
+            start_hidden=False)
         self.win.show.assert_called_once()
         self._assert_success_flow()
 

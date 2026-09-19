@@ -35,8 +35,8 @@ class TestSettingsSearch(unittest.TestCase):
                             settings=self.store)
         self.w.show()
         # settings_groups 索引：0=启动与后台运行 g1 / 1=并行与网络 g3 /
-        # 2=外观 g5 / 3=关于与更新 g4
-        self.g1, self.g3, self.g5, self.g4 = self.w.settings_groups
+        # 2=外观 g5 / 3=关于与更新 g4 / 4=完成通知 Webhook g6（G49-7）
+        self.g1, self.g3, self.g5, self.g4, self.g6 = self.w.settings_groups
 
     def tearDown(self):
         try:
@@ -73,13 +73,14 @@ class TestSettingsSearch(unittest.TestCase):
         self.assert_hidden(self.g1)
         self.assert_hidden(self.g5)
         self.assert_hidden(self.g4)
+        self.assert_hidden(self.g6)
 
     def test_clear_search_shows_all_groups(self):
         """先过滤再清空 → 全部分组恢复可见。"""
         self.w.settings_search.setText("代理")
         self.assert_hidden(self.g1, "前置：过滤后 g1 应隐藏")
         self.w.settings_search.setText("")
-        for g in (self.g1, self.g3, self.g5, self.g4):
+        for g in (self.g1, self.g3, self.g5, self.g4, self.g6):
             self.assert_visible(g, "清空搜索应恢复全部可见")
 
     def test_search_theme_shows_appearance_group(self):
@@ -89,6 +90,7 @@ class TestSettingsSearch(unittest.TestCase):
         self.assert_hidden(self.g1)
         self.assert_hidden(self.g3)
         self.assert_hidden(self.g4)
+        self.assert_hidden(self.g6)
 
     def test_search_label_text_matches(self):
         """搜索「fetch」→ g3 因行标签「fetch 超时（秒）：」匹配而可见（标题不含）。"""
@@ -100,7 +102,7 @@ class TestSettingsSearch(unittest.TestCase):
     def test_search_no_match_hides_all_groups(self):
         """搜索无匹配词 → 全部分组隐藏。"""
         self.w.settings_search.setText("不存在的关键字xyz")
-        for g in (self.g1, self.g3, self.g5, self.g4):
+        for g in (self.g1, self.g3, self.g5, self.g4, self.g6):
             self.assert_hidden(g)
 
 
