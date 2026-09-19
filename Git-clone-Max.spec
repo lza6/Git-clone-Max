@@ -83,6 +83,18 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+# G50-1 fix(build): exclude bundled UCRT so Qt6 DLLs load on Win10+ (fixes
+#   ImportError: DLL load failed while importing QtCore / ERROR_PROC_NOT_FOUND).
+#   PyInstaller collects an OLD ucrtbase.dll + api-ms-win-* forwarder stubs from the
+#   local Windows SDK into the bundle; the frozen app loads them with app-dir priority,
+#   shadowing the NEWER Windows-Update-managed system UCRT, which breaks Qt6Core.dll
+#   dependency resolution. Win10+ always ships a current UCRT, so do NOT bundle it.
+import re as _re
+from pathlib import Path as _Path
+_DROP_UCRT = _re.compile(r"^(api-ms-win-.*\.dll|ucrtbase\.dll|icuuc\.dll|icudt\d+\.dll|icuin\.dll|icuio\.dll|icutu\.dll)$", _re.I)
+a.binaries = [b for b in a.binaries if not _DROP_UCRT.match(_Path(b[0]).name)]
+a.datas = [d for d in a.datas if not _DROP_UCRT.match(_Path(d[0]).name)]
+
 pyz = PYZ(a.pure)
 
 exe = EXE(
