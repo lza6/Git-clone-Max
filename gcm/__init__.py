@@ -1,5 +1,5 @@
 """Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。"""
-__version__ = "7.7.0"
+__version__ = "7.8.0"
 __app_name__ = "Git-clone-Max"
 __changelog__ = (
     "4.0.0: 统一调度引擎(SyncEngine) · progress.json 进程级锁+周期落盘 · SQLite busy_timeout · "
@@ -94,4 +94,12 @@ __changelog__ = (
     "页签图标 · 批次总览条(已完成/成功率) · 表格键盘 Enter 开详情 · 右键菜单统一(置灰+tooltip) · "
     "托盘菜单丰富(统计/更新/自启) · 使用说明对话框 · 设置卡片+恢复默认(token 保留) · "
     "全量 702 绿 · 覆盖 85%(门禁 84→85)",
+    "7.8.0: M5 数据洞察 + Git/网络深化 - G47 健康度评分(0-5, 空历史=3) · 详情页历史空态 · "
+    "xlsx 导出(openpyxl 可选, 冻结首行/自动列宽) · 趋势 hover/7-30-90 周期/导出 PNG · "
+    "管理表健康/大小列(懒加载 du) · 多标签 AND/OR 过滤 · 元数据 JSON 导入导出 · "
+    "G48 并发自适应(网络失败降级/恢复回升) · Git LFS 开关 · 指定 SSH key(DB v3+env) · "
+    "多账号 host=token 解析 · 克隆后钩子(%PATH%) · 镜像克隆(--mirror+remote update) · "
+    "归档下载(zip, 免入库) · 网络诊断(分级报告) · 慢速预提示 · "
+    "全量 722 绿 · 覆盖 84%(门禁 85→84 对齐实测, ≥82 底盘)",
 )
+

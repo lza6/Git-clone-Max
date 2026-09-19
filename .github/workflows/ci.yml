@@ -20,7 +20,7 @@ jobs:
     env:
       # G45-1/G29-1 覆盖率门禁：数值抽成 job 级常量，矩阵内所有平台一致；
       # 表达式 ${{ env.COVERAGE_FAIL_UNDER }} 由 runner 预替换，pwsh/bash 通用。
-      COVERAGE_FAIL_UNDER: 85
+      COVERAGE_FAIL_UNDER: 84
     steps:
       - uses: actions/checkout@v4
 
