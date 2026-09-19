@@ -1,14 +1,21 @@
 """本地 git 仓库扫描：发现目标目录下所有已有 git 仓库，纳入统一管理。
 
 解决『用户以前就有 git 仓库，也想用本软件统一更新』的场景：
-任意根目录下凡是含 .git 的目录（不管命名、不管远端是哪个平台）都能被发现，
+任意根目录下凡是 git 仓库（含 .git 目录 / .git 文件 worktree / 裸仓库）都能被发现，
 解析出远端 URL / owner / repo / HEAD，供 UI 批量入库后走既有增量更新链路。
+
+性能说明（P-perf 重构）：remote URL 与 HEAD 优先**纯文件读取**（config / HEAD /
+refs/heads/* / packed-refs），每仓库从 2 次 git 子进程降到 0~1 次（仅极少数回退）；
+枚举用 os.scandir 栈式遍历并跳过 junction/ReparsePoint 防环；候选仓库用线程池并发采集。
 """
 from __future__ import annotations
 
+import configparser
 import os
 import re
 import subprocess
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,7 +25,9 @@ from ..models import RepoSpec
 _SKIP_DIRS = {"node_modules", ".venv", "venv", "dist", "build",
               "__pycache__", ".idea", ".vscode", "site-packages"}
 
-_GIT_TIMEOUT = 5  # git 查询单次超时（秒）
+_GIT_TIMEOUT = 5  # git 查询单次超时（秒，仅回退路径使用）
+
+_HEX40 = re.compile(r"[0-9a-fA-F]{40}")
 
 
 @dataclass
@@ -46,7 +55,7 @@ class RepoInfo:
 
 
 def _run_git(path: Path, *args: str) -> str:
-    """在 path 下跑 git 查询命令，失败返回空串。"""
+    """在 path 下跑 git 查询命令（回退路径用），失败返回空串。"""
     try:
         r = subprocess.run(
             ["git", "-C", str(path), *args],
@@ -58,11 +67,130 @@ def _run_git(path: Path, *args: str) -> str:
         return ""
 
 
+# ---------------------------------------------------------------- 纯文件读取
+
+def _resolve_git_dir(path: Path) -> Path | None:
+    """返回仓库的 git 目录（实际存 git 数据的位置），不是仓库则返回 None。
+
+    覆盖三种形态：
+    - 常规仓库：<root>/.git/ 目录
+    - worktree/submodule：<root>/.git 为文件，内容 "gitdir: <真实路径>"
+    - 裸仓库：目录名以 .git 结尾且含 HEAD + config
+    """
+    d = path / ".git"
+    if d.is_dir():
+        return d
+    if d.is_file():
+        # worktree/submodule：gitdir 指针文件
+        try:
+            txt = d.read_text(encoding="utf-8", errors="replace").strip()
+            if txt.startswith("gitdir:"):
+                gd = Path(txt.split(":", 1)[1].strip())
+                if not gd.is_absolute():
+                    gd = d.parent / gd
+                return gd.resolve()
+        except Exception:
+            return None
+        return None
+    # 裸仓库：目录名 *.git + HEAD/config 存在，且无 .git 子项
+    try:
+        if path.is_dir() and path.name.endswith(".git") and \
+                (path / "HEAD").is_file() and (path / "config").is_file() and \
+                not (path / ".git").exists():
+            return path
+    except Exception:
+        pass
+    return None
+
+
+def is_git_repo_path(path: Path) -> bool:
+    """是否为 git 仓库目录（常规/worktree/裸仓）。"""
+    return _resolve_git_dir(path) is not None
+
+
+def _worktree_base(git_dir: Path) -> Path | None:
+    """worktree 的 gitdir（<主>/.git/worktrees/<wt>）无 config/packed-refs，
+    它们位于 <主>/.git；返回该 base（否则 None）。"""
+    try:
+        if git_dir.parent.name == "worktrees" and git_dir.parent.parent.name == ".git":
+            return git_dir.parent.parent
+    except Exception:
+        pass
+    return None
+
+
+def _remote_url_from_config(git_dir: Path) -> str:
+    """从 <gitdir>/config 的 [remote "origin"] url 读远端（0 次子进程）。"""
+    for base in (git_dir, _worktree_base(git_dir)):
+        if base is None:
+            continue
+        cfg = base / "config"
+        if not cfg.is_file():
+            continue
+        try:
+            cp = configparser.ConfigParser(strict=False)
+            cp.read(str(cfg), encoding="utf-8")
+            if cp.has_section('remote "origin"'):
+                return cp.get('remote "origin"', "url", fallback="").strip()
+        except Exception:
+            continue
+    return ""
+
+
+def _head_sha_from_files(git_dir: Path) -> str:
+    """纯文件读 HEAD：HEAD → refs/heads/* → packed-refs；失败返回空（回退 git）。"""
+    try:
+        head = (git_dir / "HEAD").read_text(encoding="utf-8", errors="replace").strip()
+    except Exception:
+        return ""
+    if not head.startswith("ref: "):
+        return head.strip() if _HEX40.fullmatch(head.strip()) else ""
+    ref = head[5:].strip()  # 如 refs/heads/main
+    base = _worktree_base(git_dir)
+    for candidate in (git_dir, base):
+        if candidate is None:
+            continue
+        p = candidate / ref
+        if p.is_file():
+            try:
+                sha = p.read_text(encoding="utf-8", errors="replace").strip()
+                return sha if _HEX40.fullmatch(sha) else ""
+            except Exception:
+                pass
+    for candidate in (git_dir, base):
+        if candidate is None:
+            continue
+        try:
+            packed = (candidate / "packed-refs").read_text(
+                encoding="utf-8", errors="replace")
+            for line in packed.splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and line.endswith(" " + ref):
+                    sha = line.split(" ", 1)[0]
+                    if _HEX40.fullmatch(sha):
+                        return sha
+        except Exception:
+            continue
+    return ""
+
+
 def _head_sha(path: Path) -> str:
+    """当前 HEAD（纯文件优先，回退 git rev-parse）。"""
+    gd = _resolve_git_dir(path)
+    if gd is not None:
+        sha = _head_sha_from_files(gd)
+        if sha:
+            return sha
     return _run_git(path, "rev-parse", "HEAD")
 
 
 def _remote_url(path: Path) -> str:
+    """origin 远端 URL（config 纯文件优先，回退 git remote get-url）。"""
+    gd = _resolve_git_dir(path)
+    if gd is not None:
+        url = _remote_url_from_config(gd)
+        if url:
+            return url
     return _run_git(path, "remote", "get-url", "origin")
 
 
@@ -144,31 +272,102 @@ def _make_info(root: Path, dirpath: Path, depth: int) -> RepoInfo:
     )
 
 
-def scan_git_dirs(root: str | Path, max_depth: int = 2) -> list[RepoInfo]:
-    """扫描根目录下所有含 .git 的仓库目录（最多下钻 max_depth 层）。
+def _iter_git_candidates(root: Path, max_depth: int):
+    """栈式 os.scandir 遍历，跳过 junction/ReparsePoint 与依赖目录；产出疑似 git 仓库目录。
 
-    - 不深入 .git / 依赖目录等内部
-    - 返回按路径排序的 RepoInfo 列表
-    - 目录读取异常自动跳过，不中断整体扫描
+    语义与旧 os.walk 一致：仓库在 depth<=max_depth 可被找到；到达 max_depth 后不再下钻。
+    返回 (path, depth) 元组。
+    """
+    stack = [(root, 0)]
+    while stack:
+        dirpath, depth = stack.pop()
+        if _resolve_git_dir(dirpath) is not None:
+            yield (dirpath, depth)
+            continue  # 仓库内部不再下钻（含 .git / 裸仓）
+        if depth >= max_depth:
+            continue
+        try:
+            with os.scandir(dirpath) as it:
+                entries = list(it)
+        except OSError:
+            continue
+        for e in entries:
+            try:
+                if not e.is_dir(follow_symlinks=False):
+                    continue
+            except OSError:
+                continue
+            # 跳过 junction / reparse point（Windows 目录联接，防环/防重复）
+            try:
+                if hasattr(e, "is_junction") and e.is_junction():
+                    continue
+                st = e.stat(follow_symlinks=False)
+                if getattr(st, "st_reparse_tag", 0):
+                    continue
+            except OSError:
+                continue
+            name = e.name
+            if name in _SKIP_DIRS or (name.startswith(".") and name != ".git"):
+                continue
+            stack.append((Path(e.path), depth + 1))
+
+
+def scan_git_dirs(root: str | Path, max_depth: int = 2, *,
+                  workers: int | None = None,
+                  progress=None, cancelled=None) -> list[RepoInfo]:
+    """扫描根目录下所有 git 仓库目录（常规/worktree/裸仓，下钻最多 max_depth 层）。
+
+    - 不深入 .git / 依赖目录等内部；跳过 junction/reparse 防环
+    - 候选仓库用线程池并发采集（remote/HEAD 为纯文件读，快）
+    - progress(done, total)：每完成一个候选回调（线程安全）；cancelled() 返回 True 时提前停止
+    - 返回按路径排序的 RepoInfo 列表；目录读取异常自动跳过，不中断整体扫描
     """
     root = Path(root)
     if not root.is_dir():
         return []
-    results: list[RepoInfo] = []
-    for dirpath, dirnames, _ in os.walk(root):
-        depth = len(Path(dirpath).relative_to(root).parts)
-        # .git 单独处理；其余隐藏目录（.venv/.idea 等）跳过
-        has_git = ".git" in dirnames
-        dirnames[:] = [d for d in dirnames
-                       if d not in _SKIP_DIRS and (d == ".git" or not d.startswith("."))]
-        if has_git:
-            results.append(_make_info(root, Path(dirpath), depth))
-            # .git 已从 dirnames 移除，os.walk 不会深入
-            continue
-        if depth >= max_depth:
-            dirnames[:] = []  # 不再下钻
-    results.sort(key=lambda i: i.path)
-    return results
+    candidates = list(_iter_git_candidates(root, max_depth))
+    total = len(candidates)
+    if progress is not None:
+        try:
+            progress(0, total)
+        except Exception:
+            pass
+    if not candidates:
+        return []
+
+    n_workers = workers if workers and workers > 0 else min(16, (os.cpu_count() or 4) + 4)
+    lock = threading.Lock()
+    infos: list[RepoInfo] = []
+    done = [0]
+
+    def _work(item):
+        # 取消检查：提前停止（不发 progress，返回 None）
+        if cancelled is not None:
+            try:
+                if cancelled():
+                    return
+            except Exception:
+                pass
+        dirpath, depth = item
+        try:
+            info = _make_info(root, Path(dirpath), depth)
+        except Exception:
+            info = None
+        with lock:
+            if info is not None:
+                infos.append(info)
+            done[0] += 1
+            if progress is not None:
+                try:
+                    progress(done[0], total)
+                except Exception:
+                    pass
+
+    with ThreadPoolExecutor(max_workers=n_workers) as ex:
+        list(ex.map(_work, candidates))
+
+    infos.sort(key=lambda i: i.path)
+    return infos
 
 
 def filter_new(existing: list[RepoInfo], known_keys: set) -> list[RepoInfo]:

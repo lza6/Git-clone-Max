@@ -148,6 +148,49 @@ class Database:
             ).fetchone()
             return int(row["id"])
 
+    def bulk_upsert_repos(self, items) -> int:
+        """批量 upsert（单事务 executemany），返回写入条数（P-perf：本地扫描导入提速）。
+
+        items: iterable of (spec, local_path, host, head_sha)。
+        语义与 upsert_repo 一致（owner+repo+host 冲突则更新）；单条失败整体回滚。
+        """
+        items = list(items)
+        if not items:
+            return 0
+        rows = [
+            (spec.owner, spec.repo, spec.folder_name, spec.url_https, local_path,
+             host or "local", None, head_sha,
+             time.strftime("%Y-%m-%d %H:%M:%S"))
+            for (spec, local_path, host, head_sha) in items
+        ]
+        with self._lock:
+            self._begin_immediate()
+            try:
+                self._conn.executemany(
+                    """
+                    INSERT INTO repos
+                        (owner, repo, folder_name, url, local_path, host,
+                         default_branch, head_sha, last_sync_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(owner, repo, host) DO UPDATE SET
+                        folder_name=excluded.folder_name,
+                        url=excluded.url,
+                        local_path=excluded.local_path,
+                        default_branch=excluded.default_branch,
+                        head_sha=excluded.head_sha,
+                        updated_at=datetime('now','localtime')
+                    """,
+                    rows,
+                )
+                self._conn.commit()
+            except Exception:
+                try:
+                    self._conn.rollback()
+                except Exception:
+                    pass
+                raise
+            return len(rows)
+
     def set_repo_head(self, repo_id: int, head_sha: str | None, default_branch: str | None = None):
         with self._lock:
             self._begin_immediate()

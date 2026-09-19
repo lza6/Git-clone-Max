@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from ..app.scanner import RepoInfo, to_spec
+from ..app.scanner import RepoInfo, known_keys_from_db, to_spec
 from ..db.repo_db import Database
 from .scan_worker import ScanWorker
 
@@ -44,6 +44,9 @@ class LocalReposDialog(QDialog):
         self._filtered: list[RepoInfo] = []
         self._selected: list[RepoInfo] = []
         self._worker: Optional[ScanWorker] = None
+        # P-perf：已入库键集合预载（O(1) 判断），避免逐行查库
+        self._known_keys: set[str] = set()
+        self._refresh_known_keys()
 
         self._roots: list[Path] = []
         if root_paths:
@@ -155,11 +158,19 @@ class LocalReposDialog(QDialog):
     def _render(self):
         self._apply_filter()
 
-    def _is_imported(self, info: RepoInfo) -> bool:
-        """判断仓库是否已入库；db 为 None 时一律按未入库处理。"""
+    def _refresh_known_keys(self) -> None:
+        """预载已入库键集合（list_repos 一次全量），O(1) 判断后续每一行。"""
         if self._db is None:
-            return False
-        return self._db.get_repo(info.owner, info.repo, None) is not None
+            self._known_keys = set()
+            return
+        try:
+            self._known_keys = known_keys_from_db(self._db.list_repos())
+        except Exception:
+            self._known_keys = set()
+
+    def _is_imported(self, info: RepoInfo) -> bool:
+        """判断仓库是否已入库（基于预载键集合，O(1)）；db 为 None 时一律未入库。"""
+        return info.key in self._known_keys
 
     def _apply_filter(self, *args):
         q = self.filter_edit.text().strip().lower()
@@ -180,11 +191,17 @@ class LocalReposDialog(QDialog):
         self.table.setRowCount(len(rows))
         self.table.setUpdatesEnabled(False)
         for i, info in enumerate(rows):
-            chk = QCheckBox()
             imported = self._is_imported(info)
-            chk.setEnabled(not imported)
-            chk.setChecked(not imported)
-            self.table.setCellWidget(i, 0, chk)
+            # P-perf：用 item checkState 替代 QCheckBox cellWidget（几千行渲染不卡）
+            chk = QTableWidgetItem()
+            chk_flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable \
+                | Qt.ItemFlag.ItemIsUserCheckable
+            if imported:
+                chk_flags &= ~Qt.ItemFlag.ItemIsEnabled
+            chk.setFlags(chk_flags)
+            chk.setCheckState(
+                Qt.CheckState.Unchecked if imported else Qt.CheckState.Checked)
+            self.table.setItem(i, 0, chk)
             display = info.display
             if imported:
                 display = f"{display}（已入库）"
@@ -198,22 +215,22 @@ class LocalReposDialog(QDialog):
     def _checked(self) -> list[RepoInfo]:
         sel = []
         for i, info in enumerate(self._filtered):
-            w = self.table.cellWidget(i, 0)
-            if isinstance(w, QCheckBox) and w.isChecked():
+            it = self.table.item(i, 0)
+            if it is not None and it.checkState() == Qt.CheckState.Checked:
                 sel.append(info)
         return sel
 
     def _select_all(self):
         for i in range(len(self._filtered)):
-            w = self.table.cellWidget(i, 0)
-            if isinstance(w, QCheckBox):
-                w.setChecked(True)
+            it = self.table.item(i, 0)
+            if it is not None and (it.flags() & Qt.ItemFlag.ItemIsEnabled):
+                it.setCheckState(Qt.CheckState.Checked)
 
     def _select_none(self):
         for i in range(len(self._filtered)):
-            w = self.table.cellWidget(i, 0)
-            if isinstance(w, QCheckBox):
-                w.setChecked(False)
+            it = self.table.item(i, 0)
+            if it is not None:
+                it.setCheckState(Qt.CheckState.Unchecked)
 
     def _on_import(self):
         sel = self._checked()
@@ -244,17 +261,27 @@ class LocalReposDialog(QDialog):
         """
         if not self._db or not self._selected:
             return 0
-        n = 0
+        to_write = []
         for info in self._selected:
             if self._is_imported(info) and not self.chk_overwrite.isChecked():
                 continue
             spec = to_spec(info)
-            try:
-                self._db.upsert_repo(spec, info.path,
-                                     host=info.host or "local",
-                                     default_branch=None,
-                                     head_sha=info.head_sha or None)
-                n += 1
-            except Exception:
-                continue
+            to_write.append((spec, info.path, info.host or "local",
+                             info.head_sha or None))
+        if not to_write:
+            return 0
+        try:
+            n = self._db.bulk_upsert_repos(to_write)
+        except Exception:
+            # 批量失败回退到逐条 upsert（保持可用性）
+            n = 0
+            for spec, local_path, host, head_sha in to_write:
+                try:
+                    self._db.upsert_repo(spec, local_path, host=host,
+                                         default_branch=None, head_sha=head_sha)
+                    n += 1
+                except Exception:
+                    continue
+        # 更新已知键集合，保证后续勾选/过滤正确
+        self._refresh_known_keys()
         return n
