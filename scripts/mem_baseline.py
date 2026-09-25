@@ -103,7 +103,7 @@ def save_baseline(path: Path, data: dict[str, Any]) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--batch", type=int, default=DEFAULT_BATCH, help=f"假批次条数（默认 {DEFAULT_BATCH}）")
+    ap.add_argument("--batch", type=int, default=DEFAULT_BATCH, help=f"假批次条数（默认 {DEFAULT_BATCH}）")  # noqa: E501
     ap.add_argument("--baseline", type=Path, default=DEFAULT_BASELINE, help="基线文件路径")
     args = ap.parse_args(argv)
 

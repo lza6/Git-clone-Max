@@ -115,7 +115,7 @@ __changelog__ = (
     "8.0.1: 维护版 - publish_release 远端 tag 缺失幂等补建(404→create/422 竞态视为成功, "
     "含 4 单测) · 计划文档全表清账(G45-G49 状态回填[已落地], 规划总览 M 系列对齐实际交付) · "
     "全量 761 绿 · 覆盖 84%",
-    "8.1.0: G51 文档权威化 + G52 任务可靠性(自动重试队列/跨会话续跑/看门狗/进度GC/失败聚合/并发记忆) + G55 工程测试体系(QSS校验/变异冒烟/内存基线) + G56 生态agent化(CLI --json/--diag/--serve + MCP只读 + HTTP API + skills技能包 + agent契约) · 全量测试全绿/覆盖84/ruff0/mypy0",
+    "8.1.0: G51 文档权威化 + G52 任务可靠性(自动重试队列/跨会话续跑/看门狗/进度GC/失败聚合/并发记忆) + G55 工程测试体系(QSS校验/变异冒烟/内存基线) + G56 生态agent化(CLI --json/--diag/--serve + MCP只读 + HTTP API + skills技能包 + agent契约) · 全量测试全绿/覆盖84/ruff0/mypy0",  # noqa: E501
     "0 子进程+线程池并发+scandir 跳 junction) · 裸仓/worktree 完整性 · local_repos_dialog "
     "O(1) 预载+item checkState+批量写库 · 实测 300 仓 149.4s→1.6s(约95x) · "
     "全量 770 绿 · 覆盖 84%",
