@@ -103,6 +103,7 @@ class Database:
             self._conn.commit()
         # G33-5：sync_history 容量治理计数器（每 100 次 add_sync_history 自动清理一次）
         self._prune_counter = 0
+        self._history_retention_days = 90  # G53-4 历史保留天数（默认 90，可配）
 
     def close(self):
         with self._lock:
@@ -283,16 +284,32 @@ class Database:
 
     # ------------------------------------------------------------ G33-5 容量治理
     def _maybe_prune_history(self, force: bool = False) -> int:
-        """sync_history 容量治理：每仓库保留最近 200 条 + 全局 90 天窗口。
-
-        调用节奏：计数器每次 +1，达到 100 的倍数或 force=True 时真正执行清理
-        （避免每次插入都跑全表窗口函数）。返回本次删除的行数。
-        时区注意：started_at 为本地时间文本，90 天窗口用
-        datetime('now','localtime','-90 days') 与之一致比较，避免 8 小时边界误删。
-        """
+        """sync_history 容量治理：每仓保留 200 条 + 可配保留天数（G53-4）。"""
         self._prune_counter += 1
         if not (force or self._prune_counter % 100 == 0):
             return 0
+        n = self.prune_history(self._history_retention_days)
+        self._prune_counter = 0
+        return n
+    def set_history_retention_days(self, days: int) -> None:
+        """G53-4 设置历史保留天数（1-3650，默认 90）。"""
+        try:
+            self._history_retention_days = max(1, min(3650, int(days)))
+        except (TypeError, ValueError):
+            self._history_retention_days = 90
+
+    def get_history_retention_days(self) -> int:
+        """G53-4 当前历史保留天数。"""
+        return self._history_retention_days
+
+    def prune_history(self, retention_days: int | None = None) -> int:
+        """G53-4 按保留天数清理 sync_history；删除超窗口且超 200 行/仓的记录。"""
+        if retention_days is None:
+            retention_days = self._history_retention_days
+        try:
+            days = max(1, min(3650, int(retention_days)))
+        except (TypeError, ValueError):
+            days = 90
         with self._lock:
             cur = self._conn.execute(
                 """
@@ -301,12 +318,16 @@ class Database:
                         SELECT id, ROW_NUMBER() OVER (PARTITION BY repo_id ORDER BY id DESC) AS rn
                         FROM sync_history
                     ) WHERE rn <= 200
-                ) OR started_at < datetime('now', 'localtime', '-90 days')
+                ) OR started_at < datetime('now', 'localtime', ?)
                 """
+                ,
+                (f"-{days} days",),
             )
             self._conn.commit()
             self._prune_counter = 0
             return cur.rowcount
+
+    # ------------------------------------------------------------------ 读
 
     # ------------------------------------------------------------------ 读
     def get_repo(self, owner: str, repo: str,

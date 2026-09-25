@@ -166,6 +166,20 @@ class StatisticsDialog(QDialog):
         self.lbl_slow.setWordWrap(True)
         v.addWidget(self.lbl_slow)
 
+
+        # G53-1 多维评分卡（成功率/陈旧度/冲突/大小/标签/最近同步）
+        v.addWidget(QLabel("多维评分卡（0-100，越高越好）"))
+        self.lbl_scorecard = QLabel("")
+        self.lbl_scorecard.setObjectName("muted")
+        self.lbl_scorecard.setWordWrap(True)
+        v.addWidget(self.lbl_scorecard)
+
+        # G53-3 存储看板（数据目录占用 / 磁盘剩余 / 建议）
+        v.addWidget(QLabel("存储看板"))
+        self.lbl_storage = QLabel("")
+        self.lbl_storage.setObjectName("muted")
+        self.lbl_storage.setWordWrap(True)
+        v.addWidget(self.lbl_storage)
         self.lbl_note = QLabel("数据来自 sync_history 全量聚合；每次同步自动记录。")
         self.lbl_note.setObjectName("muted")
         v.addWidget(self.lbl_note)
@@ -233,6 +247,38 @@ class StatisticsDialog(QDialog):
                     f"{avg_s:.1f}s × {it.get('count', 0)}  "
                     f"{it.get('last_sync', '')}")
             self.lbl_slow.setText("\n".join(lines))
+
+        # G53-1 多维评分卡展示（最差在前 5 + 总览）
+        try:
+            from ..app.alerts import overall_summary, scorecards
+            repos = self.db.list_repos(host=None) if hasattr(self.db, "list_repos") else []
+            cards = scorecards(repos or [],
+                                lambda rid: self.db.history(rid, 20) if hasattr(self.db, "history") else [],
+                                now=None)
+            summary = overall_summary(cards)
+            if cards:
+                avg = summary["avg"]
+                parts = [f"{k} {v}" for k, v in avg.items()]
+                lines = [f'总评 {summary["overall"]}/100 · ' + ' '.join(parts)]
+                for c in summary["weakest"][:3]:
+                    lines.append(f'  {c["key"]} {c["overall"]}分：{c["suggestions"][0]}')
+                self.lbl_scorecard.setText("\\n".join(lines))
+            else:
+                self.lbl_scorecard.setText("（暂无仓库数据）")
+        except Exception:
+            self.lbl_scorecard.setText("评分卡：（不可用）")
+
+        # G53-3 存储看板
+        try:
+            from ..app.alerts import storage_overview
+            data_dir = getattr(self, "data_dir", None) or getattr(self.db, "path", None)
+            info = storage_overview(data_dir, threshold_gb=5)
+            files = info.get("files", {})
+            fsize = " · ".join(f"{k} {v//1024}KB" for k, v in files.items() if v)
+            self.lbl_storage.setText(
+                f'占用 {info["total_bytes"]//1024}KB ｜ 磁盘剩余 {info["free_gb"]}GB\\n{fsize}\\n{info["suggest"]}')
+        except Exception:
+            self.lbl_storage.setText("存储看板：（不可用）")
 
     # ------------------------------------------------------------ G47-4 周期/PNG
     def _on_period_changed(self):
