@@ -1,4 +1,10 @@
 """UI 通用：日志事件模型 / 文本高亮 / 样式常量 / 图标 helper。"""
+
+# G55 engineering item: E501 (>88 chars) counts.
+# before: 8 rows [232/247/251/254/282/284/287/418]; after: 5 rows [232/247/282/284/287].
+# Rows 232/247/282/284/287 are whole-line QSS template text: splitting would change
+# emitted QSS bytes, so they stay. Rows 251/254 fixed via locals, 418 via adjacent
+# string literal split (regex bytes identical).
 from __future__ import annotations
 
 import re
@@ -205,6 +211,10 @@ def _build_qss(palette: dict, scale: float = 1.0, motion: bool = True) -> str:
     b_fmt = TOKENS["border"]["focus"]
     pressed = _shade(panel2, 118)
     hover_bg = _shade(panel2, 108)
+    # G55 engineering item: split oversize template lines via locals (same values).
+    alt_bg = _shade(panel, 125) if palette.get("bg") == "#0d1117" else _shade(panel, 96)
+    danger_qss = (f"QPushButton#danger {{ background: {_shade(err, 260)}; "
+                  f"border-color: {_shade(err, 160)}; color: {err}; }}")
     if not motion:
         hover_motion = ""
     else:
@@ -212,7 +222,7 @@ def _build_qss(palette: dict, scale: float = 1.0, motion: bool = True) -> str:
             f"QPushButton:hover {{ background: {hover_bg}; border-color: {accent}; }}"
         )
         pressed_motion = f"QPushButton:pressed {{ background: {pressed}; }}"
-    return f"""
+    style = f"""
 QWidget {{ background: {bg}; color: {text};
             font-size: {px}px; font-family: {FONT_STACK}; }}
 QMainWindow, QDialog {{ background: {bg}; }}
@@ -248,10 +258,10 @@ QPushButton#primary {{
 }}
 QPushButton#primary:disabled {{ background: {_shade(accent, 200)}; color: {dim}; }}
 QPushButton#primary:hover {{ background: {_shade(accent, 108)}; }}
-QPushButton#danger {{ background: {_shade(err, 260)}; border-color: {_shade(err, 160)}; color: {err}; }}
+{danger_qss}
 QPushButton#danger:hover {{ background: {_shade(err, 200)}; }}
 QTableWidget {{
-  background: {panel}; alternate-background-color: {_shade(panel, 125) if palette.get("bg") == "#0d1117" else _shade(panel, 96)};
+  background: {panel}; alternate-background-color: {alt_bg};
   gridline-color: {border}; border: {b_def}px solid {border}; border-radius: {r_ctl}px;
 }}
 QHeaderView::section {{
@@ -287,6 +297,9 @@ QTabBar::tab {{ padding: 8px 18px; background: {panel}; color: {dim};
 QTabBar::tab:selected {{ background: {panel2}; color: {text}; border-top: 2px solid {accent}; }}
 QTabBar::tab:hover {{ color: {text}; }}
 """
+    from . import qss_validate  # G55 engineering item: static QSS validator hook.
+    qss_validate.validate_qss_or_raise(style)
+    return style
 
 
 def qss_for_theme(name: str, scale: float = 1.0, motion: bool = True) -> str:
@@ -415,7 +428,11 @@ def make_highlighter(document):
                  PALETTE["error"], True),
                 (re.compile(r"^\[(警告|WARN).*$", re.I), PALETTE["warning"], True),
                 (re.compile(r"https?://\S+"), PALETTE["accent"], False),
-                (re.compile(r"^.*\b(Cloning into|remote:|Receiving objects:|Resolving deltas:|Counting objects:|Compressing objects:|Updating files:|Unpacking objects:|Fetching|From |Fast-forward|Already up to date|Total \d+)\b.*$", re.I),
+                (re.compile(
+                     r"^.*\b(Cloning into|remote:|Receiving objects:|"
+                     r"Resolving deltas:|Counting objects:|Compressing objects:|"
+                     r"Updating files:|Unpacking objects:|Fetching|From |"
+                     r"Fast-forward|Already up to date|Total \d+)\b.*$", re.I),
                  PALETTE["text_dim"], False),
             ]
 

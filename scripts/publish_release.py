@@ -22,6 +22,7 @@ import urllib.request
 from pathlib import Path
 
 from github import Github as Github  # noqa: F401  PyGithub（供 main 内引用，勿删）
+
 # G50-3 控制台编码兑底：窄编码终端（cp1252/GBK）下中文输出不再抛 UnicodeEncodeError
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
@@ -194,7 +195,8 @@ def _validate_version(tag: str, version: str, changelog) -> str | None:
     if not tag:
         tag = expected_tag
     if tag != expected_tag:
-        print(f"[FAIL] tag 不一致：传入 {tag!r}，期望 {expected_tag!r}（gcm.__version__={version!r}）")
+        print(f"[FAIL] tag 不一致：传入 {tag!r}，"
+              f"期望 {expected_tag!r}（gcm.__version__={version!r}）")
         return None
     matched = [e for e in changelog if e.startswith(str(version) + ":")]
     if not matched:
