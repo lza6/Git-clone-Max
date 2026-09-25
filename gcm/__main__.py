@@ -1,4 +1,4 @@
-"""应用入口：数据目录解析 + 主窗口/CLI 启动（G45-3 / G49-2 / G49-3 / G49-6）。"""
+"""应用入口：数据目录解析 + 主窗口/CLI 启动（G45-3 / G49-2 / G49-3 / G49-6 / G56-3/4）。"""
 from __future__ import annotations
 
 import os
@@ -45,12 +45,16 @@ def get_data_dir(portable: bool = False) -> Path:
 
 
 def _parse_flags(argv=None) -> dict:
-    """解析 CLI 旗标：--portable / --minimized / --cli。"""
+    """解析 CLI 旗标：--portable / --minimized / --cli / --json / --diag / --serve / 写放行。"""
     args = list(sys.argv[1:] if argv is None else argv)
     return {
         "portable": "--portable" in args,
         "minimized": "--minimized" in args,
         "cli": "--cli" in args,
+        "json": "--json" in args,
+        "diag": "--diag" in args,
+        "serve": "--serve" in args,
+        "allow_mutate": "--allow-mutate" in args,
     }
 
 
@@ -101,6 +105,11 @@ def main(argv=None) -> int:
                      start_hidden=bool(flags["minimized"]))
     if not win.should_auto_hide():
         win.show()
+        # G52-2：真实启动且窗口可见 → 调度续跑检测（测试/隐藏启动不弹）
+        try:
+            win._schedule_resume_check()
+        except Exception:
+            pass
     try:
         return app.exec()
     finally:
