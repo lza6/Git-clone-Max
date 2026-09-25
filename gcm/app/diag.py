@@ -1,10 +1,13 @@
 """G48-8 网络诊断：串行探测 git/TCP/GitHub API/代理，输出分级报告（绿/黄/红）。"""
 from __future__ import annotations
 
+import shutil
 import socket
 import subprocess
+import sys
 import time
 import urllib.request
+from pathlib import Path
 
 
 def probe_git() -> dict:
@@ -56,3 +59,61 @@ def grade(reports: list[dict]) -> str:
     if "warn" in st:
         return "黄（部分缓慢/受限）"
     return "绿（全部正常）"
+
+# ---------------------------------------------------------------- G54-3 环境体检
+def probe_data_dir(data_dir=None) -> dict:
+    """G54-3：数据目录可写性。"""
+    try:
+        p = Path(data_dir) if data_dir else Path.cwd()
+        p.mkdir(parents=True, exist_ok=True)
+        probe = p / ".gcm_diag_probe"
+        probe.write_text("x", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        return {"name": "数据目录", "status": "ok", "detail": f"可写（{p}）"}
+    except Exception as e:
+        return {"name": "数据目录", "status": "err", "detail": f"不可写：{e}"}
+
+
+def probe_disk(data_dir=None, min_free_gb: float = 1.0) -> dict:
+    """G54-3：磁盘剩余空间。"""
+    try:
+        p = Path(data_dir) if data_dir else Path.cwd()
+        free_gb = shutil.disk_usage(str(p)).free / 1073741824.0
+        st = "ok" if free_gb >= min_free_gb else "warn"
+        return {"name": "磁盘空间", "status": st, "detail": f"剩余 {free_gb:.1f} GB"}
+    except Exception as e:
+        return {"name": "磁盘空间", "status": "err", "detail": f"检测失败：{e}"}
+
+
+def probe_python() -> dict:
+    """G54-3：Python/Qt 版本。"""
+    try:
+        from PyQt6.QtCore import QT_VERSION_STR
+        detail = f"Python {sys.version.split()[0]} · Qt {QT_VERSION_STR}"
+        return {"name": "运行环境", "status": "ok", "detail": detail}
+    except Exception as e:
+        return {"name": "运行环境", "status": "warn", "detail": f"Qt 版本不可用：{e}"}
+
+
+def run_env_diagnostics(data_dir=None) -> list:
+    """G54-3：环境体检（数据目录/磁盘/Python-Qt）+ 网络诊断。"""
+    reports = [probe_git(), probe_data_dir(data_dir), probe_disk(data_dir), probe_python()]
+    reports += run_diagnostics()
+    return reports
+
+
+def copy_paste_report(reports, app_version: str = "") -> str:
+    """G54-5：组装可复制的诊断文本（redact 后）。"""
+    redactor = str
+    try:
+        from ..util.redact import redact as _r
+        redactor = _r
+    except Exception:
+        pass
+    out = [f"Git-clone-Max 诊断（版本 {app_version or chr(117)+chr(110)+chr(107)+chr(110)+chr(111)+chr(119)+chr(110)}）"]
+    for item in reports or []:
+        nm = item.get("name")
+        st = item.get("status")
+        dt = redactor(str(item.get("detail") or ""))
+        out.append(f"[{nm}] {st} :: {dt}")
+    return chr(10).join(out)

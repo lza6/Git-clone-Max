@@ -35,10 +35,39 @@ HELP_SECTIONS = [
 ]
 
 
+# G54-2 排错地图：错误 → 根因 → 检查动作 → 对应设置入口
+TROUBLESHOOT_SECTIONS = [
+    ("认证失败 / token 无效", [
+        "根因：凭据缺失、过期或 host 未登记",
+        "检查：设置页「按平台凭据」host=token 是否填写且对应平台正确",
+        "动作：更新 token 后重试；私有仓库需确认账号对该仓库有权限",
+    ]),
+    ("平台限制 / 路径非法", [
+        "根因：仓库含 Windows 非法字符（如 : * ? ），或目标目录被占用",
+        "检查：仓库名是否含冒号/星号；目标目录是否被其他程序占用",
+        "动作：换 WSL/Linux 环境克隆，或清理占用后重试",
+    ]),
+    ("网络超时 / 连接失败", [
+        "根因：网络不可达、代理配置错误、或远端过慢",
+        "检查：设置页「网络诊断」跑一键体检；确认代理地址可用",
+        "动作：启用浅克隆/镜像前缀加速，或设置更宽松的超时",
+    ]),
+    ("磁盘空间不足", [
+        "根因：本地磁盘剩余空间不足",
+        "检查：统计中心「存储看板」查看数据目录占用",
+        "动作：清理历史/备份旧仓库，或迁移下载目录",
+    ]),
+]
+
+
 def help_html() -> str:
     """生成只读富文本（QTextBrowser 可直接 setHtml）。"""
     parts = ["<h2>Git-clone-Max 使用说明</h2>"]
     for title, lines in HELP_SECTIONS:
+        parts.append(f"<h3>{title}</h3>")
+        parts.append("<ul>" + "".join(f"<li>{line}</li>" for line in lines) + "</ul>")
+    parts.append("<h2>排错地图</h2>")
+    for title, lines in TROUBLESHOOT_SECTIONS:
         parts.append(f"<h3>{title}</h3>")
         parts.append("<ul>" + "".join(f"<li>{line}</li>" for line in lines) + "</ul>")
     return "".join(parts)
