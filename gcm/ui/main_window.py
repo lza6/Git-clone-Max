@@ -1511,19 +1511,32 @@ class MainWindow(QMainWindow):
         """G45-6 转发 manage_panel.py（行为零变化）。"""
         return self.manage_panel.export_selected_csv()
 
-    def resizeEvent(self, e):
-        """G36-5 空态 overlay 跟随表格尺寸重定位。"""
+    # ------------------------------------------------------------ G57-1 窗口语义档
+    def _apply_layout_for_width(self, w: int) -> None:
+        """G57-1：按窗口宽度切换布局语义（S<768 / M / D / XL）。窄窗折叠次要列。"""
         try:
-            if getattr(self, "_empty_download", None) is not None and \
-                    self._empty_download.isVisible():
-                self._empty_download.setGeometry(self.table.rect())
-            if getattr(self, "_empty_manage", None) is not None and \
-                    self._empty_manage.isVisible():
-                self._empty_manage.setGeometry(self.manage_table.rect())
+            narrow = w < 768
+            if hasattr(self, "manage_table"):
+                for col in range(self.manage_table.columnCount()):
+                    hdr = self.manage_table.horizontalHeaderItem(col)
+                    hide = narrow and hdr is not None and hdr.text() in ("大小", "健康", "标签")
+                    self.manage_table.setColumnHidden(col, bool(hide))
         except Exception:
             pass
-        super().resizeEvent(e)
 
+    def resizeEvent(self, e):
+        """G57-1 窗口语义档（防抖 150ms）+ G36-5 空态 overlay 跟随表格定位。"""
+        try:
+            if not hasattr(self, "_layout_timer"):
+                from PyQt6.QtCore import QTimer as _QT
+                self._layout_timer = _QT(self)
+                self._layout_timer.setSingleShot(True)
+                self._layout_timer.setInterval(150)
+                self._layout_timer.timeout.connect(
+                    lambda: self._apply_layout_for_width(self.width()))
+            self._layout_timer.start()
+        except Exception:
+            pass
     # ------------------------------------------------------------ G49-6 启动隐入托盘
     def should_auto_hide(self) -> bool:
         """--minimized 启动且系统托盘已安装 → 主窗不弹出（托盘常驻）。"""

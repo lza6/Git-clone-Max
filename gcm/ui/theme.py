@@ -319,13 +319,39 @@ _current_theme = "deep"
 FONT_BASE_PX = 13
 
 
+def clamp_scale_for_dpi(scale: float, dpi: float = 0.0) -> float:
+    """G57-2 DPI 联动：DPI>=150% 时字号下限自动抬到 1.0（防小字号不可读）。
+
+    scale 原比例 [0.8,1.6]；dpi<=0 表示未知（保持原值）。返回应用 DPI 规则后的比例。
+    """
+    try:
+        s = float(scale)
+    except (TypeError, ValueError):
+        s = 1.0
+    d = float(dpi or 0)
+    if d >= 150.0:
+        s = max(s, 1.0)
+    return s
+
+
 def qss_for_scale(scale: float = 1.0, motion: bool = True) -> str:
     """按当前主题与缩放生成 QSS（比例钳制 [0.8, 1.6]；motion=False 走 reduced-motion）。
 
     旧版仅替换深色模板字号；G46-1 起按当前主题色板生成，light/nord/hc 真正换色。
+    G57-2：DPI>=150% 时下限抬到 1.0（clamp_scale_for_dpi）。
     """
     from PyQt6.QtGui import QColor as _QC  # noqa: F401  — _build_qss 内部已引用 QColor
-    return _build_qss(current_palette(), scale, motion)
+    dpi = 0.0
+    try:
+        import os as _os
+        if str(_os.environ.get("QT_QPA_PLATFORM", "")).lower() != "offscreen":
+            from PyQt6.QtWidgets import QApplication
+            app = QApplication.instance()
+            if app is not None and app.primaryScreen() is not None:
+                dpi = float(app.primaryScreen().devicePixelRatio() * 100.0)
+    except Exception:
+        dpi = 0.0
+    return _build_qss(current_palette(), clamp_scale_for_dpi(scale, dpi), motion)
 
 
 def apply_theme(name: str) -> None:
