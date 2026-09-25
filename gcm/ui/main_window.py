@@ -174,6 +174,21 @@ class MainWindow(QMainWindow):
         self._auto_update_timer.timeout.connect(self._on_auto_update_tick)
         self._restart_auto_update_timer()
 
+        # G52-2/3：跨会话续跑清单 + 看门狗（数据目录 session_runtime.json）
+        from ..db.runtime_sessions import RuntimeSessionStore
+        self.session_store = RuntimeSessionStore(self.data_dir / "session_runtime.json")
+        from ..app.watchdog import Watchdog
+        self.watchdog = Watchdog(
+            self.data_dir / "session_runtime.json",
+            interval_min=int(getattr(self.settings, "watchdog_interval_min", 5) or 5),
+            silent=bool(getattr(self.settings, "watchdog_silent", False)),
+            engine=self.engine, parent=self)
+        self.watchdog.resume_requested.connect(self._on_watchdog_resume)
+        if bool(getattr(self.settings, "watchdog_enabled", False)):
+            self.watchdog.start()
+        # G52-2：启动续跑对话框由 show 后统一调度（_schedule_resume_check），
+        # 不在 __init__ 裸调度——避免 closeEvent/drain 泵事件时误弹阻塞对话框。
+
     def _restart_auto_update_timer(self):
         """按 settings.auto_update_minutes 重启自动更新定时器（0=关）。"""
         try:
@@ -480,6 +495,10 @@ class MainWindow(QMainWindow):
         btns.addWidget(self.btn_cancel)
         btns.addWidget(self.btn_clear)
         btns.addWidget(self.btn_open)
+        # G52-5：失败原因聚合面板入口
+        self.btn_failures = QPushButton(tr("失败汇总"))
+        self.btn_failures.clicked.connect(self._open_failure_dialog)
+        btns.addWidget(self.btn_failures)
         btns.addStretch()
         v.addLayout(btns)
 
@@ -878,6 +897,9 @@ class MainWindow(QMainWindow):
     def _on_adapt_changed(self, n: int, text: str):
         """G48-1：并发自适应状态栏提示。"""
         try:
+            rate = getattr(self.engine, "batch_fail_rate", None)
+            if rate is not None:
+                text = f"{text}（近批失败率 {rate:.0f}%）"
             self.statusBar().showMessage(text)
             self._emit_log(_fmt_dt(), LogLevel.WARN, text)
         except Exception:
@@ -1130,7 +1152,22 @@ class MainWindow(QMainWindow):
             lfs_enabled=bool(getattr(self.settings, "lfs_enabled", False)),  # G48-2
             post_clone_hook=str(getattr(self.settings, "post_clone_hook", "")),  # G48-5
             mirror=bool(mirror),  # G48-6
+            # G52-1 失败自动重试队列（设置开启且网络类错误才入队）
+            retry_queue_path=self.data_dir / "retry_queue.json",
+            retry_enabled=bool(getattr(self.settings, "retry_enabled", False)),
+            retry_max=int(getattr(self.settings, "retry_max", 2) or 2),
+            retry_backoff_base_sec=int(getattr(self.settings, "retry_backoff_base_sec", 30) or 30),
+            # G52-2 跨会话续跑清单
+            session_store=self.session_store,
+            # G52-3 看门狗参数（MainWindow 持有 Watchdog 实例）
+            watchdog_enabled=bool(getattr(self.settings, "watchdog_enabled", False)),
+            watchdog_interval_min=int(getattr(self.settings, "watchdog_interval_min", 5) or 5),
+            # G52-4 进度文件治理
+            progress_gc=self._progress_gc_mod(),
+            # G52-6 并发自适应记忆
+            concurrency_state_path=self.data_dir / "concurrency_state.json",
         )
+        self.watchdog.set_engine(self.engine)
         self.engine.line.connect(self._on_engine_line)
         self.engine.adapt_changed.connect(self._on_adapt_changed)  # G48-1
         self.engine.progress.connect(self._on_worker_progress)
@@ -1269,8 +1306,119 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------ 槽
     @pyqtSlot()
+    # ------------------------------------------------------------ G52-4 进度 GC 模块
+    @staticmethod
+    def _progress_gc_mod():
+        """G52-4：进度文件治理模块（惰性导入，避免拖慢启动）。"""
+        try:
+            from ..db import progress_gc
+            return progress_gc
+        except Exception:
+            return None
+
+    # ------------------------------------------------------------ G52-5 失败汇总
+    def _open_failure_dialog(self):
+        """打开「失败原因聚合」对话框（按错误类别聚合 + 可重试该类别）。"""
+        try:
+            from .failure_panel import FailureDialog
+            dlg = FailureDialog(owner=self, parent=self)
+            dlg.retry_category.connect(self._on_failure_category_retry)
+            dlg.exec()
+        except Exception as e:
+            self._emit_log(_fmt_dt(), LogLevel.WARN, f"失败汇总打开失败：{e}")
+
+    def _on_failure_category_retry(self, category):
+        """按失败类别重试：从 progress.json failed 记录中筛出该类并重新调度。"""
+        try:
+            from ..db.repo_db import load_progress
+            from .failure_panel import categorize_failure
+            prog = load_progress(self.progress_path)
+            rows = prog.get("failed") or []
+            hits = [r for r in rows
+                    if categorize_failure(str(r.get("message") or "")) == category]
+            if not hits:
+                self._emit_log(_fmt_dt(), LogLevel.INFO, "该类无失败记录，跳过重试")
+                return
+            specs = []
+            for r in hits:
+                key = str(r.get("key") or "")
+                try:
+                    from ..app.url_lib import parse_any_repo_url
+                    sp = parse_any_repo_url(key)
+                except Exception:
+                    sp = None
+                if sp is not None:
+                    specs.append(sp)
+            if specs and not self.busy:
+                root = Path(getattr(self.settings, "download_dir", "") or self.data_dir / "clones")
+                self._launch(specs, target_root=root, shallow=False, depth=1,
+                             clear_input=False, single_branch=False)
+        except Exception as e:
+            self._emit_log(_fmt_dt(), LogLevel.WARN, f"失败类别重试失败：{e}")
+
+    # ------------------------------------------------------------ G52-2 启动续跑对话框
+    def _schedule_resume_check(self) -> None:
+        """窗口真实 show 后调度续跑检测（只在可见时弹，避免测试/关闭路径误弹）。"""
+        try:
+            if self.isVisible():
+                QTimer.singleShot(600, self._maybe_show_resume_dialog)
+        except Exception:
+            pass
+
+    def _maybe_show_resume_dialog(self):
+        """启动时检测 session_runtime.json 有未完成任务 → 弹「续跑/清空」对话框。
+
+        仅当窗口可见（真实应用启动）才弹；测试/closeEvent/drain 期间不可见 → 跳过。
+        """
+        try:
+            if not self.isVisible():
+                return
+            store = getattr(self, "session_store", None)
+            if store is None or not store.is_resumable():
+                return
+            specs = store.to_repo_specs()
+            if not specs:
+                return
+            names = "、".join(f"{s.owner}/{s.repo}" for s in specs[:5])
+            if len(specs) > 5:
+                names += "…"
+            ret = QMessageBox.question(
+                self,
+                tr("检测到未完成任务"),
+                tr(f"上次会话有 {len(specs)} 个任务未完成：\n{names}\n\n是否续跑？"),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes)
+            if ret == QMessageBox.StandardButton.Yes:
+                root = Path(getattr(self.settings, "download_dir", "") or self.data_dir / "clones")
+                self._launch(specs, target_root=root, shallow=False, depth=1,
+                             clear_input=False, single_branch=False)
+            elif ret == QMessageBox.StandardButton.No:
+                store.clear()
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------ G52-3 看门狗续跑
+    def _on_watchdog_resume(self, specs):
+        """看门狗检测到未完成任务 → 自动续跑（静默/非静默）。"""
+        try:
+            if self.busy or not specs:
+                return
+            if not getattr(self.watchdog, "silent", False):
+                self._emit_log(_fmt_dt(), LogLevel.SYSTEM,
+                               f"看门狗检测到 {len(specs)} 个未完成任务，自动续跑")
+            root = Path(getattr(self.settings, "download_dir", "") or self.data_dir / "clones")
+            self._launch(specs, target_root=root, shallow=False, depth=1,
+                         clear_input=False, single_branch=False)
+        except Exception as e:
+            self._emit_log(_fmt_dt(), LogLevel.WARN, f"看门狗续跑失败：{e}")
+
     def _on_engine_finished(self):
-        """G45-6 转发 progress_table.py（行为零变化）。"""
+        """G45-6 转发 progress_table.py（行为零变化；G52-3 复位看门狗）。"""
+        try:
+            if getattr(self, "watchdog", None) is not None:
+                self.watchdog.reset()
+        except Exception:
+            pass
         return self.progress_panel._on_engine_finished()
 
     def _reset_buttons(self):

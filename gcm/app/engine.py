@@ -12,12 +12,13 @@
 """
 from __future__ import annotations
 
+import json
 import threading
 import time
 from collections import OrderedDict
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from PyQt6.QtCore import QObject, QThreadPool, QTimer, pyqtSignal
 
@@ -63,7 +64,16 @@ class SyncEngine(QObject):
                  lfs_enabled: bool = False,
                  post_clone_hook: str = "",
                  ssh_key: str = "",
-                 mirror: bool = False):
+                 mirror: bool = False,
+                 retry_queue_path: Optional[str | Path] = None,
+                 retry_enabled: bool = False,
+                 retry_max: int = 2,
+                 retry_backoff_base_sec: int = 30,
+                 session_store: Optional[Any] = None,
+                 watchdog_enabled: bool = False,
+                 watchdog_interval_min: int = 5,
+                 progress_gc: Optional[Any] = None,
+                 concurrency_state_path: Optional[str | Path] = None):
         super().__init__()
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -94,6 +104,32 @@ class SyncEngine(QObject):
         self._adapt_current = self._adapt_max
         self._net_fail_streak = 0
         self._net_ok_streak = 0
+        # G52-1 任务级自动重试队列（仅网络类错误；None 时行为与旧版一致）
+        self._retry_queue = None
+        if retry_queue_path and retry_enabled:
+            from .retry_queue import RetryQueue
+            self._retry_queue = RetryQueue(
+                retry_queue_path, enabled=True,
+                max_retries=int(retry_max), backoff_base_sec=int(retry_backoff_base_sec))
+        # G52-2 跨会话续跑清单（None 时不启用）
+        self.session_store = session_store if session_store is not None else None
+        # G52-3 看门狗参数（由 MainWindow 创建 Watchdog；引擎只存参）
+        self.watchdog_enabled = bool(watchdog_enabled)
+        self.watchdog_interval_min = int(watchdog_interval_min)
+        # G52-4 进度文件治理（None 时不启用；传入 progress_gc 模块才在批次末滚动/裁剪）
+        self._progress_gc = progress_gc if progress_gc is not None else None
+        # G52-6 并发自适应记忆（跨会话恢复上次并发；None 时不持久化）
+        self._concurrency_state_path = (
+            Path(concurrency_state_path) if concurrency_state_path else None)
+        self._recent_batch_rates: list[float] = []
+        self._batch_total = 0
+        self._batch_net_fail = 0
+        self._retry_timer = QTimer(self)
+        self._retry_timer.setInterval(15000)
+        self._retry_timer.timeout.connect(self._retry_tick)
+        if self._retry_queue is not None:
+            self._restore_concurrency_state()
+            self._retry_timer.start()
 
         self.tasks: list[CloneWorker] = []
         self.flags: dict[int, CancelFlag] = {}
@@ -144,6 +180,139 @@ class SyncEngine(QObject):
         n = max(1, min(32, n))
         self.pool.setMaxThreadCount(n)
         return n
+
+    # ------------------------------------------------------------ G52-6 并发记忆
+    def _restore_concurrency_state(self) -> None:
+        """启动时从 concurrency_state.json 恢复上次并发（受设置上限约束）。"""
+        if self._concurrency_state_path is None or not self._concurrency_state_path.exists():
+            return
+        try:
+            data = json.loads(self._concurrency_state_path.read_text(encoding="utf-8"))
+            n = int(data.get("concurrency", 0))
+            if 1 <= n <= self._adapt_max:
+                self._adapt_current = n
+                self.set_concurrency(n)
+        except Exception:
+            pass
+
+    def _persist_concurrency_state(self) -> None:
+        """批次结束时持久化当前并发与近批失败率。"""
+        if self._concurrency_state_path is None:
+            return
+        try:
+            rate = self.batch_fail_rate
+            data = {
+                "concurrency": self._adapt_current,
+                "fail_rate": float(rate) if rate is not None else 0.0,
+                "window": len(self._recent_batch_rates),
+                "total": self._batch_total,
+                "failed": self._batch_net_fail,
+                "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            tmp = self._concurrency_state_path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            import os
+            os.replace(tmp, self._concurrency_state_path)
+        except Exception:
+            pass
+
+    @property
+    def batch_fail_rate(self):
+        """近 N 批网络失败率（百分比）；无数据返回 None。"""
+        if not self._recent_batch_rates:
+            return None
+        return sum(self._recent_batch_rates) / len(self._recent_batch_rates) * 100.0
+
+    # ------------------------------------------------------------ G52-1 重试
+    def _record_retry_failure(self, res) -> None:
+        """失败结果（网络类）入自动重试队列；成功由 _clear_retry_success 清理。"""
+        if self._retry_queue is None:
+            return
+        try:
+            queued = self._retry_queue.record_failure(res.spec, res.message or "", res.detail or "")
+            if queued:
+                self._emit_line(0, f"已加入失败重试队列（网络类）：{res.spec.folder_name}", "warn")
+        except Exception:
+            pass
+
+    def _clear_retry_success(self, res) -> None:
+        """成功/跳过/冲突 → 从重试队列移除（已解决）。"""
+        if self._retry_queue is None:
+            return
+        try:
+            self._retry_queue.mark_success(f"{res.spec.owner}/{res.spec.repo}")
+        except Exception:
+            pass
+
+    def _retry_tick(self) -> None:
+        """引擎空闲时按退避到期自动重投（幂等：busy/取消/无到期 → 跳过）。"""
+        if self._retry_queue is None or not self._retry_queue.enabled:
+            return
+        if self.busy or self._cancelled:
+            return
+        try:
+            due = self._retry_queue.due_tasks()
+        except Exception:
+            return
+        if not due:
+            return
+        specs = []
+        for rec in due:
+            try:
+                specs.append(self._retry_queue.to_spec(rec))
+            except Exception:
+                continue
+        if specs:
+            try:
+                self.launch(specs, check_existing=False, clear_input=False)
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------ G52-4 进度 GC
+    def _run_progress_gc(self) -> None:
+        """批次完成（非取消）时滚动/裁剪 progress.json。"""
+        if self._progress_gc is None or not self.progress_path:
+            return
+        try:
+            stats = self._progress_gc.rotate_progress(self.progress_path)
+            if stats.get("trimmed", 0):
+                # 同步 engine 内存态：磁盘已裁剪，内存 finished 也截断到保留量，
+                # 避免后续任何 flush_progress 把裁剪前的旧数据覆盖回磁盘。
+                kept = int(stats.get("rows_kept", 0))
+                if kept > 0 and len(self._progress.get("finished", [])) > kept:
+                    self._progress["finished"] = self._progress["finished"][-kept:]
+                    self._dirty = True
+                msg = (f"进度文件已治理：归档 {stats.get('trimmed', 0)} 条，"
+                       f"保留 {kept} 条")
+                self._emit_line(0, msg, "info")
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------ G52-2 会话
+    def _session_record_pending(self, specs) -> None:
+        if self.session_store is None or not specs:
+            return
+        try:
+            self.session_store.replace(specs)
+        except Exception:
+            pass
+
+    def _session_update_result(self, res) -> None:
+        if self.session_store is None:
+            return
+        try:
+            key = f"{res.spec.owner}/{res.spec.repo}"
+            self.session_store.update_status(key, res.status.value, res.message or "")
+        except Exception:
+            pass
+
+    def _session_mark_completed(self) -> None:
+        if self.session_store is None:
+            return
+        try:
+            self.session_store.mark_completed()
+        except Exception:
+            pass
 
     # ------------------------------------------------------------ 内存护栏
     def _retire_task(self, worker: CloneWorker):
@@ -494,6 +663,11 @@ class SyncEngine(QObject):
         self._depth = fetch_depth
         self._unshallow = unshallow
         self._pending = len(unique_specs)
+        # G52-6：重置批次计数（近批失败率窗口）
+        self._batch_total = len(unique_specs)
+        self._batch_net_fail = 0
+        # G52-2：launch 时会话清单整体替换为 pending（供续跑/看门狗）
+        self._session_record_pending(unique_specs)
         # G22-2：登记本轮待完成清单并立即落盘（进程被杀后可据此恢复）
         self._mark_in_progress([f"{s.owner}/{s.repo}" for s in unique_specs])
         self.flush_progress()
@@ -565,6 +739,19 @@ class SyncEngine(QObject):
                 pass  # 落库失败不影响 UI 展示（历史可追溯性损失通过日志暴露）
         # 进度内存态登记
         self._mark_done(f"{res.spec.owner}/{res.spec.repo}", res.status, res.message)
+        # G52-1：网络类失败入自动重试队列；成功/跳过/冲突移除
+        if res.status == SyncStatus.FAILED:
+            self._record_retry_failure(res)
+        else:
+            self._clear_retry_success(res)
+        # G52-2：会话清单状态更新（成功/取消/跳过/冲突 → 移除；失败保留）
+        self._session_update_result(res)
+        # G52-6：批次失败计数（网络类失败计入近批失败率）
+        if res.status == SyncStatus.FAILED:
+            try:
+                self._batch_net_fail += 1
+            except Exception:
+                pass
         # G22-2：从待完成清单移除；失败项单独留档供「重试失败项」
         key = f"{res.spec.owner}/{res.spec.repo}"
         ip = self._progress.setdefault("in_progress", {})
@@ -588,6 +775,23 @@ class SyncEngine(QObject):
             self.flush_all_buffers()
             self.flush_progress()
             self.busy = False
+            # G52-2：非取消的整批完成 → 会话标记正常完成（不再续跑）
+            if not self._cancelled:
+                self._session_mark_completed()
+            # G52-4：批次完成（非取消）→ 进度文件滚动/裁剪
+            if not self._cancelled:
+                self._run_progress_gc()
+            # G52-6：批次完成（非取消）→ 记录近批失败率并持久化并发记忆
+            if not self._cancelled:
+                try:
+                    if self._batch_total > 0:
+                        rate = self._batch_net_fail / self._batch_total
+                        self._recent_batch_rates.append(rate)
+                        if len(self._recent_batch_rates) > 8:
+                            del self._recent_batch_rates[:-8]
+                except Exception:
+                    pass
+                self._persist_concurrency_state()
             self.finished.emit()
             self._stop_buffers()
             self._release_tasks()  # 全部结束后集中释放 worker 引用防 OOM
@@ -631,11 +835,20 @@ class SyncEngine(QObject):
         except Exception:
             pass
         self.flush_all_buffers()  # G43-1②：drain 后冲刷残留缓冲
+        try:
+            self._retry_timer.stop()
+        except Exception:
+            pass
         return self._pending == 0
 
     def shutdown(self):
         """取消剩余任务并落盘，供窗口关闭时调用。"""
         self.cancel_all()
+        # G52-1：窗口关闭停止重试轮询，避免残留定时器
+        try:
+            self._retry_timer.stop()
+        except Exception:
+            pass
         # G22-2：用户主动优雅退出时清空待完成清单，避免下次启动误报「上次未完成」
         try:
             self._progress["in_progress"] = {}

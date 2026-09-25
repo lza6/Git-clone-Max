@@ -215,6 +215,12 @@ class Settings:
     notify_webhook_enabled: bool = False  # G49-7 完成通知 Webhook 显式开关（与 URL 非空共同决定是否发送）
     notify_webhook_url: str = ""       # G49-7 完成通知 Webhook URL（仅显式开启且非空才发送）
     notify_webhook_token: str = ""     # G49-7 Webhook Token（可选；落盘前加密）
+    retry_enabled: bool = False        # G52-1 失败自动重试队列开关（仅网络类错误）
+    retry_max: int = 2                 # G52-1 最多重试次数 0-3（0 = 不自动重试）
+    retry_backoff_base_sec: int = 30   # G52-1 退避基数（30/60/120 秒；第 n 次延迟 = base*n）
+    watchdog_enabled: bool = False     # G52-3 看门狗开关（续跑清单非空且未正常完成 → 自动续跑）
+    watchdog_interval_min: int = 5     # G52-3 看门狗间隔（1/5/15/30 分钟）
+    watchdog_silent: bool = False      # G52-3 看门狗静默续跑（不弹提示窗，仅日志）
 
 
 _DEFAULTS: dict = asdict(Settings())
