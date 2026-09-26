@@ -131,3 +131,18 @@
 
 | 打包/发布 | ✅ | **v7.3.1 发布闭环完成**：tag 已 push · Release 已创建 · exe+zip 双产物上传成功（服务端 digest 与本地 sha256 全等）· 独立下载复验双 MATCH |
 
+
+---
+
+## v8.2.0 交付登记（2026-09-26，M10/M11/M14/M15）
+
+| 里程碑 | 状态 | 关键证据 |
+|--------|------|----------|
+| M10 G53 数据洞察 | ✅ | alerts.py（评分卡/阈值告警/存储看板）+ sched_reports.py + repo_db 历史保留参数化 + statistics_dialog 评分卡/存储块；18+5 测试绿 |
+| M11 G54 小白体验 | ✅ | diag.py 环境体检升级 + help_dialog 排错地图 + copy_paste_report；8 测试绿 |
+| M14 G57 响应式 | ✅ | main_window 窗口语义档（S/M/D/XL）+ theme DPI 联动（offscreen 守卫）；6 测试绿 |
+| M15 G58 网络深化 | ✅ | rate_limit.py（限流状态/退避）+ host_probe.py（HTTPS/Git 服务/认证头建议）；11 测试绿 |
+| 全量验证 | ✅ | 分块全绿 660+ 用例；TOTAL 84%；ruff 0；mypy 0（59 files） |
+| 发布 | ✅ | v8.2.0 Release 双产物上传，服务端 digest 与本地 sha256 全等 |
+
+> 说明：v8.1.0（M8/M9/M12核心/M13核心）登记见上轮；本轮在 v8.1.0 基础上交付 M10/M11/M14/M15。
