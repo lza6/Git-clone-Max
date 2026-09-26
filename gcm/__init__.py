@@ -1,5 +1,5 @@
 """Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。"""
-__version__ = "9.1.1"
+__version__ = "9.1.2"
 __app_name__ = "Git-clone-Max"
 __changelog__ = (
     "4.0.0: 统一调度引擎(SyncEngine) · progress.json 进程级锁+周期落盘 · SQLite busy_timeout · "
@@ -118,6 +118,7 @@ __changelog__ = (
     "9.0.0: M16 收官验收 - G53 设置面板 UI 入口（告警/历史保留/定时报表）+ CI fast-smoke job + 全模块回归 + 双产物发布 · 全量测试全绿/覆盖84/ruff0/mypy0",  # noqa: E501
     "9.1.0: G59 第三轮收官 - 评分卡 per_repo_size 接入真实 dir_size · 企业 IM 告警推送(钉钉/飞书/企微)接入主窗口 + token 加密落盘 · CI 主矩阵 fast/slow 拆分 · 文档资产(architecture/ADR/code-gems/product-brief/perf-observability)",  # noqa: E501
     "9.1.1: 补缺 - G58-5 认证头类型 UI(Bearer/PRIVATE-TOKEN/Basic 下拉 + service 头映射 + 真实 git 头注入 E2E) · G57-5 无障碍声明 · G66-1 Windows 版本资源 8.0.2→9.1.1 修复",  # noqa: E501
+    "9.1.2: 文档治理收官 - G51-3 扫描证据 478KB 归档 zip · G51-4 根目录收敛(参考结果计划指南移入计划书/16 个构建日志清理) · G51-5 v8 历史段抽为独立只读归档 · G51-6 workflow_status 里程碑仪表盘 · G52-G56 章节表全量回填[已落地]",  # noqa: E501
 
     "0 子进程+线程池并发+scandir 跳 junction) · 裸仓/worktree 完整性 · local_repos_dialog "
     "O(1) 预载+item checkState+批量写库 · 实测 300 仓 149.4s→1.6s(约95x) · "
