@@ -110,7 +110,7 @@ def copy_paste_report(reports, app_version: str = "") -> str:
         redactor = _r
     except Exception:
         pass
-    out = [f"Git-clone-Max 诊断（版本 {app_version or chr(117)+chr(110)+chr(107)+chr(110)+chr(111)+chr(119)+chr(110)}）"]
+    out = [f"Git-clone-Max 诊断（版本 {app_version or 'unknown'}）"]
     for item in reports or []:
         nm = item.get("name")
         st = item.get("status")
