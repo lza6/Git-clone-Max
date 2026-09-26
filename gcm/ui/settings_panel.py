@@ -255,6 +255,17 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     owner.ck_show_host_tokens.toggled.connect(_toggle_host_tokens_echo)
     f3.addRow("", owner.ck_show_host_tokens)
 
+    # G58-5 认证头类型（Bearer / PRIVATE-TOKEN / Basic）；空=自动（按平台默认）
+    owner.cb_auth_header = QComboBox()
+    owner.cb_auth_header.addItems([tr("自动（按平台默认）"), "Bearer", "PRIVATE-TOKEN", "Basic"])
+    owner.cb_auth_header.setToolTip(
+        tr("自建 GitLab/Gitea 等可显式选择认证头类型；空值按平台默认（github=Bearer / gitlab=PRIVATE-TOKEN）"))
+    _hat = str((getattr(settings, "host_auth_types", None) or {}).get("*", "") or "").lower().strip()
+    _idx = {"": 0, "bearer": 1, "private_token": 2, "basic": 3}.get(_hat, 0)
+    owner.cb_auth_header.setCurrentIndex(_idx)
+    owner.cb_auth_header.currentIndexChanged.connect(owner._save_auth_header_type)
+    f3.addRow(tr("认证头类型："), owner.cb_auth_header)
+
     # G38-2 镜像前缀（每行 "host=prefix"，仅 HTTPS 生效）
     owner.edit_mirror = QLineEdit(_mirror_text(settings))
     owner.edit_mirror.setPlaceholderText(tr("github.com=https://ghproxy.com（每行一个）"))
@@ -625,6 +636,18 @@ class SettingsPanel(QWidget):
         text = self.owner.edit_custom_hosts.text() or ""
         parts = [p.strip().lower() for p in text.replace("\n", ",").split(",")]
         self.owner.settings.custom_hosts = tuple(p for p in parts if p)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_auth_header_type(self, index):
+        """G58-5 保存全局认证头类型（host_auth_types["*"]）。"""
+        mapping = {0: "", 1: "bearer", 2: "private_token", 3: "basic"}
+        hat = dict(getattr(self.owner.settings, "host_auth_types", None) or {})
+        val = mapping.get(int(index), "")
+        if val:
+            hat["*"] = val
+        else:
+            hat.pop("*", None)
+        self.owner.settings.host_auth_types = hat
         self.owner.settings_store.save(self.owner.settings)
 
     def _save_auto_clear(self, checked):

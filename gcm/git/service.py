@@ -385,6 +385,7 @@ class GitService:
                  token: str = "", submodule: bool = False, rate_limit_kbps: int = 0,
                  host_tokens: Optional[dict[str, str]] = None,
                  mirror_prefix: Optional[dict[str, str]] = None,
+                 host_auth_types: Optional[dict[str, str]] = None,
                  precheck_remote: bool = False,
                  single_branch: bool = False,
                  force_ipv4: bool = False,
@@ -405,6 +406,7 @@ class GitService:
         # G38-1 按 host 映射凭据（每 host 一个 token；键为 host，值原样传递）
         self.host_tokens: dict[str, str] = dict(host_tokens or {})
         self.mirror_prefix: dict[str, str] = dict(mirror_prefix or {})  # G38-2
+        self.host_auth_types: dict[str, str] = dict(host_auth_types or {})  # G58-5 认证头类型
         self.precheck_remote = bool(precheck_remote)  # G38-3 远端可达性预检（默认关）
         self.single_branch = bool(single_branch)      # G38-4 单分支浅克隆
         self.force_ipv4 = bool(force_ipv4)            # G38-6 强制 HTTP/1.1（IPv6 兼容修复）
@@ -501,9 +503,18 @@ class GitService:
             mapped = (self.host_tokens.get(host) or "").strip()
             if mapped:
                 cfgtok = mapped
-                # 未知主机平台类型：gitlab 类头按其 feature 前缀？这里按通用 Authorization Bearer
-                # 但为避免误发全局 token，未登记一律不发——已在上面过滤，此处 mapped 存在即登记。
-                cfg.append(("http.extraHeader", f"Authorization: Bearer {cfgtok}"))
+                # G58-5：按 host_auth_types 映射发对应头（bearer/private_token/basic）；
+                # 未配置该 host 时默认 Bearer（历史行为，兼容已有登记）。
+                _hats = getattr(self, "host_auth_types", None) or {}
+                htype = str(_hats.get(host, "") or "").lower().strip()
+                if htype == "private_token":
+                    cfg.append(("http.extraHeader", f"PRIVATE-TOKEN: {cfgtok}"))
+                elif htype == "basic":
+                    import base64 as _b64
+                    b = _b64.b64encode(cfgtok.encode("utf-8")).decode("ascii")
+                    cfg.append(("http.extraHeader", f"Authorization: Basic {b}"))
+                else:
+                    cfg.append(("http.extraHeader", f"Authorization: Bearer {cfgtok}"))
         # G04-4 下载限速：低于 lowSpeedLimit KiB/s 持续 lowSpeedTime 秒 → 中止
         if self.rate_limit_kbps > 0:
             cfg.append(("http.lowSpeedLimit", str(self.rate_limit_kbps)))

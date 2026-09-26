@@ -196,6 +196,7 @@ class Settings:
     single_branch: bool = False       # G38-4 浅克隆时只拉目标分支（--single-branch）
     force_ipv4: bool = False          # G38-6 强制 HTTP/1.1（IPv6 兼容修复）
     custom_hosts: tuple = ()          # G38-7 常用主机白名单（自建 GitLab 等，短格式可直接解析）
+    host_auth_types: dict = field(default_factory=dict)  # G58-5 按 host 认证头类型（bearer/private_token/basic；空=自动）
     quick_repos: tuple = (            # G35-7 下载中心「快捷填充」按钮仓库列表（可编辑持久化）
         "vercel-labs/skills", "anthropics/skills", "microsoft/azure-skills",
         "remotion-dev/skills", "slidevjs/slidev", "openmeterio/openmeter",

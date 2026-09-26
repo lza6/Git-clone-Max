@@ -82,6 +82,7 @@ class MainWindow(QMainWindow):
             token=self.settings.token,
             host_tokens=getattr(self.settings, "host_tokens", None) or {},  # G38-1
             mirror_prefix=getattr(self.settings, "mirror_prefix", None) or {},  # G38-2
+            host_auth_types=getattr(self.settings, "host_auth_types", None) or {},  # G58-5
             precheck_remote=bool(getattr(self.settings, "precheck_remote", False)),  # G38-3
             single_branch=bool(getattr(self.settings, "single_branch", False)),  # G38-4
             force_ipv4=bool(getattr(self.settings, "force_ipv4", False)),  # G38-6
@@ -724,6 +725,10 @@ class MainWindow(QMainWindow):
         """G45-6 转发 settings_panel.py（行为零变化）。"""
         return self.settings_panel._save_custom_hosts(*args, **kwargs)
 
+    def _save_auth_header_type(self, *args, **kwargs):
+        """G58-5 转发 settings_panel.py（行为零变化）。"""
+        return self.settings_panel._save_auth_header_type(*args, **kwargs)
+
     def _save_precheck(self, checked):
         """G38-3 保存远端可达性预检开关。"""
         self.settings.precheck_remote = bool(checked)
@@ -1171,6 +1176,7 @@ class MainWindow(QMainWindow):
             rate_limit_kbps=int(getattr(self.settings, "rate_limit_kbps", 0) or 0),
             host_tokens=getattr(self.settings, "host_tokens", None) or {},  # G38-1
             mirror_prefix=getattr(self.settings, "mirror_prefix", None) or {},  # G38-2
+            host_auth_types=getattr(self.settings, "host_auth_types", None) or {},  # G58-5
             precheck_remote=bool(getattr(self.settings, "precheck_remote", False)),  # G38-3
             single_branch=bool(single_branch),  # G38-4（UI 模式 2 或设置）
             force_ipv4=bool(getattr(self.settings, "force_ipv4", False)),  # G38-6
