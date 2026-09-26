@@ -221,6 +221,16 @@ class Settings:
     watchdog_enabled: bool = False     # G52-3 看门狗开关（续跑清单非空且未正常完成 → 自动续跑）
     watchdog_interval_min: int = 5     # G52-3 看门狗间隔（1/5/15/30 分钟）
     watchdog_silent: bool = False      # G52-3 看门狗静默续跑（不弹提示窗，仅日志）
+    # ---- G53 数据洞察（评分卡 / 告警 / 历史保留 / 定时报表）
+    g53_alerts_enabled: bool = False          # G53-2 阈值告警开关
+    g53_alerts_interval_min: int = 60        # G53-2 告警扫描间隔（分钟）
+    g53_alerts_stale_days: int = 30          # G53-2 陈旧阈值（天）
+    g53_alerts_disk_min_gb: int = 5          # G53-2 磁盘水位阈值（GB）
+    history_retention_days: int = 90         # G53-4 历史保留天数（默认 90）
+    sched_report_enabled: bool = False       # G53-5 定时报表开关
+    sched_report_interval_min: int = 1440    # G53-5 定时报表间隔（分钟）
+    sched_report_dir: str = ""               # G53-5 报表输出目录
+    sched_report_format: str = "csv"         # G53-5 报表格式 csv/md
 
 
 _DEFAULTS: dict = asdict(Settings())

@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QFormLayout,
     QFrame,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -82,11 +83,12 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     # 分组收集 + 过滤闭包：空关键字全显；否则标题或行内 QLabel 文本匹配才可见
     groups: list[QGroupBox] = []
     owner.settings_groups = groups  # 供测试/外部断言分组可见性
+    owner.settings_groups_extra = []  # G53-2 扩展组（不进 groups，避免破坏既有解构）
 
     def _apply_settings_filter(keyword: str) -> None:
         """按关键字过滤设置分组：标题含关键字 或 任一行标签含关键字。"""
         kw = keyword.strip().lower()
-        for group in groups:
+        for group in list(groups) + list(owner.settings_groups_extra):
             if not kw:
                 group.setVisible(True)
                 continue
@@ -425,6 +427,36 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     sv.addWidget(g6)
     groups.append(g6)
 
+
+    # ---- G53 数据洞察（告警 / 历史保留 / 定时报表）
+    g7 = QGroupBox(tr("G53 数据洞察（告警 / 历史保留 / 定时报表）"))
+    g7.setToolTip(tr("多维评分卡/阈值告警/历史保留天数/定时报表 设置"))
+    l7 = QGridLayout(g7)
+    owner.ck_g53_alerts = QCheckBox(tr("启用阈值告警（陈旧/失败率/磁盘水位）"))
+    owner.ck_g53_alerts.toggled.connect(owner.settings_panel._save_g53_alerts)
+    l7.addWidget(owner.ck_g53_alerts, 0, 0, 1, 2)
+    l7.addWidget(QLabel(tr("告警间隔(分钟)：")), 1, 0)
+    owner.spin_g53_interval = QSpinBox()
+    owner.spin_g53_interval.setRange(5, 1440)
+    owner.spin_g53_interval.setValue(int(getattr(owner.settings, "g53_alerts_interval_min", 60) or 60))
+    owner.spin_g53_interval.valueChanged.connect(owner.settings_panel._save_g53_interval)
+    l7.addWidget(owner.spin_g53_interval, 1, 1)
+    l7.addWidget(QLabel(tr("历史保留天数：")), 2, 0)
+    owner.spin_g53_history = QSpinBox()
+    owner.spin_g53_history.setRange(1, 3650)
+    owner.spin_g53_history.setValue(int(getattr(owner.settings, "history_retention_days", 90) or 90))
+    owner.spin_g53_history.valueChanged.connect(owner.settings_panel._save_g53_history)
+    l7.addWidget(owner.spin_g53_history, 2, 1)
+    owner.btn_g53_clean = QPushButton(tr("立即清理历史"))
+    owner.btn_g53_clean.clicked.connect(owner.settings_panel._clean_g53_history)
+    l7.addWidget(owner.btn_g53_clean, 3, 0, 1, 2)
+    owner.ck_g53_sched = QCheckBox(tr("启用定时报表"))
+    owner.ck_g53_sched.toggled.connect(owner.settings_panel._save_g53_sched)
+    l7.addWidget(owner.ck_g53_sched, 4, 0, 1, 2)
+    owner.settings_groups_extra.append(g7)
+    groups2_layout = QVBoxLayout()
+    groups2_layout.addWidget(g7)
+    sv.addLayout(groups2_layout)
     sv.addStretch()
     return settings_scroll
 
@@ -484,6 +516,47 @@ class SettingsPanel(QWidget):
                 continue
             out[key] = value
         return out
+
+    # ---- G53 数据洞察保存（评分卡/告警/历史保留/定时报表）
+    def _save_g53_alerts(self, checked):
+        self.owner.settings.g53_alerts_enabled = bool(checked)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_g53_interval(self, value):
+        self.owner.settings.g53_alerts_interval_min = int(value)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_g53_history(self, value):
+        self.owner.settings.history_retention_days = int(value)
+        if hasattr(self.owner.db, "set_history_retention_days"):
+            try:
+                self.owner.db.set_history_retention_days(int(value))
+            except Exception:
+                pass
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _clean_g53_history(self):
+        """G53-4 立即清理历史（按当前保留天数）。"""
+        try:
+            days = int(self.owner.settings.history_retention_days or 90)
+            n = self.owner.db.prune_history(days) if hasattr(self.owner.db, "prune_history") else 0
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(self.owner, "清理完成", f"已清理 {n} 条历史记录（保留 {days} 天）")
+        except Exception as e:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self.owner, "清理失败", str(e))
+
+    def _save_g53_sched(self, checked):
+        self.owner.settings.sched_report_enabled = bool(checked)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_g53_sched_interval(self, value):
+        self.owner.settings.sched_report_interval_min = int(value)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_g53_sched_dir(self):
+        self.owner.settings.sched_report_dir = self.owner.edit_g53_sched_dir.text().strip()
+        self.owner.settings_store.save(self.owner.settings)
 
     def _save_concurrency(self, value):
         self.owner.settings.concurrency = int(value)
