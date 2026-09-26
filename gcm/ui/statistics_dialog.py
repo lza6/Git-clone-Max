@@ -254,6 +254,7 @@ class StatisticsDialog(QDialog):
             repos = self.db.list_repos(host=None) if hasattr(self.db, "list_repos") else []
             cards = scorecards(repos or [],
                                 lambda rid: self.db.history(rid, 20) if hasattr(self.db, "history") else [],
+                                per_repo_size=lambda p: self.db.dir_size(p) if p and hasattr(self.db, "dir_size") else None,
                                 now=None)
             summary = overall_summary(cards)
             if cards:
