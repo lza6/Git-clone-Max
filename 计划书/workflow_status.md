@@ -173,3 +173,14 @@
 | 发布 | ✅ | v9.1.0 Release 双产物，服务端 digest 与本地 sha256 全等 |
 
 > **第三轮 G59 全部收官**：G59-1..7 全部 [✅ 已落地]，见 计划书/下一步改进指南.md。
+
+
+## v9.1.1 交付登记（2026-09-27，G59 补缺）
+
+| 节点 | 状态 | 关键证据 |
+|------|------|----------|
+| G58-5 认证头类型 UI | ✅ | settings host_auth_types + service 头映射（bearer/private_token/basic）+ 设置页下拉；test_g58_5_auth_header 7 用例 + 真实 git 头注入 E2E（本地 HTTP 捕获三头均 MATCH） |
+| G57-5 无障碍声明 | ✅ | README 无障碍段（键盘路径/主题对比/触控尺寸/已知限制） |
+| G66-1 Windows 版本资源修复 | ✅ | spec filevers/prodvers/FileVersion/ProductVersion → 9.1.1（原 8.0.2 过期） |
+| 质量闸 | ✅ | ruff 0 / mypy 0（60 files）；设置/UI/G58/G56 回归批全绿 |
+| 发布 | ✅ | v9.1.1 Release 双产物，服务端 digest 与本地 sha256 全等 |
