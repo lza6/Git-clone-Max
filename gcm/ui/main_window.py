@@ -186,6 +186,31 @@ class MainWindow(QMainWindow):
         self.watchdog.resume_requested.connect(self._on_watchdog_resume)
         if bool(getattr(self.settings, "watchdog_enabled", False)):
             self.watchdog.start()
+        # G59-7：阈值告警后台扫描器（G53-2 落地；开启时启动，支持企业 IM webhook 推送）
+        self.alert_scanner = None
+        try:
+            from ..app.alerts import AlertScanner, scan_alerts
+
+            def _scan_repos():
+                repos = self.db.list_repos(host=None) if hasattr(self.db, "list_repos") else []
+                return scan_alerts(
+                    repos or [],
+                    lambda rid: self.db.history(rid, 20) if hasattr(self.db, "history") else [],
+                    data_dir=self.data_dir,
+                    stale_days=int(getattr(self.settings, "g53_alerts_stale_days", 30) or 30),
+                    disk_min_gb=int(getattr(self.settings, "g53_alerts_disk_min_gb", 5) or 5))
+
+            self.alert_scanner = AlertScanner(
+                _scan_repos,
+                interval_sec=max(60.0, float(getattr(self.settings, "g53_alerts_interval_min", 60) or 60)) * 60.0,
+                im_channel=str(getattr(self.settings, "alert_im_channel", "") or "").strip(),
+                im_url=str(getattr(self.settings, "alert_im_url", "") or "").strip(),
+                im_token=str(getattr(self.settings, "alert_im_token", "") or "").strip())
+            if bool(getattr(self.settings, "g53_alerts_enabled", False)):
+                self.alert_scanner.start()
+        except Exception:
+            self.alert_scanner = None
+
         # G52-2：启动续跑对话框由 show 后统一调度（_schedule_resume_check），
         # 不在 __init__ 裸调度——避免 closeEvent/drain 泵事件时误弹阻塞对话框。
 
@@ -1567,6 +1592,12 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
         self._close_requested = True
+        # G59-7：停止告警后台扫描器
+        try:
+            if getattr(self, "alert_scanner", None) is not None:
+                self.alert_scanner.stop()
+        except Exception:
+            pass
         # flush 剩余节流日志，避免关窗瞬间最后若干行（如"全部任务结束"）丢失
         try:
             self._flush_log_batch()

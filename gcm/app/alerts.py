@@ -261,11 +261,15 @@ class AlertScanner:
     def __init__(self, scan_fn: Callable[[], list[dict[str, Any]]],
                  interval_sec: float = 3600.0,
                  now_fn: Optional[Callable[[], float]] = None,
-                 on_alerts: Optional[Callable[[list[dict[str, Any]]], None]] = None):
+                 on_alerts: Optional[Callable[[list[dict[str, Any]]], None]] = None,
+                 im_channel: str = "", im_url: str = "", im_token: str = ""):
         self._scan_fn = scan_fn
         self._interval = max(1.0, float(interval_sec))
         self._now_fn = now_fn or _now
         self._on_alerts = on_alerts
+        self._im_channel = (im_channel or "").strip()
+        self._im_url = (im_url or "").strip()
+        self._im_token = (im_token or "").strip()
         self._last_fired: dict[str, float] = {}
         self._stop_evt: Optional[threading.Event] = None
         self._thread: Optional[threading.Thread] = None
@@ -285,6 +289,13 @@ class AlertScanner:
         if fired and self._on_alerts:
             try:
                 self._on_alerts(fired)
+            except Exception:
+                pass
+        if fired and self._im_channel and self._im_url:
+            try:
+                from .im_notify import send_im_alerts
+                send_im_alerts(self._im_channel, self._im_url, fired,
+                               token=self._im_token)
             except Exception:
                 pass
         return fired

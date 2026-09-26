@@ -231,6 +231,9 @@ class Settings:
     sched_report_interval_min: int = 1440    # G53-5 定时报表间隔（分钟）
     sched_report_dir: str = ""               # G53-5 报表输出目录
     sched_report_format: str = "csv"         # G53-5 报表格式 csv/md
+    alert_im_channel: str = ""               # G59-7 企业 IM 告警渠道（dingtalk/feishu/wecom；空=关）
+    alert_im_url: str = ""                   # G59-7 企业 IM webhook URL（空=关）
+    alert_im_token: str = ""                 # G59-7 企业 IM webhook Token（可选；落盘前加密）
 
 
 _DEFAULTS: dict = asdict(Settings())
@@ -274,6 +277,9 @@ class SettingsStore:
             # G49-7：Webhook token 读回解密（掩码/损坏 → 空串）
             nwt = getattr(s, "notify_webhook_token", "") or ""
             s.notify_webhook_token = _decrypt_token(str(nwt))
+            # G59-7：企业 IM webhook token 读回解密
+            ait = getattr(s, "alert_im_token", "") or ""
+            s.alert_im_token = _decrypt_token(str(ait))
             return s
 
     def _try_restore_backup(self) -> dict:
@@ -305,6 +311,9 @@ class SettingsStore:
             # G49-7：Webhook token 与主 token 同策略加密落盘
             if payload.get("notify_webhook_token"):
                 payload["notify_webhook_token"] = _encrypt_token(payload["notify_webhook_token"])
+            # G59-7：企业 IM webhook token 同策略加密落盘
+            if payload.get("alert_im_token"):
+                payload["alert_im_token"] = _encrypt_token(payload["alert_im_token"])
             tmp.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2),
                 encoding="utf-8",
