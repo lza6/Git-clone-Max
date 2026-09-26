@@ -1,5 +1,5 @@
 """Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。"""
-__version__ = "9.0.0"
+__version__ = "9.1.0"
 __app_name__ = "Git-clone-Max"
 __changelog__ = (
     "4.0.0: 统一调度引擎(SyncEngine) · progress.json 进程级锁+周期落盘 · SQLite busy_timeout · "
@@ -116,6 +116,8 @@ __changelog__ = (
     "含 4 单测) · 计划文档全表清账(G45-G49 状态回填[已落地], 规划总览 M 系列对齐实际交付) · "
     "全量 761 绿 · 覆盖 84%",
     "9.0.0: M16 收官验收 - G53 设置面板 UI 入口（告警/历史保留/定时报表）+ CI fast-smoke job + 全模块回归 + 双产物发布 · 全量测试全绿/覆盖84/ruff0/mypy0",  # noqa: E501
+    "9.1.0: G59 第三轮收官 - 评分卡 per_repo_size 接入真实 dir_size · 企业 IM 告警推送(钉钉/飞书/企微)接入主窗口 + token 加密落盘 · CI 主矩阵 fast/slow 拆分 · 文档资产(architecture/ADR/code-gems/product-brief/perf-observability)",  # noqa: E501
+
     "0 子进程+线程池并发+scandir 跳 junction) · 裸仓/worktree 完整性 · local_repos_dialog "
     "O(1) 预载+item checkState+批量写库 · 实测 300 仓 149.4s→1.6s(约95x) · "
     "全量 770 绿 · 覆盖 84%",

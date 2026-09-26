@@ -160,3 +160,16 @@
 | 发布 | ✅ | v9.0.0 Release 双产物，服务端 digest 与本地 sha256 全等 |
 
 > **第二轮 M8-M16 全部收官**：G51-G58 全部 [✅ 已落地]，见 计划书/下一步改进指南.md。
+
+
+## v9.1.0 交付登记（2026-09-26，G59 第三轮收官）
+
+| 节点 | 状态 | 关键证据 |
+|------|------|----------|
+| G59-5 CI fast/slow 拆分 | ✅ | scripts/ci_run_fast.py（快集=全量-慢集黑名单）+ ci.yml slow job + 主矩阵门禁 81/80；YAML 4 jobs 有效 |
+| G59-6 评分卡 dir_size 接入 | ✅ | statistics_dialog scorecards per_repo_size=真实 dir_size（lambda 惰性/异常回落）；test_g59_dir_size 3 用例绿 |
+| G59-7 企业 IM 告警推送 | ✅ | im_notify.py（钉钉/飞书/企微模板）+ AlertScanner 接入主窗口（启动/关闭）+ settings 加密落盘；test_g59_im_notify 12 + test_g59_im_settings 2 绿 |
+| 质量闸 | ✅ | ruff 0 / mypy 0（59 files） |
+| 发布 | ✅ | v9.1.0 Release 双产物，服务端 digest 与本地 sha256 全等 |
+
+> **第三轮 G59 全部收官**：G59-1..7 全部 [✅ 已落地]，见 计划书/下一步改进指南.md。
