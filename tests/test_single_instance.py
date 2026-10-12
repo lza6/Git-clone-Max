@@ -70,11 +70,13 @@ class TestSingleInstanceCrossProcess(unittest.TestCase):
             "    lock.release()\n"
         ) % (str(ROOT), str(lockpath))
         p1 = subprocess.Popen([_sys.executable, "-c", script],
-                              stdout=subprocess.PIPE, text=True)
+                              stdout=subprocess.PIPE, text=True,
+                              encoding="utf-8", errors="replace")
         try:
             time.sleep(1.2)  # p1 已持锁
             r2 = subprocess.run([_sys.executable, "-c", script],
-                                capture_output=True, text=True, timeout=10)
+                                capture_output=True, text=True,
+                                encoding="utf-8", errors="replace", timeout=10)
             self.assertIn("acquired: False", r2.stdout)
             p1.wait(timeout=10)
         finally:

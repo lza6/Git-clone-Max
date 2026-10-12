@@ -207,7 +207,8 @@ class TestLocalPathRemoteIncremental(unittest.TestCase):
         self.assertEqual(res.commits, 1)
         # HEAD 与远端一致
         r = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
-                           capture_output=True, text=True, check=True)
+                           capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", check=True)
         self.assertEqual(r.stdout.strip(), res.head_sha)
 
 
@@ -227,7 +228,8 @@ class TestServiceUpdatePaths(unittest.TestCase):
         subprocess.run(["git", "branch", "-M", "main"], cwd=self.src, check=True)
         subprocess.run(["git", "remote", "add", "origin", str(self.remote)], cwd=self.src, check=True)
         r = subprocess.run(["git", "push", "-q", "origin", "HEAD:main"], cwd=self.src,
-                           capture_output=True, text=True)
+                           capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
         if r.returncode != 0:
             raise RuntimeError(f"setUp push failed: {r.stderr}")
         self.work = self.tmp / "clones" / "w"
@@ -350,7 +352,8 @@ class TestShallowIncremental(unittest.TestCase):
         self.assertEqual(res.commits, 1)
         # 本地确实拿到 v2
         r = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
-                           capture_output=True, text=True, check=True)
+                           capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", check=True)
         self.assertEqual(r.stdout.strip(), res.head_sha)
 
 

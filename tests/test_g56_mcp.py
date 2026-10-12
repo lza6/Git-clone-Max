@@ -83,7 +83,9 @@ class TestMcpStdio(unittest.TestCase):
         env.pop("GCM_MCP_ENABLE", None)
         proc = subprocess.run(
             [sys.executable, "-m", "gcm.mcp_server"],
-            input="", capture_output=True, text=True, env=env, timeout=60, cwd=str(ROOT))
+            input="", capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+            env=env, timeout=60, cwd=str(ROOT))
         self.assertEqual(proc.returncode, 3)
 
     def test_export_report_denied_without_flag(self):

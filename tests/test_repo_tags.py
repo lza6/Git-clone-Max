@@ -115,18 +115,25 @@ class TestManageModelAdvanced(unittest.TestCase):
     """G03-1 管理页过滤 / G03-6 过期仓库高亮（ManageModel 层）。"""
 
     def test_model_filter(self):
+        import datetime
         import os
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         from PyQt6.QtWidgets import QApplication
         _app = QApplication.instance() or QApplication([])
         from gcm.ui.manage_model import ManageModel
+        # G66-3：断言必须相对当前时间构造（历史上写死 "2026-09-01" 导致 2026-10 后
+        # 用例随时间必然变红 —— 时间炸弹）。
+        fresh_ts = (datetime.datetime.now()
+                    - datetime.timedelta(days=8)).strftime("%Y-%m-%d %H:%M:%S")
+        ancient_ts = (datetime.datetime.now()
+                      - datetime.timedelta(days=900)).strftime("%Y-%m-%d %H:%M:%S")
         rows = [
             {"folder_name": "a__b", "owner": "a", "repo": "b",
-             "local_path": "/x/a__b", "last_sync_at": "2026-09-01 10:00:00",
+             "local_path": "/x/a__b", "last_sync_at": fresh_ts,
              "head_sha": "abc", "host": "github.com", "url": "u", "id": 1,
              "default_branch": "main", "tags": "AI|工具", "favorite": 1, "excluded": 0},
             {"folder_name": "c__d", "owner": "c", "repo": "d",
-             "local_path": "/x/c__d", "last_sync_at": "2020-01-01 00:00:00",
+             "local_path": "/x/c__d", "last_sync_at": ancient_ts,
              "head_sha": "def", "host": "github.com", "url": "u2", "id": 2,
              "default_branch": "main", "tags": "", "favorite": 0, "excluded": 0},
         ]
@@ -137,7 +144,18 @@ class TestManageModelAdvanced(unittest.TestCase):
         self.assertEqual(r0.tags, "AI|工具")
         self.assertEqual(r0.favorite, 1)
         # 过期仓库（>30 天未同步）应能被识别
-        stale = m.is_stale(0)   # 2026-09-01 距今 8 天 → 未过期
-        stale2 = m.is_stale(1)  # 2020-01-01 距今 > 30 天 → 过期
+        stale = m.is_stale(0)   # 8 天前 → 未过期
+        stale2 = m.is_stale(1)  # 900 天前 → 过期
         self.assertFalse(stale)
         self.assertTrue(stale2)
+        # 边界：恰好 30 天不算过期（> days 才为真）
+        boundary = (datetime.datetime.now()
+                    - datetime.timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
+        m2 = ManageModel([dict(rows[0], last_sync_at=boundary)])
+        self.assertFalse(m2.is_stale(0))
+        # 边界：31 天算过期
+        m3 = ManageModel([dict(
+            rows[0],
+            last_sync_at=(datetime.datetime.now()
+                          - datetime.timedelta(days=31)).strftime("%Y-%m-%d %H:%M:%S"))])
+        self.assertTrue(m3.is_stale(0))

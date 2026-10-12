@@ -63,7 +63,10 @@ class TestCliJsonE2E(unittest.TestCase):
         self.assertEqual(sorted(doc.keys()),
                          ["counts", "invalid", "ok", "results", "version"])
         self.assertTrue(doc["ok"])
-        self.assertEqual(doc["version"], "8.0.2")
+        # G66-2 回归：契约 version 必须与 gcm.__version__ 同源（历史上硬编码 8.0.2）
+        from gcm import __version__
+        self.assertEqual(doc["version"], __version__)
+        self.assertNotEqual(doc["version"], "8.0.2")
         self.assertEqual(doc["counts"], {"success": 2, "failed": 0, "other": 0, "total": 2})
         self.assertEqual(len(doc["results"]), 2)
         self.assertEqual(doc["invalid"], [])

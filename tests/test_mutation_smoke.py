@@ -104,14 +104,16 @@ class TestScriptGate(unittest.TestCase):
     def test_script_runs_and_passes_gate(self):
         proc = subprocess.run(
             [sys.executable, str(ROOT / "scripts" / "run_mutation_smoke.py")],
-            cwd=str(ROOT), capture_output=True, text=True, timeout=120)
+            cwd=str(ROOT), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=120)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("PASS", proc.stdout)
 
     def test_output_contains_required_fields(self):
         proc = subprocess.run(
             [sys.executable, str(ROOT / "scripts" / "run_mutation_smoke.py")],
-            cwd=str(ROOT), capture_output=True, text=True, timeout=120)
+            cwd=str(ROOT), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=120)
         for token in ("parse_any_repo_url", "_is_networkish_error", "_fetch_rows",
                       "kill_rate", "OVERALL"):
             self.assertIn(token, proc.stdout)
