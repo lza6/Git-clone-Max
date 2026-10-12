@@ -21,7 +21,8 @@ def probe_git_service(url: str, timeout: float = 10.0) -> dict:
     """git ls-remote 匿名可读性（判断是否 Git 服务）。"""
     try:
         r = subprocess.run(["git", "ls-remote", url], capture_output=True,
-                           text=True, timeout=timeout)
+                           text=True, encoding="utf-8", errors="replace",
+                           timeout=timeout)
         if r.returncode == 0:
             refs = len([ln for ln in (r.stdout or "").splitlines() if ln.strip()])
             return {"name": "Git 服务", "status": "ok",

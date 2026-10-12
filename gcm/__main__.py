@@ -55,11 +55,18 @@ def _parse_flags(argv=None) -> dict:
         "diag": "--diag" in args,
         "serve": "--serve" in args,
         "allow_mutate": "--allow-mutate" in args,
+        # G66-8：--help/-h 必须在任何分支之前拦截（原先会落进 GUI 分支并挂死）
+        "help": "--help" in args or "-h" in args,
     }
 
 
 def main(argv=None) -> int:
     flags = _parse_flags(argv)
+
+    # G66-8：帮助优先于一切分支（含 --cli 之外的裸 `python -m gcm --help`）
+    if flags["help"]:
+        from gcm.cli import _print_help
+        return _print_help()
 
     # G49-3：CLI 批量克隆模式（离屏，不创建 GUI 窗口）
     if flags["cli"]:

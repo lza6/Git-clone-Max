@@ -15,8 +15,21 @@ from __future__ import annotations
 import re
 
 _URL_CRED = re.compile(r"(https?://)([^/\s@]+)@")
-_BEARER = re.compile(r"(Authorization\s*:\s*)(Bearer|Basic)\s+\S+", re.IGNORECASE)
+# G66-11：补齐 Authorization 方案词。原实现只认 Bearer|Basic，漏掉 GitHub 旧式
+# `Authorization: token <x>`（以及 Token/Negotiate 等），这类文本会原样进 UI/日志。
+_BEARER = re.compile(
+    r"(Authorization\s*:\s*)(Bearer|Basic|Token|token|NEGOTIATE|Negotiate)\s+\S+",
+    re.IGNORECASE)
 _PRIVATE = re.compile(r"(PRIVATE-TOKEN\s*:\s*)\S+", re.IGNORECASE)
+# G66-11：其它常见私有头（GitLab Job-Token / 通用 X-Auth-Token / 自建服务 X-API-Key）
+_OTHER_HEADERS = re.compile(
+    r"((?:X-Auth-Token|X-API-Key|JOB-TOKEN|X-Gitlab-Token)\s*:\s*)\S+", re.IGNORECASE)
+# G66-11：URL query 里的凭据参数（_URL_CRED 只处理 userinfo，query 里的 token 会漏）
+# 覆盖 access_token / token / private_token / api_key / apikey / password / auth
+_SENSITIVE_QPARAM = re.compile(
+    r"([?&](?:access_token|private_token|refresh_token|id_token|api_key|apikey"
+    r"|auth|authorization|password|passwd|pwd|token)=)[^&#\s]*",
+    re.IGNORECASE)
 # G44-4：Windows 用户目录（盘符大小写不敏感）与 POSIX /home/<用户名>
 _WIN_HOME = re.compile(r"(?i)[a-z]:\\users\\[^\\/:*?\"<>|]+")
 _POSIX_HOME = re.compile(r"/home/[^/\s]+")
@@ -63,6 +76,8 @@ def redact(text: str, *, userprofile: bool | None = None) -> str:
     out = _URL_CRED.sub(r"\1***@", text)
     out = _BEARER.sub(r"\1\2 ***", out)
     out = _PRIVATE.sub(r"\1***", out)
+    out = _OTHER_HEADERS.sub(r"\1***", out)
+    out = _SENSITIVE_QPARAM.sub(r"\1***", out)
     if userprofile if userprofile is not None else _REDACT_USERPROFILE:
         out = redact_home(out)
     return out

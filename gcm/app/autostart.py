@@ -54,7 +54,8 @@ def set_autostart(enabled: bool, minimized: bool = False) -> tuple[bool, str]:
                    "/TR", tr_cmd, "/SC", "ONLOGON", "/RL", "LIMITED"]
         else:
             cmd = ["schtasks", "/Delete", "/F", "/TN", TASK_NAME]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=30)
         if r.returncode == 0:
             return True, ("已写入开机自启任务计划" if enabled else "已移除开机自启任务计划")
         detail = (r.stderr or r.stdout or "").strip()[:200]
@@ -72,7 +73,8 @@ def autostart_enabled() -> bool:
     try:
         r = subprocess.run(
             ["schtasks", "/Query", "/TN", TASK_NAME],
-            capture_output=True, text=True, timeout=15)
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=15)
         return r.returncode == 0
     except Exception:  # noqa: BLE001
         return False

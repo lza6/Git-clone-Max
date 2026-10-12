@@ -13,6 +13,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
+# G66-2：契约 version 与 gcm.__version__ 同源，禁止硬编码。
+from gcm import __version__ as CONTRACT_VERSION  # noqa: E402
+
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
@@ -44,7 +47,7 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             db.close()
         doc = {
-            "version": "8.0.2",
+            "version": CONTRACT_VERSION,
             "ok": True,
             "counts": {"success": 1, "failed": 0, "other": 0, "total": 1},
             "results": [{"path": str(p), "rows": rows, "format": fmt,
@@ -54,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(doc, ensure_ascii=False, indent=2))
         return 0
     except Exception as e:  # noqa: BLE001
-        print(json.dumps({"version": "8.0.2", "ok": False, "results": [],
+        print(json.dumps({"version": CONTRACT_VERSION, "ok": False, "results": [],
                           "invalid": [{"code": 1, "message": str(e),
                                        "redacted": str(e)}]}))
         return 1

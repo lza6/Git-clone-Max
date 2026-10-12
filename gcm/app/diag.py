@@ -12,7 +12,8 @@ from pathlib import Path
 
 def probe_git() -> dict:
     try:
-        r = subprocess.run(["git", "--version"], capture_output=True, text=True, timeout=8)
+        r = subprocess.run(["git", "--version"], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=8)
         return {"name": "git", "status": "ok" if r.returncode == 0 else "err",
                 "detail": (r.stdout or r.stderr or "").strip()[:60]}
     except Exception as e:

@@ -13,6 +13,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
+# G66-2：契约 version 与 gcm.__version__ 同源，禁止硬编码。
+from gcm import __version__ as CONTRACT_VERSION  # noqa: E402
+
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
@@ -70,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     ok = sum(1 for r in results if r["status"] == "success")
     fail = sum(1 for r in results if r["status"] == "failed")
     doc = {
-        "version": "8.0.2",
+        "version": CONTRACT_VERSION,
         "ok": fail == 0 and bool(results),
         "counts": {"success": ok, "failed": fail, "other": len(results) - ok - fail,
                    "total": len(results)},

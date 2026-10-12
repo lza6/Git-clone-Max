@@ -22,7 +22,8 @@ def _gh_token() -> str:
         r = subprocess.run(
             ["git", "credential", "fill"],
             input="protocol=https\nhost=github.com\n\n",
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=10,
         )
         for line in (r.stdout or "").splitlines():
             if line.startswith("password="):

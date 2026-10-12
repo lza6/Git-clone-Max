@@ -52,7 +52,8 @@ def _is_dirty(git_dir: str) -> bool:
     try:
         r = subprocess.run(
             ["git", "-C", str(git_dir), "status", "--porcelain"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30,
         )
         if r.returncode != 0:
             return True
@@ -72,7 +73,8 @@ def _divergence_info(git_dir: str) -> tuple[int, int]:
         try:
             r = subprocess.run(
                 ["git", "-C", git_dir, "rev-list", "--count", spec],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=30,
             )
             if r.returncode == 0:
                 return int(r.stdout.strip() or 0)
@@ -504,9 +506,11 @@ class GitService:
             if mapped:
                 cfgtok = mapped
                 # G58-5：按 host_auth_types 映射发对应头（bearer/private_token/basic）；
-                # 未配置该 host 时默认 Bearer（历史行为，兼容已有登记）。
+                # 未配置该 host 时回退 "*"（设置页只提供全局项），再默认 Bearer。
+                # G66-9 修复：原实现只查 _hats.get(host)，而 UI 写入的是 _hats["*"]
+                # → 设置页选的 Basic/PRIVATE-TOKEN 永不生效（实测仍发 Bearer）。
                 _hats = getattr(self, "host_auth_types", None) or {}
-                htype = str(_hats.get(host, "") or "").lower().strip()
+                htype = str(_hats.get(host) or _hats.get("*") or "").lower().strip()
                 if htype == "private_token":
                     cfg.append(("http.extraHeader", f"PRIVATE-TOKEN: {cfgtok}"))
                 elif htype == "basic":
@@ -618,7 +622,8 @@ class GitService:
         try:
             r = subprocess.run(
                 ["git", "-C", str(repo_dir), "rev-parse", "--is-shallow-repository"],
-                capture_output=True, text=True, timeout=20,
+                capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=20,
             )
             return r.returncode == 0 and r.stdout.strip() == "true"
         except Exception:
@@ -633,7 +638,8 @@ class GitService:
         try:
             r = subprocess.run(
                 ["git", "-C", str(repo_dir), "symbolic-ref", "--short", "HEAD"],
-                capture_output=True, text=True, timeout=20,
+                capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=20,
             )
             if r.returncode == 0:
                 return r.stdout.strip()
@@ -719,8 +725,14 @@ class GitService:
         cmd = ["git"] + self._lfs_flag() + ["clone", "--progress"]
         if getattr(spec, "ref", ""):
             cmd += ["-b", spec.ref]
-        if self.fetch_depth and self.single_branch:
-            cmd += [f"--depth={self.fetch_depth}", "--single-branch"]
+        if self.fetch_depth:
+            # G66-10 修复：--depth 原先只在 single_branch 同时为真时才追加，
+            # 导致 UI 选「浅克隆」但设置页未勾 single_branch 时退化为全量克隆
+            # （实测 depth=1, single_branch=False → 命令里没有 --depth）。
+            # 语义修正：depth 独立生效，single_branch 只决定是否附加 --single-branch。
+            cmd.append(f"--depth={self.fetch_depth}")
+            if self.single_branch:
+                cmd.append("--single-branch")
         if self._mirror:
             # G48-6 镜像克隆（--mirror 自带 --bare）
             cmd.append("--mirror")
@@ -738,8 +750,8 @@ class GitService:
         cmd = self._post_clone_hook.replace("%PATH%", str(_P(repo_dir)))
         try:
             self._emit(f"执行克隆后钩子：{cmd}")
-            _sp.run(cmd, shell=True, cwd=str(self.root),
-                    capture_output=True, text=True, timeout=60)
+            _sp.run(cmd, shell=True, cwd=str(self.root), capture_output=True,
+                    text=True, encoding="utf-8", errors="replace", timeout=60)
         except Exception as e:
             self._emit(f"克隆后钩子执行失败（仅记录）：{e}", "warn")
 
@@ -1001,7 +1013,8 @@ class GitService:
     def _head_sha(self, repo_dir: Path) -> str:
         try:
             r = subprocess.run(["git", "-C", str(repo_dir), "rev-parse", "HEAD"],
-                               capture_output=True, text=True, timeout=20)
+                               capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", timeout=20)
             return r.stdout.strip() if r.returncode == 0 else ""
         except Exception:
             return ""
@@ -1011,7 +1024,8 @@ class GitService:
         try:
             r = subprocess.run(
                 ["git", "-C", str(repo_dir), "rev-parse", f"origin/{branch}"],
-                capture_output=True, text=True, timeout=20,
+                capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=20,
             )
             return r.stdout.strip() if r.returncode == 0 else ""
         except Exception:
@@ -1021,7 +1035,8 @@ class GitService:
         try:
             r = subprocess.run(
                 ["git", "-C", str(repo_dir), "rev-list", "--count", f"HEAD..{remote_ref}"],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=30,
             )
             return int(r.stdout.strip()) if r.returncode == 0 else 0
         except Exception:

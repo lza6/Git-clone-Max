@@ -27,6 +27,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from gcm import __version__ as CONTRACT_VERSION
+
 from .util.redact import redact
 
 _MCP_DISABLED_RC = 3  # 与 gcm/cli.py ECODE_MCP_DISABLED 一致
@@ -209,7 +211,7 @@ def run_stdio(data_dir: Path, allow_export: bool) -> int:
                         "resources": {},
                         "prompts": {},
                     },
-                    "serverInfo": {"name": "gcm", "version": "8.0.2"},
+                    "serverInfo": {"name": "gcm", "version": CONTRACT_VERSION},
                 }), ensure_ascii=False) + "\n")
                 out.flush()
             elif method == "notifications/initialized":

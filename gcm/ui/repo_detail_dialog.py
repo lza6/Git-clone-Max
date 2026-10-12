@@ -320,7 +320,8 @@ class RepoDetailDialog(QDialog):
         """
         try:
             r = subprocess.run(
-                ["git", "ls-remote", url, "HEAD"], capture_output=True, text=True, timeout=30,
+                ["git", "ls-remote", url, "HEAD"], capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=30,
             )
             lines = (r.stdout or "").strip().splitlines()
             remote_sha = lines[0].split("\t")[0].strip() if lines else ""

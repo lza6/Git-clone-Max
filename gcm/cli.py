@@ -14,6 +14,8 @@ import json
 import sys
 from pathlib import Path
 
+from gcm import __version__ as CONTRACT_VERSION
+
 # G50-3 控制台编码兑底：窄编码终端（cp1252/GBK）下中文输出不再抛 UnicodeEncodeError
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
@@ -118,7 +120,9 @@ def _run_json(app, engine, specs, results) -> dict:
     fail = sum(1 for r in results if r.status.value == "failed")
     other = len(results) - ok - fail
     return {
-        "version": "8.0.2",
+        # G66-2：契约 version 必须与 gcm.__version__ 同源，禁止硬编码（历史上写死 8.0.2 导致
+        # 所有 agent 消费者读到的版本落后 4 个大版本）。
+        "version": CONTRACT_VERSION,
         "ok": fail == 0 and len(results) > 0,
         "counts": {
             "success": ok,
@@ -196,7 +200,7 @@ def _diag_main(root: Path, json_mode: bool) -> int:
         g = grade(reports)
         if json_mode:
             doc = {
-                "version": "8.0.2",
+                "version": CONTRACT_VERSION,
                 "ok": g.startswith("绿"),
                 "counts": {"success": 0, "failed": 0, "other": len(reports), "total": len(reports)},
                 "results": [],
@@ -214,6 +218,38 @@ def _diag_main(root: Path, json_mode: bool) -> int:
         return 1
 
 
+def _print_help() -> int:
+    """G66-8：`--help` 输出用法到 stdout 并返回 0。
+
+    修复前 `python -m gcm --help` 会**静默走 GUI 分支**（`__main__` 的 `flags["cli"]`
+    为假）→ 拉起窗口并阻塞，agent/脚本想查用法反而挂死。
+    """
+    print(
+        "Git-clone-Max CLI\n"
+        "\n"
+        "用法：\n"
+        "  python -m gcm --cli [--json] [--dir <目录>] <urls.txt | ->\n"
+        "  python -m gcm --cli --diag [--json]\n"
+        "  python -m gcm --cli --serve <host:port> [--allow-mutate] [--json]\n"
+        "\n"
+        "旗标：\n"
+        "  --cli           进入 CLI 模式（否则启动 GUI）\n"
+        "  --dir <目录>     克隆输出根目录（默认 ./clones）\n"
+        "  --json          结构化 JSON 输出（stdout 仅 JSON，文本进度走 stderr）\n"
+        "  --diag          网络/环境诊断（不克隆）\n"
+        "  --serve H:P     启动本地只读 HTTP API（仅允许回环地址）\n"
+        "  --allow-mutate  配合 --serve：放行 POST 写操作（默认只读）\n"
+        "  --help, -h      显示本帮助\n"
+        "\n"
+        "输入：<urls.txt> 为地址清单文件；`-` 表示 stdin（每行一个，`#` 开头忽略）。\n"
+        "\n"
+        "退出码：0=全部成功 / 1=有失败 / 2=无有效输入或参数错误 / 3=MCP 未启用。\n"
+        "\n"
+        "契约（--json 顶层 schema、打码规则、只读边界）见 docs/agent-contract.md。\n"
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI 入口：argv 为 sys.argv[1:]（可能以 --cli 开头）。
 
@@ -223,18 +259,31 @@ def main(argv: list[str] | None = None) -> int:
     - --diag        网络/环境诊断（不克隆）
     - --serve H:P   启动只读本地 HTTP API（--allow-mutate 放行写）
     - --allow-mutate 配合 --serve：放行 POST 写操作（默认只读）
+    - --help, -h    显示帮助
     """
     from gcm import __version__
     args = list(sys.argv[1:] if argv is None else argv)
     if args and args[0] == "--cli":
         args = args[1:]
+    if "--help" in args or "-h" in args:
+        return _print_help()
     json_mode = "--json" in args
     if json_mode:
         args.remove("--json")
     diag = "--diag" in args
     if diag:
         args.remove("--diag")
-    serve = "--serve" in args
+    # G66-8 关键修复：--serve 必须连值一起从 args 摘除，否则它自己会被当成 bind
+    # （原实现只置标志不移除 → args[0] 恒为 "--serve" → 100% 启动失败，
+    #  而 docs 与 docstring 都写着 `--cli --serve 127.0.0.1:8765`）。
+    serve_bind: str | None = None
+    if "--serve" in args:
+        _si = args.index("--serve")
+        if _si + 1 >= len(args):
+            print("[CLI] --serve 缺少 host:port 参数（例：--serve 127.0.0.1:8765）")
+            return 2
+        serve_bind = args[_si + 1]
+        del args[_si:_si + 2]
     allow_mutate = "--allow-mutate" in args
     if allow_mutate:
         args.remove("--allow-mutate")
@@ -247,9 +296,10 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         root = Path(args[_i + 1])
         del args[_i:_i + 2]
-    if serve:
-        bind = args[0] if args else "127.0.0.1:8765"
-        return _serve_main(root, bind, allow_mutate, json_mode)
+    if serve_bind is not None:
+        # bind 已由 --serve 显式消费；无值时退回默认回环地址
+        return _serve_main(root, serve_bind or "127.0.0.1:8765",
+                           allow_mutate, json_mode)
     if diag:
         return _diag_main(root, json_mode)
     src = args[0] if args else "-"

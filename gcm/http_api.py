@@ -28,6 +28,11 @@ from .util.redact import redact
 
 _SENSITIVE_COLS = ("token", "host_tokens", "ssh_key", "url")
 
+# G66-6：仅允许回环绑定（服务本身无鉴权，非回环等于把仓库清单与写操作对全网开放）。
+_LOOPBACK_HOSTS = frozenset({
+    "127.0.0.1", "::1", "localhost", "127.0.0.2", "127.0.0.3",
+})
+
 
 def _version() -> str:
     """项目版本号（延迟导入避免循环）。"""
@@ -202,9 +207,27 @@ class GcmApiServer(ThreadingHTTPServer):
 def create_server(bind: str = "127.0.0.1:8765", root: Path | str = Path.cwd(),
                   data_dir: Path | str | None = None,
                   allow_mutate: bool = False) -> GcmApiServer:
-    """创建本地 HTTP 服务器（默认只读）；测试可直接关闭释放端口。"""
+    """创建本地 HTTP 服务器（默认只读）；测试可直接关闭释放端口。
+
+    G66-6 安全加固：本服务**无鉴权**（设计如此：仅面向本机 agent 集成）。
+    因此任何非回环绑定都会把「仓库清单 / 报表 / 克隆写操作」暴露给同网段任何人。
+    此处强制拒绝非回环 host（不再静默接受 `0.0.0.0`）。
+    """
     host, _, port = str(bind).rpartition(":")
-    httpd = GcmApiServer((host or "127.0.0.1", int(port or 8765)), _ApiHandler)
+    host = host or "127.0.0.1"
+    if host not in _LOOPBACK_HOSTS:
+        raise ValueError(
+            f"拒绝绑定非回环地址 {host!r}：本地 HTTP API 无鉴权，"
+            f"只允许 {sorted(_LOOPBACK_HOSTS)}（默认 127.0.0.1）。"
+            "如需远程访问，请自行用带鉴权的反向代理转发到回环地址。")
+    try:
+        port_num = int(port or 8765)
+    except ValueError as e:
+        raise ValueError(f"非法端口 {port!r}（应为 0-65535 的整数）") from e
+    # 0 = 让内核分配空闲端口（测试/临时实例用），其余须在合法区间。
+    if not (0 <= port_num <= 65535):
+        raise ValueError(f"非法端口 {port_num}（应为 0-65535）")
+    httpd = GcmApiServer((host, port_num), _ApiHandler)
     httpd.root = Path(root)
     httpd.data_dir = Path(data_dir) if data_dir else Path(root)
     httpd.allow_mutate = bool(allow_mutate)
@@ -214,8 +237,19 @@ def create_server(bind: str = "127.0.0.1:8765", root: Path | str = Path.cwd(),
 def serve(bind: str = "127.0.0.1:8765", root: Path | str = Path.cwd(),
           data_dir: Path | str | None = None,
           allow_mutate: bool = False, json_mode: bool = False) -> int:
-    """启动本地 API 并阻塞（Ctrl-C 退出）；返回退出码。"""
-    httpd = create_server(bind, root, data_dir, allow_mutate)
+    """启动本地 API 并阻塞（Ctrl-C 退出）；返回退出码。
+
+    G66-6：非回环绑定 / 非法端口 → 打印错误并返回退出码 2（不再静默起服务）。
+    """
+    try:
+        httpd = create_server(bind, root, data_dir, allow_mutate)
+    except ValueError as e:
+        print(f"[SERVE] 启动被拒绝：{e}", file=sys.stderr)
+        if json_mode:
+            import json as _json
+            print(_json.dumps({"version": _version(), "ok": False,
+                               "error": str(e)}, ensure_ascii=False))
+        return 2
     host, _, port = str(bind).rpartition(":")
     if json_mode:
         import json as _json
