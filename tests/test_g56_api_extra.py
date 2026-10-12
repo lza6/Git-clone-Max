@@ -1,6 +1,5 @@
 """G56 补充覆盖：HTTP API 报告/搜索/404/POST 空体 + MCP search/status/export 边界。"""
 import json
-import socket
 import tempfile
 import threading
 import unittest
@@ -10,12 +9,6 @@ from pathlib import Path
 
 from gcm.db.repo_db import Database
 from gcm.models import RepoSpec
-
-
-def _free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
 
 
 def _make_db(tmp: Path) -> None:
@@ -33,9 +26,11 @@ def _make_db(tmp: Path) -> None:
 
 def _serve(tmp: Path, allow_mutate: bool = False):
     from gcm.http_api import create_server
-    port = _free_port()
-    httpd = create_server(f"127.0.0.1:{port}", root=tmp, data_dir=tmp,
+    # G66-12：改用端口 0 由内核分配并从 socket 反查，消除「先探测再绑定」的
+    # TOCTOU 竞态（同批多个测试文件各起 HTTP server 时会间歇性抢端口）。
+    httpd = create_server("127.0.0.1:0", root=tmp, data_dir=tmp,
                           allow_mutate=allow_mutate)
+    port = httpd.server_address[1]
     th = threading.Thread(target=httpd.serve_forever, daemon=True)
     th.start()
     return httpd, port

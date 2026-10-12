@@ -59,13 +59,8 @@ class TestContract(unittest.TestCase):
 class TestHttpApiReadonly(unittest.TestCase):
     """G56-4 HTTP API 冒烟：只绑 127.0.0.1；默认拒绝写。"""
 
-    def _free_port(self) -> int:
-        with socket.socket() as s:
-            s.bind(("127.0.0.1", 0))
-            return s.getsockname()[1]
-
     def test_readonly_boundaries(self):
-        """GET /version 只读 OK；POST /api/clone 默认 403；随机端口释放。"""
+        """GET /version 只读 OK；POST /api/clone 默认 403；端口已释放。"""
         tmp = Path(tempfile.mkdtemp(prefix="gcm_g56_http_"))
         from gcm.db.repo_db import Database
         from gcm.models import RepoSpec
@@ -75,10 +70,14 @@ class TestHttpApiReadonly(unittest.TestCase):
                                 folder_name="alice__demo"),
                        local_path=str(tmp / "alice__demo"), host="github.com")
         db.close()
-        port = self._free_port()
+        # G66-12：原实现用 _free_port()「先 bind 再 close」探测空闲端口，
+        # 在真正使用前存在 TOCTOU 窗口 —— 同批其它测试文件也各自起 HTTP server，
+        # 实测会让本用例间歇性报错（同一条命令一次 OK 一次 FAILED）。
+        # 改为 bind 到端口 0 让内核分配，再从 socket 反查实际端口，彻底消除竞态。
         from gcm.http_api import create_server
-        httpd = create_server(f"127.0.0.1:{port}", root=tmp, data_dir=tmp,
+        httpd = create_server("127.0.0.1:0", root=tmp, data_dir=tmp,
                               allow_mutate=False)
+        port = httpd.server_address[1]
         import threading
         th = threading.Thread(target=httpd.serve_forever, daemon=True)
         th.start()

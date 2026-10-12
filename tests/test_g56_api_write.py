@@ -1,6 +1,5 @@
 """G56-4 HTTP API 写路径补充测试：--allow-mutate 放行 POST /api/clone（真实本地裸仓）+ 审计落盘。"""
 import json
-import socket
 import subprocess
 import tempfile
 import threading
@@ -10,12 +9,6 @@ import urllib.request
 from pathlib import Path
 
 from gcm.http_api import create_server
-
-
-def _free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
 
 
 def _make_bare(td: Path, name: str) -> Path:
@@ -36,10 +29,10 @@ class TestHttpApiWrite(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="gcm_api_write_"))
         self.bare = _make_bare(self.tmp, "r0.git")
-        port = _free_port()
-        self.httpd = create_server(f"127.0.0.1:{port}", root=self.tmp / "out",
+        # G66-12：端口 0 由内核分配 + 反查，消除 TOCTOU 抢端口竞态。
+        self.httpd = create_server("127.0.0.1:0", root=self.tmp / "out",
                                    data_dir=self.tmp, allow_mutate=True)
-        self.port = port
+        self.port = self.httpd.server_address[1]
         th = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         th.start()
         self.addCleanup(self.httpd.shutdown)
