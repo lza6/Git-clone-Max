@@ -344,6 +344,67 @@ class TestShallowCloneDepth(unittest.TestCase):
     def test_depth_n(self):
         self.assertIn("--depth=50", self._cmd(50, False))
 
+    def test_depth_actually_takes_effect_e2e(self):
+        """真实 E2E：浅克隆必须真的只拿到 1 个提交（不只是命令里有 --depth）。
+
+        G66-14 补：原守卫只断言「命令数组含 --depth」，那只能证明「拼对了」，
+        不能证明「生效了」—— 两者是不同的问题。
+
+        注意 git 的既定行为：**对本地路径做克隆时会忽略 --depth**
+        （`warning: --depth is ignored in local clones; use file:// instead.`），
+        所以本用例必须用 `file://` URL，否则会得到「命令正确但仓不是浅的」的
+        假阴性。真实远端（https）不受此影响。
+        """
+        import shutil
+        import tempfile
+        from gcm.git.service import GitService
+        from gcm.models import RepoSpec
+
+        tmp = pathlib.Path(tempfile.mkdtemp(prefix="gcm_g66_depth_"))
+        try:
+            src = tmp / "src"
+            src.mkdir()
+
+            def _g(*args: str) -> None:
+                subprocess.run(["git", *args], cwd=str(src),
+                               capture_output=True, check=True)
+
+            _g("init", "-q")
+            _g("config", "user.email", "t@t.com")
+            _g("config", "user.name", "t")
+            for i in range(5):
+                (src / "a.txt").write_text(str(i), encoding="utf-8")
+                _g("add", "-A")
+                _g("commit", "-qm", f"c{i}")
+            _g("branch", "-M", "main")
+            bare = tmp / "r.git"
+            subprocess.run(["git", "clone", "-q", "--bare", str(src), str(bare)],
+                           capture_output=True, check=True)
+
+            # file:// 才让 git 认 --depth
+            url = "file:///" + str(bare).replace("\\", "/")
+            svc = GitService(tmp / "out", fetch_depth=1, single_branch=False)
+            spec = RepoSpec(owner="x", repo="r", url_https=url, folder_name="x__r")
+            self.assertIn("--depth=1", svc.build_clone_cmd(spec))
+            result = svc.sync(spec)
+            self.assertEqual(result.status.value, "success", result.detail)
+
+            repo_dir = pathlib.Path(result.path)
+            self.assertTrue((repo_dir / ".git").is_dir(), "克隆目录应存在")
+
+            def _git_out(*args: str) -> str:
+                r = subprocess.run(["git", "-C", str(repo_dir), *args],
+                                   capture_output=True, text=True,
+                                   encoding="utf-8", errors="replace")
+                return r.stdout.strip()
+
+            self.assertEqual(_git_out("rev-parse", "--is-shallow-repository"), "true",
+                             "浅克隆仓必须是 shallow（--depth 真的生效）")
+            self.assertEqual(_git_out("rev-list", "--count", "HEAD"), "1",
+                             "浅克隆应只含 1 个提交（远端有 5 个）")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
 
 class TestRedactCoverage(unittest.TestCase):
     """G66-11：脱敏必须覆盖 GitHub 旧式 token 头与 URL query 凭据。
