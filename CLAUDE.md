@@ -75,9 +75,14 @@ docs/        工程/产品/契约文档
 
 ## 3. 代码约定（本项目既有风格，请跟随，不要引入新范式）
 
-- **子进程**：`subprocess.run(..., text=True)` **必须**同时给 `encoding="utf-8", errors="replace"`。
-  中文 Windows 默认 locale 是 cp936，git 的 UTF-8 输出会让读取线程抛 `UnicodeDecodeError`，
-  且 `CompletedProcess.stdout` 会塌陷成 `None` → 下游报"明明成功却失败"。此条有 AST 守卫强制。
+- **子进程**：`subprocess.run(..., text=True)` **必须**同时给 `encoding`，但**不能无脑写 `"utf-8"`**：
+  - **git** 输出 UTF-8 → 用 `encoding="utf-8", errors="replace"`。
+  - **Windows 自带控制台工具（`schtasks` 等）** 输出 ANSI 代码页（中文系统 = GBK/cp936）
+    → 用 `gcm/app/autostart.py:_console_encoding()`（取 `locale.getpreferredencoding(False)`，
+    回退 `mbcs`）。写死 utf-8 会把用户可见的中文提示变成乱码（实测过的回归，别再犯）。
+  - 通用判据：**先确认这个工具输出什么编码，再决定**。省略 `encoding` 则用系统 locale，
+    对 UTF-8 输出的 git 会抛 `UnicodeDecodeError` 且 `stdout` 塌陷成 `None` →
+    下游报「明明成功却失败」。此条有 AST 守卫强制（只强制「必须有 encoding」，不强制具体值）。
 - **脱敏**：任何面向 UI / 日志 / agent 输出的文本，出站前过 `gcm/util/redact.redact`。
   `token` / `host_tokens` / `ssh_key` / URL 内嵌凭据一律打码。
 - **SQL**：只允许参数化查询；`f-string` 只能用于 PRAGMA 常量（现状已如此）。DB 写入单线程 + `BEGIN IMMEDIATE` + `busy_timeout=30000`。
@@ -111,7 +116,7 @@ docs/        工程/产品/契约文档
 | 红线 | 守卫 |
 |------|------|
 | 版本号只能来自 `gcm.__version__`（含 pyproject / installer.iss / spec / changelog） | `tests/test_g66_patch.py::TestContractVersionSingleSource` + `TestPackagingVersionSync` |
-| `subprocess` 文本模式必须显式 UTF-8（gcm / scripts / tests 全覆盖） | `tests/test_g66_patch.py::TestSubprocessTextDecoding` + `TestSubprocessDecodeE2E` |
+| `subprocess` 文本模式必须显式给 `encoding`（gcm / scripts / tests 全覆盖）；git 用 utf-8，Windows 控制台工具用 `_console_encoding()` | `tests/test_g66_patch.py::TestSubprocessTextDecoding` + `TestSubprocessDecodeE2E` + `TestConsoleToolEncoding` |
 | 测试不得用绝对日期表达相对语义 | `tests/test_g66_patch.py::TestNoTimeBombAssertions` |
 | 本地 HTTP API 只允许回环绑定（服务无鉴权） | `tests/test_g66_patch.py::TestHttpApiBindHardening` |
 | MCP / HTTP API **默认只读**，写操作需显式放行（`GCM_MCP_ENABLE=1` + `--allow-export` / `--allow-mutate`） | `tests/test_g56_mcp*.py` / `test_g56_api_write.py` |
