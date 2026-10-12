@@ -6,9 +6,10 @@
 ## 0. 前置
 
 - [ ] `python -m unittest discover -s tests` → 全绿（记录 Ran N tests OK）
-- [ ] `python -m coverage run --source=gcm -m unittest discover -s tests && python -m coverage report`
-      → TOTAL ≥ 85%（若未达门禁，标注实际值）
+- [ ] `python -m coverage run --source=gcm scripts/ci_run_fast.py && python -m coverage report`
+      → 快集 TOTAL ≥ 门禁（Windows 81 / POSIX 80，见 `.github/workflows/ci.yml` 的 `COVERAGE_FAIL_UNDER`）
 - [ ] `git status` 无未登记改动；无硬编码密钥；`gcm/util/redact.py` 回归通过（token 三态打码）
+- [ ] `python -m unittest tests.test_g66_patch` → 19 项守卫绿（版本单源 / 打包版本同步 / 子进程解码 / 时间炸弹 / HTTP 回环）
 
 ## 1. 版本与打包
 

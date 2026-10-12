@@ -1,6 +1,6 @@
 # Git-clone-Max Agent 契约（G56-5）
 
-> 适用版本：v8.0.2（基线 HEAD 4429c32）。本文档是所有 agent 接入点
+> 适用版本：v9.1.3。本文档是所有 agent 接入点
 > （CLI `--json` / MCP server / 本地 HTTP API / `skills/gcm-*`）的统一契约。
 > 任何实现与本文档冲突时，以实际输出为准（测试 `tests/test_g56_contract.py` 抽样断言）。
 
@@ -27,7 +27,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ```json
 {
-  "version": "8.0.2",
+  "version": "9.1.3",
   "ok": true,
   "counts": {"success": 2, "failed": 0, "other": 0, "total": 2},
   "results": [
@@ -48,7 +48,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `version` | string | 项目版本 `8.0.2` |
+| `version` | string | 项目版本，恒等于 `gcm.__version__`（G66-2 起单源，`tests/test_g66_patch.py` 强制校验） |
 | `ok` | bool | `true` 当且仅当 `failed==0` 且 `total>0` |
 | `counts` | object | `success` / `failed` / `other` / `total`（`other` = conflict+cancelled+skipped） |
 | `results[]` | array | 每仓库一行 |
@@ -107,7 +107,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ```
 → {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{}}}
-← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"gcm","version":"8.0.2"}}}
+← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"gcm","version":"9.1.3"}}}
 → {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
 ← {"jsonrpc":"2.0","id":2,"result":{"tools":[{...list_repos...}, ...]}}
 → {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_repos","arguments":{}}}

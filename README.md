@@ -1,7 +1,7 @@
 # Git-clone-Max
 
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
-> **当前版本：v9.1.2**（G59 收官 + 补缺 + 文档治理：评分卡 dir_size · 企业 IM 告警 · CI fast/slow · 认证头 UI · 无障碍 · 版本资源修复 · 扫描证据归档/v8 历史归档/里程碑仪表盘；G51-G59 全部 [✅]）
+> **当前版本：v9.1.3**（G66 第四轮终局审计补丁：契约版本单源 · 中文 Windows 子进程解码崩溃修复 · 时间炸弹用例修复 · 本地 HTTP API 强制回环绑定 · CI artifact/step 名修复；G51-G59 全部 [✅]，G66 全项 [✅]）
 > **v5.0：多平台直克隆** — GitLab / Gitee / Codeberg / Bitbucket / 自建主机（HTTPS/SSH/短格式/子组）同样支持。
 > 克隆目录一律 `host__作者__仓库`（GitHub 为 `作者__仓库`），本地改动永不覆盖。
 
@@ -93,32 +93,82 @@ uv run python -m gcm --portable
 
 ```
 Git-clone-Max/
-├── dist/Git-clone-Max.exe   成品可执行文件（双击即用）
-├── gcm/                    主包
-│   ├── __main__.py         入口（python -m gcm）
-│   ├── models.py           数据模型
+├── Git-clone-Max.spec       PyInstaller 打包配置（已入库，版本资源随 __version__）
+├── dist/                    构建产物：Git-clone-Max.exe（onefile）+ Git-clone-Max-portable/（onedir）
+├── gcm/                     主包
+│   ├── __main__.py          入口（python -m gcm）；--portable / --cli / --minimized
+│   ├── models.py            数据模型
+│   ├── cli.py               CLI：--cli [--json] [--diag] [--serve H:P] [--allow-mutate]
+│   ├── mcp_server.py        MCP stdio server（只读；GCM_MCP_ENABLE=1 显式启用）
+│   ├── http_api.py          本地 HTTP API（只读；强制回环绑定）
+│   ├── reports.py           报表导出（CSV / Markdown / xlsx）
 │   ├── app/
-│   │   ├── engine.py       统一调度引擎（并发/去重/进度/取消）
-│   │   ├── url_lib.py      通用 Git URL 解析（多平台）/ 跨 host 命名
-│   │   └── worker.py       并行 worker（git 同步 + 结果回传）
-│   ├── db/repo_db.py       SQLite（busy_timeout）/ progress 文件锁
-│   ├── git/service.py      git 操作（clone/fetch/merge/rebase/冲突/平台限制识别）
-│   └── ui/                 主题 + 三 Tab 主窗口
-├── scripts/                bat / ps1 启动器
-├── tests/                  单元测试（含真实 git E2E / 并发引擎测试）
-├── requirements.txt
-└── pyproject.toml
+│   │   ├── engine.py        统一调度引擎（并发/去重/进度/取消）
+│   │   ├── url_lib.py       通用 Git URL 解析（多平台）/ 跨 host 命名
+│   │   ├── diag.py          网络/环境诊断
+│   │   ├── alerts.py        阈值告警扫描 + 定时报表
+│   │   ├── im_notify.py     企业 IM 推送（钉钉/飞书/企微）
+│   │   └── worker.py        并行 worker（git 同步 + 结果回传）
+│   ├── db/                  SQLite（repo_db / settings / lists / history / runtime_sessions）
+│   ├── git/service.py       git 操作（clone/fetch/merge/rebase/冲突/平台限制识别）
+│   ├── i18n/                轻量 i18n（zh/en）
+│   └── ui/                  主题 + 三 Tab 主窗口 + 设置/统计/详情/本地扫描对话框
+├── skills/                  agent 技能包（gcm-clone/archive/report/diag/resume，各含 SKILL.md）
+├── scripts/                 启动器（bat/ps1）+ E2E 冒烟 / 健康检查 / 发布 / 基准 / CI 快集
+├── docs/                    架构 / ADR / agent 契约 / SOP / 性能可观测性 / Release 清单
+├── 计划书/                  迭代总纲 / 验收清单 / 任务日志 / DB 结构 / 项目规格
+├── tests/                   单元 + 集成 + 真实 git E2E（113 个测试文件）
+├── requirements.txt         运行时依赖（PyQt6）
+└── pyproject.toml           项目元数据 + ruff / mypy 配置
 ```
 
 ## 重新打包 exe
 
+使用入库的 spec（版本资源、Qt 模块裁剪、onedir 便携版均已配置好）：
+
 ```bash
-python -m pip install pyinstaller
-python -m PyInstaller --noconfirm --clean --onefile --windowed --name "Git-clone-Max" \
-  --add-data "gcm;gcm" --collect-all "PyQt6" gcm/__main__.py
+python -m pip install -r requirements-build.txt
+python -m PyInstaller --noconfirm Git-clone-Max.spec
 ```
 
+产出：`dist/Git-clone-Max.exe`（onefile 主产物）+ `dist/Git-clone-Max-portable/`（onedir 便携版，发布时打包为 `dist/Git-clone-Max-portable.zip`）。
+
+> `Git-clone-Max.spec` 的 `filevers/prodvers/FileVersion/ProductVersion` 必须与 `gcm/__init__.py` 的
+> `__version__` 一致，否则 Windows exe 属性会显示旧版本 —— 由 `tests/test_g66_patch.py::TestPackagingVersionSync` 强制校验。
+
 > **v5.0 起支持多平台直克隆**：GitLab / Gitee / Codeberg / Bitbucket / 自建主机，HTTPS + SSH + 短格式 + 子组均可；命名 `host__作者__仓库`（GitHub 保持 `作者__仓库`）。
+
+## Agent / 脚本接入（G56）
+
+三类入口，**全部默认只读**，统一契约见 [`docs/agent-contract.md`](docs/agent-contract.md)：
+
+```bash
+# 1) CLI 批量克隆（--json 时 stdout 只输出 JSON，进度走 stderr）
+python -m gcm --cli --dir ./clones urls.txt
+python -m gcm --cli --json --dir ./clones urls.txt
+cat urls.txt | python -m gcm --cli --json --dir ./clones -
+
+# 2) 网络/环境诊断（可配 --json）
+python -m gcm --cli --diag --json
+
+# 3) 本地只读 HTTP API（强制回环绑定；--allow-mutate 才放行写）
+python -m gcm --cli --serve 127.0.0.1:8765
+```
+
+退出码：`0` 全成功 / `1` 有失败 / `2` 无有效输入（MCP 未启用另为 `3`）。
+
+MCP server（Claude Desktop / Cursor 可直接注册）：
+
+```bash
+GCM_MCP_ENABLE=1 python -m gcm.mcp_server        # 默认只读
+GCM_MCP_ENABLE=1 python -m gcm.mcp_server --allow-export
+```
+
+> **安全边界（G66-6 起强制）**：本地 HTTP API 无鉴权，因此 `--serve` 只接受回环地址
+> （`127.0.0.1` / `localhost` / `::1`）；传 `0.0.0.0` 等非回环地址会被拒绝并以退出码 2 退出。
+> 需要远程访问请自行用带鉴权的反向代理转发到回环地址。
+
+仓库内 `skills/` 提供 5 个开箱技能包（克隆 / 归档 / 报表 / 诊断 / 续跑），每个含 `SKILL.md` + 可执行脚本，供 Claude Code / Codex 直接调用。
 
 ## 测试
 
@@ -130,16 +180,24 @@ python -m unittest discover -s tests -v
 
 ## 覆盖率与回归（G45-1）
 
-本地复现 CI 门禁（全量约 16-20 分钟；Windows 需把 git 加入 PATH，自定义安装如 scoop 请先发行 `$env:PATH="<git 安装目录>\cmd;$env:PATH"`）：
+本地复现 CI 门禁（**快集**约 7.5 分钟；全量约 15 分钟。Windows 需把 git 加入 PATH，自定义安装如 scoop 请先发行 `$env:PATH="<git 安装目录>\cmd;$env:PATH"`）：
 
 ```powershell
 $env:QT_QPA_PLATFORM = "offscreen"
+
+# 快集（CI 主矩阵实际入口；覆盖率门禁 Windows 81 / POSIX 80）
+python -m coverage run --source=gcm scripts/ci_run_fast.py
+python -m coverage report --fail-under=81
+
+# 全量（含慢集：真实 git E2E）
 python -m coverage run --source=gcm -m unittest discover -s tests
-python -m coverage report --fail-under=84
 ```
 
-- 覆盖率门禁阈值与 CI 一致（`ci.yml` 的 `COVERAGE_FAIL_UNDER`），三平台矩阵跑同一门禁。
-- v7.6.0（G45-6）起 `gcm/ui/main_window.py` 已拆分（1791→1214 行）：
+- 覆盖率门禁为**快集口径**：Windows 81 / POSIX 80（`ci.yml` 主矩阵按 `runner.os` 取值）。
+  慢集（真实 git E2E）由独立 `slow` job 承接，不计入主矩阵门禁。
+  `pyproject.toml` / `.coveragerc` 不设 `fail_under`，阈值只在 CI 与本文声明。
+- 口径拆分见 `docs/慢测定位.md`；改动某区域时**优先按 `docs/验证记录-*.md` 的对应批次跑定向回归**，不必每次全量。
+- v7.6.0（G45-6）起 `gcm/ui/main_window.py` 已拆分：
   `manage_panel.py`（管理页 UI/动作+信号回传）、`progress_table.py`（进度表/过滤/结果回填/引擎收尾）、
   `settings_panel.py`（设置回调）；控件名/方法名/信号全兼容，行为零变化。
 

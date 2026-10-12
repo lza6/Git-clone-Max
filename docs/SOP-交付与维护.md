@@ -18,8 +18,9 @@
 1. 先写测试（RED）→ 实现（GREEN）→ 重构（IMPROVE）
 2. 单测验证：python -m unittest tests.test_xxx -v
 3. 质量闸：ruff check gcm scripts && mypy gcm
-4. 覆盖率：python -m coverage run --source=gcm -m unittest discover -s tests
-            python -m coverage report --fail-under=84
+4. 覆盖率（快集口径，门禁 Windows 81 / POSIX 80）：
+            python -m coverage run --source=gcm scripts/ci_run_fast.py
+            python -m coverage report --fail-under=81
 5. 真实 E2E：python scripts/e2e_smoke.py（本地裸仓）
 6. 提交：按主题拆分 commit（docs/feat/test/fix），不用 git add .
 7. 推送 main：git push origin main（禁 -f）

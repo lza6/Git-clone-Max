@@ -16,9 +16,11 @@
 | M15 | v8.8.0 | ✅ | G58 网络 / 镜像 / 新平台 |
 | M16 | v9.0.0 | ✅ | G59 第三轮（v9.1.0） |
 | 补缺 | v9.1.1 | ✅ | G58-5/G57-5/G66-1 |
-| 总观 | — | ✅ | G51-G59 全部 [✅ 已落地]（G66-2 预留待登记） |
+| 文档治理 | v9.1.2 | ✅ | G51-3/4/5/6 + G52-G56 回填 |
+| G66 终局审计 | v9.1.3 | ✅ | G66-2..G66-7（见文末登记） |
 
-> 注：里程碑实际发布版本按交付节奏收敛（v8.1.0 → v9.0.0 → v9.1.1），与规划 M8→M16 语义对齐；验收清单 `计划书/验收清单.md` 为逐条证据。
+> 注：里程碑实际发布版本按交付节奏收敛（v8.1.0 → v9.0.0 → v9.1.1 → v9.1.3），与规划 M8→M16 语义对齐；
+> 验收清单 `计划书/验收清单.md` 为逐条证据。
 
 ## 参考库扫描 · 优点提炼 · 差距分析 · 优化规划（本次会话）
 
@@ -28,31 +30,12 @@
 | 自动聚类（两轮） | ✅ | 15+ 聚类（dev_tools 228 / agent_skill 201 / web_scraper_download 177 / agent_framework 131 / video 74 / mcp 71 / security 54 / ppt_docs 39 / image_gen 26 / ecommerce_ads 18 等；`_clusters2.json`） |
 | 同类筛选 + 56 项深读 | ✅ | 短名单 README 摘要（`_shortlist_readme.json`、`_deep2.md`）；直接同行：Website-downloader / web-check / 9router-Max / VideoHub / xl-converter / zvec-grep |
 | 优化方案设计 | ✅ | `参考结果计划指南.md`（P0/P1/P2 分层 + 验收 + 决策点） |
-| 实施 | ⏳ **待用户确认** | P0-1 一键体检 / P0-2 Webhook 审计台账 / P0-3 CLI --json 待授权后按节点实施+验收 |
+| P0-1 一键体检 | ✅ | 已并入 G54-3（diag.py 多维体检）+ scripts/health_check.py --json |
+| P0-2 Webhook 门禁 | ✅ | 已并入 G49-7/G59-7（显式开关 + payload 打码 + token 加密落盘 + IM 模板） |
+| P0-3 CLI --json | ✅ | 已并入 G56-3（`--cli --json` 统一契约 + 退出码 0/1/2） |
 
-> 本节点为只读分析规划，未改动主项目/参考项目任何代码；实施需用户确认后进入 P0 节点闭环。
-
-# 任务推进日志（主控代理）— Git-clone-Max 升级交付
-
-> 只记录事实与证据。
-
-## 里程碑进度仪表盘（G51-6）
-
-| 里程碑 | 版本 | 状态 | 关键交付 |
-|--------|------|------|----------|
-| M8 | v8.1.0 | ✅ | G51 文档权威化 + G52 可靠性 |
-| M9 | v8.2.0 | ✅ | G52 完成 + G53 数据洞察（部分） |
-| M10 | v8.3.0 | ✅ | G53 数据洞察 |
-| M11 | v8.4.0 | ✅ | G54 小白体验 |
-| M12 | v8.5.0 | ✅ | G55 工程与测试体系 |
-| M13 | v8.6.0 | ✅ | G56 生态 agent 化 |
-| M14 | v8.7.0 | ✅ | G57 响应式与无障碍 |
-| M15 | v8.8.0 | ✅ | G58 网络 / 镜像 / 新平台 |
-| M16 | v9.0.0 | ✅ | G59 第三轮（v9.1.0） |
-| 补缺 | v9.1.1 | ✅ | G58-5/G57-5/G66-1 |
-| 总观 | — | ✅ | G51-G59 全部 [✅ 已落地]（G66-2 预留待登记） |
-
-> 注：里程碑实际发布版本按交付节奏收敛（v8.1.0 → v9.0.0 → v9.1.1），与规划 M8→M16 语义对齐；验收清单 `计划书/验收清单.md` 为逐条证据。
+> 本节点初为只读分析规划（未改动任何代码）；三项 P0 已由后续里程碑 G54/G56/G59 实际落地并登记证据，
+> 故 `参考结果计划指南.md` 的「⏳ 待用户确认」状态自此关闭。
 
 ## v4.1.0 增量交付
 
@@ -233,3 +216,32 @@
 | G52-G56 章节表回填 | ✅ | G52-1..6/G53-5/G54-5/G55-5/G56-1..5 [待办]→[✅ 已落地]（14 条，测试文件实证存在） |
 | 质量闸 | ✅ | 冒烟 24 用例绿；compile 通过；ruff 未触及代码 |
 | 发布 | ✅ | v9.1.2 Release 双产物，服务端 digest 与本地 sha256 全等 |
+
+
+## v9.1.3 交付登记（2026-10-12，G66 第四轮终局审计补丁）
+
+> 触发：对 v9.1.2 工作区做六视角终局审计（产品验收 / 架构审计 / 真实用户 / 接入方 / 部署维护 / 反向辩手）。
+> 审计基线实测（修复前）：`Ran 900 tests in 528.294s … FAILED (failures=1)`；快集 `TOTAL 80%`（门禁 81/80）。
+
+| 节点 | 状态 | 关键证据 |
+|------|------|----------|
+| G66-2 契约版本单源 | ✅ | 5 处硬编码 `8.0.2` → `gcm.__version__`（cli.py ×2 / mcp_server.py / 2 个技能脚本）；pyproject.toml + installer.iss 同步 9.1.3；`TestContractVersionSingleSource` 5 + `TestPackagingVersionSync` 4 绿 |
+| G66-3 时间炸弹用例 | ✅ | `tests/test_repo_tags.py` 相对时间重构 + 30/31 天边界；`TestNoTimeBombAssertions` 静态守卫覆盖全 tests/ |
+| G66-4 GBK 解码崩溃 | ✅ | 26 处 `text=True` 补 `encoding="utf-8"`；`.audit/repro_gbk.py` 修复前实测崩溃 / 修复后正确；`TestSubprocessDecodeE2E` 真实裸仓 E2E 绿 |
+| G66-6 HTTP API 回环强制 | ✅ | `_LOOPBACK_HOSTS` 白名单；`0.0.0.0`/`192.168.1.10`/`example.com`/`[::]` 全拒绝（退出码 2）；既有 19 API 用例零回归 |
+| G66-5 CI artifact 路径 | ✅ | 改写工作区根 + `if-no-files-found: error`；YAML 4 jobs 校验通过 |
+| G66-7 CI step 名 | ✅ | 3 个 job `Set up Python 3.12` → `3.14` |
+| 新增永久守卫 | ✅ | `tests/test_g66_patch.py` 19 用例（6 个 TestCase 类） |
+| 文档补登记 | ✅ | `验收清单.md` 新增 M8–M16 合并登记 + G66 验收登记；`workflow_status.md` 去重复表头 + P0 状态关闭；README 目录结构/打包命令/agent 接入章节重写；`docs/agent-contract.md` 版本同步 |
+| 质量闸 | ✅ | `ruff check gcm` All checks passed；`mypy gcm` Success（60 files） |
+| 受影响面回归 | ✅ | 15 个测试文件 129 用例绿（112s）；`e2e_smoke.py` PASS |
+| 快集全量（修复后实测） | ✅ | `Ran 919 tests in 604.985s … OK`；`TOTAL 82%`（门禁 81/80，修复前 80%）；日志内 `UnicodeDecodeError` = 0 |
+| 发布 | ⏳ | 待用户授权 push / Release（见文末） |
+
+### 本轮未闭环（诚实披露）
+
+| 项 | 状态 | 说明 |
+|----|------|------|
+| 全量测试含慢集 | 部分验证 | 本轮实测快集 900 用例；慢集 10 文件未单独重跑（engine/core 等已由受影响面回归批覆盖） |
+| PyInstaller 重建 | 待验证 | 未重跑构建（≈6min）；版本常量已由 `TestPackagingVersionSync` 静态断言 |
+| GitHub Actions 远端 | 待验证 | 本机无 gh CLI，无法触发远端 |

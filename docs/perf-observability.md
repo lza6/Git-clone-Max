@@ -7,13 +7,13 @@
 | 本地扫描 | v8.0.2 提速 ~95x（150s→1.6s） | scanner.py |
 | 内存 | 日志环形缓冲 3000 条；退役 worker 引用回收 | engine.py |
 | SQLite | WAL + busy_timeout=30000 + BEGIN IMMEDIATE | repo_db.py |
-| 覆盖率门禁 | 84% | coverage |
+| 覆盖率门禁 | 快集 Windows 81 / POSIX 80（`ci.yml` 主矩阵） | coverage |
 | 变异测试 | 击杀率 95.24% | run_mutation_smoke.py |
 | 可观测性 | app.log/error.log + --diag --json + health_check | applog/diag/health_check |
 
 ## 2. 当前限制（诚实）
 - **无服务端**：无远程 Metrics/Tracing（Prometheus/OTel）；Load Balancer/CDN/Redis 等**不适用**于纯桌面单机（它们解决服务端高并发，本工具无服务端）
-- 全量测试 15-20 分钟（已分块缓解；CI fast-smoke 扩展已加，主矩阵未拆 fast/slow）
+- 快集约 7.5 分钟 / 全量约 15 分钟；CI 主矩阵已按 G59-5 拆 fast/slow（主矩阵跑 `scripts/ci_run_fast.py`，慢集由独立 `slow` job 承接）
 - 单实例锁限制多开；无分布式共享仓库池
 
 ## 3. SaaS 化架构建议（若未来演进，按真实需求启用）

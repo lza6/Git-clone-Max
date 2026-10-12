@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Git-clone-Max v9.1.3 · 终局审计补丁报告</title>
+<style>
+  :root{
+    --ink:#0d1117; --ink-2:#161b22; --ink-3:#1f2630;
+    --line:#2b333d; --line-2:#3a4553;
+    --fg:#e6edf3; --fg-dim:#9aa7b4; --fg-mute:#6e7d8c;
+    --crit:#ff5f56; --crit-bg:#2a1517;
+    --warn:#ffb224; --warn-bg:#2a2111;
+    --ok:#3fb950; --ok-bg:#12271a;
+    --accent:#7cc4ff; --accent-2:#b48ead;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+    --r:10px;
+    --s1:clamp(1.4rem,0.9rem + 2vw,2.4rem);
+    --s2:clamp(2.6rem,1.6rem + 4vw,4.6rem);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+  body{
+    margin:0;background:var(--ink);color:var(--fg);
+    font-family:var(--sans);font-size:16px;line-height:1.68;
+    -webkit-font-smoothing:antialiased;
+    background-image:
+      radial-gradient(900px 500px at 12% -8%,rgba(124,196,255,.10),transparent 62%),
+      radial-gradient(760px 420px at 92% 4%,rgba(180,142,173,.09),transparent 60%);
+    background-repeat:no-repeat;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1rem,4vw,2.4rem) 6rem}
+  a{color:var(--accent)}
+  a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+  code,kbd{font-family:var(--mono);font-size:.9em}
+  p code,li code,td code{background:var(--ink-3);border:1px solid var(--line);padding:.1em .4em;border-radius:5px;color:#cdd9e5}
+  pre{background:var(--ink-2);border:1px solid var(--line);border-radius:var(--r);padding:1rem 1.1rem;overflow:auto;margin:1rem 0}
+  pre code{background:none;border:none;padding:0;color:#cdd9e5;line-height:1.6}
+
+  /* ---------- header ---------- */
+  header{position:relative;padding:clamp(3rem,9vw,6rem) 0 clamp(1.6rem,4vw,2.6rem);border-bottom:1px solid var(--line)}
+  .eyebrow{font-family:var(--mono);font-size:.76rem;letter-spacing:.16em;text-transform:uppercase;color:var(--fg-mute);display:flex;gap:.7rem;flex-wrap:wrap;align-items:center}
+  .eyebrow b{color:var(--accent);font-weight:600}
+  h1{font-size:var(--s2);line-height:1.04;letter-spacing:-.03em;margin:.5rem 0 .4rem;font-weight:800}
+  h1 em{font-style:normal;background:linear-gradient(92deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lede{font-size:clamp(1.02rem,.95rem + .5vw,1.24rem);color:var(--fg-dim);max-width:74ch;margin:.6rem 0 0}
+  .meta{margin-top:1.5rem;display:flex;gap:.5rem;flex-wrap:wrap}
+  .chip{font-family:var(--mono);font-size:.74rem;border:1px solid var(--line-2);border-radius:999px;padding:.28rem .7rem;color:var(--fg-dim);background:rgba(255,255,255,.02)}
+  .chip.k{color:var(--fg);border-color:var(--accent);background:rgba(124,196,255,.09)}
+
+  /* ---------- stats bento ---------- */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin:clamp(2rem,5vw,3.2rem) 0}
+  .stat{background:var(--ink-2);padding:1.15rem 1.25rem;position:relative}
+  .stat .n{font-family:var(--mono);font-size:clamp(1.7rem,1.2rem + 1.7vw,2.5rem);font-weight:700;line-height:1;letter-spacing:-.02em}
+  .stat .l{font-size:.8rem;color:var(--fg-mute);margin-top:.5rem;letter-spacing:.02em}
+  .stat.crit .n{color:var(--crit)} .stat.warn .n{color:var(--warn)} .stat.ok .n{color:var(--ok)}
+  .stat::after{content:"";position:absolute;inset:auto 0 0 0;height:2px;background:var(--line-2)}
+  .stat.crit::after{background:var(--crit)} .stat.ok::after{background:var(--ok)} .stat.warn::after{background:var(--warn)}
+
+  /* ---------- sections ---------- */
+  section{padding:clamp(2.2rem,6vw,3.6rem) 0;border-top:1px solid var(--line)}
+  section:first-of-type{border-top:none}
+  .sec-head{display:flex;align-items:baseline;gap:.9rem;margin-bottom:1.2rem}
+  .sec-num{font-family:var(--mono);font-size:.8rem;color:var(--fg-mute);border:1px solid var(--line-2);border-radius:6px;padding:.15rem .5rem;flex:none}
+  h2{font-size:var(--s1);letter-spacing:-.02em;margin:0;font-weight:750}
+  h3{font-size:1.1rem;margin:2rem 0 .6rem;letter-spacing:-.01em}
+  h3:first-of-type{margin-top:1rem}
+  .sub{color:var(--fg-dim);margin:.3rem 0 1.2rem;max-width:78ch}
+
+  /* ---------- finding cards ---------- */
+  .finding{border:1px solid var(--line);border-left:3px solid var(--line-2);border-radius:var(--r);background:var(--ink-2);margin:1.5rem 0;overflow:hidden}
+  .finding.crit{border-left-color:var(--crit)}
+  .finding.p1{border-left-color:var(--warn)}
+  .finding.p2{border-left-color:var(--accent)}
+  .fh{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;padding:.95rem 1.15rem;background:rgba(255,255,255,.022);border-bottom:1px solid var(--line)}
+  .fh .id{font-family:var(--mono);font-size:.8rem;font-weight:700;color:var(--fg)}
+  .fh .ttl{font-weight:650;flex:1 1 22ch;min-width:0}
+  .sev{font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;padding:.2rem .55rem;border-radius:5px;text-transform:uppercase;font-weight:700}
+  .sev.crit{background:var(--crit-bg);color:var(--crit);border:1px solid rgba(255,95,86,.4)}
+  .sev.p1{background:var(--warn-bg);color:var(--warn);border:1px solid rgba(255,178,36,.4)}
+  .sev.p2{background:rgba(124,196,255,.1);color:var(--accent);border:1px solid rgba(124,196,255,.36)}
+  .fb{padding:1.05rem 1.15rem 1.25rem}
+  .fb dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:.55rem 1rem}
+  .fb dt{font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-mute);padding-top:.28rem;white-space:nowrap}
+  .fb dd{margin:0;min-width:0}
+  @media (max-width:620px){.fb dl{grid-template-columns:1fr}.fb dt{padding-top:0}}
+
+  /* ---------- callouts ---------- */
+  .note{border:1px solid var(--line);border-radius:var(--r);padding:.95rem 1.1rem;background:var(--ink-2);margin:1.1rem 0}
+  .note.warn{background:var(--warn-bg);border-color:rgba(255,178,36,.34)}
+  .note.ok{background:var(--ok-bg);border-color:rgba(63,185,80,.32)}
+  .note.crit{background:var(--crit-bg);border-color:rgba(255,95,86,.34)}
+  .note .h{font-weight:680;margin-bottom:.25rem;display:block}
+
+  /* ---------- tables ---------- */
+  .tbl{width:100%;border-collapse:collapse;margin:1rem 0;font-size:.92rem;display:block;overflow-x:auto;white-space:nowrap}
+  .tbl th,.tbl td{border:1px solid var(--line);padding:.55rem .75rem;text-align:left;vertical-align:top}
+  .tbl th{background:var(--ink-3);font-weight:650;font-size:.82rem;letter-spacing:.02em;color:var(--fg-dim)}
+  .tbl td.wrap-cell{white-space:normal;min-width:22ch}
+  .tbl tbody tr:hover{background:rgba(255,255,255,.028)}
+  .tag{font-family:var(--mono);font-size:.72rem;padding:.12rem .45rem;border-radius:4px;border:1px solid var(--line-2);color:var(--fg-dim)}
+  .tag.ok{color:var(--ok);border-color:rgba(63,185,80,.45)}
+  .tag.no{color:var(--crit);border-color:rgba(255,95,86,.45)}
+  .tag.mid{color:var(--warn);border-color:rgba(255,178,36,.45)}
+
+  /* ---------- timeline ---------- */
+  ol.steps{list-style:none;counter-reset:s;padding:0;margin:1.2rem 0}
+  ol.steps li{counter-increment:s;position:relative;padding:0 0 1.15rem 2.6rem;border-left:1px solid var(--line);margin-left:.85rem}
+  ol.steps li:last-child{border-left-color:transparent;padding-bottom:0}
+  ol.steps li::before{content:counter(s);position:absolute;left:-.85rem;top:0;width:1.7rem;height:1.7rem;border-radius:50%;background:var(--ink-3);border:1px solid var(--line-2);display:grid;place-items:center;font-family:var(--mono);font-size:.78rem;color:var(--fg-dim)}
+  ol.steps b{color:var(--fg)}
+
+  /* ---------- quiz ---------- */
+  #quiz{border-top:1px solid var(--line)}
+  .qcard{border:1px solid var(--line);border-radius:var(--r);background:var(--ink-2);padding:1.15rem 1.2rem;margin:1.1rem 0}
+  .qcard legend{font-weight:650;padding:0 .3rem;font-size:1rem;line-height:1.5}
+  .qcard fieldset{border:none;margin:0;padding:0}
+  .qnum{font-family:var(--mono);color:var(--fg-mute);font-size:.78rem;margin-right:.5rem}
+  .opt{display:flex;gap:.7rem;align-items:flex-start;padding:.55rem .7rem;border:1px solid transparent;border-radius:8px;cursor:pointer;transition:background .15s,border-color .15s}
+  .opt:hover{background:rgba(255,255,255,.035);border-color:var(--line-2)}
+  .opt input{margin-top:.42rem;accent-color:var(--accent);flex:none;width:1rem;height:1rem}
+  .opt .ot{min-width:0}
+  .opt .ot code{white-space:normal;word-break:break-word}
+  .qcard.right{border-color:rgba(63,185,80,.55);background:var(--ok-bg)}
+  .qcard.wrong{border-color:rgba(255,95,86,.55);background:var(--crit-bg)}
+  .fb-line{margin-top:.7rem;font-size:.9rem;padding:.6rem .75rem;border-radius:7px;border:1px solid var(--line-2);background:rgba(0,0,0,.22)}
+  .fb-line.ok{color:#a7e8b3;border-color:rgba(63,185,80,.4)}
+  .fb-line.no{color:#ffb3ae;border-color:rgba(255,95,86,.4)}
+  .quizbar{position:sticky;bottom:0;background:linear-gradient(180deg,rgba(13,17,23,.7),var(--ink) 42%);padding:1rem 0;margin-top:1.4rem;display:flex;gap:.85rem;align-items:center;flex-wrap:wrap;border-top:1px solid var(--line)}
+  .score{font-family:var(--mono);font-size:.92rem}
+  .score b{font-size:1.15rem}
+  button{font:inherit;font-weight:650;border-radius:8px;padding:.62rem 1.25rem;cursor:pointer;border:1px solid var(--line-2);background:var(--ink-3);color:var(--fg);transition:transform .12s,border-color .15s,background .15s}
+  button:hover{border-color:var(--accent);background:#232c37}
+  button:active{transform:translateY(1px)}
+  button.primary{background:linear-gradient(92deg,var(--accent),#5aa9e6);color:#06121d;border-color:transparent}
+  button.primary:hover{filter:brightness(1.08)}
+  #result[hidden]{display:none}
+  #result{border-radius:var(--r);padding:1.1rem 1.25rem;margin-top:1.2rem;border:1px solid var(--line-2)}
+  #result.pass{background:var(--ok-bg);border-color:rgba(63,185,80,.5)}
+  #result.fail{background:var(--crit-bg);border-color:rgba(255,95,86,.5)}
+  #result .big{font-size:1.3rem;font-weight:750;margin:0 0 .35rem}
+  footer{border-top:1px solid var(--line);padding:2rem 0 0;color:var(--fg-mute);font-size:.86rem}
+  .kbdhint{font-family:var(--mono);font-size:.76rem;color:var(--fg-mute)}
+  hr.soft{border:none;border-top:1px dashed var(--line);margin:1.6rem 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">
+    <b>Git-clone-Max</b><span>·</span><span>终局审计补丁</span><span>·</span><span>v9.1.2 → v9.1.3</span><span>·</span><span>2026-10-12</span>
+  </div>
+  <h1>把「全部已落地」<em>重新证明一遍</em></h1>
+  <p class="lede">
+    这次没有加功能。任务是对一个已经宣称「G51–G59 全部 <code>[✅]</code> 已落地」的生产工作区做六视角终局审计
+    ——产品验收、架构审计、真实用户、接入方、部署维护、反向辩手——然后把查出来的东西修掉。
+    结论是：<strong>功能面确实都在</strong>，但存在 3 个 P0 级横切缺陷，它们不属于任何一个功能，因此也躲过了所有功能级验收。
+  </p>
+  <div class="meta">
+    <span class="chip k">31 个文件修改</span>
+    <span class="chip k">2 个文件新增</span>
+    <span class="chip">+395 / −133</span>
+    <span class="chip">新增 19 项永久守卫</span>
+    <span class="chip">ruff 0 · mypy 0（60 files）</span>
+  </div>
+</header>
+
+<!-- ============ 1 ============ -->
+<section id="context">
+  <div class="sec-head"><span class="sec-num">01</span><h2>上下文：审计从哪里开始</h2></div>
+  <p class="sub">先重建事实基础，而不是相信文档。第一步是找到「权威事实源」，然后逐条去代码里核对。</p>
+
+  <div class="stats">
+    <div class="stat crit"><div class="n">900→935</div><div class="l">快集用例：修复前 <code>FAILED (failures=1)</code> → 修复后 <code>OK</code></div></div>
+    <div class="stat ok"><div class="n">80%→82%</div><div class="l">实测快集覆盖率（门禁 <code>81</code>）→ 门禁从红转绿</div></div>
+    <div class="stat warn"><div class="n">10</div><div class="l">共 10 个缺陷（P0×5 / P1×3 / P2×2）</div></div>
+    <div class="stat ok"><div class="n">0</div><div class="l">修复后快集日志中 <code>UnicodeDecodeError</code> 出现次数</div></div>
+  </div>
+
+  <div class="note ok">
+    <span class="h">修复后的决定性验证</span>
+    <code>coverage run --source=gcm scripts/ci_run_fast.py</code> →
+    <b>Ran 935 tests in 454.692s · OK</b>，<b>TOTAL 82%</b>（门禁 81/80），
+    且日志里 <code>UnicodeDecodeError</code> 的出现次数从「反复刷屏」降到 <b>0</b>。
+    用例数从 900 涨到 935 正是新增守卫的 35 项。
+  </div>
+
+  <div class="note warn">
+    <span class="h">关于「独立审查」：它确实抓到了我自己漏掉的东西</span>
+    我第一轮审计出 6 条。随后启动独立审查线程做对抗性复核，它们又在同一份改动上挖出
+    <b>4 个真实缺陷（3 个 P0）</b>：文档里的 CLI 命令必然崩溃、认证头下拉永不生效、
+    浅克隆静默退化为全量克隆、脱敏只覆盖已知的两种头。<b>这四条我都没自己发现</b> ——
+    其中三条属于同一个病：<b>功能「写着有」但从未被端到端调用过一次</b>。
+    这条经验已写进本报告第 7 节。
+  </div>
+
+  <div class="note crit">
+    <span class="h">最重要的发现不是任何一个 bug，而是一条规律</span>
+    三个 P0 缺陷都在<b>横切面</b>上：版本单源、测试可靠性、平台编码。它们不在任何单个功能里，
+    所以「一个功能一个功能地验收」这种检查方式<b>结构性地看不见它们</b>。
+    更糟的是，其中两个被<b>已有的机制掩盖</b>了 —— 一个被测试固化成「正确值」，一个被 Linux CI 的 UTF-8 locale 屏蔽。
+  </div>
+
+  <h3>审计用的事实源（先读文档，再核对代码）</h3>
+  <table class="tbl">
+    <thead><tr><th>文档</th><th>它声称什么</th><th>核对结果</th></tr></thead>
+    <tbody>
+      <tr><td><code>计划书/下一步改进指南.md</code></td><td>G51–G59 全部 <code>[✅]</code>；仅 G66-2 <code>[待办]</code></td><td class="wrap-cell"><span class="tag mid">部分不符</span> 功能属实；但附录 A 里程碑检查表整表仍为空 <code>☐</code></td></tr>
+      <tr><td><code>计划书/验收清单.md</code></td><td>发布清单要求「逐版本登记证据」</td><td class="wrap-cell"><span class="tag no">缺登记</span> 只登记到 v8.0.0（M7），v8.1.0→v9.1.2 共 6 个版本无登记</td></tr>
+      <tr><td><code>计划书/project_specs.md</code></td><td>自述「任务权威文档」</td><td class="wrap-cell"><span class="tag no">过期 4 个月</span> 版本仍写 8.0.2，M9–M16 全标「⏳ 待办」</td></tr>
+      <tr><td><code>计划书/workflow_status.md</code></td><td>任务推进日志</td><td class="wrap-cell"><span class="tag no">重复段</span> 顶部 33 行块被完整复制了一遍</td></tr>
+      <tr><td><code>参考结果计划指南.md</code> §9</td><td>P0 三项「⏳ 待用户确认」</td><td class="wrap-cell"><span class="tag ok">已关闭</span> 三项均已由 G54/G56/G59 实际落地（体检 / 通知门禁 / CLI --json）</td></tr>
+      <tr><td>CI 绿灯</td><td>三平台矩阵 + 覆盖率门禁</td><td class="wrap-cell"><span class="tag no">假象</span> 时间炸弹用例已使快集红灯；覆盖率 artifact 三平台从未上传成功</td></tr>
+    </tbody>
+  </table>
+
+  <h3>反向辩手：先攻击自己的上一轮工作</h3>
+  <ol class="steps">
+    <li><b>「功能都做了」是否等于「系统是真实的」？</b> —— 不等于。测试会变红、版本会漂移、编码会在别的机器上炸，这些都是「系统真实性」的一部分，却不属于任何功能。</li>
+    <li><b>有没有把浅实现当成完整实现？</b> —— 有。`--serve 0.0.0.0` 能起服务这件事，代码和文档都只写了「只绑定 127.0.0.1」，<b>没有任何强制</b>。这是把「默认值」当成了「安全边界」。</li>
+    <li><b>改了一个点，会不会破坏旧逻辑？</b> —— 这是本次最需要防的。所有修复都配了回归批（129 用例），并且 HTTP 回环加固特意允许端口 <code>0</code>（内核分配），以免打断既有测试的绑定方式。</li>
+    <li><b>是否默认了某些环境天然存在？</b> —— 有。整个 CI 只在 Linux 上跑慢集，而本机 <code>locale.getpreferredencoding()</code> 是 <code>cp936</code>。<b>CI 永远测不出中文 Windows 的问题。</b></li>
+  </ol>
+</section>
+
+<!-- ============ 2 ============ -->
+<section id="findings">
+  <div class="sec-head"><span class="sec-num">02</span><h2>六个缺陷：现象 → 复现 → 根因 → 修复</h2></div>
+  <p class="sub">每个缺陷都按同一模板记录：先能复现，才能说修好了。所有「修复前」结论都是本机实际跑出来的输出，不是推断。</p>
+
+  <article class="finding crit">
+    <div class="fh"><span class="id">G66-4</span><span class="ttl">中文 Windows 下子进程解码崩溃 —— 明明克隆成功却报失败</span><span class="sev crit">P0</span></div>
+    <div class="fb"><dl>
+      <dt>现象</dt><dd>本机 <code>locale.getpreferredencoding()</code> = <code>cp936</code>。凡是输出中含 UTF-8 而非 GBK 可表示字符的 git 命令，读取线程直接抛异常，<code>CompletedProcess.stdout</code> 塌陷为 <code>None</code>，下游紧接着 <code>TypeError: 'NoneType' object is not subscriptable</code>。</dd>
+      <dt>复现</dt><dd>构造含 <code>…</code>(U+2026) / <code>®</code>(U+00AE) / <code>①</code>(U+2460) 的提交信息与文件名，跑 <code>git log</code>：
+<pre><code>Exception in thread Thread-19 (_readerthread):
+  File "subprocess.py", line 1613, in _readerthread
+    buffer.append(fh.read())
+UnicodeDecodeError: 'gbk' codec can't decode byte 0xad in position 16
+# 默认 locale：CRASH
+# encoding="utf-8", errors="replace"：OK: 'dc531e9 init: 中文…®① 提交信息'</code></pre>
+        这不是假想场景：项目自己的测试套件运行时就在刷同一条 <code>UnicodeDecodeError: 'gbk' codec can't decode byte 0xae</code>。</dd>
+      <dt>影响面</dt><dd>全仓 <b>26 处</b> <code>subprocess.run(..., text=True)</code> 未指定 <code>encoding</code>（gcm 21 / scripts 5 / tests 8），只有 3 处是对的先例（<code>scanner.py</code>、<code>service.py:240</code>）。受影响命令包括 <code>status --porcelain</code> / <code>rev-parse</code> / <code>symbolic-ref</code> / <code>rev-list</code> / <code>ls-remote</code> / <code>credential fill</code> / <code>schtasks</code>。<b>只要是中文仓库（提交信息/文件名带 <code>…</code>、<code>®</code>、表情、生僻字），用户就会看到假的失败。</b></dd>
+      <dt>为什么没被发现</dt><dd>CI 跑在 <code>ubuntu-latest</code>，locale 是 UTF-8 —— <b>这条路径在 CI 上结构性地不可能触发</b>。这就是「CI 全绿」在 Windows 桌面应用上的盲区。</dd>
+      <dt>修复</dt><dd>26 处全部补 <code>encoding="utf-8", errors="replace"</code>（沿用项目既有先例的写法，不引入新抽象，避免破坏既有 mock）。</dd>
+      <dt>验证</dt><dd>AST 静态守卫 <code>TestSubprocessTextDecoding</code> 覆盖 gcm/scripts/tests 三目录（返回空列表）；真实 E2E <code>TestSubprocessDecodeE2E</code> 用本地裸仓 + 中文提交信息跑通 <code>_is_dirty</code> / <code>_divergence_info</code> 真实产品路径。修复后快集运行日志中该 traceback 消失。</dd>
+    </dl></div>
+  </article>
+
+  <article class="finding crit">
+    <div class="fh"><span class="id">G66-3</span><span class="ttl">时间炸弹用例 —— 主矩阵门禁其实早就是红的</span><span class="sev crit">P0</span></div>
+    <div class="fb"><dl>
+      <dt>现象</dt><dd><code>tests/test_repo_tags.py:140</code> 写死 <code>last_sync_at="2026-09-01"</code> 并注称「距今 8 天 → 未过期」，然后断言 <code>assertFalse(stale)</code>。</dd>
+      <dt>复现</dt><dd>2026-10-12 实测：
+<pre><code>FAIL: test_model_filter (tests.test_repo_tags.TestManageModelAdvanced.test_model_filter)
+AssertionError: True is not false
+Ran 900 tests in 528.294s
+FAILED (failures=1)</code></pre>
+        与此同时覆盖率从登记的 81% 掉到 <b>80%</b>，Windows 门禁是 81 —— <b>「CI 绿灯」是假象。</b></dd>
+      <dt>根因</dt><dd>用绝对日期表达相对语义。写用例那天是绿的，之后每一天都在逼近变红，且没有任何机制提醒。</dd>
+      <dt>修复</dt><dd>改用 <code>datetime.now() - timedelta(days=…)</code> 构造，并顺手补上真正的边界断言：29 天不过期 / 30 天不过期（严格大于才过期）/ 31 天过期 / 3650 天过期 / 空值与非法值不抛异常。这几个边界此前<b>完全没有覆盖</b>。</dd>
+      <dt>验证</dt><dd><code>tests.test_repo_tags</code> 恢复绿；新增 <code>TestNoTimeBombAssertions</code> 静态守卫，扫描 <code>tests/</code> 全目录里「相对语义关键词 + 绝对日期字面量」的组合（排除 docstring，否则守卫会抓到自己）。</dd>
+    </dl></div>
+  </article>
+
+  <article class="finding crit">
+    <div class="fh"><span class="id">G66-6</span><span class="ttl">本地 HTTP API 可无鉴权暴露到局域网 —— 安全边界只写在文档里</span><span class="sev crit">P0</span></div>
+    <div class="fb"><dl>
+      <dt>现象</dt><dd><code>gcm/http_api.py</code> 原实现把用户传入的 host 直接交给 <code>ThreadingHTTPServer</code>。而这个服务<b>没有任何鉴权</b>。</dd>
+      <dt>复现</dt><dd><code>python -m gcm --cli --serve 0.0.0.0:8765</code> → 静默监听全部网卡。同网段任何人都可以：
+<pre><code>GET /api/repos              → 全部仓库清单（owner/repo/host/tags/note/本地路径）
+GET /api/report?format=csv  → 直接下载报表
+（配合 --allow-mutate）     → 远程触发克隆写盘</code></pre></dd>
+      <dt>根因</dt><dd>把「默认值」当成了「安全边界」。代码注释、模块文档、README、agent 契约四处都写着「只绑定 127.0.0.1」，但<b>没有任何一处强制它</b>。这就是典型的「文档说的安全」而非「代码保证的安全」。</dd>
+      <dt>修复</dt><dd><code>create_server</code> 强制回环白名单（<code>127.0.0.1</code> / <code>127.0.0.2</code> / <code>127.0.0.3</code> / <code>::1</code> / <code>localhost</code>），非回环抛 <code>ValueError</code>；端口校验 0–65535；<code>serve()</code> 捕获后打印明确原因并以退出码 <code>2</code> 退出。<b>特意保留端口 0</b>（内核分配），以免打断既有测试的绑定方式。</dd>
+      <dt>验证</dt><dd><code>TestHttpApiBindHardening</code>：<code>0.0.0.0</code> / <code>192.168.1.10</code> / <code>example.com</code> / <code>[::]</code> 全部被拒绝；既有 <code>test_g56_api_extra</code> / <code>test_g56_api_write</code> / <code>test_g56_contract</code> 共 19 用例<b>零回归</b>。</dd>
+    </dl></div>
+  </article>
+
+  <article class="finding p1">
+    <div class="fh"><span class="id">G66-2</span><span class="ttl">契约版本硬编码 —— 错误被测试固化成「正确值」</span><span class="sev p1">P1</span></div>
+    <div class="fb"><dl>
+      <dt>现象</dt><dd>面向所有 agent 消费者的 <code>version</code> 字段写死 <code>"8.0.2"</code>，而 <code>gcm.__version__</code> 已经是 9.1.2 —— <b>落后 4 个大版本</b>。共 5 个生产者：<code>gcm/cli.py</code>（<code>--json</code> 与 <code>--diag</code> 两条路径）、<code>gcm/mcp_server.py</code>（MCP <code>serverInfo</code>）、两个技能脚本。附带 <code>pyproject.toml</code> 与 <code>packaging/installer.iss</code> 也停在 8.0.2 —— 装出来的 setup.exe 版本号是错的。</dd>
+      <dt>最刺眼的一处</dt><dd><code>tests/test_g56_cli_json.py:66</code>：
+<pre><code>self.assertEqual(doc["version"], "8.0.2")   # 把错误值断言成了正确值</code></pre>
+        这道测试不是漏检，它是<b>主动把错误锁死</b>了：任何人想修这个 bug，测试会先红。</dd>
+      <dt>根因</dt><dd>版本号没有单源。5 个地方各自复制一份字面量，谁也没负责同步。而「运行时」是读 <code>__version__</code> 的，所以 GUI 显示 9.1.2、机器接口返回 8.0.2 —— 两条路径从未被放在一起对过。</dd>
+      <dt>修复</dt><dd>5 处改为 <code>from gcm import __version__ as CONTRACT_VERSION</code>；测试断言改为与 <code>__version__</code> 相等，并显式加 <code>assertNotEqual(version, "8.0.2")</code> 防止回退；<code>pyproject.toml</code> 与 <code>installer.iss</code> 同步。</dd>
+      <dt>验证</dt><dd><code>TestContractVersionSingleSource</code>（5 项）+ <code>TestPackagingVersionSync</code>（4 项，覆盖 pyproject / iss / spec 的 <code>filevers</code>/<code>prodvers</code>/<code>FileVersion</code>/<code>ProductVersion</code> / changelog 条目）。<b>以后再漂移，CI 直接红。</b></dd>
+    </dl></div>
+  </article>
+
+  <article class="finding p2">
+    <div class="fh"><span class="id">G66-5</span><span class="ttl">CI 覆盖率 artifact 三平台从未上传成功</span><span class="sev p2">P2</span></div>
+    <div class="fb"><dl>
+      <dt>现象</dt><dd><code>Coverage summary</code> 步骤把汇总写到 <code>Path.home() / ".workflow_summary.md"</code>，而紧接着的 <code>actions/upload-artifact</code> 取的是工作区相对路径 <code>.workflow_summary.md</code>。在 GitHub runner 上 <code>$HOME</code> ≠ 工作区 —— 上传的永远是空。</dd>
+      <dt>为什么没人发现</dt><dd><code>upload-artifact</code> 默认在找不到文件时只<b>警告</b>，不失败。所以这一步连续绿了几个版本，产物却是空的。</dd>
+      <dt>修复</dt><dd>改写工作区根；<code>coverage json</code> 不再重定向到 <code>$null</code>（保留日志便于排障）；给 <code>upload-artifact</code> 加 <code>if-no-files-found: error</code> —— 让这类静默失效<b>下次直接报错</b>。</dd>
+      <dt>验证</dt><dd><code>yaml.safe_load</code> 校验：4 个 job（<code>test</code>/<code>e2e-smoke</code>/<code>fast-smoke</code>/<code>slow</code>）结构有效。</dd>
+    </dl></div>
+  </article>
+
+  <article class="finding p2">
+    <div class="fh"><span class="id">G66-7</span><span class="ttl">CI 步骤名写 Python 3.12，实际跑 3.14</span><span class="sev p2">P2</span></div>
+    <div class="fb"><dl>
+      <dt>现象</dt><dd>3 个 job 的步骤名是 <code>Set up Python 3.12</code>，而 <code>python-version: '3.14'</code>。</dd>
+      <dt>为什么算缺陷</dt><dd>不影响执行，但会在排障时误导 —— 有人会拿着 3.12 的语义去解释 3.14 的行为（例如 3.14 的默认 locale / <code>subprocess</code> 行为差异）。</dd>
+      <dt>修复 / 验证</dt><dd>统一为 <code>Set up Python 3.14</code>；YAML 校验 4 个 job 名称一致。</dd>
+    </dl></div>
+  </article>
+
+  <h3>第二轮：独立审查线程追加发现的 4 个缺陷</h3>
+  <p class="sub">
+    上面 6 条是我自己审计出来的。此后按其要求启动了<b>独立审查线程</b>（builder ↔ critic 闭环），它们在同一份改动上又挖出 4 个真实缺陷 ——
+    其中 3 个是 P0，且都属于「功能写着有、实际不可用」的同一类病。以下每条都由我亲自复现确认后才修复。
+  </p>
+
+  <article class="finding crit">
+    <div class="fh"><span class="id">G66-8</span><span class="ttl">文档里写的 CLI 命令 100% 崩溃；<code>--help</code> 静默拉起 GUI 并挂死 43 分钟</span><span class="sev crit">P0</span></div>
+    <div class="fb"><dl>
+      <dt>现象 A</dt><dd><code>python -m gcm --cli --serve 127.0.0.1:8765</code> —— 这正是 <code>docs/agent-contract.md</code>、<code>gcm/cli.py</code> docstring、README 三处写的用法 —— <b>必然失败</b>：
+<pre><code>[SERVE] 启动被拒绝：非法端口 '--serve'（应为 0-65535 的整数）</code></pre></dd>
+      <dt>根因 A</dt><dd><code>cli.py</code> 只把 <code>serve</code> 置为布尔标志，<b>从不把 <code>--serve</code> 从 args 里摘除</b>；随后 <code>bind = args[0]</code> 取到的就是字面量 <code>"--serve"</code>，被当成端口去 <code>int()</code>。只有把 bind 写在前面（<code>--cli 127.0.0.1:8792 --serve</code>）才能侥幸工作。</dd>
+      <dt>现象 B</dt><dd><code>python -m gcm --help</code> 不是帮助：<code>__main__</code> 的 <code>flags["cli"]</code> 为假 → 落入 GUI 分支 → 创建 QApplication 并阻塞。<b>实测 stdout 完全为空，stderr 只有一条 libpng 警告，进程挂了 43 分钟</b>。对 agent / 脚本消费者而言，想查用法会得到一个挂死的图形界面进程。</dd>
+      <dt>修复</dt><dd><code>--serve</code> 连值一起消费（<code>del args[i:i+2]</code>），缺值时报错并返回退出码 2；新增 <code>_print_help()</code>，并在 <code>__main__.main</code> 的<b>所有分支之前</b>拦截 <code>--help</code> / <code>-h</code>。</dd>
+      <dt>验证</dt><dd><code>--help</code> 输出完整用法、rc=0；<code>--cli --serve 127.0.0.1:8791 --json</code> 真实阻塞在 <code>serve_forever</code>（<code>timeout</code> 返回 124 = 成功启动后被杀）；<code>TestCliEntrypointContract</code> 4 用例绿。</dd>
+    </dl></div>
+  </article>
+
+  <article class="finding crit">
+    <div class="fh"><span class="id">G66-9</span><span class="ttl">认证头类型下拉永不生效 —— 两个 key 空间不相交</span><span class="sev crit">P0</span></div>
+    <div class="fb"><dl>
+      <dt>现象</dt><dd>设置页让用户选 <code>Bearer</code> / <code>PRIVATE-TOKEN</code> / <code>Basic</code>。用户选了 Basic，实际发出去的仍然是 <code>Authorization: Bearer &lt;token&gt;</code>。</dd>
+      <dt>根因</dt><dd>两侧用了不同的 key：UI <b>写</b> <code>host_auth_types["*"]</code>（<code>settings_panel.py:647</code>），而 <code>service._env()</code> <b>只读</b> <code>_hats.get(host)</code>（<code>service.py:511</code>，无 <code>"*"</code> 兜底）。<code>"*"</code> 永远命中不了，于是恒走 <code>else: Bearer</code>。</dd>
+      <dt>后果</dt><dd>双重：① 认证失败，且只表现为「clone 失败」而无任何提示；② <b>把用户本不想以 Bearer 形式外发的凭据，以 Bearer 形式发给了该主机</b> —— 这是安全语义问题，不只是功能问题。</dd>
+      <dt>为什么测试全绿</dt><dd><code>test_g58_5_auth_header.py</code> 测的是 host 级 key（可用），另有一条只断言「设置里存进了 <code>*</code>」，<b>从未把 <code>*</code> 喂给 <code>_env()</code></b>。测试验的是「写」，没验「读到」。</dd>
+      <dt>修复</dt><dd><code>htype = str(_hats.get(host) or _hats.get("*") or "").lower().strip()</code> —— host 级优先、<code>*</code> 兜底、最后默认 Bearer。</dd>
+      <dt>验证</dt><dd><code>TestAuthHeaderGlobalFallback</code> 4 用例绿：<code>*</code>=basic → <code>Authorization: Basic dG9rMTIz</code>；<code>*</code>=private_token → <code>PRIVATE-TOKEN</code>；host 级覆盖 <code>*</code>；缺省 Bearer。</dd>
+    </dl></div>
+  </article>
+
+  <article class="finding crit">
+    <div class="fh"><span class="id">G66-10</span><span class="ttl">「浅克隆」静默退化为全量克隆</span><span class="sev crit">P0</span></div>
+    <div class="fb"><dl>
+      <dt>现象</dt><dd>用户在界面上选「浅克隆」，日志也打印「浅克隆 depth=1」，但实际拉下来的是<b>完整历史</b>。</dd>
+      <dt>根因</dt><dd><code>service.py</code> 写的是 <code>if self.fetch_depth and self.single_branch:</code> —— <code>--depth</code> 被 <code>single_branch</code> 这个<b>不相干的开关</b>门控了。当设置页未勾选 single_branch 时：<code>fetch_depth=1, single_branch=False</code>。</dd>
+      <dt>实测证据</dt><dd>直接调用 <code>build_clone_cmd</code>（未触网）：
+<pre><code>depth=1, single_branch=False → ['git','clone','--progress', url, dst]   # 没有 --depth
+depth=1, single_branch=True  → [..., '--depth=1', '--single-branch', ...]</code></pre></dd>
+      <dt>后果</dt><dd>一次误判，流量/耗时/磁盘差数十倍；且日志文案与真实命令不一致，用户没有任何办法发现。同一个缺陷也污染 <code>_update</code> 的浅仓增量 fetch 语义。</dd>
+      <dt>修复</dt><dd><code>--depth</code> 独立生效；<code>single_branch</code> 只决定是否附加 <code>--single-branch</code>。</dd>
+      <dt>验证</dt><dd><code>TestShallowCloneDepth</code> 4 用例绿（depth 无 sb / depth 有 sb / depth=0 全无 / depth=50）。</dd>
+    </dl></div>
+  </article>
+
+  <article class="finding p1">
+    <div class="fh"><span class="id">G66-11</span><span class="ttl">脱敏只覆盖了「已知的两种头」，URL query 里的 token 完全裸奔</span><span class="sev p1">P1</span></div>
+    <div class="fb"><dl>
+      <dt>现象</dt><dd><code>redact()</code> 是「任何进入 UI / 日志 / 审计的文本」的必经关口。实测三处穿透：
+<pre><code>Authorization: token ghp_abc123          → 原样输出（旧式 GitHub token 头）
+X-Auth-Token: secret1 / X-API-Key: ...   → 原样输出
+https://github.com/a/b.git?access_token=ghp_leak&x=1  → 原样输出</code></pre></dd>
+      <dt>根因</dt><dd><code>_BEARER</code> 只写了 <code>Bearer|Basic</code> 两个方案词；<code>_URL_CRED</code> 只管 userinfo（<code>https://token@host</code>），不管 query 参数。两者都是「只覆盖了当初想到的形式」。</dd>
+      <dt>影响面</dt><dd>这些文本会经 <code>_emit_line</code> / <code>show_history</code> / <code>.gcm-api-audit.jsonl</code> 进入 UI 显示与<b>落盘文件</b>，属于凭据长期驻留。</dd>
+      <dt>修复</dt><dd>方案词扩为 <code>Bearer|Basic|Token|NEGOTIATE</code>；新增 <code>_OTHER_HEADERS</code>（X-Auth-Token / X-API-Key / JOB-TOKEN / X-Gitlab-Token）；新增 <code>_SENSITIVE_QPARAM</code> 覆盖 <code>access_token</code> / <code>private_token</code> / <code>api_key</code> / <code>password</code> / <code>token</code> 等 query 参数。</dd>
+      <dt>验证</dt><dd><code>TestRedactCoverage</code> 4 用例绿（15 组输入逐一断言），并显式验证<b>无假阳性</b> —— <code>?page=2&amp;limit=10</code> 不被误伤；既有 <code>test_redact</code> / <code>test_g44_secure</code> 零回归。</dd>
+    </dl></div>
+  </article>
+</section>
+
+<!-- ============ 3 ============ -->
+<section id="docs">
+  <div class="sec-head"><span class="sec-num">03</span><h2>顺带的文档与台账修复</h2></div>
+  <p class="sub">审计过程中发现的「文档 vs 代码」不一致，一并修正。<b>过期文档比没有文档更贵</b>，因为它会让人做出错误判断。</p>
+  <table class="tbl">
+    <thead><tr><th>文件</th><th>问题</th><th>处置</th></tr></thead>
+    <tbody>
+      <tr><td><code>CLAUDE.md</code></td><td class="wrap-cell">项目级 AI 约定<b>不存在</b> —— 每次新会话都要从零摸索「哪些文档可信、改哪块必跑哪些测试、红线在哪」</td><td class="wrap-cell"><b>新建</b>：30 秒上下文 / 权威文档索引 / 常用命令 / 目录职责 / 代码约定 / 加新功能九步流程 / 红线守卫表 / 已知边界</td></tr>
+      <tr><td><code>计划书/验收清单.md</code></td><td class="wrap-cell">只登记到 v8.0.0，v8.1.0→v9.1.2 六个版本无登记（违反发布清单第 1 节硬性要求）</td><td class="wrap-cell">补 M8–M16 合并登记表 + 完整 G66 验收登记（含复现→修复→验证三段证据、本轮回归实测、未闭环边界）</td></tr>
+      <tr><td><code>计划书/project_specs.md</code></td><td class="wrap-cell">自述「权威文档」却停在 2026-09-25：版本 8.0.2、M9–M16 全「⏳ 待办」</td><td class="wrap-cell">基线更新至 v9.1.3；M8–M16 与 G59 由「待办」更正为「已交付」；补修改记录说明为何过期</td></tr>
+      <tr><td><code>计划书/workflow_status.md</code></td><td class="wrap-cell">顶部 33 行里程碑块被完整复制一遍；「实施 ⏳ 待用户确认」已过时</td><td class="wrap-cell">删除重复段；P0 三项状态关闭并注明并入哪几个里程碑；追加 v9.1.3 交付登记</td></tr>
+      <tr><td><code>计划书/下一步改进指南.md</code></td><td class="wrap-cell">G66-2 是 <code>[待办]</code>；附录 A 里程碑检查表整表仍是空 <code>☐</code>，与同期已交付事实矛盾</td><td class="wrap-cell">G66-1..7 全部 <code>[✅]</code> 并补完整证据；附录 A 按验收清单回填；新增 §20「G66 第四轮」含缺陷本质与「为何此前没被发现」</td></tr>
+      <tr><td><code>README.md</code></td><td class="wrap-cell">目录结构缺 <code>cli.py</code>/<code>mcp_server.py</code>/<code>http_api.py</code>/<code>skills/</code>/<code>docs/</code>；打包命令手写且未用入库 spec；<b>完全没写 agent 接入方式</b></td><td class="wrap-cell">目录结构重写；打包改用 <code>Git-clone-Max.spec</code>；新增「Agent / 脚本接入」章节（CLI/MCP/HTTP + 退出码 + 安全边界）</td></tr>
+      <tr><td><code>docs/agent-contract.md</code></td><td class="wrap-cell">契约文档自身写着 <code>"version": "8.0.2"</code></td><td class="wrap-cell">同步 9.1.3；字段表注明「恒等于 <code>gcm.__version__</code>，由测试强制」</td></tr>
+      <tr><td><code>docs/RELEASE_CHECKLIST.md</code></td><td class="wrap-cell">覆盖率门槛写 ≥85%，与实际门禁（81/80，且已改快集口径）不符</td><td class="wrap-cell">对齐 CI 实际门禁；新增「跑 G66 守卫」为发布前置项</td></tr>
+      <tr><td><code>packaging/installer.iss</code></td><td class="wrap-cell"><code>MyAppVersion "8.0.2"</code>，注释里产物名还是 7.9.0</td><td class="wrap-cell">同步 9.1.3，并由 <code>TestPackagingVersionSync</code> 守卫</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ 4 ============ -->
+<section id="guards">
+  <div class="sec-head"><span class="sec-num">04</span><h2>新增的永久守卫：让同类缺陷不能再犯</h2></div>
+  <p class="sub">这次修复的原则是：<b>如果这个 bug 属于「能再犯」的类型，就补一个守卫，而不是只修当下这一处。</b>全部落在 <code>tests/test_g66_patch.py</code>。</p>
+  <table class="tbl">
+    <thead><tr><th>守卫类</th><th>项数</th><th>它拦什么</th><th>手段</th></tr></thead>
+    <tbody>
+      <tr><td><code>TestContractVersionSingleSource</code></td><td>5</td><td class="wrap-cell">任何契约生产者重新出现版本字面量</td><td class="wrap-cell">AST 扫描字符串常量，匹配 semver 即失败</td></tr>
+      <tr><td><code>TestPackagingVersionSync</code></td><td>4</td><td class="wrap-cell">pyproject / installer.iss / PyInstaller spec / changelog 与 <code>__version__</code> 漂移</td><td class="wrap-cell">正则解析这四个文件，与 <code>__version__</code> 比对</td></tr>
+      <tr><td><code>TestSubprocessTextDecoding</code></td><td>2</td><td class="wrap-cell"><code>text=True</code> 或 <code>universal_newlines=True</code> 缺 <code>encoding</code></td><td class="wrap-cell">AST 扫描 gcm/ + scripts/ + tests/（<b>新增测试文件自动纳入</b>）</td></tr>
+      <tr><td><code>TestSubprocessDecodeE2E</code></td><td>2</td><td class="wrap-cell">真实 git 输出在宿主 locale 下不可解码</td><td class="wrap-cell">本地裸仓 + <code>…</code>/<code>®</code>/<code>①</code> 中文提交信息，走真实产品函数</td></tr>
+      <tr><td><code>TestNoTimeBombAssertions</code></td><td>2</td><td class="wrap-cell">测试里用绝对日期表达相对语义；<code>is_stale</code> 边界回归</td><td class="wrap-cell">行扫描「相对语义关键词 + 日期字面量」+ 相对时间边界自证</td></tr>
+      <tr><td><code>TestHttpApiBindHardening</code></td><td>4</td><td class="wrap-cell">本地 HTTP API 被绑到非回环地址</td><td class="wrap-cell">真实 <code>create_server</code> 调用 + 非法端口 + <code>serve()</code> 退出码</td></tr>
+      <tr><td><code>TestCliEntrypointContract</code></td><td>4</td><td class="wrap-cell"><code>--help</code> 落进 GUI 分支；<code>--serve</code> 不消费自己的 bind</td><td class="wrap-cell">直接调 <code>cli.main()</code> 断言退出码与输出；<code>_parse_flags</code> 断言 help 识别</td></tr>
+      <tr><td><code>TestAuthHeaderGlobalFallback</code></td><td>4</td><td class="wrap-cell">设置页写的 <code>"*"</code> 全局认证头被 <code>_env()</code> 忽略</td><td class="wrap-cell">构造自建 host 场景，读 <code>GIT_CONFIG_VALUE_*</code> 断言实际头内容</td></tr>
+      <tr><td><code>TestShallowCloneDepth</code></td><td>4</td><td class="wrap-cell"><code>--depth</code> 被 <code>single_branch</code> 门控而静默丢失</td><td class="wrap-cell">直接断言 <code>build_clone_cmd</code> 四组组合的命令数组</td></tr>
+      <tr><td><code>TestRedactCoverage</code></td><td>4</td><td class="wrap-cell">旧式 token 头 / query 凭据穿透；以及误伤普通 query</td><td class="wrap-cell">15 组输入逐一断言 + 显式假阳性断言</td></tr>
+    </tbody>
+  </table>
+  <div class="note ok">
+    <span class="h">一个设计取舍值得说明</span>
+    <code>TestNoTimeBombAssertions</code> 会扫描 <code>tests/</code> 全目录，所以要排除 docstring —— 否则这个守卫文件的文档（里面引用了反例）会抓到自己。同理，HTTP 回环加固保留端口 <code>0</code>，因为既有测试依赖内核分配端口。**守卫必须比它守卫的代码更宽容，否则它会变成新的噪音源。**
+  </div>
+</section>
+
+<!-- ============ 5 ============ -->
+<section id="evidence">
+  <div class="sec-head"><span class="sec-num">05</span><h2>验证证据</h2></div>
+  <p class="sub">所有结论来自实际执行的命令输出。未运行的验证在下一节明确列出。</p>
+  <table class="tbl">
+    <thead><tr><th>验证</th><th>命令</th><th>结果</th></tr></thead>
+    <tbody>
+      <tr><td>新增守卫</td><td class="wrap-cell"><code>python -m unittest tests.test_g66_patch</code></td><td><span class="tag ok">Ran 19 tests · OK</span></td></tr>
+      <tr><td>缺陷复现（修复前）</td><td class="wrap-cell"><code>python -m coverage run --source=gcm scripts/ci_run_fast.py</code></td><td><span class="tag no">Ran 900 tests · FAILED (failures=1) · TOTAL 80%</span>（门禁 81）</td></tr>
+      <tr><td>修复后快集全量</td><td class="wrap-cell"><code>python -m coverage run --source=gcm scripts/ci_run_fast.py</code> + <code>coverage report</code></td><td><span class="tag ok">Ran 935 tests in 454.692s · OK · TOTAL 82%</span> · <code>UnicodeDecodeError</code> 计数 <b>0</b></td></tr>
+      <tr><td>新增守卫</td><td class="wrap-cell"><code>python -m unittest tests.test_g66_patch</code></td><td><span class="tag ok">Ran 35 tests · OK</span>（10 个 TestCase 类）</td></tr>
+      <tr><td>受影响面回归</td><td class="wrap-cell"><code>unittest</code> redact / g44_secure / g58_5_auth_header / g48_git / g49_cli / g56_cli_extra / g38_network</td><td><span class="tag ok">Ran 68 tests · OK</span></td></tr>
+      <tr><td>CLI 入口实测</td><td class="wrap-cell"><code>python -m gcm --help</code> · <code>--cli --serve 127.0.0.1:8791 --json</code></td><td><span class="tag ok">help rc=0 输出完整用法</span> · <span class="tag ok">serve 阻塞于 serve_forever（timeout rc=124）</span></td></tr>
+      <tr><td>受影响面回归</td><td class="wrap-cell">15 个测试文件批（g56*/g49*/g38/g48/g47_g48/repo_detail/single_instance/mutation_smoke）</td><td><span class="tag ok">Ran 129 tests · OK（112s）</span></td></tr>
+      <tr><td>真实 E2E 冒烟</td><td class="wrap-cell"><code>python scripts/e2e_smoke.py</code></td><td><span class="tag ok">E2E_SMOKE_RESULT: PASS</span>（clone / fetch / 冲突保护 / abort 恢复 6 项）</td></tr>
+      <tr><td>静态质量闸</td><td class="wrap-cell"><code>ruff check gcm</code> · <code>mypy gcm</code></td><td><span class="tag ok">All checks passed</span> · <span class="tag ok">Success: 60 source files</span></td></tr>
+      <tr><td>CI 配置</td><td class="wrap-cell"><code>yaml.safe_load(.github/workflows/ci.yml)</code></td><td><span class="tag ok">4 jobs 有效，Python 版本标签一致</span></td></tr>
+      <tr><td>打包资源完整性</td><td class="wrap-cell"><code>ls dist/Git-clone-Max-portable/_internal/gcm/i18n/</code></td><td><span class="tag ok">__init__.py · en.py · zh.py 实际存在</span></td></tr>
+      <tr><td>缺陷复现脚本</td><td class="wrap-cell"><code>python .audit/repro_gbk.py</code></td><td><span class="tag mid">临时脚本，已随审计目录清理</span>（结论已固化为 E2E 守卫）</td></tr>
+    </tbody>
+  </table>
+
+  <h3>未闭环 / 已披露的边界（诚实清单）</h3>
+  <table class="tbl">
+    <thead><tr><th>项</th><th>状态</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>全量测试（含慢集 10 文件）</td><td><span class="tag mid">部分验证</span></td><td class="wrap-cell">快集 935 用例已实测全绿（覆盖 82%）；慢集 10 个文件<b>本轮未单独重跑</b>（engine / core / extra 等已由受影响面回归批间接覆盖）。发布前应按 <code>docs/RELEASE_CHECKLIST.md</code> 补跑全量 <code>unittest discover</code>。</td></tr>
+      <tr><td>PyInstaller 重建</td><td><span class="tag mid">待验证</span></td><td class="wrap-cell">未重跑构建（≈6min）。版本常量已由静态测试断言，但 exe 需人工重建后看属性。</td></tr>
+      <tr><td>GitHub Actions 远端绿灯</td><td><span class="tag mid">待验证</span></td><td class="wrap-cell">本机无 <code>gh</code> CLI，无法触发远端。CI 配置已本地 YAML 校验；<code>if-no-files-found: error</code> 会在下次 push 时显式暴露 artifact 问题。</td></tr>
+      <tr><td>端口 <code>0</code> 之外的 IPv6 全写法</td><td><span class="tag ok">已覆盖</span></td><td class="wrap-cell"><code>[::]</code> 被拒绝；<code>::1</code> 在环境支持时被接受（不支持则 skip，不算失败）。</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ 6 QUIZ ============ -->
+<section id="quiz">
+  <div class="sec-head"><span class="sec-num">06</span><h2>测验：确认你真的理解了这次变更</h2></div>
+  <p class="sub">19 题，每题只有一个正确选项。<b>必须答对全部 19 题才算通过</b> —— 提交后每题会给出即时反馈与理由。可以通过「重做」反复尝试。</p>
+
+  <form id="quizForm" novalidate>
+    <div id="questions"></div>
+
+    <div class="quizbar">
+      <button type="button" class="primary" id="gradeBtn">提交并评分</button>
+      <button type="button" id="resetBtn">重做</button>
+      <span class="score" id="liveScore" aria-live="polite"></span>
+      <span class="kbdhint">提示：全文可用键盘 Tab 导航</span>
+    </div>
+  </form>
+
+  <div id="result" hidden role="status" aria-live="polite"></div>
+</section>
+
+<footer>
+  <p>
+    <strong>Git-clone-Max v9.1.3 · G66 终局审计补丁</strong> · 生成于 2026-10-12。
+    逐条证据见 <code>计划书/验收清单.md</code>「G66 第四轮」与 <code>计划书/下一步改进指南.md</code> §18/§20；
+    永久守卫见 <code>tests/test_g66_patch.py</code>。
+  </p>
+  <p class="kbdhint">本页为自包含单文件，无外部依赖，可离线打开。</p>
+</footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var QS = [
+    {
+      q: "G66-4 的核心症状是什么？为什么它在 CI 上永远测不出来？",
+      opts: [
+        "git 命令在 Windows 上超时；CI 的 runner 太快所以触发不到",
+        "subprocess 文本模式未指定编码，中文 Windows(cp936) 解码 git 的 UTF-8 输出时读取线程抛 UnicodeDecodeError，且 stdout 塌陷为 None 导致下游报假失败；CI 在 ubuntu-latest（UTF-8 locale）上结构性不可能触发",
+        "PyQt6 在 offscreen 模式下不渲染中文；CI 没有装 Qt 系统库",
+        "仓库路径含中文时 git 拒绝克隆；CI 用 ASCII 路径"
+      ],
+      a: 1,
+      why: "本机 locale.getpreferredencoding() 实测 = cp936。26 处 text=True 里只有 3 处显式指定了 utf-8。CI 跑在 ubuntu-latest，locale 是 UTF-8，所以这条路径在 CI 上永远走不到 —— 这是桌面应用「CI 全绿」的典型盲区。"
+    },
+    {
+      q: "关于 tests/test_repo_tags.py 的时间炸弹，下面哪个描述最准确？",
+      opts: [
+        "生产代码 ManageModel.is_stale 有 bug，需要改源码",
+        "测试夹具的日期格式写错了，改成 ISO 格式即可",
+        "生产逻辑是对的；测试用绝对日期 '2026-09-01' 表达「距今 8 天」，随时间推移必然变红，且已实测使快集 FAILED(failures=1)、覆盖率掉到门禁线下",
+        "这个用例本来就被 skip 了，不影响 CI"
+      ],
+      a: 2,
+      why: "is_stale 的实现（(now - last).days > days）本身正确。问题在测试一侧：写用例那天是绿的，之后每天都在逼近变红。修复是用 now - timedelta(...) 构造，并补上 29/30/31 天与空值/脏值的边界断言。"
+    },
+    {
+      q: "G66-6 里「把默认值当成安全边界」具体指什么？",
+      opts: [
+        "默认端口 8765 是弱口令，应改为随机端口",
+        "文档和注释四处写着「只绑定 127.0.0.1」，但代码直接把用户传入的 host 交给 ThreadingHTTPServer，服务本身无鉴权 —— --serve 0.0.0.0 就能把仓库清单和报表暴露给整个局域网",
+        "默认开启了 --allow-mutate，应改为默认关闭",
+        "HTTP API 缺少 HTTPS，应加自签证书"
+      ],
+      a: 1,
+      why: "安全边界必须由代码强制，不能由文档声明。修复后 create_server 强制回环白名单，非回环抛 ValueError，serve() 返回退出码 2。注意端口 0 被特意保留，因为既有测试依赖内核分配端口。"
+    },
+    {
+      q: "G66-2 里最值得警惕的一点是什么？",
+      opts: [
+        "CLI 和 MCP 用了不同的版本号常量名",
+        "pyproject.toml 的版本号不参与打包",
+        "tests/test_g56_cli_json.py 把错误值 '8.0.2' 断言成正确值 —— 测试主动把 bug 锁死了，任何人想修会先看到测试变红",
+        "版本号落后不影响 agent 消费，可以延后处理"
+      ],
+      a: 2,
+      why: "这是「测试固化缺陷」的典型：漏检只是没抓到，而固化会让修复本身产生红灯反馈，从而抑制修复。新断言改成与 __version__ 相等，并显式 assertNotEqual(version, \"8.0.2\") 防止回退。"
+    },
+    {
+      q: "本次审计发现的三个 P0 缺陷有什么共同特征？",
+      opts: [
+        "都只在 Windows 上出现，与架构无关",
+        "都是横切面缺陷（版本单源 / 测试可靠性 / 平台编码），不属于任何单个功能，因此「逐个功能验收」结构性地看不见它们",
+        "都是同一个提交引入的回归",
+        "都能通过提高测试覆盖率发现"
+      ],
+      a: 1,
+      why: "这是本次审计最重要的方法论结论：功能面确实都交付了，但横切面的真实性没有人负责。逐个功能验收能证明「功能在」，不能证明「系统真实」。"
+    },
+    {
+      q: "G66-5 的 CI artifact 问题为什么能连续几个版本不被发现？",
+      opts: [
+        "因为 artifact 只在 tag 推送时上传",
+        "因为 Path.home() 在 runner 上等于工作区",
+        "因为 upload-artifact 默认在找不到文件时只警告不失败，而写入路径（Path.home()）与上传路径（工作区相对路径 .workflow_summary.md）不一致",
+        "因为 coverage.json 没有生成"
+      ],
+      a: 2,
+      why: "修复加了三件事：改写工作区根、不再把 coverage json 输出重定向到 $null、并给 upload-artifact 加 if-no-files-found: error —— 让这类静默失效下次直接报错，而不是继续绿。"
+    },
+    {
+      q: "修复 G66-4 时，为什么选择在 26 处逐一补 encoding 参数，而不是抽一个统一的 run_text() 包装？",
+      opts: [
+        "因为 Python 不允许在 wrapper 里传 encoding",
+        "因为项目已有 scanner.py / service.py 内联写法的先例，且既有测试大量 mock subprocess.run / 模块级 subprocess.run，抽包装层会打断 mock 目标，风险大于收益",
+        "因为包装层会显著降低性能",
+        "因为 ruff 禁止新增工具模块"
+      ],
+      a: 1,
+      why: "跟随既有代码风格、把回归风险压到最低，是这个项目的既定倾向。测试里既有 mock.patch(\"subprocess.run\") 也有 mock.patch.object(autostart.subprocess, \"run\")，抽包装层需要同步改测试的 mock 目标，收益不抵风险。"
+    },
+    {
+      q: "「守卫必须比它守卫的代码更宽容」在本次的两个具体体现是？",
+      opts: [
+        "守卫只扫描 gcm/ 不扫描 tests/；HTTP 加固只拒绝 0.0.0.0",
+        "时间炸弹守卫排除 docstring（否则会抓到自己的文档）；HTTP 回环白名单保留端口 0（既有测试依赖内核分配端口）",
+        "守卫允许跳过失败用例；HTTP 加固允许 localhost",
+        "守卫只在发布时运行；HTTP 加固只在 --allow-mutate 时生效"
+      ],
+      a: 1,
+      why: "守卫如果比被测代码更严格，就会变成新的噪音源，最后被人忽略或禁用。这两个细节都是为了「守卫本身不制造假阳性」。"
+    },
+    {
+      q: "本次修改后，下面哪一项是「已实际验证」而不是「静态确认/待验证」？",
+      opts: [
+        "PyInstaller 重新构建后 exe 属性显示 9.1.3",
+        "GitHub Actions 三平台远端绿灯",
+        "慢集 10 个测试文件全部重跑通过",
+        "tests.test_g66_patch 共 19 用例在本机实跑通过，且 15 个受影响测试文件 129 用例回归全绿"
+      ],
+      a: 3,
+      why: "前两项明确标为「待验证」（本机无 gh CLI、未重跑构建），第三项标为「部分验证」。只有实际执行并看到输出的才算已验证 —— 报告里每条都标了标签，不要混用。"
+    },
+    {
+      q: "G66-8 里 `--serve` 崩溃的真正原因是什么？",
+      opts: [
+        "端口 8765 被防火墙占用",
+        "解析时只把 `--serve` 置为布尔标志却从不把它从参数数组里摘除，随后 `bind = args[0]` 取到的就是字面量 `\"--serve\"`，被当成端口去 int()",
+        "HTTP API 不支持该端口范围",
+        "bind 参数必须写在 `--cli` 之前"
+      ],
+      a: 1,
+      why: "关键区别：这不是「实现有 bug」，而是「文档里写的用法从未被真正执行过一次」。只有把 bind 写在前面才能侥幸工作，所以随手一测可能通过，而照文档抄一定失败。修复是连值一起消费（del args[i:i+2]），缺值报错返回 2。"
+    },
+    {
+      q: "`python -m gcm --help` 修复前的行为是什么？",
+      opts: [
+        "打印用法并退出 0",
+        "报错 `unrecognized argument` 退出 2",
+        "静默走 GUI 分支：`__main__` 的 flags[\"cli\"] 为假 → 创建 QApplication 并阻塞（实测 stdout 空、stderr 只有 libpng 警告、挂 43 分钟）",
+        "打开浏览器显示在线文档"
+      ],
+      a: 2,
+      why: "对 agent / 脚本消费者而言，想查用法却得到一个挂死的图形界面进程，这是实打实的可用性缺口。修复是在 __main__.main 的所有分支之前拦截 --help/-h。"
+    },
+    {
+      q: "G66-9 认证头下拉失效，本质是哪种类型的缺陷？",
+      opts: [
+        "加密算法选错了",
+        "两侧用了不相交的 key 空间：UI 写 host_auth_types[\"*\"]，而 _env() 只读 _hats.get(host)，无 \"*\" 兜底 → 恒走 else 分支发 Bearer",
+        "下拉框选项值拼写错误",
+        "settings.json 没有持久化"
+      ],
+      a: 1,
+      why: "后果双重：既认证失败（只表现为 clone 失败、无提示），又把用户本不想以 Bearer 形式外发的凭据以 Bearer 发出。测试盲区在于只验了「写进设置」，从未验「_env() 读到了」。"
+    },
+    {
+      q: "为什么 G66-9 这类缺陷能长期躲过测试？",
+      opts: [
+        "因为测试被 skip 了",
+        "因为测试只断言「设置里存进了 `*`」，从未把 `*` 喂给消费端 _env() —— 验的是「写」，没验「读」",
+        "因为 CI 没装 PyQt6",
+        "因为该功能是最近才加的实现"
+      ],
+      a: 1,
+      why: "这是本项目最值得记住的一类盲区：测试覆盖了生产者，却没覆盖消费者，于是「写入正确」被误当成「功能可用」。修复时补的 TestAuthHeaderGlobalFallback 直接断言 GIT_CONFIG_VALUE_* 里的实际头内容，即端到端跨过这条缝。"
+    },
+    {
+      q: "G66-10「浅克隆」为什么会退化成全量克隆？",
+      opts: [
+        "git 的 --depth 在 Windows 上无效",
+        "命令拼装写成了 `if self.fetch_depth and self.single_branch:`，把 --depth 绑到了另一个不相干的开关上；设置页未勾 single_branch 时 depth 被静默丢弃",
+        "用户设置里 depth 填了 0",
+        "浅克隆需要服务端支持，本地裸仓不支持"
+      ],
+      a: 1,
+      why: "实测命令：depth=1, single_branch=False → ['git','clone','--progress',url,dst]，完全没有 --depth。更糟的是日志仍打印「浅克隆 depth=1」，用户没有任何办法发现。修复让 --depth 独立生效。"
+    },
+    {
+      q: "G66-11 redact 的三个实测穿透点中，哪一个最容易被忽略？",
+      opts: [
+        "https://token@host 形式",
+        "Authorization: Bearer 形式",
+        "PRIVATE-TOKEN 形式",
+        "URL query 里的 ?access_token=ghp_x —— 因为 _URL_CRED 只管 userinfo，query 参数完全不在覆盖范围"
+      ],
+      a: 3,
+      why: "前三种都是原本就覆盖的形式（或只需扩方案词）。query 参数是结构性缺口：正则从一开始就只匹配 https://cred@host，没考虑凭据可以放在 ?access_token= 里。补的时候还要验证不打码普通 query（?page=2&limit=10），避免假阳性。"
+    },
+    {
+      q: "「独立审查线程抓到了 4 个我自己漏掉的缺陷」这件事，最该怎么理解？",
+      opts: [
+        "说明第一轮审计是白做的",
+        "说明自我审查有结构性盲区：这 4 条里有 3 条属于「功能写着有、但从未被端到端调用过一次」，而写代码的人会不自觉地跳过自己认为已经想清楚的路径",
+        "说明应该只依赖外部审查",
+        "说明测试覆盖率不够高，提到 100% 就能避免"
+      ],
+      a: 1,
+      why: "自主审计与对抗性审查抓的是不同类别的问题。前者能系统性地扫横切面一致性，后者更擅长发现「作者默认可用因此不验证」的路径。两者都要有，不能互相替代。"
+    },
+    {
+      q: "本次 10 个缺陷里，有 5 个被定为 P0。它们的共同特征是什么？",
+      opts: [
+        "都只在 Linux 上出现",
+        "都是横切面或「声明与实现之间的缝」：版本单源、测试可靠性、平台编码、安全边界强制、CLI 入口契约、UI 与消费端 key 对齐、开关语义",
+        "都需要改动数据库结构",
+        "都是由同一次提交引入的"
+      ],
+      a: 1,
+      why: "没有任何一个 P0 是「某个页面渲染错了」这种可见的功能缺陷。它们全部位于功能之间的接缝上，这正是「逐个功能验收」这种检查方式结构性看不见的地方 —— 也是本次审计最重要的方法论结论。"
+    },
+    {
+      q: "关于本次修改后「已实际验证」与「待验证」的区分，哪项正确？",
+      opts: [
+        "PyInstaller 重建后 exe 属性显示 9.1.3 —— 已验证",
+        "GitHub Actions 三平台远端绿灯 —— 已验证",
+        "tests.test_g66_patch 共 35 用例本机实跑通过；快集 935 用例全绿且覆盖率 82% —— 已验证",
+        "慢集 10 个测试文件全部重跑通过 —— 已验证"
+      ],
+      a: 2,
+      why: "前两项标为「待验证」（本机无 gh CLI、未重跑构建），慢集标为「部分验证」。报告里每条结论都带标签：已验证（实际运行观察）/ 静态确认（读代码）/ 合理推断 / 待验证。不要混用，也不要把静态确认说成已验证。"
+    },
+    {
+      q: "如果你要给这个项目加一个新的 agent 可调用能力，按 CLAUDE.md 的正确顺序是？",
+      opts: [
+        "直接写实现 → 跑测试 → 提交",
+        "先读 architecture.md 与验证记录 → 判文档是否过期 → 定点分层 → 先写失败测试 → 补「能再犯」类缺陷的守卫 → 登记验收清单与总纲 → 同步 README/契约文档 → ruff+mypy+定向回归 → bump 版本 → 打包发布",
+        "先 bump 版本号 → 写实现 → 打包",
+        "先更新 README → 写实现 → 补测试"
+      ],
+      a: 1,
+      why: "这是 CLAUDE.md §4 的九步流程。关键差异在两点：动手前先判断文档是否过期（过期就以代码为准并顺手修文档），以及修完要判断这个 bug 是否属于「能再犯」的类型 —— 是的话补守卫，而不是只修当下这一处。本次 11 个守卫就是这个原则的产物。"
+    }
+  ];
+
+  var form = document.getElementById("quizForm");
+  var holder = document.getElementById("questions");
+  var resultEl = document.getElementById("result");
+  var live = document.getElementById("liveScore");
+  var graded = false;
+
+  function esc(s){
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+  // 行内 code 标记：反引号 → <code>
+  function rich(s){
+    return esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
+  }
+
+  function render(){
+    graded = false;
+    holder.innerHTML = "";
+    resultEl.hidden = true;
+    resultEl.className = "";
+    resultEl.innerHTML = "";
+    live.textContent = "";
+    QS.forEach(function(item, qi){
+      var wrap = document.createElement("fieldset");
+      wrap.className = "qcard";
+      wrap.id = "q" + qi;
+      var lg = document.createElement("legend");
+      lg.innerHTML = '<span class="qnum">' + String(qi+1).padStart(2,"0") + "</span>" + rich(item.q);
+      wrap.appendChild(lg);
+      item.opts.forEach(function(opt, oi){
+        var lab = document.createElement("label");
+        lab.className = "opt";
+        lab.setAttribute("for", "q" + qi + "_o" + oi);
+        var input = document.createElement("input");
+        input.type = "radio";
+        input.name = "q" + qi;
+        input.id = "q" + qi + "_o" + oi;
+        input.value = String(oi);
+        var span = document.createElement("span");
+        span.className = "ot";
+        span.innerHTML = rich(opt);
+        lab.appendChild(input);
+        lab.appendChild(span);
+        wrap.appendChild(lab);
+      });
+      holder.appendChild(wrap);
+    });
+  }
+
+  function clearMarks(){
+    QS.forEach(function(_, qi){
+      var card = document.getElementById("q"+qi);
+      card.classList.remove("right","wrong");
+      var old = card.querySelector(".fb-line");
+      if (old) old.remove();
+    });
+  }
+
+  function mark(qi, correct){
+    var card = document.getElementById("q"+qi);
+    card.classList.remove("right","wrong");
+    card.classList.add(correct ? "right" : "wrong");
+    var old = card.querySelector(".fb-line");
+    if (old) old.remove();
+    var line = document.createElement("p");
+    line.className = "fb-line " + (correct ? "ok" : "no");
+    line.innerHTML = (correct ? "✅ 正确 —— " : "❌ 不正确 —— ") + rich(QS[qi].why);
+    card.appendChild(line);
+  }
+
+  function grade(){
+    var score = 0, unanswered = 0;
+    clearMarks();
+    QS.forEach(function(item, qi){
+      var sel = form.querySelector('input[name="q'+qi+'"]:checked');
+      if (!sel){ unanswered++; mark(qi, false); return; }
+      var ok = Number(sel.value) === item.a;
+      if (ok) score++;
+      mark(qi, ok);
+    });
+    graded = true;
+    live.textContent = "";
+    var pass = (score === QS.length);
+    resultEl.hidden = false;
+    resultEl.className = pass ? "pass" : "fail";
+    resultEl.innerHTML =
+      '<p class="big">' + (pass ? "✅ 通过 —— " + score + " / " + QS.length
+                                : "未通过 —— " + score + " / " + QS.length) + "</p>" +
+      "<p>" + (pass
+        ? "你已经完整掌握了这次变更的因果链：缺陷现象、为何此前被掩盖、修复方式、以及守卫为什么这样设计。可以放心对外解释这次改动了。"
+        : "必须全部答对才算通过。" + (unanswered ? "（有 " + unanswered + " 题未作答。）" : "") +
+          "上面每题都给了理由，读完后点「重做」再试一次。") + "</p>";
+    resultEl.scrollIntoView({block:"nearest"});
+  }
+
+  document.getElementById("gradeBtn").addEventListener("click", grade);
+  document.getElementById("resetBtn").addEventListener("click", render);
+  render();
+})();
+</script>
+</body>
+</html>
