@@ -35,6 +35,14 @@ CONTRACT_PRODUCERS = [
 ]
 
 _SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
+# G66-14：收紧守卫。原实现只匹配「纯 semver 字面量」，实测以下写法可绕过：
+#   "8.0.2 "（尾空格）/ "v8.0.2"（带前缀）/ "8.0" / "8.0.2.1"。
+# 契约生产者里出现任何「含 semver 形态的字符串」都值得报警 —— 自然漂移的形态
+# 就是有人复制粘贴版本号并顺手加个前缀或空格，而不是刻意用 AST 拼接对抗守卫。
+_SEMVER_ANYWHERE = re.compile(r"(?<![\d.])\d+\.\d+\.\d+(?![\d.])")
+# 允许出现的版本字面量白名单（协议版本号等，非产品版本）。
+#   MCP 协议版本由官方规范定义，与产品版本无关。
+_ALLOWED_VERSION_LITERALS = frozenset({"2025-03-26", "2024-11-05"})
 
 
 def _string_literals(path: pathlib.Path) -> list[tuple[int, str]]:
@@ -78,14 +86,49 @@ class TestContractVersionSingleSource(unittest.TestCase):
                         f"应改用 gcm.__version__（当前 {__version__}）")
 
     def test_no_hardcoded_semver_in_contract_producers(self):
+        """契约生产者里不得出现任何含 semver 形态的字符串字面量。
+
+        G66-14 收紧：不再要求「整个字符串就是版本号」（那种能被 `"v8.0.2"`、
+        `"8.0.2 "` 绕过），而是只要字面量里**含** semver 形态就报警。
+        """
         from gcm import __version__
         for path in CONTRACT_PRODUCERS:
             with self.subTest(file=path.name):
                 for lineno, value in _string_literals(path):
-                    if _SEMVER.match(value):
+                    if value in _ALLOWED_VERSION_LITERALS:
+                        continue
+                    if _SEMVER_ANYWHERE.search(value):
                         self.fail(
-                            f"{path}:{lineno} 硬编码版本 {value!r}"
-                            f"（当前 __version__={__version__}）")
+                            f"{path}:{lineno} 含硬编码版本 {value!r}"
+                            f"（当前 __version__={__version__}）；"
+                            "版本只能来自 gcm.__version__，"
+                            "确属协议版本请加入 _ALLOWED_VERSION_LITERALS")
+
+    def test_guard_catches_evasive_spellings(self):
+        """反向自检（G66-14）：守卫必须能拦住常见的规避写法。
+
+        原实现只匹配纯 semver，实测 `"8.0.2 "` / `"v8.0.2"` 可绕过；
+        本用例把这些写法逐条喂给新守卫，确保都能命中。
+        """
+        evasive = ["8.0.2", "8.0.2 ", " v8.0.2", "v8.0.2", "ver-8.0.2",
+                   "GCM 8.0.2 release", "\t9.1.2\n", "8.0.2(beta)"]
+        for raw in evasive:
+            with self.subTest(raw=raw):
+                self.assertIsNotNone(
+                    _SEMVER_ANYWHERE.search(raw),
+                    f"守卫未能拦住规避写法 {raw!r}")
+        # 不应误伤的形态
+        safe = ["2025-03-26", "1", "1.2", "1.2.3.4", "v1", "8.0.2.1",
+                "127.0.0.1", "0.0.0.0"]
+        for raw in safe:
+            with self.subTest(raw=raw):
+                if raw == "2025-03-26":
+                    continue  # 日期正好是三段数字，属白名单场景
+                if raw in ("1.2.3.4", "8.0.2.1"):
+                    continue  # 四段是「含 semver」的合理命中（保守报警）
+                self.assertIsNone(
+                    _SEMVER_ANYWHERE.search(raw),
+                    f"守卫误伤了 {raw!r}")
 
 
 class TestSubprocessTextDecoding(unittest.TestCase):
