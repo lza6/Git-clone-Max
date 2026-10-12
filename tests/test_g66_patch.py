@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ast
 import datetime
+import os
 import pathlib
 import re
 import subprocess
@@ -356,6 +357,53 @@ class TestRedactCoverage(unittest.TestCase):
                 self.assertNotIn("limit=***", out)
         self.assertEqual(redact("https://user:pass@h/a"),
                          "https://***@h/a")
+
+
+class TestConsoleToolEncoding(unittest.TestCase):
+    """G66-13：Windows 自带工具（schtasks 等）输出的是 ANSI 代码页，不是 UTF-8。
+
+    G66-4 把 26 处子进程统一改成 ``encoding="utf-8"`` —— 对 git 是对的，
+    但对 **schtasks** 是功能退化。实测（本机 cp936）::
+
+        schtasks /Query /TN <不存在>
+          utf-8 解码 → '����: ϵͳ�Ҳ���ָ�����ļ���'   ← 一片乱码
+          gbk  解码 → '错误: 系统找不到指定的文件。'      ← 正确
+
+    这段文本会被拼进 ``任务计划操作失败（rc=…）：{detail}`` 直接展示给用户，
+    所以是真实的用户可见退化，不是内部细节。
+    """
+
+    def test_console_encoding_matches_ansi_codepage(self):
+        import locale
+
+        from gcm.app.autostart import _console_encoding
+        enc = _console_encoding()
+        self.assertTrue(enc, "必须返回一个可用编码名")
+        # 应与系统 ANSI 代码页一致（中文 Windows = cp936）
+        self.assertEqual(enc, locale.getpreferredencoding(False))
+
+    def test_console_encoding_is_decodable_alias(self):
+        from gcm.app.autostart import _console_encoding
+        # 编码名必须真的能被 codecs 接受（防呆：拼错名字会在运行时才炸）
+        "测试".encode(_console_encoding())
+
+    @unittest.skipIf(os.name != "nt", "schtasks 仅 Windows")
+    def test_schtasks_output_is_readable_chinese(self):
+        """真实调用 schtasks，断言中文提示可读（不是 U+FFFD 乱码）。"""
+        import subprocess
+
+        from gcm.app.autostart import _console_encoding
+        r = subprocess.run(
+            ["schtasks", "/Query", "/TN", "GCM_Probe_NotExist_G66"],
+            capture_output=True, text=True,
+            encoding=_console_encoding(), errors="replace", timeout=20)
+        self.assertNotEqual(r.returncode, 0, "不存在的任务应返回非 0")
+        text = (r.stderr or "") + (r.stdout or "")
+        self.assertTrue(text.strip(), "应捕获到错误文本")
+        # 乱码特征：替换字符占比过高
+        self.assertNotIn("�", text,
+                         f"中文提示被解码成乱码：{text[:80]!r}")
+        self.assertIn("错误", text, f"应含可读中文「错误」：{text[:80]!r}")
 
 
 class TestPackagingVersionSync(unittest.TestCase):

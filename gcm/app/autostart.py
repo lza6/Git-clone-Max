@@ -39,6 +39,26 @@ def _quote_cmd(cmd: list[str]) -> str:
     return " ".join(parts)
 
 
+def _console_encoding() -> str:
+    """G66-13：取 schtasks 等 Windows 控制台程序的实际输出编码。
+
+    教训：不是所有 Windows 自带工具都输出 UTF-8。实测中文 Windows 上
+    ``schtasks`` 稳定输出 **GBK**（cp936），若一律按 utf-8 解码，
+    用户可见的失败提示会从「错误: 系统找不到指定的文件。」退化成一片乱码。
+    Python 3.6+ 在 Windows 上调用 CreateProcess 时使用 **ANSI** 代码页
+    （即 GetACP 的结果，中文系统为 936），而 ``locale.getpreferredencoding()``
+    返回的正是它；取不到时回退 ``mbcs``（更稳的 ANSI 别名）。
+    """
+    import locale
+    try:
+        enc = locale.getpreferredencoding(False)
+        if enc:
+            return enc
+    except Exception:  # noqa: BLE001
+        pass
+    return "mbcs"
+
+
 def set_autostart(enabled: bool, minimized: bool = False) -> tuple[bool, str]:
     """写入/删除 Windows 任务计划（登录时启动一次，限权限）。
 
@@ -55,7 +75,8 @@ def set_autostart(enabled: bool, minimized: bool = False) -> tuple[bool, str]:
         else:
             cmd = ["schtasks", "/Delete", "/F", "/TN", TASK_NAME]
         r = subprocess.run(cmd, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=30)
+                           encoding=_console_encoding(), errors="replace",
+                           timeout=30)
         if r.returncode == 0:
             return True, ("已写入开机自启任务计划" if enabled else "已移除开机自启任务计划")
         detail = (r.stderr or r.stdout or "").strip()[:200]
@@ -74,7 +95,7 @@ def autostart_enabled() -> bool:
         r = subprocess.run(
             ["schtasks", "/Query", "/TN", TASK_NAME],
             capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=15)
+            encoding=_console_encoding(), errors="replace", timeout=15)
         return r.returncode == 0
     except Exception:  # noqa: BLE001
         return False
