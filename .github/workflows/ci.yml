@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
+      - name: Set up Python 3.14
         uses: actions/setup-python@v5
         with:
           python-version: '3.14'
@@ -91,15 +91,16 @@ jobs:
           mypy gcm
 
       # G29-6 模块级覆盖率表格输出到 job summary（pwsh 三平台预装）
+      # G66-5 修复：原实现写到 Path.home() 而 upload-artifact 取工作区相对路径
+      # `.workflow_summary.md` → 三平台永远上传不到（静默空产物）。改为写工作区根。
       - name: Coverage summary
         env:
           QT_QPA_PLATFORM: offscreen
         shell: pwsh
         run: |
-          python -m coverage json > $null
+          python -m coverage json
           @"
           import json
-          from pathlib import Path
           with open("coverage.json", encoding="utf-8") as f:
               data = json.load(f)
           total = data["totals"]["percent_covered"]
@@ -107,7 +108,7 @@ jobs:
           for name, meta in sorted(data["files"].items()):
               lines.append(f"| {name} | {meta['summary']['percent_covered']:.1f}% |")
           lines.append(f"| **TOTAL** | **{total:.1f}%** |")
-          with open(Path.home() / ".workflow_summary.md", "w", encoding="utf-8") as f:
+          with open(".workflow_summary.md", "w", encoding="utf-8") as f:
               f.write("\n".join(lines))
           "@ | python -
 
@@ -117,6 +118,7 @@ jobs:
           # 矩阵并行 job 必须唯一 artifact 名，避免 upload-artifact@v4 冲突
           name: workflow-summary-${{ matrix.os }}
           path: .workflow_summary.md
+          if-no-files-found: error
 
   # G45-7：真实 git E2E 冒烟（本地裸仓 clone/update/conflict 保护），独立红绿灯
   e2e-smoke:
@@ -124,7 +126,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
+      - name: Set up Python 3.14
         uses: actions/setup-python@v5
         with:
           python-version: '3.14'
@@ -140,7 +142,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
+      - name: Set up Python 3.14
         uses: actions/setup-python@v5
         with:
           python-version: '3.14'

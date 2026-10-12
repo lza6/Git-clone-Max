@@ -96,7 +96,8 @@ def _git(*args: str) -> str:
 def _get_token() -> str:
     r = subprocess.run(["git", "credential", "fill"],
                        input="protocol=https\nhost=github.com\n\n",
-                       capture_output=True, text=True)
+                       capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
     for line in (r.stdout or "").splitlines():
         if line.startswith("password="):
             return line[len("password="):].strip()
