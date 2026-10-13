@@ -267,3 +267,31 @@
   **并留下托盘实例**（本轮实测残留 PID 3760、20204 两次）。已写入 `docs/RELEASE_CHECKLIST.md`。
 - **便携版 zip 无脚本生成**：本轮补了 `scripts/build_portable_zip.py`，并验证其 `--check` 能抓到
   「zip 比来源目录旧」这一不一致。
+
+
+## v9.1.5 发布闭环登记（2026-10-13，独立复验修复）
+
+> 独立复验线程对 v9.1.4 给出 **FAIL**，抓到 2 项 P1 —— 两项都是我上一批改动引入的。
+
+| 节点 | 状态 | 关键证据 |
+|------|------|----------|
+| G67-3a 浅仓增量更新永久失败 | ✅ | 修复前实测 `depth=1,远端+1/+2 → conflict、HEAD 不前进`；修复（浅仓改 plain fetch）后均 success 且 HEAD 前进，连续两次增量更新均前进 |
+| G67-3b 钩子引号绕过 | ✅ | 修复前模板 `"%PATH%\marker.txt"` 生成相邻双引号使引号状态翻转、实测注入成功；改为按引号上下文决定是否加引号后，4 种模板注入全阻断且引号平衡，同时两种自然写法都真正生成目标文件 |
+| G67-4 GetACP 编码来源 | ✅ | `_console_encoding()` == `cp<GetACP>`；子进程带 `PYTHONUTF8=1` 复测编码不漂移 |
+| G67-5 IPv6 绑定 | ✅ | 4 种 IPv6 写法均抛含「IPv6」的明确错误；端口占用场景 `serve()` 返回 2 而非崩溃 |
+| G67-6 redact 收尾引号 | ✅ | 4 组引号场景保留收尾引号；4 组无假阳性回归 |
+| G67-7 契约文档纳入守卫 | ✅ | 新增 `test_contract_doc_version_matches_package`；此前文档版本悄悄停在 9.1.3 而守卫全绿 |
+| 质量闸 | ✅ | 快集 `Ran 961 tests in 512.824s · OK` / 覆盖 `82%` / `ruff check gcm` 0 / `mypy gcm` Success（60 files）/ `e2e_smoke` PASS |
+| 产物健康检查 | ✅ | `source_version = artifact_version = 9.1.5`（`version_match` 通过）；exe `filevers=(9,1,5,0)` |
+| 构建/发布 | ✅ | tag v9.1.5 = ac37b4d == remote main == local HEAD；Release 双产物上传，**服务端 digest 与本地 sha256 全等**（exe `fc01386e…` / zip `c61142d8…`），size 亦一致 |
+
+### 本轮最贵的教训（写入台账与报告）
+
+两个 P1 的成因完全相同：**守卫只覆盖了「我做的那一侧」**。
+- `TestShallowCloneDepth` 只 `sync` 一次 → 验了 clone 侧，从不验**更新侧**；
+- `TestPostCloneHookInjection` 5 条用例全是无引号模板 → 不覆盖**带后缀的引号写法**。
+
+**「守卫能过」与「回归拦得住」是两件事**；判据必须选在**真实用户的用法**上，
+而不是自己顺手写出的那一种写法。另外 `G67-3b` 的第三版修正之所以被发现，
+是因为我补了一条「引号必须平衡」的断言 —— **安全修复也要同时断言可用性**，
+否则容易得到「靠报错换安全」的假成功。
