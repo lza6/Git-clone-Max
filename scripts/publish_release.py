@@ -41,10 +41,30 @@ PORTABLE_ZIP = ROOT / "dist" / "Git-clone-Max-portable.zip"
 PORTABLE_NAME = "Git-clone-Max-portable.zip"
 
 
+def _highlights() -> str:
+    """从 __changelog__ 取当前版本那一行作为「本版重点」（去除尾部测试/覆盖描述）。
+
+    历史问题：Release body 是纯静态模板，从 v2 时代起就没随版本迭代，
+    发出去等于给用户看一份过期的功能说明。现在把本版 changelog 抬到最前面，
+    并在产能信息后附上「为何这版值得升级」。
+    """
+    try:
+        from gcm import __changelog__, __version__
+    except Exception:  # noqa: BLE001
+        return ""
+    prefix = f"{__version__}:"
+    for line in __changelog__:
+        text = str(line).strip()
+        if text.startswith(prefix):
+            return text[len(prefix):].strip()
+    return ""
+
+
 def _build_body() -> str:
     """G45-4：读取 docs/RELEASE_BODY.md 模板并替换占位符生成 Release body。
 
-    占位符：{version}、{sha256_exe}、{sha256_zip}（缺失/读取失败置空，不阻断发布）。
+    占位符：{version}、{sha256_exe}、{sha256_zip}、{highlights}
+    （缺失/读取失败置空，不阻断发布）。
     BODY 常量保留并指向同一模板结果，兼容旧测试对 pr.BODY 的引用。
     """
     from gcm import __version__  # 脚本入口已把 ROOT 加入 sys.path
@@ -68,6 +88,7 @@ def _build_body() -> str:
         .replace("{version}", str(__version__))
         .replace("{sha256_exe}", _sum(DIST))
         .replace("{sha256_zip}", _sum(PORTABLE_ZIP))
+        .replace("{highlights}", _highlights())
     )
 
 
