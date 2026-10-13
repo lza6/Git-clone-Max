@@ -1,5 +1,5 @@
 """Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。"""
-__version__ = "9.1.3"
+__version__ = "9.1.4"
 __app_name__ = "Git-clone-Max"
 __changelog__ = (
     "4.0.0: 统一调度引擎(SyncEngine) · progress.json 进程级锁+周期落盘 · SQLite busy_timeout · "
@@ -119,6 +119,7 @@ __changelog__ = (
     "9.1.0: G59 第三轮收官 - 评分卡 per_repo_size 接入真实 dir_size · 企业 IM 告警推送(钉钉/飞书/企微)接入主窗口 + token 加密落盘 · CI 主矩阵 fast/slow 拆分 · 文档资产(architecture/ADR/code-gems/product-brief/perf-observability)",  # noqa: E501
     "9.1.1: 补缺 - G58-5 认证头类型 UI(Bearer/PRIVATE-TOKEN/Basic 下拉 + service 头映射 + 真实 git 头注入 E2E) · G57-5 无障碍声明 · G66-1 Windows 版本资源 8.0.2→9.1.1 修复",  # noqa: E501
     "9.1.2: 文档治理收官 - G51-3 扫描证据 478KB 归档 zip · G51-4 根目录收敛(参考结果计划指南移入计划书/16 个构建日志清理) · G51-5 v8 历史段抽为独立只读归档 · G51-6 workflow_status 里程碑仪表盘 · G52-G56 章节表全量回填[已落地]",  # noqa: E501
+    "9.1.4: G67 安全与线程安全补丁 - G67-1 克隆后钩子命令注入修复(路径强制双引号包裹, A/B 实测: 目录名 x&mkdir PWNED&y 修复前真的执行了 mkdir) · G67-2 三处跨线程直接操作 Qt 控件改为 pyqtSignal 桥接(main_window/progress_table/settings_panel) · 附带修复归档取光标行与文件名清洗 · 守卫 40→51 用例(含反向自检: 取基线 commit 断言守卫能抓到修复前的违规)",  # noqa: E501
     "9.1.3: G66 第四轮终局审计补丁 - G66-2 契约版本单源(CLI --json/--diag + MCP serverInfo + 2 个技能脚本共 5 处硬编码 8.0.2 → gcm.__version__；pyproject/installer.iss 同步) · G66-3 时间炸弹用例修复(test_repo_tags 写死日期致主矩阵 2026-10-12 实测红灯) · G66-4 中文 Windows(cp936) 子进程解码崩溃修复(26 处 text=True 补 encoding=utf-8) · G66-6 本地 HTTP API 强制回环绑定(拒绝 0.0.0.0 无鉴权暴露) · G66-5/G66-7 CI artifact 与 step 名修复 · 新增 test_g66_patch.py 19 项永久守卫",  # noqa: E501
 
     "0 子进程+线程池并发+scandir 跳 junction) · 裸仓/worktree 完整性 · local_repos_dialog "
