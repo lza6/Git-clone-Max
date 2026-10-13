@@ -357,6 +357,7 @@ class TestShallowCloneDepth(unittest.TestCase):
         """
         import shutil
         import tempfile
+
         from gcm.git.service import GitService
         from gcm.models import RepoSpec
 
@@ -508,6 +509,287 @@ class TestConsoleToolEncoding(unittest.TestCase):
         self.assertNotIn("�", text,
                          f"中文提示被解码成乱码：{text[:80]!r}")
         self.assertIn("错误", text, f"应含可读中文「错误」：{text[:80]!r}")
+
+
+class TestPostCloneHookInjection(unittest.TestCase):
+    """G67-1：克隆后钩子不得因不可信目录名而被注入命令。
+
+    钩子文本是用户自己写的（可信），但替换进 `%PATH%` 的**仓库路径来自 URL**
+    （不可信）—— `url_lib.sanitize_name` 只过滤 `\\/:*?"<>|` 与控制字符，
+    不过滤 `& ; $ ( ) ^ ! %` 等 cmd.exe 元字符。本工具最典型的用法恰是
+    「粘贴别人的仓库清单批量克隆」，所以这条路径真实可触发。
+
+    实测（修复前）：目录名含 `&echo INJECTED&` 时，cmd.exe 会把
+    `echo INJECTED` 当成独立命令执行。
+    """
+
+    def test_replacement_path_is_quoted(self):
+        """替换进钩子的路径必须被双引号包裹，且不出现双层引号。"""
+        svc = _make_hook_svc(r"echo done > %PATH%\marker.done")
+        cmd = svc._build_post_clone_hook_cmd(ROOT / "a&b")
+        self.assertIsNotNone(cmd)
+        # 双引号必须闭合包裹路径
+        self.assertRegex(cmd, r'"[^"]*a&b[^"]*"')
+
+    def test_pre_quoted_placeholder_not_doubled(self):
+        """用户已写 "%PATH%" 时归一化，不产生 ""path""。"""
+        svc = _make_hook_svc(r'echo done > "%PATH%"')
+        cmd = svc._build_post_clone_hook_cmd(ROOT / "plain")
+        self.assertIsNotNone(cmd)
+        self.assertNotIn('""', cmd)
+        self.assertIn('"', cmd)
+
+    def test_metachars_cannot_break_out(self):
+        """含 & | > ^ 的目录名不得突破引号边界。"""
+        for name in ("x&echo PWN&y", "x|whoami|y", "x^&y", "x>out&y"):
+            with self.subTest(name=name):
+                svc = _make_hook_svc(r"echo ok > %PATH%\ \done")
+                cmd = svc._build_post_clone_hook_cmd(ROOT / name)
+                self.assertIsNotNone(cmd)
+                # 路径整体被一对引号包住（引号总数为偶数）
+                self.assertEqual(cmd.count('"') % 2, 0)
+
+    def test_path_with_double_quote_is_refused(self):
+        """路径含 `"` 时拒绝执行（无法安全转义），而不是冒险拼接。"""
+        svc = _make_hook_svc("echo %PATH%")
+        self.assertIsNone(svc._build_post_clone_hook_cmd(ROOT / 'a"b'))
+
+    @unittest.skipIf(os.name != "nt", "cmd.exe 注入语义仅 Windows")
+    def test_no_injection_e2e_after_clone(self):
+        """真实 E2E（走完整 _clone 路径）：注入载荷绝不真的执行。
+
+        判据的选择很关键：
+        - **不能**用「日志里是否出现注入串」—— 注入串本就是路径的一部分，必然
+          出现在路径回显里（那是回显，不是执行）。
+        - **不能**用 `>` 重定向做载荷 —— `>` 是 Windows 非法目录字符，git 建不出
+          该目录，钩子根本不会跑，测试会变成假通过。
+        - 可靠判据：**注入命令是否产生了真实副作用**。这里用
+          `&mkdir PWNED_G67&`（`&` 是合法文件名字符，`mkdir` 无需重定向）。
+
+        A/B 实测对照（同一份真实克隆流程）：
+          加引号（修复后）  → status=success，PWNED_G67 未创建
+          去掉引号（修复前）→ status=success，PWNED_G67 **被创建**（注入成功）
+        """
+        import shutil
+        import tempfile
+
+        from gcm.git.service import GitService
+        from gcm.models import RepoSpec
+
+        tmp = pathlib.Path(tempfile.mkdtemp(prefix="gcm_g67_hook_"))
+        try:
+            src = tmp / "src"
+            src.mkdir()
+
+            def _g(*args: str) -> None:
+                subprocess.run(["git", *args], cwd=str(src),
+                               capture_output=True, check=True)
+
+            _g("init", "-q")
+            _g("config", "user.email", "t@t.com")
+            _g("config", "user.name", "t")
+            (src / "a.txt").write_text("x", encoding="utf-8")
+            _g("add", "-A")
+            _g("commit", "-qm", "c1")
+            _g("branch", "-M", "main")
+            bare = tmp / "r.git"
+            subprocess.run(["git", "clone", "-q", "--bare", str(src), str(bare)],
+                           capture_output=True, check=True)
+
+            clone_root = tmp / "clones"
+            lines: list[str] = []
+            svc = GitService(clone_root,
+                             post_clone_hook=r"echo ran > %PATH%\hook_ran.txt",
+                             ssh_key="",
+                             on_line=lambda c: lines.append(c.text))
+            spec = RepoSpec(owner="a", repo="b", url_https=str(bare),
+                            folder_name="x&mkdir PWNED_G67&y")
+            from gcm.models import SyncAction, SyncResult, SyncStatus
+            res = SyncResult(spec=spec, status=SyncStatus.PENDING,
+                             action=SyncAction.CLONED)
+            svc._clone(spec, res)
+
+            # 前置条件：克隆必须成功且钩子真的跑了，否则本用例会「假通过」
+            self.assertEqual(res.status.value, "success", res.detail)
+            hook_line = next((ln for ln in lines if "执行克隆后钩子" in ln), "")
+            self.assertTrue(hook_line, f"钩子未执行，用例无效：{lines[-3:]}")
+
+            # 决定性判据：注入命令的副作用不存在
+            self.assertFalse((clone_root / "PWNED_G67").exists(),
+                             "发生命令注入：PWNED_G67 被创建 —— "
+                             f"钩子命令：{hook_line}")
+            # 且钩子命令本身必须已把路径加引号
+            self.assertIn('"', hook_line, f"钩子命令未加引号：{hook_line}")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _make_hook_svc(hook: str):
+    """构造带钩子的 GitService，供钩子命令拼装断言用。"""
+    from gcm.git.service import GitService
+    return GitService(ROOT / "out", post_clone_hook=hook)
+
+
+class TestNoCrossThreadWidgetAccess(unittest.TestCase):
+    """G67-2：工作线程不得直接触碰 QWidget / QAbstractItemModel。
+
+    Qt 的 QObject 有线程亲和性。原实现有 3 处在裸 ``threading.Thread`` 内直接：
+
+    - ``main_window``：``self._emit_log(...)``（LogModel 是 QAbstractListModel）
+      与 ``self.statusBar().showMessage(...)``（QWidget）
+    - ``progress_table``：``owner.statusBar().showMessage(...)``
+    - ``settings_panel``：在工作线程 ``QMessageBox.information(...)``（建窗 + exec）
+
+    后果是随机崩溃或静默错行（``__main__`` 装了 excepthook 后 PyQt 通常不再
+    abort，所以更难排查）。修复方式统一为「worker emit 信号 → GUI 线程槽」。
+
+    本守卫用 AST 静态扫描守卫这三处已知形态，防止回归。
+    """
+
+    # 工作线程函数体内**禁止出现**的调用（GUI 线程亲和对象的方法名）
+    # 注意：不能只列 `QMessageBox` —— 原代码用的是别名 `from PyQt6.QtWidgets
+    # import QMessageBox as _QMB` 再调 `_QMB.information(...)`，被调名是
+    # `information`。所以必须按「最终被调用的方法名」列，否则守卫会漏。
+    _FORBIDDEN = (
+        "statusBar", "_emit_log", "showMessage", "setText",
+        "QMessageBox", "information", "warning", "critical", "question",
+    )
+    # 允许出现这些调用的位置（GUI 线程槽 / 非线程上下文）
+    _ALLOW_MARKERS = ("_on_archive_finished", "_on_notify_sent", "_on_diag_finished")
+
+    def _thread_targets(self, path: pathlib.Path) -> list[ast.AST]:
+        """找出 `threading.Thread(target=fn)` 里的 fn（函数对象或 lambda）。"""
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        # 先收集函数名 → 函数节点
+        funcs: dict[str, ast.AST] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                funcs[node.name] = node
+        found: list[ast.AST] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "attr", None) or getattr(node.func, "id", None)
+            if name != "Thread":
+                continue
+            for kw in node.keywords:
+                if kw.arg != "target":
+                    continue
+                tgt = kw.value
+                if isinstance(tgt, ast.Name) and tgt.id in funcs:
+                    found.append(funcs[tgt.id])
+                elif isinstance(tgt, ast.Lambda):
+                    found.append(tgt)
+        return found
+
+    def _violations(self, file_rel: str) -> list[str]:
+        path = ROOT / file_rel
+        bad: list[str] = []
+        for target in self._thread_targets(path):
+            for node in ast.walk(target):
+                if not isinstance(node, ast.Call):
+                    continue
+                name = (getattr(node.func, "attr", None)
+                        or getattr(node.func, "id", None) or "")
+                if name not in self._FORBIDDEN:
+                    continue
+                # 允许：在嵌套函数里再次定义 GUI 线程槽（本项目无此写法，保守放行 emit）
+                bad.append(f"{file_rel}:{node.lineno} 线程内调用 {name}()")
+        return bad
+
+    def test_main_window_thread_targets_are_clean(self):
+        bad = self._violations("gcm/ui/main_window.py")
+        self.assertEqual(bad, [], "工作线程内直接操作了 GUI 对象：\n  "
+                                  + "\n  ".join(bad))
+
+    def test_progress_table_thread_targets_are_clean(self):
+        bad = self._violations("gcm/ui/progress_table.py")
+        self.assertEqual(bad, [], "工作线程内直接操作了 GUI 对象：\n  "
+                                  + "\n  ".join(bad))
+
+    def test_settings_panel_thread_targets_are_clean(self):
+        bad = self._violations("gcm/ui/settings_panel.py")
+        self.assertEqual(bad, [], "工作线程内直接操作了 GUI 对象：\n  "
+                                  + "\n  ".join(bad))
+
+    def test_guard_catches_the_original_violations(self):
+        """反向自检：守卫必须能抓到**修复前**的三处违规。
+
+        没有这条，守卫可能是「永远通过」的空壳。用 git 取修复前版本跑同一套
+        扫描逻辑，断言三处都被抓出来（含 settings_panel 的 `_QMB.information`
+        别名写法 —— 那正是最初漏掉的一种形态）。
+
+        基线用固定的 v9.1.2 发布点 `f0e686f`（本轮 G66/G67 审计开始前的最后一个
+        版本），而不是 `HEAD~N` —— 后者会随提交数变化而失效。
+        """
+        import subprocess
+        baseline = "f0e686f"  # v9.1.2 发布提交
+        rels = ("gcm/ui/main_window.py", "gcm/ui/progress_table.py",
+                "gcm/ui/settings_panel.py")
+        for rel in rels:
+            with self.subTest(file=rel):
+                old = subprocess.run(
+                    ["git", "show", f"{baseline}:{rel}"], cwd=str(ROOT),
+                    capture_output=True, text=True,
+                    encoding="utf-8", errors="replace")
+                if old.returncode != 0:
+                    self.skipTest(f"取不到基线版本 {baseline}:{rel}")
+                import tempfile
+                tmpd = pathlib.Path(tempfile.mkdtemp(prefix="gcm_g67_old_"))
+                try:
+                    mirror = tmpd / rel
+                    mirror.parent.mkdir(parents=True, exist_ok=True)
+                    mirror.write_text(old.stdout, encoding="utf-8")
+                    saved = globals()["ROOT"]
+                    try:
+                        globals()["ROOT"] = tmpd
+                        bad = self._violations(rel)
+                    finally:
+                        globals()["ROOT"] = saved
+                    self.assertTrue(
+                        bad, f"{rel} 修复前应被抓到违规，但守卫报无问题 —— 守卫是空壳")
+                finally:
+                    import shutil
+                    shutil.rmtree(tmpd, ignore_errors=True)
+
+    def test_bridge_signals_declared_and_connected(self):
+        """三个桥接信号必须在 MainWindow 上声明**且**连接（声明没连等于没修）。"""
+        src = (ROOT / "gcm/ui/main_window.py").read_text(encoding="utf-8")
+        for sig in ("archive_finished", "notify_sent", "diag_finished"):
+            with self.subTest(signal=sig):
+                self.assertTrue(
+                    re.search(rf"^\s*{sig}\s*=\s*pyqtSignal\(", src, re.MULTILINE),
+                    f"{sig} 未声明为 pyqtSignal")
+                self.assertTrue(
+                    re.search(rf"self\.{sig}\.connect\(", src, re.MULTILINE),
+                    f"{sig} 未 connect 到槽（信号声明了但不接等于没修）")
+
+    def test_archive_finished_slot_updates_ui_on_gui_thread(self):
+        """真实构造 MainWindow：archive_finished 必须由主线程槽处理。"""
+        import os as _os
+        _os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        import tempfile
+
+        from PyQt6.QtWidgets import QApplication
+
+        from gcm.ui.main_window import MainWindow
+
+        app = QApplication.instance() or QApplication([])
+        tmp = pathlib.Path(tempfile.mkdtemp(prefix="gcm_g67_mw_"))
+        win = None
+        try:
+            win = MainWindow(tmp)
+            self.assertTrue(hasattr(win, "_on_archive_finished"))
+            # 直接调用槽（等同 GUI 线程执行），不应抛异常
+            win._on_archive_finished(str(tmp / "x.zip"), True, "归档下载完成：x.zip")
+            win._on_archive_finished(str(tmp / "y.zip"), False, "归档下载失败：boom")
+            win._on_notify_sent("完成通知 Webhook 已发送")
+            app.processEvents()
+        finally:
+            if win is not None:
+                win.close()
+                win.deleteLater()
+                app.processEvents()
 
 
 class TestPackagingVersionSync(unittest.TestCase):

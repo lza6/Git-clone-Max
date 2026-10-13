@@ -5,7 +5,7 @@ import os
 import time
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSlot
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QCloseEvent
 from PyQt6.QtWidgets import (
     QComboBox,
@@ -54,7 +54,22 @@ def _dur(ms: int) -> str:
 
 
 class MainWindow(QMainWindow):
-    """Git-clone-Max 主窗口。"""
+    """Git-clone-Max 主窗口。
+
+    G67-2 线程安全约定（重要）：
+    以下信号专供**工作线程**回到 GUI 线程使用。Qt 的自动连接在「发射者线程 ≠
+    接收者线程」时会走 QueuedConnection，槽函数因此在 GUI 线程执行 —— 这是唯一
+    允许的跨线程更新 UI 的方式。
+    **禁止**在工作线程里直接触碰 QWidget / QAbstractItemModel（statusBar()、
+    LogModel、QMessageBox 等都有 GUI 线程亲和性，违反后表现为随机崩溃或静默错行）。
+    """
+
+    # 归档下载完成（dest, 是否成功, 提示文本）
+    archive_finished = pyqtSignal(str, bool, str)
+    # 完成通知 Webhook 发送结束（状态栏文案）
+    notify_sent = pyqtSignal(str)
+    # 网络诊断结束（标题, 正文）—— 由 GUI 线程弹 QMessageBox
+    diag_finished = pyqtSignal(str, str)
 
     def __init__(self, data_dir: str | Path, db: Database | None = None,
                  settings: SettingsStore | None = None,
@@ -121,6 +136,12 @@ class MainWindow(QMainWindow):
         self._build_ui()
         # 首次日志写入前先挂 LogBuffer（此时 log_view/log_count 已存在）
         self._ensure_log_buffer()
+
+        # G67-2：工作线程 → GUI 线程的信号桥（详见类文档的线程安全约定）。
+        # 必须在 _build_ui() 之后连接：槽函数要用到 statusBar 与已建好的控件。
+        self.archive_finished.connect(self._on_archive_finished)
+        self.notify_sent.connect(self._on_notify_sent)
+        self.diag_finished.connect(self._on_diag_finished)
 
         # G05-1 应用持久化主题（默认 deep）+ G10-1 字号缩放
         from ..ui import theme as _th
@@ -896,33 +917,63 @@ class MainWindow(QMainWindow):
         _rim(self, pos, _fmt_dt, extra_actions=_extra)
 
     def _archive_current_line(self):
-        """G48-7：对输入区光标所在行地址执行归档下载到 data/archives/。"""
+        """G48-7：对输入区光标所在行地址执行归档下载到 data/archives/。
+
+        G67-2：网络下载在后台线程，但**结果回传必须经信号回到 GUI 线程** ——
+        原实现在工作线程里直接调 `_emit_log`（QAbstractItemModel）与
+        `statusBar().showMessage()`（QWidget），二者都有 GUI 线程亲和性。
+        """
         text = self.repo_input.toPlainText()
         lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
         if not lines:
             self._emit_log(_fmt_dt(), LogLevel.WARN, "输入区为空，无法归档下载。")
             return
-        url = lines[0]
+        # G67-2 附带修复：原实现固定取 lines[0]，与右键菜单文案「光标所在行」不符。
+        cursor = self.repo_input.textCursor()
+        idx = max(0, min(cursor.blockNumber(), len(lines) - 1))
+        url = lines[idx]
         try:
             from gcm.git.archive import download_archive
         except Exception:
             self._emit_log(_fmt_dt(), LogLevel.WARN, "归档模块不可用。")
             return
+        from gcm.app.url_lib import sanitize_name
         dest_dir = self.data_dir / "archives"
-        dest = dest_dir / (url.rstrip("/").split("/")[-1].removesuffix(".git") + ".zip")
+        # G67-2 附带修复：原实现用 URL 末段直接拼文件名（未清洗）→ Windows 非法
+        # 字符/超长名会抛 OSError，`..` 等还会落成怪异路径。
+        stem = sanitize_name(url.rstrip("/").split("/")[-1].removesuffix(".git"))
+        dest = dest_dir / f"{stem}.zip"
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         def _run():
             try:
                 download_archive(url, dest)
-                self._emit_log(_fmt_dt(), LogLevel.INFO, f"归档下载完成：{dest}")
-                self.statusBar().showMessage(f"归档已保存：{dest}")
+                # 跨线程：只允许 emit，不得触碰任何 QWidget/QAbstractItemModel
+                self.archive_finished.emit(str(dest), True, f"归档下载完成：{dest}")
             except Exception as e:
-                self._emit_log(_fmt_dt(), LogLevel.WARN, f"归档下载失败：{e}")
+                self.archive_finished.emit(str(dest), False, f"归档下载失败：{e}")
 
         import threading
         threading.Thread(target=_run, daemon=True).start()
         self.statusBar().showMessage("归档下载中…")
+
+    def _on_archive_finished(self, dest: str, ok: bool, message: str):
+        """G67-2：归档完成回主线程（GUI 线程）后更新日志与状态栏。"""
+        self._emit_log(_fmt_dt(), LogLevel.INFO if ok else LogLevel.WARN, message)
+        self.statusBar().showMessage(f"归档已保存：{dest}" if ok else message)
+
+    def _on_notify_sent(self, message: str):
+        """G67-2：完成通知 Webhook 发送结果回主线程后更新状态栏。"""
+        self.statusBar().showMessage(message, 5000)
+
+    def _on_diag_finished(self, title: str, body: str):
+        """G67-2：网络诊断结果回主线程后再弹 QMessageBox。
+
+        原实现在工作线程里 `QMessageBox.information(...)` —— 在工作线程创建并
+        exec 模态窗口是 Qt 明确禁止的用法。
+        """
+        from PyQt6.QtWidgets import QMessageBox
+        QMessageBox.information(self, title, body)
 
     def _on_adapt_changed(self, n: int, text: str):
         """G48-1：并发自适应状态栏提示。"""

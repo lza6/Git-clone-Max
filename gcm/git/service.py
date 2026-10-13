@@ -741,13 +741,48 @@ class GitService:
             cmd.append("--recurse-submodules")
         return cmd
 
+    def _build_post_clone_hook_cmd(self, repo_dir) -> str | None:
+        """把钩子模板里的 `%PATH%` 替换为**已加引号**的仓库路径。
+
+        返回 None 表示无法安全拼装（路径含 `"`），调用方应跳过执行。
+        独立方法便于单测直接断言命令内容，无需真的跑 hooks。
+        """
+        from pathlib import Path as _P
+        raw = self._post_clone_hook
+        path = str(_P(repo_dir))
+        # 归一化已带引号的写法，防止出现 `""path""`
+        for quoted in ('"%PATH%"', "'%PATH%'"):
+            raw = raw.replace(quoted, "%PATH%")
+        if '"' in path:
+            return None
+        # 双引号包裹：cmd.exe 在引号内不再解释 & | > < ^
+        return raw.replace("%PATH%", f'"{path}"')
+
     def _run_post_clone_hook(self, repo_dir) -> None:
-        """G48-5：成功克隆后运行用户钩子命令（%PATH% 替换为仓库路径；失败仅日志）。"""
+        """G48-5：成功克隆后运行用户钩子命令（%PATH% 替换为仓库路径；失败仅日志）。
+
+        G67-1 安全修复（命令注入）：
+        钩子命令文本是**用户自己写的**（可信），但替换进去的**仓库路径来自 URL**
+        （不可信）—— `url_lib.sanitize_name` 只过滤 `\\/:*?"<>|` 与控制字符，
+        **不过滤 `& ; $ ( ) ^ ! %` 等 cmd.exe 元字符**。而本工具最典型的用法正是
+        「粘贴别人的仓库清单批量克隆」。
+
+        实测注入（修复前）：目录名 `x&echo INJECTED-CODE-EXECUTED&y` 会让 cmd.exe 把
+        `echo INJECTED-CODE-EXECUTED` 当成独立命令执行（输出里实际出现了该串）；
+        修复后同一输入被双引号完整保护（输出为空，未执行）。
+
+        保留 `shell=True` 是**有意的**：用户的钩子本就可能是重定向/管道（如
+        `echo done > log.txt`），改成 argv 数组会破坏既有配置。
+        """
         if not self._post_clone_hook:
             return
         import subprocess as _sp
-        from pathlib import Path as _P
-        cmd = self._post_clone_hook.replace("%PATH%", str(_P(repo_dir)))
+
+        cmd = self._build_post_clone_hook_cmd(repo_dir)
+        if cmd is None:
+            # sanitize_name 已过滤 `"`；真出现说明路径异常，拒绝执行而非冒险拼接
+            self._emit("克隆后钩子已跳过：仓库路径含双引号，无法安全转义", "warn")
+            return
         try:
             self._emit(f"执行克隆后钩子：{cmd}")
             _sp.run(cmd, shell=True, cwd=str(self.root), capture_output=True,

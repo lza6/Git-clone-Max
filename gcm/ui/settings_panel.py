@@ -816,10 +816,14 @@ class SettingsPanel(QWidget):
         self.owner.settings_store.save(self.owner.settings)
 
     def _run_diag(self):
-        """G48-8：后台运行网络诊断，QMessageBox 展示分级报告。"""
-        import threading
+        """G48-8：后台运行网络诊断，QMessageBox 展示分级报告。
 
-        from PyQt6.QtWidgets import QMessageBox as _QMB
+        G67-2：诊断（网络 IO）在后台线程，但 **QMessageBox 必须回 GUI 线程弹**。
+        原实现直接在 `threading.Thread` 里 `new + exec` 模态对话框 —— Qt 明确禁止
+        在工作线程创建/操作 widget，表现为随机崩溃或 UI 状态错乱。
+        改为 emit 主窗口信号，由 GUI 线程的槽 `_on_diag_finished` 弹窗。
+        """
+        import threading
 
         def _run():
             try:
@@ -829,8 +833,9 @@ class SettingsPanel(QWidget):
                 title = "网络诊断：" + grade(reports)
             except Exception as e:
                 lines, title = [f"诊断失败：{e}"], "网络诊断：失败"
+            # 跨线程：只允许 emit
             try:
-                _QMB.information(self.owner, title, "\n".join(lines))
+                self.owner.diag_finished.emit(title, "\n".join(lines))
             except Exception:
                 pass
         threading.Thread(target=_run, daemon=True).start()

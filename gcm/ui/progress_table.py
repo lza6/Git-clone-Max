@@ -493,9 +493,11 @@ class ProgressTable(QWidget):
                     try:
                         from ..app.notify import maybe_notify as _mn
                         if _mn(_s, *_params):
+                            # G67-2：工作线程不得直接触碰 QWidget。原实现此处调
+                            # owner.statusBar().showMessage(...) —— 改为 emit 信号，
+                            # 由 GUI 线程的槽更新状态栏（Qt 自动走 QueuedConnection）。
                             try:
-                                self.owner.statusBar().showMessage(
-                                    "完成通知 Webhook 已发送", 5000)
+                                self.owner.notify_sent.emit("完成通知 Webhook 已发送")
                             except Exception:
                                 pass
                     except Exception:
