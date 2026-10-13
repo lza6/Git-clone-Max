@@ -488,6 +488,52 @@ settings_panel QMessageBox.information()  ← 在工作线程建窗 + exec（最
     这也是本次审计反复出现的同一主题：相信代码与输出，不要相信文档里的形容词。
   </div>
 
+  <h3>第五轮：独立复验抓到我自己引入的两项 P1</h3>
+  <p class="sub">
+    复验线程对 v9.1.4 给出 <b>FAIL</b>，抓到 2 项 P1 —— <b>两项都是我上一批「修复」引入的</b>。
+    它们的共同成因只有一个：<b>我的守卫只覆盖了「我做的那一侧」</b>。
+  </p>
+
+  <article class="finding crit">
+    <div class="fh"><span class="id">G67-3a</span><span class="ttl">我的修复把「浪费流量」换成了「仓库永久无法更新」</span><span class="sev crit">P1 回归</span></div>
+    <div class="fb"><dl>
+      <dt>因果链</dt><dd>G66-10 让 <code>--depth</code> 独立生效 → UI 默认路径（下拉选「浅克隆」+ 设置页未勾 single_branch）现在真的 clone 出<b>浅仓</b> → 而 <code>_update</code> 对浅仓重复 <code>fetch --depth=N</code> → 新取到的 tip 成为<b>无父的 shallow 边界</b> → <code>merge-base</code> 无解 → <code>refusing to merge unrelated histories</code> → 被失败分类误判成「合并/rebase 冲突」。</dd>
+      <dt>实测矩阵</dt><dd>
+<pre><code>depth=1, 远端推进 1 → conflict, HEAD 不前进
+depth=1, 远端推进 2 → conflict, HEAD 不前进
+（规律：只有 fetch_depth ≥ 1+推进数 才侥幸成功 → UI 默认 depth=1 必然每次失败）</code></pre>
+        仓库<b>从第二次同步起永久无法更新且不可自愈</b>，用户看到的是「冲突」假象 —— 而本地其实毫无改动。</dd>
+      <dt>为什么这是"倒退"而不是"没修好"</dt><dd>改动之前，这个配置产出的是<b>全量仓</b>，所以更新正常（代价是浪费流量/磁盘 —— 那正是 G66-10 想修的）。改动之后，流量省了，但<b>这个配置的仓库彻底不能更新了</b>。用用户价值衡量，后者明显更糟。<b>修 A 的同时必须验证 A 的下游有没有被破坏。</b></dd>
+      <dt>修复</dt><dd><code>_update</code> 对浅仓改发 <b>plain fetch</b>（不带 <code>--depth</code>）—— git 会尊重既有 shallow 边界、只取新增提交，仓库保持浅的，ff 正常。（<code>--deepen=N</code> / <code>--update-shallow</code> 实测也可行，但 plain fetch 语义最简且不会随时间无界加深。）</dd>
+      <dt>验证</dt><dd>本地裸仓实测：<code>depth=1</code> 远端 +1 / +2 均 <b>success 且 HEAD 前进</b>；连做两次增量更新均前进。新增 <code>test_shallow_repo_incremental_update_e2e</code>（clone → 推进远端 → 更新 → 再更新，断言 status/HEAD/仍是浅仓）。</dd>
+    </dl></div>
+  </article>
+
+  <article class="finding crit">
+    <div class="fh"><span class="id">G67-3b</span><span class="ttl">我的钩子引号保护，被一个「更自然的写法」绕过</span><span class="sev crit">P1 安全</span></div>
+    <div class="fb"><dl>
+      <dt>绕过方式</dt><dd>G67-1 只归一化<b>完整</b>占位符 <code>"%PATH%"</code>。但用户更可能写<b>带后缀</b>的形式：
+<pre><code>模板: echo done > "%PATH%\marker.txt"
+生成: echo done > ""&lt;path&gt;"\marker.txt"     ← 相邻双引号
+                                              → 引号状态翻转
+                                              → 路径落到引号外
+                                              → & 重新被当命令分隔符</code></pre>
+        实测目录名 <code>x&amp;copy NUL PWNED_Q.txt&amp;y</code> 在该模板下 <b>注入成功</b>。</dd>
+      <dt>修复（第三版才对）</dt><dd>前两版都错在「一律处理」：一律加引号 → 相邻引号可注入；一律剥引号 → <code>"&lt;path&gt;"\marker.txt"</code> 引号不均衡、钩子实际失效（<b>我自己的测试抓到了这一版</b>）。正确规则是<b>按引号上下文决定</b>：逐个出现位置统计它前面未闭合的 <code>"</code> 数 —— 奇数说明模板已把占位符包住（原样替换，让模板的引号生效）；偶数说明在引号外（由我们加引号）。另加路径含 <code>" % !</code> 时拒绝执行（<code>%VAR%</code> 在引号内仍会展开）。</dd>
+      <dt>验证（同时验安全与可用）</dt><dd>4 种模板注入<b>全部阻断</b>且引号平衡；并验证<b>可用性</b>—— <code>%PATH%\marker.txt</code> 与 <code>"%PATH%\marker.txt"</code> 都真的在目标路径生成文件。<b>不是「靠报错换安全」。</b></dd>
+    </dl></div>
+  </article>
+
+  <div class="note crit">
+    <span class="h">这两项为什么能躲过 61 项守卫？—— 因为它们测的是「我做的那一侧」</span>
+    <ul style="margin:.5rem 0 0;padding-left:1.2rem">
+      <li><code>TestShallowCloneDepth</code> 只 <code>sync</code> 一次 —— 验的是 <b>clone 侧</b>，从不验<b>更新侧</b>。</li>
+      <li><code>TestPostCloneHookInjection</code> 5 条用例<b>全是无引号模板</b> —— 不覆盖带后缀的引号写法。</li>
+    </ul>
+    <b>「守卫能过」和「回归拦得住」是两件事。</b>判据必须选在<b>真实用户的用法</b>上，
+    而不是自己顺手写出的那一种写法 —— 这是本轮最贵的一课，代价是两次 P1。
+  </div>
+
   <article class="finding p2">
     <div class="fh"><span class="id">G66-13</span><span class="ttl">「统一 UTF-8」本身引入了功能退化 —— schtasks 输出的是 GBK</span><span class="sev p2">P2</span></div>
     <div class="fb"><dl>
@@ -589,7 +635,7 @@ settings_panel QMessageBox.information()  ← 在工作线程建窗 + exec（最
 <!-- ============ 6 QUIZ ============ -->
 <section id="quiz">
   <div class="sec-head"><span class="sec-num">06</span><h2>测验：确认你真的理解了这次变更</h2></div>
-  <p class="sub">24 题，每题只有一个正确选项。<b>必须答对全部 24 题才算通过</b> —— 提交后每题会给出即时反馈与理由。可以通过「重做」反复尝试。</p>
+  <p class="sub">27 题，每题只有一个正确选项。<b>必须答对全部 27 题才算通过</b> —— 提交后每题会给出即时反馈与理由。可以通过「重做」反复尝试。</p>
 
   <form id="quizForm" novalidate>
     <div id="questions"></div>
@@ -871,6 +917,39 @@ settings_panel QMessageBox.information()  ← 在工作线程建窗 + exec（最
       ],
       a: 1,
       why: "这是本次审计反复出现的纪律：拿不到证据就说拿不到，把它登记成阻塞项并写清解除条件（用户贴日志 / 提供 actions:read token），而不是「先改了让红灯消失」。改断言是最容易做的事，也是最容易掩盖真问题的事。"
+    },
+    {
+      q: "G67-3a 最值得吸取的教训是什么？",
+      opts: [
+        "浅克隆本身就不该支持，应该移除该功能",
+        "修 A 的同时必须验证 A 的<b>下游</b>有没有被破坏：让 --depth 独立生效是对的，但没有同步改 _update 的浅仓 fetch 策略，于是把「浪费流量」换成了「仓库永久无法更新」",
+        "应该在 CI 上加一条浅克隆测试就够了",
+        "这是 git 的 bug，本工具无法规避"
+      ],
+      a: 1,
+      why: "G66-10 的方向没错，错在只改了「产生浅仓」的那一侧。浅仓一旦产生，更新侧就必须理解浅仓语义 —— 这属于「改了一个点，要顺着上下游继续追查」。用用户价值衡量，「多花流量」远好过「功能彻底失效且不可自愈」。"
+    },
+    {
+      q: "G67-3b 里，为什么「一律剥掉引号」和「一律加引号」两种简化方案都不行？",
+      opts: [
+        "因为 cmd.exe 不支持引号",
+        "一律加引号会产生相邻引号使引号状态翻转（可注入）；一律剥引号会产生引号不均衡命令、钩子实际失效（我自己的测试抓到了这一版）。正确做法是按引号上下文逐个判断：占位符前面未闭合的引号数为奇数则已在引号内、原样替换，偶数则由我们加引号",
+        "因为用户可能不用 Windows",
+        "因为路径里可能含空格"
+      ],
+      a: 1,
+      why: "值得注意两点：① 「统一处理」这种看似稳妥的做法在引号/转义这类问题上往往两头不讨好；② 第三版修正之所以被发现，是因为我写了一条「引号必须平衡」的断言 —— 安全修复也需要同时断言可用性，否则容易得到「靠报错换安全」的假成功。"
+    },
+    {
+      q: "为什么这两项 P1 能躲过当时已有的 53 项守卫？",
+      opts: [
+        "因为守卫被 skip 了",
+        "因为守卫只覆盖了「我做的那一侧」：浅克隆守卫只 sync 一次（只验 clone 侧不验更新侧）；钩子守卫 5 条用例全是无引号模板（不覆盖带后缀引号写法）",
+        "因为守卫是 mock 的",
+        "因为 CI 没跑这些守卫"
+      ],
+      a: 1,
+      why: "「守卫能过」和「回归拦得住」是两件事。判据必须选在真实用户的用法上，而不是自己顺手写出的那一种写法。这条教训的代价是两次 P1，也是本次审计里最贵的一课。"
     },
     {
       q: "如果你要给这个项目加一个新的 agent 可调用能力，按 CLAUDE.md 的正确顺序是？",
