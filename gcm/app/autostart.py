@@ -45,20 +45,33 @@ def _console_encoding() -> str:
     教训：不是所有 Windows 自带工具都输出 UTF-8。实测中文 Windows 上
     ``schtasks`` 稳定输出 **GBK**（cp936），若一律按 utf-8 解码，
     用户可见的失败提示会从「错误: 系统找不到指定的文件。」退化成一片乱码。
-    Python 3.6+ 在 Windows 上调用 CreateProcess 时使用 **ANSI** 代码页
-    （即 GetACP 的结果，中文系统为 936），而 ``locale.getpreferredencoding()``
-    返回的正是它；取不到时回退 ``mbcs``（更稳的 ANSI 别名）。
+
+    G67-4 修正：**不要用 `locale.getpreferredencoding()`** —— 它会被 PEP 540
+    （`PYTHONUTF8=1` / UTF-8 模式）改写为 `utf-8`，于是同一个程序在不同环境变量下
+    解码结果不同，schtasks 又会变回乱码（实测 `PYTHONUTF8=1` 时返回 `utf-8`）。
+    改为直接问系统 ANSI 代码页：`kernel32.GetACP()` → `cp936`。
+    这与 `CreateProcess` 实际使用的代码页严格一致，且不受 locale/UTF-8 模式影响。
+
+    回退：Windows 上取不到 ACP → ``mbcs``；其它平台 → ``utf-8``
+    （``mbcs`` 是 Windows 专有 codec，在 POSIX 上查表会 LookupError）。
     """
-    import locale
+    if os.name != "nt":
+        return "utf-8"
     try:
+        import ctypes
+        acp = int(ctypes.windll.kernel32.GetACP())
+        if acp > 0:
+            return f"cp{acp}"
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import locale
         enc = locale.getpreferredencoding(False)
         if enc:
             return enc
     except Exception:  # noqa: BLE001
         pass
-    # 回退：Windows → `mbcs`（ANSI 的稳定别名）；其它平台 → utf-8
-    # （`mbcs` 是 Windows 专有 codec，在 POSIX 上查表会 LookupError）
-    return "mbcs" if os.name == "nt" else "utf-8"
+    return "mbcs"
 
 
 def set_autostart(enabled: bool, minimized: bool = False) -> tuple[bool, str]:

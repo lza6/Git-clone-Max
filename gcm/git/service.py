@@ -744,19 +744,55 @@ class GitService:
     def _build_post_clone_hook_cmd(self, repo_dir) -> str | None:
         """把钩子模板里的 `%PATH%` 替换为**已加引号**的仓库路径。
 
-        返回 None 表示无法安全拼装（路径含 `"`），调用方应跳过执行。
+        返回 None 表示无法安全拼装，调用方应跳过执行（并提示原因）。
+
         独立方法便于单测直接断言命令内容，无需真的跑 hooks。
+
+        G67-1 / G67-3 安全要点（两次踩坑，都很值得记）：
+
+        1) **为什么必须加引号**：钩子文本是用户写的（可信），但替换进去的路径来自
+           URL（不可信）—— `url_lib.sanitize_name` 只过滤 `\\/:*?"<>|` 与控制字符，
+           **不过滤 `& ; $ ( ) ^ ! %`**。实测目录名 `x&mkdir PWNED&y` 未加引号时
+           真的执行了 `mkdir`。cmd.exe 在双引号内不再解释 `& | > < ^`，所以加引号可挡。
+
+        2) **为什么归一化要用正则而不是精确字符串替换**（G67-3 修复的绕过）：
+           只归一化完整的 `"%PATH%"` 会漏掉**占位符带后缀**这一自然写法
+           `"%PATH%\\marker.txt"` → 生成 `""<path>"\\marker.txt"`，两个相邻引号使
+           引号状态翻转，路径落到引号外，`&` 重新被当成命令分隔符
+           （实测该模板下注入 `x&copy NUL PWNED_Q.txt&y` **成功**）。
+           正则 `["\\']?%PATH%["\\']?` 会把占位符两侧的引号一起剥掉，再由我们统一加引号。
+
+        3) **路径本身还必须不含 `"` `%` `!`**：`"` 无法转义；`%VAR%` 在引号内
+           **仍会展开**（cmd 先展开再解析），`!` 在启用延迟展开时同理 ——
+           两者都可能让展开值里的 `"` 突破引号。命中即拒绝执行钩子，不冒险拼接。
+
+        4) **按引号上下文决定是否加引号**（而不是一律加、也不是一律剥）：
+           逐个出现位置统计「它前面有几个未闭合的 `"`」——
+           奇数说明模板自己已经把它包在引号里，此时**原样替换**（让模板的引号生效，
+           且 `"%PATH%\\marker.txt"` 会自然得到 `"<path>\\marker.txt"`，正是用户意图）；
+           偶数说明它在引号外，此时**由我们加引号**。
+           前两版都错在这里：一律加引号会产生 `""<path>"\\marker.txt"`（引号状态翻转，
+           可被注入）或 `"<path>"\\marker.txt"`（引号不均衡，钩子实际失效）。
         """
         from pathlib import Path as _P
+
         raw = self._post_clone_hook
         path = str(_P(repo_dir))
-        # 归一化已带引号的写法，防止出现 `""path""`
-        for quoted in ('"%PATH%"', "'%PATH%'"):
-            raw = raw.replace(quoted, "%PATH%")
-        if '"' in path:
+        if any(ch in path for ch in ('"', "%", "!")):
             return None
-        # 双引号包裹：cmd.exe 在引号内不再解释 & | > < ^
-        return raw.replace("%PATH%", f'"{path}"')
+        token = "%PATH%"
+        out: list[str] = []
+        cursor = 0
+        while True:
+            hit = raw.find(token, cursor)
+            if hit < 0:
+                out.append(raw[cursor:])
+                break
+            out.append(raw[cursor:hit])
+            inside_quotes = (raw[:hit].count('"') % 2) == 1
+            out.append(path if inside_quotes else f'"{path}"')
+            cursor = hit + len(token)
+        return "".join(out)
 
     def _run_post_clone_hook(self, repo_dir) -> None:
         """G48-5：成功克隆后运行用户钩子命令（%PATH% 替换为仓库路径；失败仅日志）。
@@ -780,8 +816,12 @@ class GitService:
 
         cmd = self._build_post_clone_hook_cmd(repo_dir)
         if cmd is None:
-            # sanitize_name 已过滤 `"`；真出现说明路径异常，拒绝执行而非冒险拼接
-            self._emit("克隆后钩子已跳过：仓库路径含双引号，无法安全转义", "warn")
+            # 路径含 `"` / `%` / `!` —— 无法安全转义（见 _build_post_clone_hook_cmd
+            # 的说明），拒绝执行而不是冒险拼接。sanitize_name 已过滤 `"`，
+            # 所以正常路径不会走到这里。
+            self._emit(
+                "克隆后钩子已跳过：仓库路径含无法安全转义的特殊字符"
+                "（\" / % / !），跳过执行以避免命令注入", "warn")
             return
         try:
             self._emit(f"执行克隆后钩子：{cmd}")
@@ -937,8 +977,25 @@ class GitService:
             used_unshallow = True
             self._emit(f"{spec.display} 为浅克隆仓库，正在拉取全量历史（--unshallow）…")
         elif self.fetch_depth and self._is_shallow_repo(repo_dir):
-            fetch_cmd = ["git", "fetch", "--progress", "--prune",
-                         f"--depth={self.fetch_depth}", "origin"]
+            # G67-3 修复（重要回归）：**不要在浅仓上重复 `fetch --depth=N`**。
+            #
+            # 原实现在浅仓上发 `fetch --depth=N origin`，这会让新取到的 tip 成为
+            # 「无父节点」的新 shallow 边界 → `git merge-base HEAD origin/main` 无解 →
+            # `fatal: refusing to merge unrelated histories` → 被下方失败分类误判成
+            # 「合并/rebase 冲突」，于是仓库**从第二次同步起永久无法更新且 HEAD 永不前进**，
+            # 而用户看到的是「冲突」假象（本地其实毫无改动）。
+            #
+            # 实测规律：只有 `fetch_depth ≥ 1 + 远端推进数` 才侥幸成功，所以 UI 默认的
+            # `depth=1` **必然每次失败** —— 属结构性缺陷而非特例。实测对照（本地裸仓）：
+            #   depth=1, 远端+1 → conflict, HEAD 不前进
+            #   depth=1, 远端+2 → conflict, HEAD 不前进
+            #   depth=2, 远端+2 → success（但那时仓库已不是浅仓）
+            # 改为 plain fetch：git 会尊重既有 shallow 边界、只取新增提交，
+            # 仓库保持浅的，且 ff 正常。（`--deepen=N` / `--update-shallow` 实测也可行，
+            # 但 plain fetch 语义最简、不会随时间无界加深。）
+            fetch_cmd = ["git"] + self._lfs_flag() + [
+                "fetch", "--progress", "--prune", "origin"]
+            self._emit(f"{spec.display} 为浅克隆仓库：按浅边界增量 fetch（不带 --depth）")
         rc, _ = run_git_ui(
             fetch_cmd,
             str(repo_dir), self.on_line, cancelled=self.cancelled, env=self._env(),

@@ -17,13 +17,18 @@ import re
 _URL_CRED = re.compile(r"(https?://)([^/\s@]+)@")
 # G66-11：补齐 Authorization 方案词。原实现只认 Bearer|Basic，漏掉 GitHub 旧式
 # `Authorization: token <x>`（以及 Token/Negotiate 等），这类文本会原样进 UI/日志。
+# G67-6：凭据体用 `[^\s"']+` 而不是 `\S+` —— 后者会把紧邻的收尾引号一起吃掉，
+# 例如 `curl -H 'Authorization: Negotiate TlRM'` 会变成 `...Negotiate ***`（丢了 `'`），
+# 让打码后的文本看起来像被截断。
+_CRED = r"[^\s\"']+"
 _BEARER = re.compile(
-    r"(Authorization\s*:\s*)(Bearer|Basic|Token|token|NEGOTIATE|Negotiate)\s+\S+",
+    r"(Authorization\s*:\s*)(Bearer|Basic|Token|token|NEGOTIATE|Negotiate)\s+" + _CRED,
     re.IGNORECASE)
-_PRIVATE = re.compile(r"(PRIVATE-TOKEN\s*:\s*)\S+", re.IGNORECASE)
+_PRIVATE = re.compile(r"(PRIVATE-TOKEN\s*:\s*)" + _CRED, re.IGNORECASE)
 # G66-11：其它常见私有头（GitLab Job-Token / 通用 X-Auth-Token / 自建服务 X-API-Key）
 _OTHER_HEADERS = re.compile(
-    r"((?:X-Auth-Token|X-API-Key|JOB-TOKEN|X-Gitlab-Token)\s*:\s*)\S+", re.IGNORECASE)
+    r"((?:X-Auth-Token|X-API-Key|JOB-TOKEN|X-Gitlab-Token)\s*:\s*)" + _CRED,
+    re.IGNORECASE)
 # G66-11：URL query 里的凭据参数（_URL_CRED 只处理 userinfo，query 里的 token 会漏）
 # 覆盖 access_token / token / private_token / api_key / apikey / password / auth
 _SENSITIVE_QPARAM = re.compile(

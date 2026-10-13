@@ -29,9 +29,20 @@ from .util.redact import redact
 _SENSITIVE_COLS = ("token", "host_tokens", "ssh_key", "url")
 
 # G66-6：仅允许回环绑定（服务本身无鉴权，非回环等于把仓库清单与写操作对全网开放）。
+# G67-5 修正：**移除 `::1`** —— `GcmApiServer` 继承 `ThreadingHTTPServer`，
+# `address_family` 固定为 `AF_INET`，把 IPv6 字面量交给 AF_INET 的 getaddrinfo
+# 必然抛 `gaierror`（实测 `serve("::1:8791")` → `[Errno 11001] getaddrinfo failed`），
+# 而原来只捕 `ValueError` → 整个命令以 traceback 崩溃（rc=1），违反 docstring 承诺的
+# 「绑定失败返回 2」。IPv6 绑定需改 `AF_INET6`，超出本次范围，故明确不支持并给出可读错误。
 _LOOPBACK_HOSTS = frozenset({
-    "127.0.0.1", "::1", "localhost", "127.0.0.2", "127.0.0.3",
+    "127.0.0.1", "127.0.0.2", "127.0.0.3", "localhost",
 })
+
+
+def _looks_like_ipv6(host: str) -> bool:
+    """粗判 IPv6 字面量（含方括号写法），用于给出明确的不支持提示。"""
+    h = host.strip()
+    return h.startswith("[") or h.count(":") >= 2
 
 
 def _version() -> str:
@@ -215,6 +226,10 @@ def create_server(bind: str = "127.0.0.1:8765", root: Path | str = Path.cwd(),
     """
     host, _, port = str(bind).rpartition(":")
     host = host or "127.0.0.1"
+    if _looks_like_ipv6(host):
+        raise ValueError(
+            f"IPv6 绑定暂不支持（{host!r}）：本地 HTTP API 基于 AF_INET 实现。"
+            "请用 127.0.0.1 / localhost。")
     if host not in _LOOPBACK_HOSTS:
         raise ValueError(
             f"拒绝绑定非回环地址 {host!r}：本地 HTTP API 无鉴权，"
@@ -240,10 +255,12 @@ def serve(bind: str = "127.0.0.1:8765", root: Path | str = Path.cwd(),
     """启动本地 API 并阻塞（Ctrl-C 退出）；返回退出码。
 
     G66-6：非回环绑定 / 非法端口 → 打印错误并返回退出码 2（不再静默起服务）。
+    G67-5：同时捕获 `OSError` —— 绑定失败（端口被占、地址不可用等）原本会以
+    traceback 崩溃（rc=1），与 docstring 承诺的「返回 2」不符。
     """
     try:
         httpd = create_server(bind, root, data_dir, allow_mutate)
-    except ValueError as e:
+    except (ValueError, OSError) as e:
         print(f"[SERVE] 启动被拒绝：{e}", file=sys.stderr)
         if json_mode:
             import json as _json

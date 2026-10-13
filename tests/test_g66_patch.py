@@ -22,6 +22,7 @@ import os
 import pathlib
 import re
 import subprocess
+import sys
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -84,6 +85,30 @@ class TestContractVersionSingleSource(unittest.TestCase):
                         _SEMVER.match(value),
                         f"{path}:{lineno} 出现硬编码版本字面量 {value!r}，"
                         f"应改用 gcm.__version__（当前 {__version__}）")
+
+    def test_contract_doc_version_matches_package(self):
+        """**守卫缺口补齐（G67-7）**：契约文档 `docs/agent-contract.md` 的版本也必须单源。
+
+        为什么补这条：`CONTRACT_PRODUCERS` 只覆盖**代码**生产者（cli.py / mcp_server.py /
+        2 个技能脚本），**没有覆盖契约文档本身**。结果文档里的示例版本在 9.1.4 bump 时
+        被漏掉，悄悄停在了 `9.1.3` —— 而所有守卫都是绿的。文档是给 agent 消费者看的，
+        它的 schema 示例就是承诺，必须和代码同源。
+        """
+        from gcm import __version__
+        doc = ROOT / "docs" / "agent-contract.md"
+        text = doc.read_text(encoding="utf-8")
+        found = set(re.findall(r'"version"\s*:\s*"([^"]+)"', text))
+        self.assertTrue(found, "契约文档应含 version 示例")
+        for got in found:
+            with self.subTest(found=got):
+                self.assertEqual(
+                    got, __version__,
+                    f"docs/agent-contract.md 的 version 示例 {got!r} 与 "
+                    f"gcm.__version__ {__version__!r} 不一致")
+        # 「适用版本」行也必须同步
+        head = re.search(r"适用版本：v([\d.]+)", text)
+        self.assertIsNotNone(head, "契约文档应含「适用版本」行")
+        self.assertEqual(head.group(1), __version__)
 
     def test_no_hardcoded_semver_in_contract_producers(self):
         """契约生产者里不得出现任何含 semver 形态的字符串字面量。
@@ -179,19 +204,30 @@ class TestHttpApiBindHardening(unittest.TestCase):
 
     def test_loopback_binds_accepted(self):
         from gcm.http_api import create_server
-        for bind in ("127.0.0.1:0", "localhost:0", "::1:0"):
+        for bind in ("127.0.0.1:0", "localhost:0", "127.0.0.2:0"):
             with self.subTest(bind=bind):
-                try:
-                    httpd = create_server(bind, root=ROOT)
-                except OSError:  # 环境不支持 ::1 等，跳过（非断言失败）
-                    continue
+                httpd = create_server(bind, root=ROOT)
                 self.addCleanup(httpd.server_close)
                 self.assertTrue(httpd.allow_mutate is False)
 
+    def test_ipv6_bind_rejected_with_clear_message(self):
+        """G67-5：IPv6 绑定必须给出**明确**的「暂不支持」，而不是崩溃或误报「非回环」。
+
+        原实现把 `::1` 放进白名单，但服务基类的 `address_family` 是 `AF_INET`，
+        IPv6 字面量交给 AF_INET 的 getaddrinfo 必然抛 `gaierror`；
+        而 `serve()` 只捕 `ValueError` → `--cli --serve ::1:8765` 直接 traceback 崩溃（rc=1），
+        与 docstring 承诺的「返回 2」不符。
+        """
+        from gcm.http_api import create_server
+        for bind in ("::1:8765", "[::1]:8765", "[::]:8765", "::ffff:127.0.0.1:8765"):
+            with self.subTest(bind=bind):
+                with self.assertRaises(ValueError) as ctx:
+                    create_server(bind, root=ROOT)
+                self.assertIn("IPv6", str(ctx.exception))
+
     def test_non_loopback_bind_rejected(self):
         from gcm.http_api import create_server
-        for bind in ("0.0.0.0:8765", "192.168.1.10:8765", "example.com:8765",
-                     "[::]:8765"):
+        for bind in ("0.0.0.0:8765", "192.168.1.10:8765", "example.com:8765"):
             with self.subTest(bind=bind):
                 with self.assertRaises(ValueError) as ctx:
                     create_server(bind, root=ROOT)
@@ -202,10 +238,30 @@ class TestHttpApiBindHardening(unittest.TestCase):
         for bind in ("127.0.0.1:70000", "127.0.0.1:-1", "127.0.0.1:abc"):
             with self.subTest(bind=bind), self.assertRaises(ValueError):
                 create_server(bind, root=ROOT)
+
     def test_serve_returns_2_on_refused_bind(self):
         from gcm.http_api import serve
-        rc = serve("0.0.0.0:8765", root=ROOT)
-        self.assertEqual(rc, 2)
+        for bind in ("0.0.0.0:8765", "::1:8765"):
+            with self.subTest(bind=bind):
+                self.assertEqual(serve(bind, root=ROOT), 2)
+
+    def test_serve_returns_2_on_bind_oserror(self):
+        """G67-5：真正绑定失败（如端口被占）必须返回 2，而不是以 traceback 崩溃。"""
+        import socket
+
+        from gcm.http_api import create_server, serve
+        holder = socket.socket()
+        holder.bind(("127.0.0.1", 0))
+        holder.listen(1)
+        port = holder.getsockname()[1]
+        try:
+            # 同端口已被占用 → bind 抛 OSError → 应返回 2
+            self.assertEqual(serve(f"127.0.0.1:{port}", root=ROOT), 2)
+            # 直接走 create_server 时 OSError 应向上抛（由 serve 负责转退出码）
+            with self.assertRaises(OSError):
+                create_server(f"127.0.0.1:{port}", root=ROOT)
+        finally:
+            holder.close()
 
 
 class TestCliEntrypointContract(unittest.TestCase):
@@ -409,6 +465,101 @@ class TestShallowCloneDepth(unittest.TestCase):
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
+    def test_shallow_repo_incremental_update_e2e(self):
+        """**关键回归守卫（G67-3）**：浅仓必须能增量更新，且 HEAD 真的前进。
+
+        这是独立审查线程抓到的、而原守卫**恰好覆盖不到**的缺口：
+        `test_depth_actually_takes_effect_e2e` 只 `sync` 一次（只验 clone 侧），
+        于是「浅仓第二次同步永久失败」这条路径完全没有断言保护。
+
+        原缺陷（G66-10 引入的回归）：`_update` 在浅仓上重复 `fetch --depth=N`，
+        新取到的 tip 成为无父的 shallow 边界 → `merge-base` 无解 →
+        `refusing to merge unrelated histories` → 被误判成「冲突」→
+        仓库**从第二次同步起永久无法更新**。实测矩阵：
+            depth=1, 远端+1 → conflict, HEAD 不前进
+            depth=1, 远端+2 → conflict, HEAD 不前进
+        改为 plain fetch（尊重既有 shallow 边界）后两者均 success 且 HEAD 前进。
+        """
+        import shutil
+        import tempfile
+
+        from gcm.git.service import GitService
+        from gcm.models import RepoSpec
+
+        tmp = pathlib.Path(tempfile.mkdtemp(prefix="gcm_g67_shallow_"))
+        try:
+            src = tmp / "src"
+            src.mkdir()
+
+            def _g(*args: str, cwd: pathlib.Path | None = None) -> None:
+                subprocess.run(["git", *args], cwd=str(cwd or src),
+                               capture_output=True, check=True)
+
+            _g("init", "-q")
+            _g("config", "user.email", "t@t.com")
+            _g("config", "user.name", "t")
+            _g("checkout", "-q", "-b", "main")
+            (src / "f.txt").write_text("c1", encoding="utf-8")
+            _g("add", "-A")
+            _g("commit", "-qm", "c1")
+            bare = tmp / "r.git"
+            subprocess.run(["git", "clone", "-q", "--bare", str(src), str(bare)],
+                           capture_output=True, check=True)
+            _g("remote", "add", "origin", str(bare))
+            _g("push", "-q", "origin", "main")
+
+            out = tmp / "out"
+            out.mkdir()
+            svc = GitService(root_dir=str(out), fetch_depth=1, single_branch=False)
+            url = bare.as_uri()
+            spec = RepoSpec(owner="o", repo="r", url_https=url, folder_name="o__r")
+
+            r1 = svc.sync(spec)
+            self.assertEqual(r1.status.value, "success", r1.detail)
+            repo = pathlib.Path(r1.path)
+
+            def _git_out(*args: str) -> str:
+                r = subprocess.run(["git", "-C", str(repo), *args],
+                                   capture_output=True, text=True,
+                                   encoding="utf-8", errors="replace")
+                return r.stdout.strip()
+
+            self.assertEqual(_git_out("rev-parse", "--is-shallow-repository"), "true",
+                             "前置条件：首次克隆必须是浅仓，否则本用例失去意义")
+            head_after_clone = _git_out("rev-parse", "HEAD")
+
+            # 远端推进 2 个提交（覆盖「推进数 > depth」这一必然失败的形态）
+            for i in (2, 3):
+                (src / "f.txt").write_text(f"c{i}", encoding="utf-8")
+                _g("add", "-A")
+                _g("commit", "-qm", f"c{i}")
+                _g("push", "-q", "origin", "main")
+
+            r2 = svc.sync(RepoSpec(owner="o", repo="r", url_https=url,
+                                   folder_name="o__r"))
+            self.assertEqual(
+                r2.status.value, "success",
+                f"浅仓增量更新必须成功；实际 status={r2.status.value} "
+                f"msg={r2.message or r2.detail}")
+            head_after_update = _git_out("rev-parse", "HEAD")
+            self.assertNotEqual(head_after_update, head_after_clone,
+                                "HEAD 必须前进（原缺陷的表现就是 HEAD 永不前进）")
+            self.assertEqual(_git_out("rev-parse", "--is-shallow-repository"), "true",
+                             "增量更新后仍应是浅仓（不应悄悄变成全量）")
+
+            # 再来一次，确认不是「只对第一次侥幸成功」
+            (src / "f.txt").write_text("c4", encoding="utf-8")
+            _g("add", "-A")
+            _g("commit", "-qm", "c4")
+            _g("push", "-q", "origin", "main")
+            r3 = svc.sync(RepoSpec(owner="o", repo="r", url_https=url,
+                                   folder_name="o__r"))
+            self.assertEqual(r3.status.value, "success", r3.detail)
+            self.assertNotEqual(_git_out("rev-parse", "HEAD"), head_after_update,
+                                "第二次增量更新也必须前进（原缺陷是「永久卡死」）")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
 
 class TestRedactCoverage(unittest.TestCase):
     """G66-11：脱敏必须覆盖 GitHub 旧式 token 头与 URL query 凭据。
@@ -466,6 +617,30 @@ class TestRedactCoverage(unittest.TestCase):
         self.assertEqual(redact("https://user:pass@h/a"),
                          "https://***@h/a")
 
+    def test_closing_quote_is_preserved(self):
+        """G67-6：凭据体正则不得吞掉紧邻的收尾引号。
+
+        `\\S+` 会把 `'` 一起吃掉，打码结果看起来像被截断（`...Negotiate ***` 丢了收尾 `'`）。
+        改用 `[^\\s\"']+` 后引号保留。
+        """
+        from gcm.util.redact import redact
+        cases = {
+            "curl -H 'Authorization: Negotiate TlRM'":
+                "curl -H 'Authorization: Negotiate ***'",
+            'curl -H "Authorization: Bearer abc"':
+                'curl -H "Authorization: Bearer ***"',
+            "curl -H 'PRIVATE-TOKEN: glpat-x'":
+                "curl -H 'PRIVATE-TOKEN: ***'",
+            "curl -H 'X-API-Key: k1'":
+                "curl -H 'X-API-Key: ***'",
+        }
+        for raw, want in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(redact(raw), want)
+        # 反向：不能因为排除引号而漏掉凭据本身
+        self.assertNotIn("TlRM", redact("curl -H 'Authorization: Negotiate TlRM'"))
+        self.assertNotIn("glpat-x", redact("curl -H 'PRIVATE-TOKEN: glpat-x'"))
+
 
 class TestConsoleToolEncoding(unittest.TestCase):
     """G66-13：Windows 自带工具（schtasks 等）输出的是 ANSI 代码页，不是 UTF-8。
@@ -481,14 +656,35 @@ class TestConsoleToolEncoding(unittest.TestCase):
     所以是真实的用户可见退化，不是内部细节。
     """
 
-    def test_console_encoding_matches_ansi_codepage(self):
-        import locale
+    @unittest.skipIf(os.name != "nt", "GetACP 仅 Windows")
+    def test_console_encoding_matches_getacp(self):
+        """G67-4：编码必须来自 `GetACP()`（真实 ANSI 代码页），而非 locale。
+
+        原实现用 `locale.getpreferredencoding(False)` —— 它会被 PEP 540
+        （`PYTHONUTF8=1` / Python UTF-8 模式）改写为 `utf-8`，于是同一份代码在
+        不同环境变量下解码结果不同，schtasks 又会变回乱码。实现在不同子树进程里
+        验证 `PYTHONUTF8=1` 下仍等于 `cp<ACP>`。
+        """
+        import ctypes
+        import subprocess
+
+        acp = int(ctypes.windll.kernel32.GetACP())
+        expected = f"cp{acp}"
 
         from gcm.app.autostart import _console_encoding
-        enc = _console_encoding()
-        self.assertTrue(enc, "必须返回一个可用编码名")
-        # 应与系统 ANSI 代码页一致（中文 Windows = cp936）
-        self.assertEqual(enc, locale.getpreferredencoding(False))
+        self.assertEqual(_console_encoding(), expected)
+
+        # 子进程带 PYTHONUTF8=1 重新求值：必须保持一致（这正是原实现失效的场景）
+        env = dict(os.environ, PYTHONUTF8="1")
+        r = subprocess.run(
+            [sys.executable, "-c",
+             "from gcm.app.autostart import _console_encoding;"
+             "print(_console_encoding())"],
+            cwd=str(ROOT), capture_output=True, text=True, env=env,
+            encoding="utf-8", errors="replace", timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.strip(), expected,
+                         "PYTHONUTF8=1 下编码发生了漂移（原缺陷会在此复发）")
 
     def test_console_encoding_is_decodable_alias(self):
         """编码名必须真的能被 codecs 接受（防呆：拼错名字运行时才炸）。
@@ -572,6 +768,65 @@ class TestPostCloneHookInjection(unittest.TestCase):
         """路径含 `"` 时拒绝执行（无法安全转义），而不是冒险拼接。"""
         svc = _make_hook_svc("echo %PATH%")
         self.assertIsNone(svc._build_post_clone_hook_cmd(ROOT / 'a"b'))
+
+    def test_quoted_placeholder_with_suffix_is_quoted(self):
+        """**关键回归守卫（G67-3）**：模板 `"%PATH%\\suffix"`（占位符带后缀+整体引号）。
+
+        这是独立审查线程实测出的绕过：原归一化只替换**完整**占位符 `"%PATH%"`，
+        于是 `echo done > "%PATH%\\marker.txt"` 会生成
+        `""<path>"\\marker.txt"` —— 两个相邻引号使引号状态翻转，路径落到引号**外**，
+        `&` 重新被 cmd.exe 当命令分隔符。实测目录名 `x&copy NUL PWNED_Q.txt&y`
+        在该模板下**注入成功**。
+
+        修复改用正则剥掉占位符两侧的引号（含带后缀写法），再由我们统一加引号。
+        """
+        for tpl in (r'echo done > "%PATH%\marker.txt"',
+                    r"echo done > '%PATH%\marker.txt'",
+                    r'echo done > "%PATH%"',
+                    r"echo done > %PATH%\marker.txt",
+                    "echo done > %PATH%"):
+            with self.subTest(tpl=tpl):
+                svc = _make_hook_svc(tpl)
+                cmd = svc._build_post_clone_hook_cmd(ROOT / "x&copy NUL PWNED_Q.txt&y")
+                self.assertIsNotNone(cmd)
+                # 不得出现相邻的双引号（`""`）—— 那是引号状态翻转的信号
+                self.assertNotIn('""', cmd, f"出现相邻引号，可被绕过：{cmd}")
+                # 路径必须整体落在一对引号内
+                self.assertRegex(cmd, r'"[^"]*x&copy NUL PWNED_Q\.txt&y[^"]*"')
+                # 引号总数必须为偶数（状态平衡）
+                self.assertEqual(cmd.count('"') % 2, 0, f"引号不平衡：{cmd}")
+
+    def test_env_expansion_chars_are_refused(self):
+        """路径含 `%` 或 `!` 时拒绝执行（引号内它们仍会被 cmd 展开/延迟展开）。"""
+        svc = _make_hook_svc("echo %PATH%")
+        for name in ("a%PATH%b", "a%CD%b", "a!b"):
+            with self.subTest(name=name):
+                self.assertIsNone(svc._build_post_clone_hook_cmd(ROOT / name))
+
+    @unittest.skipIf(os.name != "nt", "cmd.exe 注入语义仅 Windows")
+    def test_suffix_template_injection_e2e(self):
+        """真实 E2E：`"%PATH%\\marker.txt"` 模板下注入必须被阻断。
+
+        判据同 `test_no_injection_e2e_after_clone`：看注入命令的**副作用**是否真的发生。
+        """
+        import shutil
+        import tempfile
+
+        tmp = pathlib.Path(tempfile.mkdtemp(prefix="gcm_g67_suffix_"))
+        try:
+            root = tmp / "clones"
+            root.mkdir()
+            repo = root / "x&copy NUL PWNED_S.txt&y"
+            repo.mkdir()
+            svc = _make_hook_svc(r'echo done > "%PATH%\marker.txt"')
+            cmd = svc._build_post_clone_hook_cmd(repo)
+            self.assertIsNotNone(cmd)
+            subprocess.run(cmd, shell=True, cwd=str(root), capture_output=True,
+                           timeout=30)
+            self.assertFalse((root / "PWNED_S.txt").exists(),
+                             f"发生命令注入：{cmd}")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
     @unittest.skipIf(os.name != "nt", "cmd.exe 注入语义仅 Windows")
     def test_no_injection_e2e_after_clone(self):
