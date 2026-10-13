@@ -137,6 +137,9 @@ class TestRepoDbExtra(unittest.TestCase):
     def test_close_idempotent(self):
         self.db.close()
         self.db.close()  # 不应抛异常
+        # 真实副作用：关闭后连接不可再用于查询
+        with self.assertRaises(Exception):
+            self.db._conn.execute("SELECT 1")
 
 
 class TestMarkFinishedReplace(unittest.TestCase):
@@ -242,8 +245,15 @@ class TestServiceExtra(unittest.TestCase):
     def test_kill_tree_real_proc(self):
         proc = subprocess.Popen(["cmd.exe", "/c", "ping -n 30 127.0.0.1"],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        _kill_tree(proc)  # 不应抛异常
-        proc.wait(timeout=15)
+        try:
+            self.assertIsNone(proc.poll(), "进程应在运行中")
+            _kill_tree(proc)  # 不应抛异常
+            # 真实行为：整树被终止 → wait 应迅速返回而非等满 15s
+            rc = proc.wait(timeout=15)
+            self.assertIsNotNone(rc, "被终止的进程应有退出码")
+        finally:
+            if proc.poll() is None:
+                proc.kill()
 
 
 class TestCancelFlag(unittest.TestCase):

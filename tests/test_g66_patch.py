@@ -705,7 +705,11 @@ class TestConsoleToolEncoding(unittest.TestCase):
         import codecs
 
         from gcm.app.autostart import _console_encoding
-        codecs.lookup(_console_encoding())  # 非法名字会抛 LookupError
+        name = _console_encoding()
+        # 显式断言（而非仅靠 LookupError 让测试失败）：非法名字会在这里抛
+        self.assertIsInstance(codecs.lookup(name), codecs.CodecInfo,
+                              f"_console_encoding() 返回了非法 codec：{name!r}")
+        self.assertNotEqual(name, "mbcs", "mbcs 是 Windows 专有 codec")
 
     @unittest.skipIf(os.name != "nt", "schtasks 仅 Windows")
     def test_schtasks_output_is_readable_chinese(self):
@@ -1067,7 +1071,6 @@ class TestNoCrossThreadWidgetAccess(unittest.TestCase):
 
     def test_slot_runs_on_gui_thread_when_emitted_from_worker(self):
         """**核心断言**：工作线程 emit → 槽必须在 GUI 线程执行（不是排队错觉）。
-
         整个 G67-2 修复都建立在「Qt 跨线程 emit 自动走 QueuedConnection」这一约定上，
         所以必须真的验证线程 id，而不是只验证「不报错」。断言三点：
           1. emit 后、事件循环未跑时槽**尚未执行**（证明是排队而非直连）
@@ -1112,6 +1115,210 @@ class TestNoCrossThreadWidgetAccess(unittest.TestCase):
             self.assertEqual(seen[0][0], main_tid,
                              "槽必须执行在 GUI 主线程；跑到工作线程说明桥接失效")
         finally:
+            if win is not None:
+                win.close()
+                win.deleteLater()
+                app.processEvents()
+
+
+class TestUpdateCheckThreading(unittest.TestCase):
+    """G67-9：检查更新不得在 GUI 线程跑同步 HTTP。
+
+    历史事故：`check_update_now`（按钮回调）与 `_check_update_silent`
+    （`QTimer.singleShot` 回调，也在主线程）都**同步**调用 `check_latest()`，
+    而它内部失败时会 `time.sleep(2)` 重试一次 —— 点一下按钮界面最长冻结 2s+，
+    启动后 2.5s 也会卡一下。修复方式与 G67-2 一致：worker 线程只 emit 信号。
+    """
+
+    def test_check_latest_has_blocking_retry(self):
+        """前提守卫：check_latest 确实存在阻塞重试。
+
+        若哪天去掉了 `time.sleep`，那「必须挪到工作线程」的理由就不成立了，
+        本类其余断言会变成过度约束 —— 那时应重新评估而非直接删。
+        """
+        src = (ROOT / "gcm/app/updater.py").read_text(encoding="utf-8")
+        self.assertIn("time.sleep(", src,
+                      "updater.check_latest 已无阻塞重试；请复核 G67-9 是否仍必要")
+
+    def test_update_checked_signal_declared_and_connected(self):
+        """`update_checked` 必须声明为 pyqtSignal **且** connect（声明没连等于没修）。"""
+        src = (ROOT / "gcm/ui/main_window.py").read_text(encoding="utf-8")
+        self.assertTrue(
+            re.search(r"^\s*update_checked\s*=\s*pyqtSignal\(", src, re.MULTILINE),
+            "update_checked 未声明为 pyqtSignal")
+        self.assertTrue(
+            re.search(r"self\.update_checked\.connect\(", src, re.MULTILINE),
+            "update_checked 未 connect 到槽")
+
+    def test_check_update_now_does_not_call_check_latest_on_gui_thread(self):
+        """AST 断言：`check_update_now` **自身**语句不得调用 `check_latest(`。
+
+        只在嵌套函数体（worker）里调用是合法的 —— 那才是修复本身。
+        因此用 AST 精确取「函数自身语句」并**不下钻**嵌套 FunctionDef/Lambda，
+        避免把 docstring 里提到的 `check_latest()` 误判成真调用。
+        """
+        tree = ast.parse((ROOT / "gcm/ui/main_window.py").read_text(encoding="utf-8"))
+        fn = None
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "check_update_now":
+                fn = node
+                break
+        self.assertIsNotNone(fn, "main_window.py 中找不到 check_update_now")
+
+        offenders: list[str] = []
+        stack = list(fn.body)
+        while stack:
+            node = stack.pop()
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                continue  # 嵌套函数体是 worker，合法；不下钻
+            if isinstance(node, ast.Call):
+                name = (getattr(node.func, "attr", None)
+                        or getattr(node.func, "id", None) or "")
+                if name == "check_latest":
+                    offenders.append(f"line {node.lineno}")
+            stack.extend(ast.iter_child_nodes(node))
+        self.assertEqual(
+            offenders, [],
+            "check_update_now 在 GUI 线程同步调用 check_latest（G67-9 回归）："
+            + ", ".join(offenders))
+
+    def test_manual_check_runs_worker_off_gui_thread(self):
+        """**真实行为断言**：点「检查更新」时，HTTP 必须在非 GUI 线程执行。
+
+        做法：把 `gcm.app.updater.check_latest` 换成记录线程 id 的假实现，
+        断言 ① 调用发生在非主线程 ② 按钮回调**立即**返回（未被 2s 重试阻塞）
+        ③ 弹窗只在 `update_checked` 回到 GUI 线程后发生。
+        """
+        import os as _os
+        import tempfile
+        import threading
+        import time as _time
+
+        _os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PyQt6.QtCore import QTimer
+        from PyQt6.QtWidgets import QApplication
+
+        import gcm.app.updater as updater_mod
+        from gcm.ui.main_window import MainWindow
+
+        app = QApplication.instance() or QApplication([])
+        main_tid = threading.get_ident()
+        calls: list[int] = []
+        slot_calls: list[int] = []
+
+        def _fake_check_latest(*_a, **_kw):
+            calls.append(threading.get_ident())
+            _time.sleep(0.30)  # 模拟网络往返
+            return (True, "9.9.9", "https://example.invalid/dl", "")
+
+        tmp = pathlib.Path(tempfile.mkdtemp(prefix="gcm_g67_upd_"))
+        win = None
+        original = updater_mod.check_latest
+        import gcm.ui.main_window as mw_mod
+        real_mb = mw_mod.QMessageBox
+        try:
+            win = MainWindow(tmp)
+            updater_mod.check_latest = _fake_check_latest
+
+            # 弹窗打桩：真 QMessageBox.question 会阻塞事件循环，测试无法收尾
+            class _StubMB:
+                StandardButton = real_mb.StandardButton
+                seen: list[str] = []
+
+                @staticmethod
+                def information(*_a, **_k):
+                    _StubMB.seen.append("information")
+
+                @staticmethod
+                def question(*_a, **_k):
+                    _StubMB.seen.append("question")
+                    return real_mb.StandardButton.No
+
+            mw_mod.QMessageBox = _StubMB
+
+            # 探针：记录线程 id 后**仍然调用真槽** —— 顺带验证 _update_checking 复位
+            win.update_checked.disconnect()
+
+            def _probe(*args):
+                slot_calls.append(threading.get_ident())
+                win._on_update_checked(*args)
+
+            win.update_checked.connect(_probe)
+
+            t0 = _time.perf_counter()
+            win.check_update_now()
+            elapsed = _time.perf_counter() - t0
+
+            self.assertLess(elapsed, 0.25,
+                            f"check_update_now 阻塞了 {elapsed:.2f}s —— 仍在 GUI 线程同步跑")
+            self.assertTrue(win._update_checking, "发起后应立即置位防连点标记")
+            for _ in range(200):
+                if calls:
+                    break
+                threading.Event().wait(0.02)
+            self.assertEqual(len(calls), 1, "worker 未调用 check_latest")
+            self.assertNotEqual(calls[0], main_tid,
+                                "check_latest 跑在 GUI 主线程 —— G67-9 未修复")
+
+            QTimer.singleShot(800, app.quit)
+            app.exec()
+            self.assertEqual(len(slot_calls), 1, "update_checked 槽应被触发一次")
+            self.assertEqual(slot_calls[0], main_tid,
+                             "槽必须回到 GUI 主线程执行")
+            self.assertFalse(win._update_checking,
+                             "槽跑完后必须复位 _update_checking，否则「检查更新」永久失效")
+            self.assertEqual(_StubMB.seen, ["question"],
+                             "有新版应走 question 分支一次（弹窗只在 GUI 线程发生）")
+        finally:
+            mw_mod.QMessageBox = real_mb
+            updater_mod.check_latest = original
+            if win is not None:
+                win.close()
+                win.deleteLater()
+                app.processEvents()
+
+    def test_silent_check_runs_off_gui_thread(self):
+        """启动后静默检查同样不得占用 GUI 线程。"""
+        import os as _os
+        import tempfile
+        import threading
+        import time as _time
+
+        _os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PyQt6.QtWidgets import QApplication
+
+        import gcm.app.updater as updater_mod
+        from gcm.ui.main_window import MainWindow
+
+        app = QApplication.instance() or QApplication([])
+        main_tid = threading.get_ident()
+        calls: list[int] = []
+
+        def _fake_check_latest(*_a, **_kw):
+            calls.append(threading.get_ident())
+            _time.sleep(0.30)
+            return (False, "0.0.0", "", "")
+
+        tmp = pathlib.Path(tempfile.mkdtemp(prefix="gcm_g67_upds_"))
+        win = None
+        original = updater_mod.check_latest
+        try:
+            win = MainWindow(tmp)
+            updater_mod.check_latest = _fake_check_latest
+            t0 = _time.perf_counter()
+            win._check_update_silent()
+            elapsed = _time.perf_counter() - t0
+            self.assertLess(elapsed, 0.25,
+                            f"_check_update_silent 阻塞了 {elapsed:.2f}s —— 未挪到工作线程")
+            for _ in range(200):
+                if calls:
+                    break
+                threading.Event().wait(0.02)
+            self.assertEqual(len(calls), 1, "worker 未调用 check_latest")
+            self.assertNotEqual(calls[0], main_tid,
+                                "_check_update_silent 仍在 GUI 主线程跑 HTTP")
+        finally:
+            updater_mod.check_latest = original
             if win is not None:
                 win.close()
                 win.deleteLater()

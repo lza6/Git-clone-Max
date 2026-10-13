@@ -1,45 +1,16 @@
-"""G58 网络深化测试：限流状态 / host 探测 / 认证头类型建议。"""
+"""G58 网络深化测试：host 探测 / 认证头类型建议。
+
+（G67-21：原含 RateLimitState 用例，该模块因零生产引用已删除。）
+"""
 import unittest
 from unittest import mock
 
 from gcm.app.host_probe import probe_git_service, probe_host, probe_https, suggest_auth_header
-from gcm.app.rate_limit import RateLimitState
-
-
-class TestRateLimit(unittest.TestCase):
-    def test_observe_remaining(self):
-        rl = RateLimitState()
-        rl.observe({"X-RateLimit-Remaining": "3", "X-RateLimit-Reset": "9999999999"}, 200)
-        self.assertEqual(rl.remaining, 3)
-
-    def test_limited_when_zero(self):
-        rl = RateLimitState()
-        rl.observe({"X-RateLimit-Remaining": "0"}, 200)
-        self.assertTrue(rl.is_limited)
-
-    def test_backoff_after_429(self):
-        rl = RateLimitState()
-        rl.observe({}, 429)
-        self.assertGreater(rl.backoff_seconds(), 0)
-        rl.observe({}, 429)
-        self.assertGreater(rl.backoff_seconds(), 5)
-
-    def test_not_limited_by_default(self):
-        rl = RateLimitState()
-        self.assertFalse(rl.is_limited)
-        self.assertEqual(rl.backoff_seconds(), 0.0)
-
-    def test_reset(self):
-        rl = RateLimitState()
-        rl.observe({}, 429)
-        rl.reset()
-        self.assertFalse(rl.is_limited)
-        self.assertEqual(rl.backoff_seconds(), 0.0)
 
 
 class TestHostProbe(unittest.TestCase):
     def test_probe_https_ok(self):
-        with mock.patch("socket.create_connection") as conn:
+        with mock.patch("socket.create_connection"):
             r = probe_https("example.com", timeout=1)
             self.assertEqual(r["status"], "ok")
 

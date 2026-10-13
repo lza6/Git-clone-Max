@@ -293,6 +293,18 @@ class ProgressTable(QWidget):
         idx = it.data(Qt.ItemDataRole.UserRole + 1) if it is not None else None
         return int(idx) if idx is not None else row
 
+    def _row_for_engine_index(self, engine_index: int) -> int | None:
+        """按 UserRole+1 里藏的 engine index 反查当前行号（G67-3）。
+
+        排序开启时 `setItem` 会立刻触发重排 —— 行的**视觉位置**不再等于 engine
+        index。逐行扫描取回真实行号，避免后续 `table.item(index, col)` 拿到 None。
+        """
+        for r in range(self.table.rowCount()):
+            it = self.table.item(r, 0)
+            if it is not None and it.data(Qt.ItemDataRole.UserRole + 1) == engine_index:
+                return r
+        return None
+
     @pyqtSlot(int, str)
     def _on_worker_progress(self, index, percent):
         if not (0 <= index < self.table.rowCount()):
@@ -329,7 +341,33 @@ class ProgressTable(QWidget):
 
     @pyqtSlot(int, SyncResult)
     def _on_worker_result(self, index, res: SyncResult):
-        bar = self.table.cellWidget(index, 1)
+        # G67-3 修复：重投批次的 index 可能**超出当前行数**（表按上一批预填，而重投
+        # 批 spec 更多 —— 例如用户中途清空了部分行）→ `table.item(index, col)` 返回
+        # None → `st.setText` 抛 AttributeError，异常从槽里冒出（结果丢失且日志无用）。
+        # 越界时按 res.spec 补建该行，保证结果仍落到表里。
+        row = index
+        if index >= 0 and index >= self.table.rowCount():
+            was_sorting = self.table.isSortingEnabled()
+            if was_sorting:
+                # 先关排序：开着排序时 setItem 会立即重排，补出来的行会被挤到别处
+                self.table.setSortingEnabled(False)
+            try:
+                self.table.setRowCount(index + 1)
+                self._add_table_row(index, res.spec)
+            except Exception as e:  # noqa: BLE001 —— 补行失败不应让回调崩溃
+                try:
+                    from ..app.applog import warn as _warn
+                    _warn(f"进度行补建失败（index={index}）：{e}")
+                except Exception:
+                    pass
+            finally:
+                if was_sorting:
+                    self.table.setSortingEnabled(True)
+                    # 开了排序 → 行位置已变，按行内藏的 engine index 反查真实行
+                    row = self._row_for_engine_index(index)
+        if row is None or not (0 <= row < self.table.rowCount()):
+            return  # 补行失败 → 无可写目标，直接放弃（异常路径已留痕）
+        bar = self.table.cellWidget(row, 1)
         if isinstance(bar, QProgressBar):
             bar.setRange(0, 1)
             bar.setValue(1)
@@ -351,14 +389,16 @@ class ProgressTable(QWidget):
                     self.owner.tray.update_counts(ok_delta=1)
         except Exception:
             pass
-        st = self.table.item(index, 2)
+        st = self.table.item(row, 2)
+        if st is None:
+            return  # 行存在但单元格缺失（表被外部重建）—— 不崩，交由下一次刷新
         st.setText(label)
         st.setForeground(QColor(color))
         # 状态原始值存 UserRole：排序/右键/统计按原始值判断（符号仅视觉）
         st.setData(Qt.ItemDataRole.UserRole, res.status.value)
         # G35-8 状态格 tooltip：message + detail 拼接（与详情列 tooltip 互补）
         st.setToolTip(f"{res.message or ''}" + (f"\n{res.detail or ''}" if res.detail else ""))
-        act = self.table.item(index, 3)
+        act = self.table.item(row, 3)
         action_label = {
             "cloned": "新建克隆",
             "updated": f"增量 +{res.commits}",
@@ -369,18 +409,20 @@ class ProgressTable(QWidget):
             "cancelled": "取消",
             "failed": "失败",
         }.get(res.action.value, res.action.value)
-        act.setText(action_label)
-        act.setForeground(QColor(color))
-        msg = self.table.item(index, 4)
-        msg.setText(res.message)
-        msg.setToolTip(res.detail or "")
+        if act is not None:
+            act.setText(action_label)
+            act.setForeground(QColor(color))
+        msg = self.table.item(row, 4)
+        if msg is not None:
+            msg.setText(res.message)
+            msg.setToolTip(res.detail or "")
         # G36-6 完成动效：成功绿/失败红背景色 1.2s 消隐
         # （设置开关；offscreen 自动关；G46-8 prefers_reduced_motion 也关）
         if bool(getattr(self.owner.settings, "animations", True)) and \
                 not self._on_worker_result_motion_guard() and \
                 os.environ.get("QT_QPA_PLATFORM") != "offscreen":
             try:
-                self._animate_result_row(index, res.status)
+                self._animate_result_row(row, res.status)
             except Exception:
                 pass
         # 同步成功 → 地址入 URL 历史（G02-4）

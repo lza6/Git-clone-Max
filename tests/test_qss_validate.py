@@ -53,7 +53,8 @@ class TestValidateQss(unittest.TestCase):
         self.assertEqual(validate_qss(qss), [])
 
     def test_validate_or_raise_pass(self):
-        validate_qss_or_raise("QLabel { color: red; }")
+        # 合法 QSS → 返回 None 且不抛异常
+        self.assertIsNone(validate_qss_or_raise("QLabel { color: red; }"))
 
     def test_validate_or_raise_fail(self):
         with self.assertRaises(ValueError):

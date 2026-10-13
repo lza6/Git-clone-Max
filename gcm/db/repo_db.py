@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import sqlite3
 import threading
@@ -726,81 +725,16 @@ class Database:
                 (str(key_path or ""), repo_id))
             self._conn.commit()
 
-# 断点续传：progress.json（含已完任务记录）
+
 # ---------------------------------------------------------------------------
-# progress.json 的读写需要互斥：多 worker 并发（或未来多实例）写同一 tmp 路径
-# 会导致 PermissionError（Windows）。这里提供线程级 + 进程级双层锁。
-import contextlib as _contextlib  # noqa: E402  （置于本模块中部，供进度读写使用）
-
-_progress_lock = threading.RLock()
-
-
-@_contextlib.contextmanager
-def _progress_guard(path: Path):
-    """线程锁 + 进程锁双层互斥，保护对 progress.json 的读改写。
-
-    进程锁：Windows msvcrt（每句柄独占锁）/ POSIX fcntl.flock。
-    同进程多线程 → RLock 串行；多进程 → 文件锁串行。锁失败降级为仅线程锁。
-    """
-    with _progress_lock:
-        lock_fh = None
-        try:
-            if os.name == "nt":
-                import msvcrt
-                lock_fh = open(str(path) + ".lock", "a+")
-                msvcrt.locking(lock_fh.fileno(), msvcrt.LK_LOCK, 1)
-            else:
-                import fcntl
-                lock_fh = open(str(path) + ".lock", "a+")
-                fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
-        except Exception:
-            lock_fh = None  # 锁获取失败 → 降级为仅线程锁
-        try:
-            yield
-        finally:
-            if lock_fh is not None:
-                try:
-                    if os.name == "nt":
-                        import msvcrt
-                        lock_fh.seek(0)
-                        msvcrt.locking(lock_fh.fileno(), msvcrt.LK_UNLCK, 1)
-                    else:
-                        import fcntl
-                        fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
-                except Exception:
-                    pass
-                try:
-                    lock_fh.close()
-                except Exception:
-                    pass
-
-
-def load_progress(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {"finished": [], "in_progress": {}, "failed": []}
-    try:
-        with _progress_guard(path), open(path, encoding="utf-8") as f:
-            data = json.load(f)
-        # G22-2：补齐新键，旧文件无痛升级
-        data.setdefault("finished", [])
-        data.setdefault("in_progress", {})
-        data.setdefault("failed", [])
-        return data
-    except Exception:
-        return {"finished": [], "in_progress": {}, "failed": []}
-
-
-def save_progress(path: Path, data: dict[str, Any]):
-    tmp = path.with_suffix(".json.tmp")
-    with _progress_guard(path):
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, path)  # 原子写
-
-
-def mark_finished(path: Path, spec: RepoSpec, result: dict[str, Any]):
-    data = load_progress(path)
-    key = f"{spec.owner}/{spec.repo}"
-    data["finished"] = [x for x in data.get("finished", []) if x.get("key") != key]
-    data["finished"].append({"key": key, **result})
-    save_progress(path, data)
+# 断点续传：progress.json（含已完任务记录）
+#
+# G67-14：实现已拆到 `gcm/db/progress_file.py`（与 SQLite 无关的纯文件持久化，
+# 混在 DB 模块里会撑破 800 行上限，还逼出「模块中部 import」的变通写法）。
+# 这里**原样再导出**，engine / worker / UI / 测试的既有导入路径全部不变。
+from .progress_file import (  # noqa: E402,F401  （再导出，保持既有导入路径不变）
+    _progress_guard,
+    load_progress,
+    mark_finished,
+    save_progress,
+)

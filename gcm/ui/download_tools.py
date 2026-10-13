@@ -46,15 +46,24 @@ def save_log(owner, fmt_dt) -> None:
 
 
 def export_report(owner, fmt_dt) -> None:
-    """G07-3 导出 CSV/Markdown 报表（弹文件选择；CSV 为 Excel 友好 utf-8-sig）。"""
+    """G07-3 导出报表（弹文件选择；CSV 为 Excel 友好 utf-8-sig）。
+
+    G67-5：新增 **xlsx** 选项 —— `reports.export_xlsx` 早已实现（含自动列宽/冻结首行），
+    但 UI 只给 CSV/Markdown → 用户实际不可达（changelog 却宣称已落地）。
+    xlsx 依赖可选包 openpyxl，缺失时 `export_xlsx` 会抛带安装提示的 RuntimeError，
+    这里按普通错误路径展示（不静默降级）。
+    """
     path, _ = _fd().getSaveFileName(
         owner, tr("导出报表"), str(owner.data_dir / "sync_report.csv"),
-        "CSV (*.csv);;Markdown (*.md)")
+        "CSV (*.csv);;Excel (*.xlsx);;Markdown (*.md)")
     if not path:
         return
     try:
-        from ..reports import export_csv, export_markdown
-        if str(path).lower().endswith(".md"):
+        from ..reports import export_csv, export_markdown, export_xlsx
+        lower = str(path).lower()
+        if lower.endswith(".xlsx"):
+            n = export_xlsx(owner.db, path)
+        elif lower.endswith(".md"):
             n = export_markdown(owner.db, path)
         else:
             n = export_csv(owner.db, path)

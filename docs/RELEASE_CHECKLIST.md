@@ -2,6 +2,10 @@
 
 > G29-7 · 每个版本发布前按顺序走查，全部勾选才能宣称发布闭环。
 > 证据登记同步回 `计划书/验收清单.md`。
+>
+> ⚠️ **不要只看本清单的正向勾选**：`计划书/下一步改进指南.md` §21 记录了「CI 长期红灯」
+> 这一未闭环阻塞项（2026-10-13 实测发现）。**不得**以本清单全勾为据宣称「CI 绿」——
+> 发布前请实际打开 GitHub Actions 看三平台结论。
 
 ## 0. 前置
 
@@ -9,7 +13,9 @@
 - [ ] `python -m coverage run --source=gcm scripts/ci_run_fast.py && python -m coverage report`
       → 快集 TOTAL ≥ 门禁（Windows 81 / POSIX 80，见 `.github/workflows/ci.yml` 的 `COVERAGE_FAIL_UNDER`）
 - [ ] `git status` 无未登记改动；无硬编码密钥；`gcm/util/redact.py` 回归通过（token 三态打码）
-- [ ] `python -m unittest tests.test_g66_patch` → 19 项守卫绿（版本单源 / 打包版本同步 / 子进程解码 / 时间炸弹 / HTTP 回环）
+- [ ] `python -m unittest tests.test_g66_patch` → 守卫全绿（版本单源 / 打包版本同步 / 子进程解码 /
+      时间炸弹 / HTTP 回环 / 钩子注入 / 跨线程 Qt 控件；**用例数不写死在本文件**，避免文档漂移）
+- [ ] `python -m unittest tests.test_g67_docs_freshness` → 文档版本与路径新鲜度守卫绿
 
 ## 1. 版本与打包
 

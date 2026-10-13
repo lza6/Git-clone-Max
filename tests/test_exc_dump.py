@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -40,9 +41,22 @@ class TestExcDump(unittest.TestCase):
         self.assertIn("ZeroDivisionError", log_path.read_text(encoding="utf-8"))
 
     def test_install_idempotent(self):
+        """重复安装不得重复包装 sys.excepthook（否则异常会被记录多次）。
+
+        `install_excepthook` 用模块级 `_installed["hook"]` 做一次性闸门，
+        必须临时复位该闸门，否则本测试只会在「别的测试已装过」时才通过
+        （顺序依赖，且第二次调用本就是 no-op，断言不到任何东西）。
+        """
+        from gcm.app import exc_dump
         d = Path(tempfile.mkdtemp())
-        install_excepthook(log_path=d / "error.log")
-        install_excepthook(log_path=d / "error.log")  # 重复安装不应崩
+        with mock.patch.dict(exc_dump._installed, {"hook": False}), \
+             mock.patch.object(sys, "excepthook", sys.__excepthook__):
+            install_excepthook(log_path=d / "error.log")
+            first = sys.excepthook
+            self.assertTrue(exc_dump._installed["hook"], "首次安装应置位闸门")
+            # 二次安装：闸门已置位 → 必须原样返回，不得替换 hook
+            install_excepthook(log_path=d / "error.log")
+            self.assertIs(sys.excepthook, first, "重复安装不得再次包装")
 
 
 if __name__ == "__main__":

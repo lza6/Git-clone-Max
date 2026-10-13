@@ -71,10 +71,14 @@ class TestTrayProgressCounts(unittest.TestCase):
         self.assertTrue(c._tip_timer.isActive())
 
     def test_no_tray_object_safe(self):
+        # 无系统托盘对象（tray=None）→ 必须静默降级，且计数照常累加
         c = TrayController(parent=None)
         c.tray = None
-        c.update_counts(running_delta=2)  # 不得抛异常
-        c._flush_tooltip()
+        c.update_counts(reset=True)
+        c.update_counts(running_delta=2)   # 不得抛异常
+        c._flush_tooltip()                 # 不得抛异常（早返回）
+        self.assertEqual(c._counts["running"], 2, "无托盘也应记账")
+        self.assertIsNone(c.tray)
 
 
 if __name__ == "__main__":

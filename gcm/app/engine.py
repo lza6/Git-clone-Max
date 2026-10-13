@@ -137,6 +137,10 @@ class SyncEngine(QObject):
         self.flags: dict[int, CancelFlag] = {}
         self.specs: dict[int, RepoSpec] = {}
         self._host_by_key: dict[str, str] = {}
+        # G67-3：上一批的启动上下文快照（host_by_key/fetch_depth/unshallow/mirror）。
+        # 与 `_host_by_key` **分开保存** —— 后者会在 `_release_tasks()` 里被清空，
+        # 而重投定时器可能在该批结束之后才到期，那时正是需要这份快照的时候。
+        self._last_batch_ctx: dict[str, object] = {}
         self._depth = 0
         self._unshallow = False
         self._pending = 0
@@ -265,8 +269,18 @@ class SyncEngine(QObject):
             except Exception:
                 continue
         if specs:
+            # G67-3 修复：重投必须复用**上一批的上下文**，否则：
+            #   ① 不带 host_by_key → 非 GitHub 仓库落库成 host="github.com"，
+            #      污染 UNIQUE(owner,repo,host)（同一仓库被当成两个）；
+            #   ② 丢掉 fetch_depth/mirror → 重投出来的仓库克隆语义与用户所选不符
+            #      （选「浅克隆」却按满量拉，或反之）。
+            ctx = self._last_batch_ctx or {}
             try:
-                self.launch(specs, check_existing=False, clear_input=False)
+                self.launch(specs, check_existing=False, clear_input=False,
+                            host_by_key=dict(ctx.get("host_by_key") or {}),
+                            fetch_depth=int(ctx.get("fetch_depth") or 0),
+                            unshallow=bool(ctx.get("unshallow")),
+                            mirror=bool(ctx.get("mirror")))
             except Exception:
                 pass
 
@@ -665,6 +679,13 @@ class SyncEngine(QObject):
         self._host_by_key = host_by_key or {}
         self._depth = fetch_depth
         self._unshallow = unshallow
+        # G67-3：快照本批上下文供 `_retry_tick` 重投复用（见 `_last_batch_ctx` 注释）
+        self._last_batch_ctx = {
+            "host_by_key": dict(host_by_key or {}),
+            "fetch_depth": fetch_depth,
+            "unshallow": unshallow,
+            "mirror": bool(mirror),
+        }
         self._pending = len(unique_specs)
         # G52-6：重置批次计数（近批失败率窗口）
         self._batch_total = len(unique_specs)
@@ -845,11 +866,26 @@ class SyncEngine(QObject):
         return self._pending == 0
 
     def shutdown(self):
-        """取消剩余任务并落盘，供窗口关闭时调用。"""
+        """取消剩余任务并落盘，供窗口关闭时调用。
+
+        G67-22 修复：原实现 `cancel_all()` 之后**不等 worker 收敛**就清空
+        `in_progress` 并落盘 —— 但在跑的 worker 稍后仍会回调 `_on_result`
+        （取消也是终态），把 `in_progress[key]` 又写回去。于是
+        「shutdown 后 in_progress 已清空」只在**快**机器上偶然成立；
+        实测同一测试套件里，`_on_result` 晚到一步就会把上一个引擎的 key 留在
+        `progress.json` 里，下次启动误报「上次未完成」。改为先等收敛
+        （复用 `drain` 的等待语义）再清空 + 落盘。
+        """
         self.cancel_all()
         # G52-1：窗口关闭停止重试轮询，避免残留定时器
         try:
             self._retry_timer.stop()
+        except Exception:
+            pass
+        # G67-22：先等在跑 worker 到达终态（drain 内部会泵事件、等 pool），
+        # 否则清空后会被晚到的 `_on_result` 重新写回。
+        try:
+            self.drain(4000)
         except Exception:
             pass
         # G22-2：用户主动优雅退出时清空待完成清单，避免下次启动误报「上次未完成」
@@ -865,3 +901,4 @@ class SyncEngine(QObject):
             self.pool.clear()
         except Exception:
             pass
+

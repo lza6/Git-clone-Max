@@ -62,7 +62,8 @@ def _fetch_rows(db, filters: dict | None = None) -> list[dict]:
             params.append(status)
 
         sql = """
-            SELECT r.owner, r.repo, r.host,
+            SELECT r.owner, r.repo, r.host, r.local_path, r.folder_name,
+                   r.last_sync_at,
                    h.status, h.action, h.message, h.commits,
                    h.duration_ms, h.started_at
             FROM repos r
@@ -77,14 +78,20 @@ def _fetch_rows(db, filters: dict | None = None) -> list[dict]:
         for r in rows:
             d = dict(r)
             if d.get("started_at") is None:
-                # 无历史仓库只保留一行
-                if (d["owner"], d["repo"], None) in seen:
+                # 无历史仓库只保留一行。
+                # （`d["started_at"] is None` 时三元组恒为 (owner, repo, None)，
+                #  直接查/加即可 —— 原写法把同一常量重复拼了三次。）
+                key = (d["owner"], d["repo"], None)
+                if key in seen:
                     continue
-                seen.add((d["owner"], d["repo"], None))
+                seen.add(key)
             out.append(d)
         return out
-    except Exception:
-        return []
+    except Exception as e:
+        # G67-18 修复：原为 `except Exception: return []` —— 任何 SQL/类型错误都被吞成
+        # 「空结果」，导出会「成功」但报表 0 行，用户完全无法察觉。
+        # 静默失败比崩溃更难排查，改为上抛（UI 会走 `导出失败` 分支显示原因）。
+        raise RuntimeError(f"报表数据查询失败：{e}") from e
 
 
 def export_csv(db, out_path: str | Path, filters: dict | None = None) -> int:
@@ -133,11 +140,20 @@ def export_markdown(db, out_path: str | Path, filters: dict | None = None) -> in
 # --------------------------------------------------------------- G47-3 xlsx 导出
 EXPORT_COLUMNS_XLSX = ("owner", "repo", "host", "local_path", "folder_name",
                        "last_sync_at", "status", "action", "commits", "message")
+# G67-17：xlsx 含 local_path（CSV/Markdown 按 G44-1 不含）。报表是要**发给别人**的文件，
+# 而 local_path 里带本机用户名（`C:\Users\<用户名>\...`）→ 属隐私泄漏。
+# 不删列（定位仓库仍需它），改为出站前把 home 目录打码成 `~`。
+_XLSX_HOME_REDACT_COLS = ("local_path",)
 
 
 def export_xlsx(db, out_path: str | Path, filters: dict | None = None) -> int:
-    """G47-3 导出 xlsx（openpyxl 可选依赖）：自动列宽 + 冻结首行 + 汇总行。
+    """G47-3 导出 xlsx（openpyxl 可选依赖）：自动列宽 + 冻结首行。
 
+    G67-19：原 docstring 写「+ 汇总行」，但代码里从来没有汇总行 —— 属虚假描述，
+    已更正（CSV/Markdown 亦无汇总行，三者保持一致）。
+
+    G67-17：`local_path` 出站前打码 home 目录（报表是要发给别人的文件，
+    原始路径含本机用户名）。
     openpyxl 缺失时抛带安装提示的 RuntimeError（不静默降级，避免用户误以为已导出）。
     """
     try:
@@ -147,6 +163,8 @@ def export_xlsx(db, out_path: str | Path, filters: dict | None = None) -> int:
         raise RuntimeError(
             "导出 xlsx 需要 openpyxl，请先执行：pip install openpyxl（或用 CSV/Markdown）"
         ) from e
+    from .util.redact import redact_home
+
     rows = _fetch_rows(db, filters)
     wb = Workbook()
     ws = wb.active
@@ -154,13 +172,18 @@ def export_xlsx(db, out_path: str | Path, filters: dict | None = None) -> int:
     headers = list(EXPORT_COLUMNS_XLSX)
     ws.append(headers)
     for r in rows:
-        ws.append([r.get(k, "") for k in headers])
+        ws.append([
+            redact_home(str(r.get(k, ""))) if k in _XLSX_HOME_REDACT_COLS
+            else r.get(k, "")
+            for k in headers
+        ])
     # 自动列宽（中文按 2 倍估算）+ 冻结首行
+    # G67-5 修复：原写法 `max(... for r in rows if rows)` 在**空结果集**时抛
+    # ValueError（max 空序列）—— 导出「0 行」是完全合法的场景，不该崩。
+    # 改用 `default=` 提供空集兜底宽度。
     for col_idx, name in enumerate(headers, start=1):
-        width = max(10, min(40, max(
-            (len(str(name)) * 2 + 2),
-            max((len(str(r.get(name, ""))) * 2 + 2) for r in rows if rows) or 12,
-        )))
+        body_w = max((len(str(r.get(name, ""))) * 2 + 2 for r in rows), default=12)
+        width = max(10, min(40, max(len(str(name)) * 2 + 2, body_w)))
         ws.column_dimensions[get_column_letter(col_idx)].width = width
     ws.freeze_panes = "A2"
     out = Path(out_path)

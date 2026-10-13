@@ -95,9 +95,17 @@ class TestProgressDetailSlot(unittest.TestCase):
         self.assertIn("7.03 MiB/s", bar.format())
 
     def test_progress_detail_ignores_bad_index(self):
-        # 越界 index 不应抛异常
+        # 越界 index 不应抛异常，且**不得**污染批缓冲（缓冲在 progress_panel 上）
+        panel = self._w.progress_panel
+        self._w._prepare_table(1)          # 建 1 行，使 index 0 合法
+        panel._detail_batch.clear()
         self._w._on_worker_progress_detail(99, "1 MiB/s")
         self._w._on_worker_progress_detail(-1, "1 MiB/s")
+        self.assertEqual(panel._detail_batch, {},
+                         "越界 index 不得进入批缓冲")
+        # 合法 index 仍正常入批（证明未被越界调用破坏）
+        self._w._on_worker_progress_detail(0, "2 MiB/s")
+        self.assertEqual(panel._detail_batch, {0: "2 MiB/s"})
 
     def test_progress_detail_initial_format_percent(self):
         spec = RepoSpec("owner", "repo", "https://github.com/owner/repo.git")

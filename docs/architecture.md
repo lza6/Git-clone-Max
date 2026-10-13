@@ -1,6 +1,7 @@
-# Git-clone-Max 架构资产（v9.0.0，2026-09-26 逆向生成）
+# Git-clone-Max 架构资产（2026-09-26 逆向生成；2026-10-13 校准）
 
-> 依据真实代码（gcm/ 59 个源文件）整理，供交接/审计/后续迭代定位。
+> 依据真实代码（`gcm/` 下 60 个 `.py` 源文件）整理，供交接/审计/后续迭代定位。
+> **版本号不写死在本文件**：唯一事实源是 `gcm/__init__.py` 的 `__version__`（当前值见该文件）。
 
 ## 1. 分层架构
 
@@ -15,14 +16,16 @@
 │  main_window.py（主窗/编排）→ settings_panel/manage_panel/    │
 │  progress_table/statistics_dialog/failure_panel/help_dialog  │
 │  onboarding/tray/theme(qss_validate)/download_tools          │
+│  log_buffer/manage_model/repo_detail_dialog/local_repos_dialog│
+│  scan_worker                                                 │
 └──────────────┬──────────────────────────────────────────┘
                ▼
 ┌─────────────────────────────────────────────────────────┐
 │ 应用层（无 UI 依赖，可独立测试）                                │
 │  engine.py（统一调度）→ worker.py（并行克隆）                    │
 │  retry_queue/watchdog/runtime_sessions/progress_gc           │
-│  alerts/sched_reports/rate_limit/host_probe/diag/gh_api      │
-│  updater/notify/clipboard_watcher/scanner/proxy/token        │
+│  alerts/sched_reports/host_probe/diag/gh_api                 │
+│  updater/notify/im_notify/clipboard_watcher/scanner/proxy/token│
 │  single_instance/autostart/exc_dump/applog/system_theme      │
 └──────────────┬──────────────────────────────────────────┘
                ▼
@@ -36,6 +39,7 @@
 │ 数据层（SQLite + JSON 文件）                                   │
 │  repo_db.py（WAL/BEGIN IMMEDIATE/迁移链）→ settings.py（加密     │
 │  落盘）/history.py/lists.py/runtime_sessions/progress_gc        │
+│  gcm/util/filelock.py（跨进程写锁）                             │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -62,15 +66,18 @@
 | ADR-003 | 凭据加密落盘（DPAPI/Keyring/XOR 降级）+ redact 全出口打码 |
 | ADR-004 | 生态 agent 化：CLI --json 契约 + MCP 只读 + HTTP API 默认只读（显式 enable 才可写） |
 
-## 4. 模块规模基线（2026-09-26）
+## 4. 模块规模基线（2026-10-13 用 `wc -l` 实测）
 
 | 模块 | 行数 | 职责 |
 |------|------|------|
-| main_window.py | 1580+ | 主窗编排（G45-6 拆分后收敛） |
-| service.py | 1020 | Git 操作全链路 |
-| engine.py | 864 | 调度/并发/进度/重试/会话 |
-| repo_db.py | 806 | SQLite 数据层 |
-| settings_panel.py | 828+ | 设置 UI（含 G53 数据洞察组） |
+| `gcm/ui/main_window.py` | 1742 | 主窗编排（G45-6 拆分后仍偏大，新 UI 逻辑落独立模块） |
+| `gcm/git/service.py` | 1170 | Git 操作全链路 |
+| `gcm/ui/settings_panel.py` | 899 | 设置 UI（含 G53 数据洞察组） |
+| `gcm/app/engine.py` | 888 | 调度/并发/进度/重试/会话 |
+| `gcm/db/repo_db.py` | 802 | SQLite 数据层 |
+
+> 上表 5 个文件**均超出项目硬上限 800 行**（见 `CLAUDE.md` §3），已登记在
+> `计划书/下一步改进指南.md` 的 G67-14。行数会随迭代漂移 —— 引用前请现测。
 
 ## 5. 可观测性现状
 

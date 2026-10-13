@@ -1,6 +1,7 @@
-# SOP：Git-clone-Max 交付与维护标准（v8.2.0）
+# SOP：Git-clone-Max 交付与维护标准（2026-10-13 校准）
 
 > 面向独立开发者/交接方：本文档定义「改代码→验证→发布→维护」的标准流程，避免重复踩坑、保证交付质量。
+> 版本号不写死在本文件：唯一事实源是 `gcm/__init__.py` 的 `__version__`。
 
 ## 1. 本地环境
 
@@ -37,7 +38,7 @@
 | CLI HTTP API | python -m gcm --cli --serve 127.0.0.1:8765 |
 | MCP server | GCM_MCP_ENABLE=1 python -m gcm.mcp_server |
 | 变异测试 | python scripts/run_mutation_smoke.py |
-| 内存基线 | python scripts/mem_baseline.py --repos 100 |
+| 内存基线 | python scripts/mem_baseline.py --batch 100 |
 | 健康检查 | python scripts/health_check.py --json dist/health_check.json |
 
 ## 4. 发布流程（vX.Y.Z）
@@ -46,7 +47,8 @@
 2. 提交 + 推送 main（git push origin main）
 3. `git tag vX.Y.Z && git push origin vX.Y.Z`
 4. 构建：`python -m PyInstaller --noconfirm --clean Git-clone-Max.spec`
-5. zip：`Compress-Archive dist\Git-clone-Max-portable → dist\Git-clone-Max-portable.zip`
+5. zip：`python scripts/build_portable_zip.py`（**别手工 Compress-Archive** —— 手工产物会悄悄过期；
+   发布前用 `--check` 校验 zip 不比来源目录旧）
 6. 健康检查：`python scripts/health_check.py --json dist/health_check.json`（版本一致/启动 OK）
 7. Release：`gh release create vX.Y.Z --title ... --notes ...` + `gh release upload`
 8. 验证：`gh release view vX.Y.Z --json assets`（digest 与本地产物 sha256 一致）
@@ -67,4 +69,4 @@
 - [ ] docs/agent-contract.md 与 CLI/MCP/HTTP 实际行为一致
 - [ ] workflow_status.md 登记最新里程碑
 - [ ] 无未提交工作区改动（git status 干净）
-- [ ] 全量测试绿 + 覆盖 ≥84 + ruff 0 + mypy 0
+- [ ] 全量测试绿 + 快集覆盖率达门禁（Windows 81 / POSIX 80，见 `docs/RELEASE_CHECKLIST.md`）+ ruff 0 + mypy 0

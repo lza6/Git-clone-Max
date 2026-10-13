@@ -55,9 +55,22 @@ class ReportScheduler:
             self.run_once()
 
     def stop(self) -> None:
+        """停止定时报表线程。
+
+        G67-8 修复：同 `alerts.AlertScanner.stop` —— join 超时后不得清引用，
+        否则旧线程仍在跑而 `start()` 会再起一个（重复导出/重复写文件）。
+        """
         if self._stop_evt:
             self._stop_evt.set()
-        if self._thread:
-            self._thread.join(timeout=2)
+        th = self._thread
+        if th is not None:
+            th.join(timeout=2)
+            if th.is_alive():
+                try:
+                    from .applog import warn as _warn
+                    _warn("定时报表线程未在 2s 内退出，已保留引用以避免重复起线程")
+                except Exception:
+                    pass
+                return
         self._thread = None
         self._stop_evt = None

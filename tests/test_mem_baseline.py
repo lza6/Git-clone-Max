@@ -59,9 +59,13 @@ class TestMemBaselineHelpers(unittest.TestCase):
     def test_json_utf8(self):
         with tempfile.TemporaryDirectory() as td:
             p = pathlib.Path(td) / "b.json"
-            self.mem.save_baseline(p, {"peak_bytes": 1})
+            self.mem.save_baseline(p, {"peak_bytes": 1, "note": "中文备注"})
+            # 真实契约：UTF-8 可读回、非 ASCII 不被转义、内容可 round-trip
             raw = p.read_text(encoding="utf-8")
-            json.loads(raw)
+            self.assertIn("中文备注", raw, "ensure_ascii=False 应保留原字符")
+            self.assertNotIn("\\u4e2d", raw, "不得转义为 \\uXXXX")
+            self.assertEqual(json.loads(raw), {"peak_bytes": 1, "note": "中文备注"})
+            self.assertEqual(self.mem.load_baseline(p)["note"], "中文备注")
 
 
 if __name__ == "__main__":

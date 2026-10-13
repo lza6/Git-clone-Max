@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -70,6 +71,10 @@ class MainWindow(QMainWindow):
     notify_sent = pyqtSignal(str)
     # 网络诊断结束（标题, 正文）—— 由 GUI 线程弹 QMessageBox
     diag_finished = pyqtSignal(str, str)
+    # 手动检查更新结束（has_new, ver, url, err）—— 网络请求在工作线程，弹窗回 GUI 线程
+    update_checked = pyqtSignal(bool, str, str, str)
+    # G67-9：工作线程日志桥（time, LogLevel, text）—— 线程内只 emit，槽回 GUI 线程
+    _log_line = pyqtSignal(str, object, str)
 
     def __init__(self, data_dir: str | Path, db: Database | None = None,
                  settings: SettingsStore | None = None,
@@ -103,6 +108,7 @@ class MainWindow(QMainWindow):
             force_ipv4=bool(getattr(self.settings, "force_ipv4", False)),  # G38-6
             lfs_enabled=bool(getattr(self.settings, "lfs_enabled", False)),  # G48-2
             post_clone_hook=str(getattr(self.settings, "post_clone_hook", "")),  # G48-5
+            ssh_key=str(getattr(self.settings, "ssh_key_path", "")),  # G48-3/G67-16 接线
         )
         self.engine.line.connect(self._on_engine_line)
         self.engine.progress.connect(self._on_worker_progress)
@@ -142,6 +148,9 @@ class MainWindow(QMainWindow):
         self.archive_finished.connect(self._on_archive_finished)
         self.notify_sent.connect(self._on_notify_sent)
         self.diag_finished.connect(self._on_diag_finished)
+        self.update_checked.connect(self._on_update_checked)
+        # G67-9：工作线程日志桥 → GUI 线程写模型/视图（跨线程 emit 自动 QueuedConnection）
+        self._log_line.connect(self._emit_log)
 
         # G05-1 应用持久化主题（默认 deep）+ G10-1 字号缩放
         from ..ui import theme as _th
@@ -675,12 +684,28 @@ class MainWindow(QMainWindow):
         """统一日志入口：入模型 + 节流批量渲染（高频 git 输出不阻塞主线程）。
 
         G33-8 拆分：批量渲染逻辑委托 LogBuffer（log_buffer.py）。
+
+        G67-9 线程约定（**必须遵守**）：
+        - `log`（QAbstractItemModel）与 `log_count`（QLabel）都是 GUI 对象，
+          只在 GUI 线程触碰。
+        - 工作线程**不得**直接调本方法 —— 会命中 `TestNoCrossThreadWidgetAccess`
+          的 AST 守卫。工作线程请调 `emit_log_from_worker()`。
+        - 本方法内部不再做线程判断：调用点已由守卫强制分岔，运行时检查是多余的
+          复杂度（且 if 判断本身会让 AST 守卫看不懂而误放行）。
         """
         self._ensure_log_buffer()
         self.log.append(time, level, text)
         # 节流：把待渲染条目并入批量，由 LogBuffer 定时器统一 flush
         from .theme import LogEvent as _LE
         self._log_buffer.append(_LE(time, level, text))
+
+    def emit_log_from_worker(self, time: str, level: LogLevel, text: str) -> None:
+        """G67-9：**供工作线程调用**的日志入口（唯一被允许的跨线程日志方式）。
+
+        只 `emit` 信号，不触碰任何控件；`_log_line` 连到 `_emit_log`，Qt 自动
+        判定为 QueuedConnection → 槽在 GUI 线程执行。
+        """
+        self._log_line.emit(time, level, text)
 
     def _flush_log_batch(self):
         """兼容入口：刷日志缓冲（历史测试/closeEvent 引用）。"""
@@ -749,6 +774,14 @@ class MainWindow(QMainWindow):
     def _save_auth_header_type(self, *args, **kwargs):
         """G58-5 转发 settings_panel.py（行为零变化）。"""
         return self.settings_panel._save_auth_header_type(*args, **kwargs)
+
+    def _save_ssh_key(self, *args, **kwargs):
+        """G67-16 转发 settings_panel.py（G48-3 SSH key 接线）。"""
+        return self.settings_panel._save_ssh_key(*args, **kwargs)
+
+    def _pick_ssh_key(self, *args, **kwargs):
+        """G67-16 转发 settings_panel.py（浏览选择私钥）。"""
+        return self.settings_panel._pick_ssh_key(*args, **kwargs)
 
     def _save_precheck(self, checked):
         """G38-3 保存远端可达性预检开关。"""
@@ -853,10 +886,36 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------ 更新检查
     def check_update_now(self):
+        """手动检查更新：网络请求放工作线程，结果经 `update_checked` 回 GUI 线程弹窗。
+
+        G67-9：原实现在按钮回调里**同步**跑 `check_latest()`，而它内部失败时会
+        `time.sleep(2)` 重试一次 —— 点击后界面最长冻结 2s+（弱网/被墙时更久）。
+        现在与 G67-2 的 archive/notify/diag 同款：worker 只发信号，不碰任何控件。
+        """
+        if getattr(self, "_update_checking", False):
+            return  # 防连点：worker 未回前不重复发起
+        self._update_checking = True
         try:
-            from .. import __version__
-            from ..app.updater import check_latest
-            has_new, ver, url, err = check_latest()
+            self.statusBar().showMessage("正在检查更新…", 3000)
+        except Exception:
+            pass
+
+        def _worker():
+            try:
+                from ..app.updater import check_latest
+                has_new, ver, url, err = check_latest()
+            except Exception as e:  # noqa: BLE001 —— 兜底成 err，绝不从线程抛出
+                has_new, ver, url, err = False, "", "", f"检查更新失败：{e}"
+            # 跨线程 emit：Qt 自动走 QueuedConnection，槽在 GUI 线程执行
+            self.update_checked.emit(bool(has_new), str(ver or ""), str(url or ""), str(err or ""))
+
+        threading.Thread(target=_worker, daemon=True, name="gcm-update-check").start()
+
+    def _on_update_checked(self, has_new: bool, ver: str, url: str, err: str):
+        """`update_checked` 槽（GUI 线程）：负责弹窗与打开下载页。"""
+        self._update_checking = False
+        from .. import __version__
+        try:
             if err:
                 QMessageBox.information(self, "检查更新", err)
             elif has_new:
@@ -869,38 +928,49 @@ class MainWindow(QMainWindow):
                     webbrowser.open(url)
             else:
                 QMessageBox.information(self, "检查更新", f"已是最新版本（{__version__}）")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             QMessageBox.information(self, "检查更新", f"检查更新失败：{e}")
 
     def _check_update_silent(self):
         """启动后静默后台检查更新：不阻塞、不弹窗；有新版本写日志 + 托盘提示。
 
-        与手动按钮 check_update_now 共用 update_latest，只是结果呈现方式不同
+        与手动按钮 check_update_now 共用 check_latest，只是结果呈现方式不同
         （err 静默返回；发现新版只记日志，需要时用户可去设置页手动操作）。
+
+        G67-9：整段（含 HTTP 与其内部 2s 重试）挪进 daemon 线程 —— 原先由
+        `QTimer.singleShot(2500, ...)` 在 **GUI 线程**调用，启动后 2.5s 的主线程
+        同步网络请求会让窗口短暂无响应（弱网时更明显）。线程内不做任何 Qt 调用，
+        仅经 `_emit_log`（已具备线程安全约定）与 tray 通知回主线程。
         """
-        try:
-            from .. import __version__
-            from ..app.updater import check_latest
-            has_new, ver, url, err = check_latest()
-            if err:
-                # G21-3：静默检查失败必须留痕（结构化 app.log），不再无痕
-                try:
-                    from ..app.applog import warn as _log_warn
-                    _log_warn(f"check_update|silent_fail|{err}",
-                              self.data_dir / "app.log")
-                except Exception:
-                    pass
-                return
-            if has_new:
-                self._emit_log(_fmt_dt(), LogLevel.INFO,
-                               f"发现新版本 {ver}（当前 {__version__}），可到设置页检查更新。")
-                try:
-                    if getattr(self, "tray", None) is not None:
-                        self.tray.notify("Git-clone-Max 有新版本", f"最新 {ver}，可下载更新")
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        def _worker():
+            try:
+                from .. import __version__
+                from ..app.updater import check_latest
+                has_new, ver, url, err = check_latest()
+                if err:
+                    # G21-3：静默检查失败必须留痕（结构化 app.log），不再无痕
+                    try:
+                        from ..app.applog import warn as _log_warn
+                        _log_warn(f"check_update|silent_fail|{err}",
+                                  self.data_dir / "app.log")
+                    except Exception:
+                        pass
+                    return
+                if has_new:
+                    # G67-9：**工作线程内只能走 emit 桥**，不得直接调 _emit_log
+                    self.emit_log_from_worker(
+                        _fmt_dt(), LogLevel.INFO,
+                        f"发现新版本 {ver}（当前 {__version__}），可到设置页检查更新。")
+                    try:
+                        if getattr(self, "tray", None) is not None:
+                            self.tray.notify("Git-clone-Max 有新版本",
+                                             f"最新 {ver}，可下载更新")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        threading.Thread(target=_worker, daemon=True, name="gcm-update-silent").start()
 
     def save_log(self):
         from .download_tools import save_log as _sl
@@ -974,6 +1044,18 @@ class MainWindow(QMainWindow):
         """
         from PyQt6.QtWidgets import QMessageBox
         QMessageBox.information(self, title, body)
+
+    def _apply_ssh_key_to_engine(self):
+        """G67-16：把设置里的 SSH 私钥路径立即同步到运行中的引擎。
+
+        G48-3 原先只有 service 侧支持（`GIT_SSH_COMMAND`），settings/UI 都没有该字段，
+        整条链路恒为空 → 功能实际不可达。接线后改设置需即时生效，不必重启。
+        """
+        key = str(getattr(self.settings, "ssh_key_path", "") or "").strip()
+        eng = getattr(self, "engine", None)
+        if eng is not None:
+            eng._ssh_key_global = key  # noqa: SLF001 - 引擎按批次读该字段
+        return key
 
     def _on_adapt_changed(self, n: int, text: str):
         """G48-1：并发自适应状态栏提示。"""
@@ -1233,6 +1315,7 @@ class MainWindow(QMainWindow):
             force_ipv4=bool(getattr(self.settings, "force_ipv4", False)),  # G38-6
             lfs_enabled=bool(getattr(self.settings, "lfs_enabled", False)),  # G48-2
             post_clone_hook=str(getattr(self.settings, "post_clone_hook", "")),  # G48-5
+            ssh_key=str(getattr(self.settings, "ssh_key_path", "")),  # G48-3/G67-16 接线
             mirror=bool(mirror),  # G48-6
             # G52-1 失败自动重试队列（设置开启且网络类错误才入队）
             retry_queue_path=self.data_dir / "retry_queue.json",

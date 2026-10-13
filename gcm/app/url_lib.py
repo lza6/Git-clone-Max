@@ -59,22 +59,20 @@ def _extra_hosts() -> tuple[str, ...]:
 
     惰性读取 settings.json（避免 url_lib 依赖 settings 造成循环导入）；
     读取失败/无配置 → 空元组（行为与旧版一致）。
+
+    G67-4 修复：数据目录解析**必须复用 `__main__.get_data_dir()`**。
+    原实现自行拼 `frozen → <exe>/data : <源码>/data`，**漏掉了默认的
+    `%APPDATA%/Git-clone-Max`** —— 而设置页恰恰把 settings.json 写到那里。
+    结果：干净安装（无 `data/` 目录）下自建 GitLab／公司内网地址
+    **永远提示「没有可用的 GitHub 地址」**，白名单功能等于不存在。
+    开发者本机因仓库里恰好有 `data/` 而看不到 —— 这正是它长期潜伏的原因。
     """
     try:
         import json
-        import os
-        from pathlib import Path
-        # 数据目录：与 __main__.get_data_dir 同一规则（GCM_DATA_DIR 覆盖优先）
-        env = os.environ.get("GCM_DATA_DIR")
-        if env:
-            base = Path(env)
-        else:
-            import sys as _sys
-            if getattr(_sys, "frozen", False):
-                base = Path(_sys.executable).parent / "data"
-            else:
-                base = Path(__file__).resolve().parent.parent.parent / "data"
-        p = base / "settings.json"
+
+        # 与 __main__.get_data_dir 同一规则（GCM_DATA_DIR / portable / APPDATA 全覆盖）
+        from ..__main__ import get_data_dir
+        p = get_data_dir() / "settings.json"
         if not p.exists():
             return ()
         raw = json.loads(p.read_text(encoding="utf-8"))

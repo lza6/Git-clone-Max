@@ -1060,7 +1060,17 @@ class GitService:
         # 由 merge --ff-only 失败路径统一处理（rebase/回滚），此处不再重复检测。
 
         # 4) merge --ff-only（或 rebase）
-        if commits_new > 0:
+        if commits_new < 0:
+            # G67-11：无法判定落后数（远端 ref 不可解析等）→ **不得宣称「已是最新」**。
+            # 仍尝试一次 ff 合并（若确实落后则推进；若真是最新则无副作用），
+            # 但如实告知状态待复核，避免「长期落后却永远绿灯」。
+            self._emit(
+                f"{spec.display} 无法判定远端新提交数（{remote_ref} 不可解析），"
+                "已尝试同步，请复核远端分支是否被重命名/删除", "warn")
+            run_git_ui(["git", "merge", "--ff-only", "@{upstream}"],
+                       str(repo_dir), self.on_line, cancelled=self.cancelled, timeout=120,
+                       progress_detail=getattr(self, "send_progress_detail", None))
+        elif commits_new > 0:
             self._emit(f"{spec.display} 有 {commits_new} 个新提交，执行快进合并 …")
             rc, _ = run_git_ui(
                 ["git", "merge", "--ff-only", "@{upstream}"],
@@ -1095,10 +1105,20 @@ class GitService:
         after = self._head_sha(repo_dir)
         res.head_sha = after
         res.remote_sha = self._remote_head(repo_dir)
-        res.commits = commits_new
+        res.commits = max(0, commits_new)
         res.status = SyncStatus.SUCCESS
-        res.action = SyncAction.UPDATED if commits_new > 0 else SyncAction.FETCHED
-        res.message = f"更新完成（+{commits_new} 提交）" if commits_new > 0 else "已是最新"
+        if commits_new > 0:
+            res.action = SyncAction.UPDATED
+            res.message = f"更新完成（+{commits_new} 提交）"
+        elif commits_new == 0:
+            res.action = SyncAction.FETCHED
+            res.message = "已是最新"
+        else:
+            # G67-11：无法判定时不能宣称「已是最新」——用 FETCHED + 明确措辞。
+            advanced = after != before
+            res.action = SyncAction.UPDATED if advanced else SyncAction.FETCHED
+            res.message = ("已同步（提交数无法判定，HEAD 已推进）" if advanced
+                           else "已获取远端（提交数无法判定，请复核远端分支）")
         return res
 
     # ------------------------------------------------------------ helpers
@@ -1124,15 +1144,27 @@ class GitService:
             return ""
 
     def _count_new_commits(self, repo_dir: Path, remote_ref: str) -> int:
+        """HEAD 落后 remote_ref 的提交数。
+
+        G67-11 修复：**失败返回 -1（无法判定）而不是 0**。
+        原实现把「rev-list 失败」与「确实是最新」混为一谈 —— 远端分支被重命名/删除、
+        `origin/<branch>` 不存在、git 报错等情况下都返回 0，于是调用方走
+        「已是最新」SUCCESS 分支，**仓库长期落后却永远显示绿色**。
+        返回 -1 让调用方能把「未知」与「零」区分开，不再假报成功。
+        """
         try:
             r = subprocess.run(
                 ["git", "-C", str(repo_dir), "rev-list", "--count", f"HEAD..{remote_ref}"],
                 capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=30,
             )
-            return int(r.stdout.strip()) if r.returncode == 0 else 0
+            if r.returncode == 0:
+                txt = (r.stdout or "").strip()
+                if txt.isdigit():
+                    return int(txt)
+            return -1
         except Exception:
-            return 0
+            return -1
 
     def current_branch(self, repo_dir: Path) -> str:
         return self._local_branch(repo_dir)

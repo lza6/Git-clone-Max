@@ -41,14 +41,35 @@ def probe_github_api() -> dict:
         return {"name": "GitHub API", "status": "err", "detail": f"请求失败：{str(e)[:80]}"}
 
 
-def run_diagnostics(proxy: str = "", host: str = "github.com") -> list[dict]:
-    """串行探测（每项自带超时，不会死锁）。"""
+def run_diagnostics(proxy: str = "", host: str = "github.com",
+                    extra_hosts: tuple[str, ...] | list[str] = ()) -> list[dict]:
+    """串行探测（每项自带超时，不会死锁）。
+
+    G67-20 接线：`extra_hosts` 为设置里配置的**常用主机白名单**。原实现只探
+    github.com，而 `gcm/app/host_probe.py`（G58-4 的 host 探测 + 认证头建议）
+    **零生产引用** —— 用户加了自建 GitLab 却解析不了时，没有任何入口能诊断它。
+    这里把自建主机也纳入探测，host_probe 才真正可达。
+    最多取前 3 个（每项最长 ~15s，避免诊断按钮长时间无响应）。
+    """
     reports = [probe_git()]
     ok, detail = _tcp_ok(host, 443)
     reports.append({"name": f"{host}:443", "status": "ok" if ok else "err", "detail": detail})
     reports.append(probe_github_api())
     if proxy:
         reports.append({"name": "代理", "status": "warn", "detail": f"已配置代理（{proxy[:40]}）"})
+    # 自建主机探测（G58-4 host_probe 接线）
+    seen: set[str] = set()
+    for h in list(extra_hosts)[:3]:
+        name = str(h or "").strip().lower()
+        if not name or name in seen or name == host:
+            continue
+        seen.add(name)
+        try:
+            from .host_probe import probe_host
+            reports.extend(probe_host(name, f"https://{name}/"))
+        except Exception as e:  # noqa: BLE001 - 探测失败不应影响整体诊断
+            reports.append({"name": f"{name} 探测", "status": "warn",
+                            "detail": f"主机探测不可用：{e}"})
     return reports
 
 

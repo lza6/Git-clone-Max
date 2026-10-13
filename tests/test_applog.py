@@ -45,9 +45,26 @@ class TestApplog(unittest.TestCase):
         applog.info("with-file", p)
         self.assertIn("with-file", p.read_text(encoding="utf-8"))
 
+    def test_missing_dir_is_autocreated(self):
+        # 目录不存在 → get_logger 会 mkdir(parents=True) 自动建目录并正常落盘
+        target = self.tmp / "no_dir_zzz" / "x" / "a.log"
+        applog.info("auto-created", target)
+        self.assertTrue(target.exists())
+        self.assertIn("auto-created", target.read_text(encoding="utf-8"))
+
     def test_bad_path_silent(self):
-        # 非法路径不抛异常（静默降级）
-        applog.info("should-not-crash", self.tmp / "no_dir_zzz" / "x" / "a.log")
+        # 真正不可创建的路径（父级是个文件）→ 静默降级，不抛异常
+        blocker = self.tmp / "afile"
+        blocker.write_text("x", encoding="utf-8")
+        target = blocker / "sub" / "a.log"
+        applog.info("should-not-crash", target)  # 不应抛异常
+        self.assertFalse(target.exists())
+        # 降级后 logger 仍可用（不因坏路径把单例写坏）
+        self.assertIsNotNone(applog.get_logger())
+        # 好路径仍能正常落盘（证明降级未污染后续调用）
+        good = self.tmp / "good.log"
+        applog.info("after-bad-path", good)
+        self.assertIn("after-bad-path", good.read_text(encoding="utf-8"))
 
     def test_singleton(self):
         a = applog.get_logger()

@@ -1,7 +1,7 @@
 # Git-clone-Max
 
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
-> **当前版本：v9.1.5**（G66 终局审计补丁 + G67 安全/线程安全补丁 + 独立复验修复：契约版本单源 · 中文 Windows 解码崩溃 · 时间炸弹用例 · HTTP API 强制回环 · 钩子命令注入（含引号绕过）· 跨线程 Qt 控件信号化 · 浅仓增量更新修复）
+> **当前版本：v9.2.0**（G67 终局收尾：接线 host_probe 诊断 / xlsx 导出入口 / 全局 SSH key；删除零引用的 rate_limit；重投复用批次上下文；常用主机白名单改读真实数据目录；检查更新移出 GUI 线程；settings/progress 跨进程写锁；无法判定落后数不再假报「已是最新」）
 > **v5.0：多平台直克隆** — GitLab / Gitee / Codeberg / Bitbucket / 自建主机（HTTPS/SSH/短格式/子组）同样支持。
 > 克隆目录一律 `host__作者__仓库`（GitHub 为 `作者__仓库`），本地改动永不覆盖。
 
@@ -117,7 +117,7 @@ Git-clone-Max/
 ├── scripts/                 启动器（bat/ps1）+ E2E 冒烟 / 健康检查 / 发布 / 基准 / CI 快集
 ├── docs/                    架构 / ADR / agent 契约 / SOP / 性能可观测性 / Release 清单
 ├── 计划书/                  迭代总纲 / 验收清单 / 任务日志 / DB 结构 / 项目规格
-├── tests/                   单元 + 集成 + 真实 git E2E（113 个测试文件）
+├── tests/                   单元 + 集成 + 真实 git E2E（116 个测试文件）
 ├── requirements.txt         运行时依赖（PyQt6）
 └── pyproject.toml           项目元数据 + ruff / mypy 配置
 ```
@@ -175,7 +175,8 @@ GCM_MCP_ENABLE=1 python -m gcm.mcp_server --allow-export
 ```
 
 > **安全边界（G66-6 起强制）**：本地 HTTP API 无鉴权，因此 `--serve` 只接受回环地址
-> （`127.0.0.1` / `localhost` / `::1`）；传 `0.0.0.0` 等非回环地址会被拒绝并以退出码 2 退出。
+> （`127.0.0.1` / `127.0.0.2` / `127.0.0.3` / `localhost`）；传 `0.0.0.0` 等非回环地址会被拒绝并以退出码 2 退出。
+> IPv6（含 `::1`）暂不支持（本地 API 基于 AF_INET），传入会明确报错而非崩溃。
 > 需要远程访问请自行用带鉴权的反向代理转发到回环地址。
 
 仓库内 `skills/` 提供 5 个开箱技能包（克隆 / 归档 / 报表 / 诊断 / 续跑），每个含 `SKILL.md` + 可执行脚本，供 Claude Code / Codex 直接调用。
@@ -190,7 +191,8 @@ python -m unittest discover -s tests -v
 
 ## 覆盖率与回归（G45-1）
 
-本地复现 CI 门禁（**快集**约 7.5 分钟；全量约 15 分钟。Windows 需把 git 加入 PATH，自定义安装如 scoop 请先发行 `$env:PATH="<git 安装目录>\cmd;$env:PATH"`）：
+本地复现 CI 门禁（**快集** = CI 主矩阵实际入口；**全量** = 快集 + 慢集〔真实 git E2E〕。
+耗时基线见 `docs/慢测定位.md`，这里不写死分钟数以免漂移。Windows 需把 git 加入 PATH，自定义安装如 scoop 请先发行 `$env:PATH="<git 安装目录>\cmd;$env:PATH"`）：
 
 ```powershell
 $env:QT_QPA_PLATFORM = "offscreen"

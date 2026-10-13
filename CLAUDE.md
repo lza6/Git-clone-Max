@@ -59,10 +59,10 @@ QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m coverage run --source=gc
 
 ```
 gcm/app/     纯逻辑：引擎/URL 解析/诊断/告警/通知/看门狗/限流/探测（不 import Qt Widgets 以外的 UI）
-gcm/db/      持久化：repo_db / settings / lists / history / runtime_sessions / progress_gc
+gcm/db/      持久化：repo_db / settings / lists / history / runtime_sessions / progress_gc / progress_file
 gcm/git/     git 子进程封装：service.py（同步）、archive.py（归档）
 gcm/ui/      PyQt6 界面：main_window 及其拆分面板；**新 UI 逻辑优先独立模块**，别再塞 main_window.py
-gcm/util/    跨层工具：redact（脱敏）
+gcm/util/    跨层工具：redact（脱敏）/ filelock（跨进程文件锁）
 gcm/i18n/    文案字典 zh/en（key 即中文，缺失回退中文）
 skills/      agent 技能包（SKILL.md + scripts/），每个必须自包含验收步骤
 scripts/     运维/CI/基准脚本（不参与打包）
@@ -121,15 +121,27 @@ docs/        工程/产品/契约文档
 | 本地 HTTP API 只允许回环绑定（服务无鉴权） | `tests/test_g66_patch.py::TestHttpApiBindHardening` |
 | MCP / HTTP API **默认只读**，写操作需显式放行（`GCM_MCP_ENABLE=1` + `--allow-export` / `--allow-mutate`） | `tests/test_g56_mcp*.py` / `test_g56_api_write.py` |
 | 付费外部 API 默认不真实调用（图像/视频/支付等）；用 mock 覆盖 success/timeout/rate_limit/malformed/retry_exhausted | 全局规则 + 现有 mock 惯例 |
+| 写盘互斥必须**跨进程**：`settings.json` / `progress.json` 的读-改-写要走 `gcm/util/filelock.cross_process_lock`（线程锁只保护单进程，多实例会丢更新） | `tests/test_g67_closure.py::TestCrossProcessLock`（含无锁对照组反向自检） |
+| 数据目录解析**唯一来源**是 `gcm.__main__.get_data_dir()`，任何模块不得自行拼 `<exe>/data` 或 `<源码>/data`（否则安装版读不到 `%APPDATA%` 里的配置） | `tests/test_g67_closure.py::TestExtraHostsUsesRealDataDir` |
+| 同步网络 I/O（检查更新、诊断、归档、通知）**不得在 GUI 线程**执行：worker 只 `emit`，槽回主线程 | `tests/test_g66_patch.py::TestNoCrossThreadWidgetAccess` / `TestUpdateCheckThreading` |
+| 自动重投（retry）必须复用上一批的 `host_by_key` / `fetch_depth` / `mirror`（否则污染 `host` 列、克隆语义错位） | `tests/test_g67_closure.py::TestRetryReusesBatchContext` |
 | 绝不为了绿灯削弱断言、跳过测试、mock 生产逻辑 | 代码审查 |
 
 ---
 
 ## 6. 已知边界（诚实清单，别当 bug 修）
 
-- **`main_window.py` 仍偏大**（约 1900 行）：新 UI 逻辑请落独立模块（既有 `failure_panel` / `onboarding` / `progress_table` / `settings_panel` 先例）。
+- **代码规模现状（G67-14，实测 ≠ 目标）**：`main_window.py` ~1740、`service.py` ~1170、
+  `settings_panel.py` ~899、`engine.py` ~888 行仍超 800 行软上限（`repo_db.py` 已拆到 ~741）；
+  33 个函数超 50 行（最大 `settings_panel.build_settings_ui` ~430 行）。
+  **这是已登记的、被显式接受的技术债，不是缺陷**：`main_window.py` 的体量在
+  「拆分收益 < 回归风险」区间，一次大规模 UI 重排会危及发布稳定性。
+  约束是**增量的**：新增 UI 逻辑一律落独立模块（既有 `failure_panel` / `onboarding` /
+  `progress_table` / `settings_panel` / `main_window_tasks` 先例），不得再往
+  `main_window.py` 里塞。下次动这几块时**顺手**把所在函数拆小。
 - **覆盖率门禁是快集口径**（Windows 81 / POSIX 80），不是全量口径；POSIX 低 1 个点源于 `msvcrt`/`schtasks`/`winreg` 分支不可执行。
 - **`gcm/ui/*.py` 有 E501 豁免**（纯中文文案长行，East-Asian 宽度计数）；`gcm/i18n/*.py` 为生成文件同样豁免。
 - **CI 只在 Linux 上跑慢集**：Windows 特有的编码/路径问题必须本机验证，别只信 CI 绿灯。
 - **打包构建未纳入 CI**：`Git-clone-Max.spec` 的版本常量由静态测试守卫，但 exe 需人工重建验证。
 - **技能包脚本用 `sys.executable` 找解释器**：在打包 exe 环境下需改为打包路径（见 `skills/G56-1-验收说明.md` 遗留风险）。
+- **`report.export_xlsx` 依赖可选包 openpyxl**：缺失时抛带安装提示的 RuntimeError（不静默降级）。

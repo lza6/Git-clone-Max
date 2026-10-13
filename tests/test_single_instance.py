@@ -43,6 +43,23 @@ class TestSingleInstance(unittest.TestCase):
         lock = SingleInstanceLock(d / "app.lock")
         _free_lock(lock)  # 不应抛异常（幂等清理）
         _free_lock(lock)
+        # 未获锁时清理是 no-op：不得凭空写出 pid 哨兵，也不得持有句柄
+        self.assertFalse(lock.pid_file.exists(), "未获锁不应留下 pid 哨兵")
+        self.assertIsNone(lock.lock_fh)
+
+    def test_cleanup_releases_held_lock(self):
+        """已获锁 → _free_lock 必须真正释放：句柄清空、哨兵删除、可再获锁。"""
+        d = Path(tempfile.mkdtemp())
+        lock = SingleInstanceLock(d / "app.lock")
+        self.assertTrue(lock.try_acquire())
+        self.assertTrue(lock.pid_file.exists(), "获锁后应有 pid 哨兵")
+        _free_lock(lock)
+        self.assertIsNone(lock.lock_fh, "句柄应被关闭并清空")
+        self.assertFalse(lock.pid_file.exists(), "哨兵应被删除")
+        # 释放后可重新获锁（证明 OS 锁确实放开了）
+        again = SingleInstanceLock(d / "app.lock")
+        self.assertTrue(again.try_acquire(), "释放后应能再获锁")
+        again.release()
 
 
 if __name__ == "__main__":

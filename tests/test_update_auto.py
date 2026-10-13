@@ -85,6 +85,19 @@ class TestCheckUpdateSilent(unittest.TestCase):
         def notify(self, title, message):
             self.notified.append((title, message))
 
+    def _pump(self, predicate, timeout: float = 5.0):
+        """泵事件循环直到 predicate() 为真（G67-9 静默检查改为工作线程后必需）。"""
+        import time as _t
+        app = QApplication.instance()
+        deadline = _t.monotonic() + timeout
+        while _t.monotonic() < deadline:
+            app.processEvents()
+            if predicate():
+                return True
+            _t.sleep(0.01)
+        app.processEvents()
+        return predicate()
+
     def test_check_update_silent_new(self):
         w = self.w
         tray = self.FakeTray()
@@ -92,10 +105,15 @@ class TestCheckUpdateSilent(unittest.TestCase):
         with mock.patch("gcm.app.updater.check_latest",
                         return_value=(True, "v9.9.9", "https://example.com/x", "")):
             w._check_update_silent()
-        self.assertEqual(len(tray.notified), 1)
+            # G67-9：整段（含 HTTP 与内部 2s 重试）已挪进 daemon 线程，
+            # 托盘提示与日志经信号/既有线程约定回主线程 → 必须泵事件等待。
+            self.assertTrue(self._pump(lambda: len(tray.notified) == 1),
+                            "新版本托盘提示应在工作线程完成后到达")
+            # 日志走 `_log_line` 信号桥 → GUI 线程写模型；再等一拍让它落到模型里
+            self.assertTrue(self._pump(
+                lambda: "发现新版本 v9.9.9" in w.log.to_plain_text()),
+                f"新版本应写入日志模型；实际日志：{w.log.to_plain_text()[-200:]!r}")
         self.assertIn("v9.9.9", tray.notified[0][1])
-        log_text = w.log.to_plain_text()
-        self.assertIn("发现新版本 v9.9.9", log_text)
 
     def test_check_update_silent_error(self):
         w = self.w
@@ -104,8 +122,12 @@ class TestCheckUpdateSilent(unittest.TestCase):
         with mock.patch("gcm.app.updater.check_latest",
                         return_value=(False, "", "", "检查更新失败：boom")):
             w._check_update_silent()
+            self.assertFalse(self._pump(lambda: bool(tray.notified), timeout=1.0),
+                             "出错时不得托盘提示")
         self.assertEqual(tray.notified, [])
         self.assertNotIn("发现新版本", w.log.to_plain_text())
+        # G21-3：静默检查失败必须留痕（结构化 app.log）
+        self.assertTrue((w.data_dir / "app.log").exists(), "静默失败应写 app.log 留痕")
 
     def test_check_update_silent_no_new(self):
         w = self.w
@@ -114,8 +136,11 @@ class TestCheckUpdateSilent(unittest.TestCase):
         with mock.patch("gcm.app.updater.check_latest",
                         return_value=(False, "", "", "")):
             w._check_update_silent()
-        self.assertEqual(tray.notified, [])
-        self.assertNotIn("发现新版本", w.log.to_plain_text())
+            self.assertFalse(self._pump(lambda: bool(tray.notified), timeout=1.0),
+                             "无新版本不得托盘提示")
+            self.assertFalse(self._pump(
+                lambda: "发现新版本" in w.log.to_plain_text(), timeout=1.0),
+                "无新版本不得写「发现新版本」日志")
 
 
 class TestCheckUpdateNow(unittest.TestCase):
@@ -148,9 +173,25 @@ class TestCheckUpdateNow(unittest.TestCase):
             m_msg.StandardButton.Yes = QMessageBox.StandardButton.Yes
             m_msg.StandardButton.No = QMessageBox.StandardButton.No
             self.w.check_update_now()
-        m_check.assert_called_once()
-        m_msg.information.assert_called_once()
+            # G67-9：网络请求已挪到工作线程，结果经 `update_checked` 信号回 GUI 线程。
+            # 原测试假设「函数返回时弹窗已发生」，那是同步实现的产物，现在必须泵事件。
+            self._pump(lambda: m_msg.information.called)
+        m_check.assert_called()
+        self.assertTrue(m_msg.information.called, "错误提示应经信号回到 GUI 线程后弹出")
         self.assertIn("网络错误", m_msg.information.call_args.args[2])
+
+    def _pump(self, predicate, timeout: float = 5.0):
+        """泵事件循环直到 predicate() 为真（G67-9 异步桥必需）。"""
+        import time as _t
+        app = QApplication.instance()
+        deadline = _t.monotonic() + timeout
+        while _t.monotonic() < deadline:
+            app.processEvents()
+            if predicate():
+                return True
+            _t.sleep(0.01)
+        app.processEvents()
+        return predicate()
 
 
 if __name__ == "__main__":

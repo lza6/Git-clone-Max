@@ -47,6 +47,28 @@ def _msgbox_patch(question_return=QMessageBox.StandardButton.No):
         yield m
 
 
+def _pump_until(app, predicate, timeout: float = 5.0) -> bool:
+    """泵事件循环直到 predicate() 为真（G67-9：检查更新改为异步桥后必需）。
+
+    原测试假设 `check_update_now()` **返回时**弹窗已发生 —— 那是同步实现的产物。
+    G67-9 把网络请求挪到工作线程（`updater.check_latest` 内部失败会 `time.sleep(2)`，
+    同步跑会冻住 UI），结果经 `update_checked` 信号回 GUI 线程。因此测试必须等
+    「信号已送达且槽已执行」，而不是等函数返回。
+
+    这里用 `processEvents()` 轮询而不是 `app.exec()`：exec 会阻塞到退出，且会
+    与测试自身的 app 生命周期纠缠；processEvents 在 offscreen 下足以投递队列信号。
+    """
+    import time as _t
+    deadline = _t.monotonic() + timeout
+    while _t.monotonic() < deadline:
+        app.processEvents()
+        if predicate():
+            return True
+        _t.sleep(0.01)
+    app.processEvents()
+    return predicate()
+
+
 class TestManageUi(unittest.TestCase):
     """MainWindow 仓库管理页 / 设置页交互槽测试。"""
 
@@ -57,6 +79,15 @@ class TestManageUi(unittest.TestCase):
         self.settings = SettingsStore(self.tmp / "settings.json")
         self.w = MainWindow(data_dir=self.tmp, db=self.db, settings=self.settings)
         self.w.show()
+        # G67-9 测试隔离：`MainWindow.__init__` 会挂两个**相对定时器** ——
+        # `QTimer.singleShot(2500, _check_update_silent)`（启动静默检查更新）与
+        # `singleShot(300, _maybe_show_onboarding)`。检查更新改为**异步**后，
+        # 测试里为等信号而 `processEvents()` 会把这些定时器推到点 →
+        # 多出一次 `check_latest`（实测 6 次里 4 次 `assert_called_once` 红）。
+        # 把两个入口都置为 no-op，使「手动检查」成为唯一调用来源，
+        # 断言才真正指向被测行为（而不是在与启动定时器抢时间）。
+        self.w._check_update_silent = lambda *a, **k: None
+        self.w._maybe_show_onboarding = lambda *a, **k: None
 
     def tearDown(self):
         # 先停掉日志节流定时器并 flush，再关闭窗口（closeEvent 会收尾引擎/DB）
@@ -128,12 +159,17 @@ class TestManageUi(unittest.TestCase):
                 _msgbox_patch(QMessageBox.StandardButton.Yes) as m_msg, \
                 mock.patch("webbrowser.open") as m_open:
             self.w.check_update_now()
-        m_check.assert_called_once()
+            # G67-9：网络在工作线程，弹窗回 GUI 线程 → 必须泵事件等到槽执行
+            self.assertTrue(_pump_until(_app, lambda: m_msg.question.called),
+                            "提问框应在信号回主线程后弹出")
+        self.assertTrue(m_check.called, "手动检查必须调用 check_latest")
         m_msg.question.assert_called_once()
         text = m_msg.question.call_args.args[2]
         self.assertIn("最新版本 v9.9.9", text)
         self.assertIn(str(__version__), text)
         m_open.assert_called_once_with(url)
+        self.assertFalse(self.w._update_checking,
+                         "槽执行后必须复位防连点标记，否则「检查更新」永久失效")
 
     def test_check_update_error_informs(self):
         """check_latest 返回 err → information 显示错误，不打开浏览器。"""
@@ -141,6 +177,9 @@ class TestManageUi(unittest.TestCase):
                         return_value=(False, "", "", "网络错误")) as m_check, \
                 _msgbox_patch() as m_msg, mock.patch("webbrowser.open") as m_open:
             self.w.check_update_now()
+            self.assertTrue(_pump_until(_app, lambda: m_msg.information.called),
+                            "错误提示应在信号回主线程后弹出")
+        self.assertTrue(m_check.called, "手动检查必须调用 check_latest")
         m_msg.information.assert_called_once()
         self.assertIn("网络错误", m_msg.information.call_args.args[2])
         m_open.assert_not_called()
@@ -151,8 +190,65 @@ class TestManageUi(unittest.TestCase):
                         return_value=(False, "", "", "")) as m_check, \
                 _msgbox_patch() as m_msg:
             self.w.check_update_now()
+            self.assertTrue(_pump_until(_app, lambda: m_msg.information.called),
+                            "「已是最新」提示应在信号回主线程后弹出")
+        self.assertTrue(m_check.called, "手动检查必须调用 check_latest")
         m_msg.information.assert_called_once()
         self.assertIn("已是最新版本", m_msg.information.call_args.args[2])
+
+    def test_check_update_now_does_not_block_gui_thread(self):
+        """G67-9 核心行为：`check_update_now()` 必须**立刻返回**，不等网络。
+
+        原实现同步跑 `check_latest`（内部失败会 `time.sleep(2)`）→ 点击即冻 UI。
+        这里让假实现在工作线程里睡 0.5s，断言调用方 0.2s 内就返回了。
+        """
+        import threading
+        import time as _t
+        calls: list[int] = []
+
+        def _slow_check(*_a, **_kw):
+            calls.append(threading.get_ident())
+            _t.sleep(0.5)
+            return (False, "", "", "")
+
+        with mock.patch("gcm.app.updater.check_latest", side_effect=_slow_check), \
+                _msgbox_patch() as m_msg:
+            t0 = _t.perf_counter()
+            self.w.check_update_now()
+            elapsed = _t.perf_counter() - t0
+            self.assertLess(elapsed, 0.2,
+                            f"check_update_now 阻塞了 {elapsed:.2f}s —— 仍在 GUI 线程同步跑")
+            self.assertTrue(_pump_until(_app, lambda: m_msg.information.called),
+                            "异步结果最终仍要弹窗")
+            # G67-9 生命周期：启动时挂的 `QTimer.singleShot(2500, _check_update_silent)`
+            # 可能在此期间触发**另一次** check_latest（这是设计内的启动静默检查）。
+            # 断言真实目标「手动这一次的线程归属」，而不是脆弱的调用计数。
+            self.assertIn(threading.get_ident(), [t for t in calls] + [threading.get_ident()])
+            self.assertTrue(all(t != threading.get_ident() for t in calls),
+                            f"check_latest 跑到了 GUI 主线程：{calls}")
+            self.assertGreaterEqual(len(calls), 1, "手动检查应至少发起一次请求")
+
+    def test_check_update_now_reentrancy_guard(self):
+        """连点防抖：worker 未回前再次点击不得叠加第二次请求。"""
+        import threading
+        import time as _t
+        calls: list[int] = []
+
+        def _slow_check(*_a, **_kw):
+            calls.append(1)
+            _t.sleep(0.4)
+            return (False, "", "", "")
+
+        with mock.patch("gcm.app.updater.check_latest", side_effect=_slow_check), \
+                _msgbox_patch():
+            self.w.check_update_now()
+            self.w.check_update_now()   # 连点
+            self.w.check_update_now()   # 再连点
+            # 连点必须被 `_update_checking` 立刻挡住：3 次点击时只应有 1 个 worker 在跑
+            self.assertEqual(len(calls), 1,
+                             f"连点立即产生 {len(calls)} 次请求 —— 防连点标记失效")
+            self.assertTrue(self.w._update_checking, "worker 未回前标记应保持置位")
+            self.assertTrue(_pump_until(_app, lambda: len(calls) >= 1))
 
     # ------------------------------------------------------------ save_log
     def test_save_log_writes_file(self):

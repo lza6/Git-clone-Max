@@ -12,6 +12,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QFrame,
     QGridLayout,
@@ -265,6 +266,22 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     owner.cb_auth_header.setCurrentIndex(_idx)
     owner.cb_auth_header.currentIndexChanged.connect(owner._save_auth_header_type)
     f3.addRow(tr("认证头类型："), owner.cb_auth_header)
+
+    # G67-16 指定 SSH key（G48-3 接线）：原先 service 侧已支持 GIT_SSH_COMMAND，
+    # 但 settings 里没有该字段、UI 也没有入口 → 整条链路永远为空、功能实际不可达。
+    _ssh_row = QWidget()
+    _ssh_lay = QHBoxLayout(_ssh_row)
+    _ssh_lay.setContentsMargins(0, 0, 0, 0)
+    owner.edit_ssh_key = QLineEdit(str(getattr(settings, "ssh_key_path", "") or ""))
+    owner.edit_ssh_key.setPlaceholderText(tr("留空=用系统默认；例：C:\\Users\\me\\.ssh\\id_ed25519"))
+    owner.edit_ssh_key.setToolTip(
+        tr("SSH 克隆时通过 GIT_SSH_COMMAND 指定私钥；仅对本工具发起的 git 操作生效"))
+    owner.edit_ssh_key.editingFinished.connect(owner._save_ssh_key)
+    owner.btn_ssh_key = QPushButton(tr("浏览…"))
+    owner.btn_ssh_key.clicked.connect(owner._pick_ssh_key)
+    _ssh_lay.addWidget(owner.edit_ssh_key, 1)
+    _ssh_lay.addWidget(owner.btn_ssh_key, 0)
+    f3.addRow(tr("SSH 私钥："), _ssh_row)
 
     # G38-2 镜像前缀（每行 "host=prefix"，仅 HTTPS 生效）
     owner.edit_mirror = QLineEdit(_mirror_text(settings))
@@ -638,6 +655,29 @@ class SettingsPanel(QWidget):
         self.owner.settings.custom_hosts = tuple(p for p in parts if p)
         self.owner.settings_store.save(self.owner.settings)
 
+    def _save_ssh_key(self):
+        """G67-16：保存全局 SSH 私钥路径（G48-3 接线）。
+
+        保存后**立即写回运行中的引擎**，否则要重启才生效（引擎在 _launch 时按
+        settings 重建，但用户期望改完即用）。
+        """
+        self.owner.settings.ssh_key_path = self.owner.edit_ssh_key.text().strip()
+        self.owner.settings_store.save(self.owner.settings)
+        try:
+            self.owner._apply_ssh_key_to_engine()
+        except Exception:  # noqa: BLE001 - 引擎可能尚未创建
+            pass
+
+    def _pick_ssh_key(self):
+        """G67-16：浏览选择私钥文件（失败/取消都不改动现值）。"""
+        path, _ = QFileDialog.getOpenFileName(
+            self.owner, tr("选择 SSH 私钥"), self.owner.edit_ssh_key.text() or "",
+            tr("私钥文件 (*id_* *.pem *.ppk);;所有文件 (*)"))
+        if not path:
+            return
+        self.owner.edit_ssh_key.setText(path)
+        self._save_ssh_key()
+
     def _save_auth_header_type(self, index):
         """G58-5 保存全局认证头类型（host_auth_types["*"]）。"""
         mapping = {0: "", 1: "bearer", 2: "private_token", 3: "basic"}
@@ -828,7 +868,9 @@ class SettingsPanel(QWidget):
         def _run():
             try:
                 from gcm.app.diag import grade, run_diagnostics
-                reports = run_diagnostics(proxy=str(getattr(self.owner.settings, "proxy", "") or ""))
+                reports = run_diagnostics(
+                    proxy=str(getattr(self.owner.settings, "proxy", "") or ""),
+                    extra_hosts=tuple(getattr(self.owner.settings, "custom_hosts", ()) or ()))
                 lines = [f"[{r['status']}] {r['name']}: {r['detail']}" for r in reports]
                 title = "网络诊断：" + grade(reports)
             except Exception as e:

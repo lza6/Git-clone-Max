@@ -196,18 +196,29 @@ class _DbWrap:
 
 
 def _make_sqlite_db(rows):
-    """构造真实 sqlite3 内存库（repos + sync_history 表），行结构与 reports 期望一致。"""
+    """构造真实 sqlite3 内存库（repos + sync_history 表），行结构与 reports 期望一致。
+
+    注意：这里必须与 `gcm/reports.py::_fetch_rows` 的 SELECT 列集合**保持同步** ——
+    xlsx 导出（G47-3）需要在 SELECT 里带上 `local_path` / `folder_name` /
+    `last_sync_at`，少一列就会 `no such column`，而 `_fetch_rows` 现在会把
+    数据库错误上抛（G67-18，不再吞成空结果），于是本 fixture 缺列会直接
+    把全部用例变成异常、击杀率判定失去意义。改 SELECT 时请同步改这里。
+    """
     import sqlite3
     conn = sqlite3.connect(":memory:")
-    conn.execute("CREATE TABLE repos (id INTEGER PRIMARY KEY, owner TEXT, repo TEXT, host TEXT)")
+    conn.execute("CREATE TABLE repos (id INTEGER PRIMARY KEY, owner TEXT, repo TEXT, "
+                 "host TEXT, local_path TEXT, folder_name TEXT, last_sync_at TEXT)")
     conn.execute("""CREATE TABLE sync_history (
         id INTEGER PRIMARY KEY, repo_id INTEGER,
         status TEXT, action TEXT, message TEXT, commits INTEGER,
         duration_ms TEXT, started_at TEXT)""")
     cur = conn.cursor()
     for i, r in enumerate(rows, 1):
-        cur.execute("INSERT INTO repos (id, owner, repo, host) VALUES (?,?,?,?)",
-                    (i, r["owner"], r["repo"], r["host"]))
+        cur.execute("INSERT INTO repos (id, owner, repo, host, local_path, folder_name, "
+                    "last_sync_at) VALUES (?,?,?,?,?,?,?)",
+                    (i, r["owner"], r["repo"], r["host"],
+                     r.get("local_path", ""), r.get("folder_name", ""),
+                     r.get("last_sync_at", "")))
         if r.get("started_at") is not None:
             cur.execute("""INSERT INTO sync_history
                 (id, repo_id, status, action, message, commits, duration_ms, started_at)
@@ -248,6 +259,11 @@ def _cases_fetch_rows() -> list[tuple[Any, Any]]:
         ((_make_sqlite_db(_base_rows()), {"host": "gitlab.com"}), 1),
         ((_make_sqlite_db(_base_rows()), {"end": "2026-12-31"}), 3),
         ((_make_sqlite_db(_base_rows()), {"status": "failed"}), 0),
+        # 非空 host/status 过滤：上一批用例恰好没覆盖到这两条分支，
+        # 于是 `filters.get("host") or ""` → `... and ""` 这类变异能存活。
+        # 这两条把「过滤确实生效」钉住（Mutation 击杀率是测试有效性的信号）。
+        ((_make_sqlite_db(_base_rows()), {"host": "gitlab.com", "status": "success"}), 1),
+        ((_make_sqlite_db(_base_rows()), {"host": "bitbucket.org", "status": "success"}), 0),
     ]
     return cases
 

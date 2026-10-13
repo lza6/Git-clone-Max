@@ -38,7 +38,11 @@ class TestMutator(unittest.TestCase):
         body = "def f(xs):\n    out = []\n    for x in xs:\n        out.append(x)\n    return out\n"
         muts = self.sm._mutate_single_tokens(body)
         for m in muts:
-            compile(m, "<m>", "exec")  # 不得生成 for x not in xs
+            compile(m, "<m>", "exec")  # 全部可编译
+        # 真实契约：for 的 `in` 不被变异（否则会生成 for x not in xs）
+        self.assertNotIn("not in xs", "\n".join(muts))
+        self.assertFalse(any("for x not in" in m for m in muts),
+                         "不得把 for..in 变异成 for..not in")
 
     def test_mutate_not_in(self):
         body = "def f(t):\n    return 1 if 'x' not in t else 0\n"

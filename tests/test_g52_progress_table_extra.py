@@ -74,8 +74,12 @@ class TestProgressTableExtra(unittest.TestCase):
     def test_copy_detail(self):
         from PyQt6.QtWidgets import QApplication as _A
         _A.clipboard().clear()
-        if hasattr(self.pt, "_copy_row_detail"):
-            self.pt._copy_row_detail(0)  # 行无详情 → 不崩
+        # 真实行为：把该行 message 的 toolTip/text 复制进剪贴板 + 状态栏提示
+        item = self.pt.table.item(0, 4)
+        detail = item.toolTip() or item.text()
+        self.pt._copy_row_detail(0)
+        self.assertEqual(_A.clipboard().text(), detail)
+        self.owner.statusBar().showMessage.assert_called_with("错误详情已复制")
 
     def test_open_row_dir_missing(self):
         # 目录不存在 → warning 不崩

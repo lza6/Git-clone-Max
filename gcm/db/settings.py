@@ -13,6 +13,8 @@ import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from ..util.filelock import cross_process_lock
+
 # token 加密封装：优先平台密钥环，缺失时用 DPAPI（Windows）或简单掩码。
 # 关键目标：settings.json 中 token 永不明文。
 _ENC_PREFIX = "enc:v1:"          # 加密值前缀（明示已加密）
@@ -208,6 +210,7 @@ class Settings:
     lfs_enabled: bool = False          # G48-2 Git LFS：clone/fetch 追加 -c filter.lfs.required=false
     mirror_default: bool = False       # G48-6 克隆模式第 4 项「镜像克隆(--mirror)」
     post_clone_hook: str = ""           # G48-5 克隆后钩子命令模板（%PATH% 替换为仓库路径）
+    ssh_key_path: str = ""              # G48-3/G67-16 全局 SSH 私钥路径（经 GIT_SSH_COMMAND 注入）
     first_run_done: bool = False      # G36-1 首次运行向导已完成（跳过也置 True）
     auto_update_minutes: int = 0      # G37-4 自动更新间隔（分钟，0=关；非 busy 时触发一键更新）
     font_scale: float = 1.0           # G10-1 字号缩放（0.8 ~ 1.6）
@@ -241,7 +244,13 @@ _DEFAULTS: dict = asdict(Settings())
 
 
 class SettingsStore:
-    """线程安全、原子写、损坏兜底 的 settings.json 封装。"""
+    """线程安全、原子写、损坏兜底、**跨进程互斥** 的 settings.json 封装。
+
+    G67-10：原实现只有 `threading.RLock` —— 只保护同进程。多开实例（或看门狗/
+    CLI 与服务进程并存）时两个进程的「读-改-写」会交错，后写者拿旧快照整份覆盖，
+    表现为「刚改的设置没生效」「token 偶发变回旧值」。现读写都在
+    `cross_process_lock` 临界区内完成（进程锁失败会降级并写入 app.log 留痕）。
+    """
 
     def __init__(self, path: str | Path):
         self.path = Path(path)
@@ -249,7 +258,7 @@ class SettingsStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def load(self) -> Settings:
-        with self._lock:
+        with self._lock, cross_process_lock(self.path, label="settings.json"):
             raw: dict = {}
             if self.path.exists():
                 try:
@@ -297,8 +306,12 @@ class SettingsStore:
         return {}
 
     def save(self, s: Settings) -> None:
-        """原子写 settings.json；token 加密落盘。每次保存前把当前文件备份到 .bak。"""
-        with self._lock:
+        """原子写 settings.json；token 加密落盘。每次保存前把当前文件备份到 .bak。
+
+        G67-10：整个「备份 → 写 tmp → os.replace」都在跨进程临界区内完成 ——
+        否则两个实例并发保存时，各自基于旧内容写 .bak / 覆盖主文件，仍会丢更新。
+        """
+        with self._lock, cross_process_lock(self.path, label="settings.json"):
             tmp = self.path.with_suffix(".json.tmp")
             payload = asdict(s)
             # G06-1：token 落盘前加密（绝不明文）

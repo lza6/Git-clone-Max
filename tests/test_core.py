@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -253,8 +254,18 @@ class TestRetryHelpers(unittest.TestCase):
         self.assertEqual(_retry_delays(5), (1.0, 3.0, 8.0))
 
     def test_kill_tree_noop(self):
-        # 无进程对象不抛异常即可
-        _kill_tree(None)
+        # 无进程对象（None）→ 必须静默返回，不得抛异常、不得调用 taskkill
+        with mock.patch.object(subprocess, "run") as srun:
+            _kill_tree(None)
+            srun.assert_not_called()
+        # 已退出的进程对象 → 同样直接返回（poll() 非 None）
+        proc = mock.Mock()
+        proc.poll.return_value = 0
+        proc.pid = 1234
+        with mock.patch.object(subprocess, "run") as srun:
+            _kill_tree(proc)
+            srun.assert_not_called()
+        proc.kill.assert_not_called()
 
     def test_kill_tree_terminates(self):
         """真实拉起一个 sleep 进程，_kill_tree 应能终止其整树。"""

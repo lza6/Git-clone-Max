@@ -317,10 +317,27 @@ class AlertScanner:
                 pass
 
     def stop(self) -> None:
+        """停止扫描线程。
+
+        G67-8 修复：原实现在 `join(timeout=2)` **超时后照样**把 `_thread`/`_stop_evt`
+        置 None —— 此时旧线程仍在跑（一次扫描可能超过 2s），而 `start()` 只检查
+        `self._thread is not None and is_alive()`，于是再次 `start()` 会**再起一个循环线程**
+        → 告警重复推送。现在：join 成功才清引用；未成功则保留引用（`is_alive()` 为真
+        会挡住 `start()`），并如实记录。
+        """
         if self._stop_evt:
             self._stop_evt.set()
-        if self._thread:
-            self._thread.join(timeout=2)
+        th = self._thread
+        if th is not None:
+            th.join(timeout=2)
+            if th.is_alive():
+                # 未能在 2s 内退出（扫描超时）→ 保留引用，避免 start() 再起一个
+                try:
+                    from .applog import warn as _warn
+                    _warn("告警扫描线程未在 2s 内退出，已保留引用以避免重复起线程")
+                except Exception:
+                    pass
+                return
         self._thread = None
         self._stop_evt = None
 

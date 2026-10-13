@@ -201,6 +201,7 @@ class TestPosixBranches(unittest.TestCase):
 
 class TestFreeLock(unittest.TestCase):
     def test_free_lock_idempotent_with_failures(self):
+        """release/close 双双抛错时，_free_lock 仍须完成哨兵清理且不抛异常。"""
         d = Path(tempfile.mkdtemp())
         pid = d / "app.lock.pid"
         pid.write_text("1", encoding="utf-8")
@@ -210,8 +211,18 @@ class TestFreeLock(unittest.TestCase):
         lock.release.side_effect = RuntimeError("release fail")
         lock.lock_fh = fh
         lock.pid_file = pid
-        _free_lock(lock)
-        _free_lock(lock)
+        _free_lock(lock)   # 不得抛异常（异常被吞）
+        _free_lock(lock)   # 幂等：二次同样不抛
+        # 真实副作用：释放与关闭都被尝试过，且哨兵文件最终被删除
+        lock.release.assert_called()
+        fh.close.assert_called()
+        self.assertFalse(pid.exists(), "即便 release/close 失败，哨兵仍应被删除")
+
+    def test_free_lock_tolerates_missing_attrs(self):
+        """替身缺 lock_fh/pid_file 属性时也不得抛异常（防御性清理）。"""
+        lock = mock.Mock(spec=["release"])  # 只有 release
+        _free_lock(lock)  # 不应抛异常
+        lock.release.assert_called()
 
     def test_free_lock_happy_path(self):
         d = Path(tempfile.mkdtemp())
