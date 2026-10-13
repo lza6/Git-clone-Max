@@ -174,18 +174,18 @@
   <p class="sub">先重建事实基础，而不是相信文档。第一步是找到「权威事实源」，然后逐条去代码里核对。</p>
 
   <div class="stats">
-    <div class="stat crit"><div class="n">900→938</div><div class="l">快集用例：修复前 <code>FAILED (failures=1)</code> → 修复后 <code>OK</code></div></div>
+    <div class="stat crit"><div class="n">900→953</div><div class="l">快集用例：修复前 <code>FAILED (failures=1)</code> → 修复后 <code>OK</code></div></div>
     <div class="stat ok"><div class="n">80%→82%</div><div class="l">实测快集覆盖率（门禁 <code>81</code>）→ 门禁从红转绿</div></div>
-    <div class="stat warn"><div class="n">13</div><div class="l">共 13 个缺陷（P0×5 / P1×5 / P2×3）</div></div>
+    <div class="stat warn"><div class="n">15</div><div class="l">共 15 项发现（P0×6 / P1×5 / P2×4）</div></div>
     <div class="stat ok"><div class="n">0</div><div class="l">修复后快集日志中 <code>UnicodeDecodeError</code> 出现次数</div></div>
   </div>
 
   <div class="note ok">
     <span class="h">修复后的决定性验证</span>
     <code>coverage run --source=gcm scripts/ci_run_fast.py</code> →
-    <b>Ran 938 tests in 457.271s · OK</b>，<b>TOTAL 82%</b>（门禁 81/80），<code>ruff</code> 0 / <code>mypy</code> 0 / <code>e2e_smoke</code> PASS，
+    <b>Ran 953 tests in 380.323s · OK</b>，<b>TOTAL 82%</b>（门禁 81/80），<code>ruff</code> 0 / <code>mypy</code> 0 / <code>e2e_smoke</code> PASS，
     且日志里 <code>UnicodeDecodeError</code> 的出现次数从「反复刷屏」降到 <b>0</b>。
-    用例数从 900 涨到 938 正是新增守卫的 38 项（含 G66-13 的 3 项控制台编码守卫）。
+    用例数从 900 涨到 953 正是新增守卫的 53 项。
   </div>
 
   <div class="note warn">
@@ -429,6 +429,65 @@ settings_panel QMessageBox.information()  ← 在工作线程建窗 + exec（最
     <b>没有这条自检，这个守卫会是个「永远通过的空壳」</b>—— 状态看着很好，实际什么都没拦。
   </div>
 
+  <h3>第四轮：核实一个从未被核实过的前提 —— 远端 CI 到底绿不绿</h3>
+  <p class="sub">
+    前面所有轮次都在本机做验证。但项目的完成标准里写着一句「CI 三平台绿」——
+    <b>这句话从来没被核对过</b>。本轮用 GitHub REST API 去问了一下。
+  </p>
+
+  <article class="finding crit">
+    <div class="fh"><span class="id">CI-1</span><span class="ttl">远端 CI 长期红灯：81 次运行里只成功过 1 次，而文档多处宣称「三平台 CI 绿」</span><span class="sev crit">P0 阻塞</span></div>
+    <div class="fb"><dl>
+      <dt>怎么发现的</dt><dd>本机没有 <code>gh</code> CLI，但仓库是公开的，可以直接打 REST API：
+<pre><code>GET /repos/lza6/Git-clone-Max/actions/runs?per_page=100
+→ 共 81 次运行：success = 1，failure = 80
+
+按时间正序扫描状态变化：
+  2026-09-19 19:09  4429c326  success   ← 唯一一次成功
+  2026-09-25 22:19  d79f2fd8  failure   ← 此后持续失败至今</code></pre></dd>
+      <dt>影响</dt><dd>项目 DoD 明确把「CI 三平台绿」列为验收条件，<code>workflow_status.md</code> 与
+      <code>验收清单.md</code> 的多个版本（v8.1.0 → v9.1.2）据此声明「三平台 CI 绿」。
+      <b>这些声明与实际不符</b>。更实质的后果是：<b>CI 红灯意味着门禁形同虚设，回归可以静默合入</b>——
+      而本轮一开始发现的「时间炸弹用例让门禁失效」正是被这个状态掩盖的。</dd>
+      <dt>失败位置</dt><dd>三个平台的 <code>test</code> job 均失败在 <code>Run tests (offscreen, fast suite)</code>；
+      而 <code>e2e-smoke</code> / <code>fast-smoke</code> / <code>slow</code> 三个 job 实际<b>通过</b>。
+      同时观察到<b>跨平台不一致</b>：同一类失败有时落在 macOS、有时落在 ubuntu
+      （977d234 时 macOS 挂在测试步骤，e167858 时 macOS 测试通过却挂在后面的 summary 步骤）——
+      这种不稳定与「环境相关的绝对阈值断言」高度吻合。</dd>
+      <dt>已排除</dt><dd>① <b>不是依赖缺失</b>：扫描 <code>tests/**</code> 的非 CI 依赖，只有
+      <code>openpyxl</code>（已有 <code>skipTest</code> 守卫）与 <code>publish_release</code>（脚本，入 sys.path）；
+      ② <b>不是 ruff/mypy</b>：本地与 CI 都通过；③ <b>不是覆盖率门禁</b>：失败步骤早于门禁步骤。</dd>
+      <dt>主要嫌疑</dt><dd><code>scripts/ci_run_fast.py</code> 的快集黑名单遗漏了
+      <code>test_scanner_perf.py</code>（含 <code>assertLess(time.time() - t0, 30)</code> 这类
+      <b>绝对时间断言</b>）与 <code>test_mem_baseline.py</code>（绝对内存阈值）。
+      本机实测该文件整跑 <b>31.8s</b>，已贴近那个 30s 上限 —— CI runner（尤其 macOS/Windows）I/O 更慢时越界概率很高。
+      <b>在正确性门禁里放硬件相关的绝对阈值断言，本身就是缺陷。</b></dd>
+      <dt>为何没闭环</dt><dd>读 Actions 运行日志需要 admin 权限：
+      <code>GET /actions/jobs/{id}/logs</code> 返回 <code>403 Must have admin rights</code>
+      （匿名 token 与 repo-scope token 都被拒），<code>check-runs/annotations</code> 为空。
+      <b>所以拿不到失败的测试名与堆栈 —— 我不猜，把它作为阻塞项上报。</b></dd>
+      <dt>解除条件</dt><dd>任选其一：① 打开
+      <a href="https://github.com/lza6/Git-clone-Max/actions">Actions 页面</a>，
+      找任一红色 run 的 <code>test (ubuntu-latest)</code>，把 <code>Run tests</code> 步骤末尾的失败清单贴回；
+      ② 提供具备 <code>actions:read</code> / admin 的 token。拿到后：定位失败用例 →
+      若是硬件相关断言，改为相对基线或稳健阈值（<b>不削弱断言本身</b>）→ 复跑三平台 → 回填 CI 声明。</dd>
+      <dt>本轮修正的东西</dt><dd>把文档里「三平台 CI 绿」的声明逐处更正（基线快照加醒目更正块、
+      §21 新增阻塞项小节、验收清单新增「CI 状态专项核查」节），并明确写死
+      <b>不得再以 CI 绿作为交付依据</b>。同时收回了自己一处过度反应：上一批把
+      artifact 缺失改成 <code>if-no-files-found: error</code>，但那只是信息性产物，
+      为它把 job 弄红会淹没真实失败 —— 改为 <code>warn</code> + 步骤内显式打印文件大小，
+      让信号可见但不致命（<b>信号 ≠ 门禁</b>）。</dd>
+    </dl></div>
+  </article>
+
+  <div class="note warn">
+    <span class="h">这条发现的方法论意义，比它本身更重要</span>
+    「CI 绿」是项目里被引用次数最多、却<b>从未被验证过一次</b>的断言 —— 因为它不在任何
+    测试里，也没有任何自动化会去核对它。它靠的是<em>人的记忆与良好意愿</em>。
+    <b>凡是没有自动化核对的「已完成」声明，都应该被当作未验证。</b>
+    这也是本次审计反复出现的同一主题：相信代码与输出，不要相信文档里的形容词。
+  </div>
+
   <article class="finding p2">
     <div class="fh"><span class="id">G66-13</span><span class="ttl">「统一 UTF-8」本身引入了功能退化 —— schtasks 输出的是 GBK</span><span class="sev p2">P2</span></div>
     <div class="fb"><dl>
@@ -500,6 +559,7 @@ settings_panel QMessageBox.information()  ← 在工作线程建窗 + exec（最
     <tbody>
       <tr><td>新增守卫</td><td class="wrap-cell"><code>python -m unittest tests.test_g66_patch</code></td><td><span class="tag ok">Ran 19 tests · OK</span></td></tr>
       <tr><td>缺陷复现（修复前）</td><td class="wrap-cell"><code>python -m coverage run --source=gcm scripts/ci_run_fast.py</code></td><td><span class="tag no">Ran 900 tests · FAILED (failures=1) · TOTAL 80%</span>（门禁 81）</td></tr>
+      <tr><td>远端 CI 核查</td><td class="wrap-cell"><code>GET /repos/lza6/Git-clone-Max/actions/runs?per_page=100</code></td><td><span class="tag no">81 次运行 success=1 / failure=80</span>，自 2026-09-25 起持续红灯（详见 CI-1）</td></tr>
       <tr><td>修复后快集全量</td><td class="wrap-cell"><code>python -m coverage run --source=gcm scripts/ci_run_fast.py</code> + <code>coverage report</code></td><td><span class="tag ok">Ran 935 tests in 454.692s · OK · TOTAL 82%</span> · <code>UnicodeDecodeError</code> 计数 <b>0</b></td></tr>
       <tr><td>新增守卫</td><td class="wrap-cell"><code>python -m unittest tests.test_g66_patch</code></td><td><span class="tag ok">Ran 38 tests · OK</span>（11 个 TestCase 类）</td></tr>
       <tr><td>flaky 复跑验证</td><td class="wrap-cell">HTTP API 相关 6 文件批 ×4 次</td><td><span class="tag ok">40 用例连跑 4 次全 OK</span>（48/50/46/46s）</td></tr>
@@ -529,7 +589,7 @@ settings_panel QMessageBox.information()  ← 在工作线程建窗 + exec（最
 <!-- ============ 6 QUIZ ============ -->
 <section id="quiz">
   <div class="sec-head"><span class="sec-num">06</span><h2>测验：确认你真的理解了这次变更</h2></div>
-  <p class="sub">22 题，每题只有一个正确选项。<b>必须答对全部 22 题才算通过</b> —— 提交后每题会给出即时反馈与理由。可以通过「重做」反复尝试。</p>
+  <p class="sub">24 题，每题只有一个正确选项。<b>必须答对全部 24 题才算通过</b> —— 提交后每题会给出即时反馈与理由。可以通过「重做」反复尝试。</p>
 
   <form id="quizForm" novalidate>
     <div id="questions"></div>
@@ -789,6 +849,28 @@ settings_panel QMessageBox.information()  ← 在工作线程建窗 + exec（最
       ],
       a: 2,
       why: "前两项标为「待验证」（本机无 gh CLI、未重跑构建），慢集标为「部分验证」。报告里每条结论都带标签：已验证（实际运行观察）/ 静态确认（读代码）/ 合理推断 / 待验证。不要混用，也不要把静态确认说成已验证。"
+    },
+    {
+      q: "本轮核实远端 CI 后发现了什么？为什么这件事比单个 bug 更严重？",
+      opts: [
+        "CI 偶尔超时，重跑即可；与代码质量无关",
+        "最近 81 次运行 success=1 / failure=80，自 2026-09-25 起持续红灯，而文档多个版本宣称「CI 三平台绿」—— 门禁形同虚设、回归可静默合入，且「时间炸弹让门禁失效」正是被这个状态掩盖的",
+        "CI 从未配置成功过，需要重新设计 workflow",
+        "CI 失败只是覆盖率没达标，把阈值调低即可"
+      ],
+      a: 1,
+      why: "关键不在「有几个 bug」，而在「声称的保障实际不存在」。项目 DoD 把「CI 三平台绿」列为验收条件，多个版本的交付声明都引用了它 —— 但它从未被核对过一次。已知的信息：失败在三个平台的 Run tests 步骤，而 e2e-smoke / fast-smoke / slow 三个 job 是通过的。"
+    },
+    {
+      q: "我为什么没有直接去改那些「疑似导致 CI 失败」的性能断言？",
+      opts: [
+        "因为那些断言是别人写的，不该动",
+        "因为我拿不到 CI 日志（读 Actions 日志需 admin 权限，403），无法确认失败用例就是它们 —— 在未确认前改断言，等于用「让测试变绿」冒充「问题已解决」",
+        "因为性能断言本来就不该存在",
+        "因为改动 CI 需要用户单独授权"
+      ],
+      a: 1,
+      why: "这是本次审计反复出现的纪律：拿不到证据就说拿不到，把它登记成阻塞项并写清解除条件（用户贴日志 / 提供 actions:read token），而不是「先改了让红灯消失」。改断言是最容易做的事，也是最容易掩盖真问题的事。"
     },
     {
       q: "如果你要给这个项目加一个新的 agent 可调用能力，按 CLAUDE.md 的正确顺序是？",
