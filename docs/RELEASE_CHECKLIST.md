@@ -29,6 +29,8 @@
 - [ ] `计划书/下一步改进指南.md`：对应条目标记 `[✅ 已落地]`
 - [ ] `计划书/验收清单.md`：新增版本节登记（条目 | ✅ | 实现要点 | 验证命令与输出摘要 | 覆盖率证据）
 - [ ] `python -m PyInstaller Git-clone-Max.spec`（onefile 主产物）
+- [ ] `python scripts/build_portable_zip.py`（生成/刷新便携版 zip；**必须在 PyInstaller 之后跑**）
+- [ ] `python scripts/build_portable_zip.py --check` → `[OK]`（拦住「新 exe + 旧 zip」）
 - [ ] 产物 sha256 记录（本地）
 
 ## 2. 冒烟

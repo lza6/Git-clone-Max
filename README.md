@@ -131,7 +131,17 @@ python -m pip install -r requirements-build.txt
 python -m PyInstaller --noconfirm Git-clone-Max.spec
 ```
 
-产出：`dist/Git-clone-Max.exe`（onefile 主产物）+ `dist/Git-clone-Max-portable/`（onedir 便携版，发布时打包为 `dist/Git-clone-Max-portable.zip`）。
+产出：`dist/Git-clone-Max.exe`（onefile 主产物）+ `dist/Git-clone-Max-portable/`（onedir 便携版）。
+
+便携版 zip 是发布的双产物之一，用仓库脚本生成（**别手工压缩** —— 手工产物会悄悄过期）：
+
+```bash
+python scripts/build_portable_zip.py           # 生成 dist/Git-clone-Max-portable.zip
+python scripts/build_portable_zip.py --check   # 发布前校验 zip 是否比来源目录旧
+```
+
+> 实测教训：该脚本此前不存在，导致 dist 里的 exe 已重建到新版本而 zip 仍停在两周前，
+> 发布时会传出「新 exe + 旧 zip」的不一致产物。`--check` 就是为拦住这种情况。
 
 > `Git-clone-Max.spec` 的 `filevers/prodvers/FileVersion/ProductVersion` 必须与 `gcm/__init__.py` 的
 > `__version__` 一致，否则 Windows exe 属性会显示旧版本 —— 由 `tests/test_g66_patch.py::TestPackagingVersionSync` 强制校验。
