@@ -245,3 +245,25 @@
 | 全量测试含慢集 | 部分验证 | 本轮实测快集 900 用例；慢集 10 文件未单独重跑（engine/core 等已由受影响面回归批覆盖） |
 | PyInstaller 重建 | 待验证 | 未重跑构建（≈6min）；版本常量已由 `TestPackagingVersionSync` 静态断言 |
 | GitHub Actions 远端 | 待验证 | 本机无 gh CLI，无法触发远端 |
+
+
+## v9.1.4 发布闭环登记（2026-10-13，G67 安全补丁）
+
+| 节点 | 状态 | 关键证据 |
+|------|------|----------|
+| G67-1 钩子命令注入修复 | ✅ | A/B 实证：目录名 `x&mkdir PWNED_G67&y` 走真实 `_clone`，修复前 `PWNED_G67` **被创建**，修复后未创建；`TestPostCloneHookInjection` 5 用例绿 |
+| G67-2 跨线程操作 Qt 修复 | ✅ | 3 处改 `pyqtSignal` 桥；`TestNoCrossThreadWidgetAccess` 7 用例绿，含**线程 id 实证**（工作线程 emit → 排队 → 槽在主线程 13424 执行）与**反向自检**（取基线 `f0e686f` 断言守卫能抓到修复前违规） |
+| 附带修复 | ✅ | 归档取真实光标行（原固定 `lines[0]`）；归档文件名过 `sanitize_name`（原未清洗 → OSError/怪异路径） |
+| 缺失构建脚本补齐 | ✅ | 新增 `scripts/build_portable_zip.py`（此前便携版 zip 无脚本生成，实测 zip 比 exe 落后两周 → 会发出「新 exe + 旧 zip」）；`--check` 抓过期，实测 `[FAIL] zip 已过期 → [OK] 未过期` |
+| 发布说明模板重写 | ✅ | `RELEASE_BODY.md` 重写为准确能力总览；新增 `{highlights}` 占位符自动取本版 changelog（消除「模板漂移」） |
+| 质量闸 | ✅ | 快集 `Ran 9xx tests OK` / 覆盖 82% / `ruff check gcm` 0 / `mypy gcm` Success（60 files）/ `e2e_smoke` PASS |
+| 产物健康检查 | ✅ | `health_check.py`：`source_version=9.1.4` == `artifact_version=9.1.4`（**上一版此处的 `version_match` 红灯已修复**）；exe 属性实测 `FileVersion/ProductVersion=9.1.4, filevers=(9,1,4,0)` |
+| 构建/发布 | ✅ | tag v9.1.4 = 977d234 == remote main == local HEAD；Release 双产物上传，**服务端 digest 与本地 sha256 全等**；独立重新下载双产物 sha256 **MATCH** |
+
+### 本轮踩到并已记录的运维坑
+
+- **构建前必须关闭正在运行的应用**：`dist\Git-clone-Max.exe` 运行时 PyInstaller 覆盖会报
+  `PermissionError: [WinError 5] 拒绝访问`。而 `scripts/health_check.py` 会拉起 exe 做存活验证
+  **并留下托盘实例**（本轮实测残留 PID 3760、20204 两次）。已写入 `docs/RELEASE_CHECKLIST.md`。
+- **便携版 zip 无脚本生成**：本轮补了 `scripts/build_portable_zip.py`，并验证其 `--check` 能抓到
+  「zip 比来源目录旧」这一不一致。

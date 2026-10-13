@@ -381,6 +381,54 @@ https://github.com/a/b.git?access_token=ghp_leak&x=1  → 原样输出</code></p
     </dl></div>
   </article>
 
+  <h3>第三轮：用户授权后继续修的 G67 项（安全 + 线程安全）</h3>
+  <p class="sub">
+    第二轮独立审查还报了 G67 台账里的项。用户授权后我继续修了其中两条最高风险项 ——
+    一条是真实可利用的安全漏洞，一条是长期潜伏的崩溃源。两条都做了 <b>A/B 实证</b>。
+  </p>
+
+  <article class="finding crit">
+    <div class="fh"><span class="id">G67-1</span><span class="ttl">克隆后钩子的命令注入 —— 目录名可执行任意命令</span><span class="sev crit">P1 安全</span></div>
+    <div class="fb"><dl>
+      <dt>为什么这里会有注入</dt><dd>钩子命令文本是<b>用户自己写的</b>（可信），但替换进 <code>%PATH%</code> 的<b>仓库路径来自 URL</b>（不可信）。而 <code>url_lib.sanitize_name</code> 只过滤 <code>\ / : * ? " &lt; &gt; |</code> 与控制字符，<b>不过滤 <code>&amp; ; $ ( ) ^ ! %</code> 等 cmd.exe 元字符</b>。钩子又是用 <code>shell=True</code> 执行的 —— 而本工具最典型的用法正是「粘贴别人的仓库清单批量克隆」。</dd>
+      <dt>A/B 实证（走真实 <code>_clone</code> 流程）</dt><dd>目录名用 <code>x&amp;mkdir PWNED_G67&amp;y</code>（<code>&amp;</code> 是合法 Windows 文件名字符）：
+<pre><code>去掉引号（= 修复前）→ status=success，PWNED_G67 被创建   ← 注入成功
+加引号  （= 修复后）→ status=success，PWNED_G67 未创建   ← 阻断</code></pre>
+        另用 <code>&amp;echo INJECTED-CODE-EXECUTED&amp;</code> 复现：修复前该串被当成独立命令执行。</dd>
+      <dt>修复</dt><dd>替换进钩子的路径<b>强制双引号包裹</b> —— cmd.exe 在双引号内不再解释 <code>&amp; | &gt; &lt; ^</code>，所以任意目录名都无法突破；把用户已写的 <code>"%PATH%"</code> 归一化，避免出现 <code>""path""</code> 破坏既有钩子；路径含 <code>"</code> 时<b>拒绝执行</b>而非冒险拼接。抽出 <code>_build_post_clone_hook_cmd()</code> 便于单测。</dd>
+      <dt>为什么保留 <code>shell=True</code></dt><dd>这是<b>有意的取舍</b>：用户的钩子本来就可能含重定向/管道（如 <code>echo done &gt; log.txt</code>），改成 argv 数组会破坏既有配置。正确的修法是让<b>插值进命令的数据</b>安全，而不是取消用户的能力。</dd>
+      <dt>验证</dt><dd><code>TestPostCloneHookInjection</code> 5 用例绿（引号包裹 / 归一化 / 元字符不突破 / 含双引号拒绝执行 / 真实 <code>_clone</code> E2E 含 A/B 对照）。</dd>
+    </dl></div>
+  </article>
+
+  <article class="finding crit">
+    <div class="fh"><span class="id">G67-2</span><span class="ttl">工作线程直接操作 Qt 控件（3 处）—— 随机崩溃的长期来源</span><span class="sev crit">P1</span></div>
+    <div class="fb"><dl>
+      <dt>问题</dt><dd>Qt 的 QObject 有**线程亲和性**：widget 与 model 只能在 GUI 线程操作。原实现有 3 处在裸 <code>threading.Thread</code> 内直接触碰：
+<pre><code>main_window    _emit_log(...)         ← LogModel 是 QAbstractItemModel
+main_window    statusBar().showMessage()  ← QWidget
+progress_table owner.statusBar().showMessage()
+settings_panel QMessageBox.information()  ← 在工作线程建窗 + exec（最确定会炸）
+</code></pre></dd>
+      <dt>为什么难发现</dt><dd><code>__main__</code> 装了自定义 excepthook，PyQt 通常不再 <code>abort()</code>，所以更常见的表现是<b>静默错行或偶发崩溃</b>，而不是稳定复现的异常。</dd>
+      <dt>修复</dt><dd>新增 3 个 <code>pyqtSignal</code> 桥（<code>archive_finished</code> / <code>notify_sent</code> / <code>diag_finished</code>）并在 <code>_build_ui()</code> 后连接；工作线程只 <code>emit</code>，槽在 GUI 线程执行（Qt 对跨线程 emit 自动走 QueuedConnection）。<code>MainWindow</code> 类文档写明线程安全约定。</dd>
+      <dt>验证（这里我特意验证了「真的安全」而不是「不报错」）</dt><dd><code>TestNoCrossThreadWidgetAccess</code> 7 用例，其中核心一条是<b>线程 id 实证</b>：从工作线程 emit 后，
+<b>① emit 完成但事件循环未跑时槽尚未执行</b>（证明是排队而非直连）、
+<b>② 跑事件循环后槽执行一次</b>、
+<b>③ 槽执行的线程 id == 主线程 id</b>（实测 13424 == 13424）。</dd>
+      <dt>附带修复</dt><dd>同一批发现两处相邻缺陷：<code>_archive_current_line</code> 原固定取 <code>lines[0]</code>，与菜单文案「光标所在行」不符（改为按 <code>textCursor().blockNumber()</code>）；归档文件名用未清洗的 URL 末段拼接，Windows 非法字符/超长名会抛 <code>OSError</code>、<code>..</code> 还会落成怪异路径（改为过 <code>sanitize_name</code>）。</dd>
+    </dl></div>
+  </article>
+
+  <div class="note ok">
+    <span class="h">反向自检暴露了守卫自己的盲区</span>
+    我给跨线程守卫加了「取基线 commit 跑同一扫描器、断言能抓到修复前违规」的反向自检 ——
+    结果它第一次跑就<b>没抓到 <code>settings_panel</code></b>。原因是那段代码用了别名
+    <code>from PyQt6.QtWidgets import QMessageBox as _QMB</code> 再调 <code>_QMB.information()</code>，
+    按「<code>QMessageBox</code>」匹配会漏，必须按<b>最终被调用的方法名</b>匹配。
+    <b>没有这条自检，这个守卫会是个「永远通过的空壳」</b>—— 状态看着很好，实际什么都没拦。
+  </div>
+
   <article class="finding p2">
     <div class="fh"><span class="id">G66-13</span><span class="ttl">「统一 UTF-8」本身引入了功能退化 —— schtasks 输出的是 GBK</span><span class="sev p2">P2</span></div>
     <div class="fb"><dl>
