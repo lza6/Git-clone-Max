@@ -791,6 +791,58 @@ class TestNoCrossThreadWidgetAccess(unittest.TestCase):
                 win.deleteLater()
                 app.processEvents()
 
+    def test_slot_runs_on_gui_thread_when_emitted_from_worker(self):
+        """**核心断言**：工作线程 emit → 槽必须在 GUI 线程执行（不是排队错觉）。
+
+        整个 G67-2 修复都建立在「Qt 跨线程 emit 自动走 QueuedConnection」这一约定上，
+        所以必须真的验证线程 id，而不是只验证「不报错」。断言三点：
+          1. emit 后、事件循环未跑时槽**尚未执行**（证明是排队而非直连）
+          2. 跑事件循环后槽执行了
+          3. 槽执行的线程 id == 主线程 id
+        """
+        import os as _os
+        import tempfile
+        import threading
+
+        _os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PyQt6.QtCore import QTimer
+        from PyQt6.QtWidgets import QApplication
+
+        from gcm.ui.main_window import MainWindow
+
+        app = QApplication.instance() or QApplication([])
+        main_tid = threading.get_ident()
+        tmp = pathlib.Path(tempfile.mkdtemp(prefix="gcm_g67_thr_"))
+        win = None
+        try:
+            win = MainWindow(tmp)
+            seen: list[tuple[int, str, bool]] = []
+            win.archive_finished.disconnect()
+            win.archive_finished.connect(
+                lambda dest, ok, msg: seen.append((threading.get_ident(), dest, ok)))
+
+            threading.Thread(
+                target=lambda: win.archive_finished.emit("X.zip", True, "done"),
+                daemon=True).start()
+            # 给工作线程一点时间完成 emit
+            for _ in range(50):
+                if threading.active_count() >= 1:
+                    break
+                threading.Event().wait(0.02)
+            threading.Event().wait(0.15)
+
+            self.assertEqual(seen, [], "emit 后槽不应立即执行 —— 应排队到 GUI 线程")
+            QTimer.singleShot(150, app.quit)
+            app.exec()
+            self.assertEqual(len(seen), 1, "事件循环跑完后槽应已执行一次")
+            self.assertEqual(seen[0][0], main_tid,
+                             "槽必须执行在 GUI 主线程；跑到工作线程说明桥接失效")
+        finally:
+            if win is not None:
+                win.close()
+                win.deleteLater()
+                app.processEvents()
+
 
 class TestPackagingVersionSync(unittest.TestCase):
     """G66-2：打包/元数据里的版本号必须与 gcm.__version__ 一致。
