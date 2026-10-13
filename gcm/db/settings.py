@@ -312,7 +312,6 @@ class SettingsStore:
         否则两个实例并发保存时，各自基于旧内容写 .bak / 覆盖主文件，仍会丢更新。
         """
         with self._lock, cross_process_lock(self.path, label="settings.json"):
-            tmp = self.path.with_suffix(".json.tmp")
             payload = asdict(s)
             # G06-1：token 落盘前加密（绝不明文）
             if payload.get("token"):
@@ -328,6 +327,16 @@ class SettingsStore:
             # G59-7：企业 IM webhook token 同策略加密落盘
             if payload.get("alert_im_token"):
                 payload["alert_im_token"] = _encrypt_token(payload["alert_im_token"])
+            # G67-23：tmp 文件名**必须含 pid+线程 id**。
+            # 原实现固定用 `settings.json.tmp`：同进程多线程并发保存时，两个线程
+            # 会同时 open 同一个 tmp 路径 —— 后开者截断前者的内容，先完成者
+            # `os.replace` 走了 tmp，后完成者就撞上 `PermissionError [WinError 5]`
+            # （Windows 不允许替换/删除仍被占用的文件）。
+            # 实测：8 线程 x 全速 churn 时 3 次失败 —— 不丢已有数据（原子替换本身安全），
+            # 但那一次保存被**静默丢弃**（save 只抛给调用方，UI 层没兜住），
+            # 用户表现为「刚改的设置没保存」。
+            tmp = self.path.with_name(
+                f"{self.path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
             tmp.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2),
                 encoding="utf-8",

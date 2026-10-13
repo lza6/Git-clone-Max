@@ -505,5 +505,59 @@ class TestShutdownClearsInProgress(unittest.TestCase):
                          "晚到的 _on_result 把已清空的清单写回去了")
 
 
+class TestConcurrentSettingsSave(unittest.TestCase):
+    """G67-23：同进程多线程并发 save 不得失败（tmp 名必须唯一）。
+
+    原实现固定用 `settings.json.tmp`：并发保存时两个线程同时打开同一 tmp，
+    一个 `os.replace` 走了它，另一个就撞 `PermissionError [WinError 5]`
+    （Windows 不允许替换被占用的文件）。**压测实测**：8 线程全速 churn 出 3 次失败。
+    不丢已有数据（原子替换本身安全），但**那一次保存被静默丢弃**，
+    用户表现为「刚改的设置没保存」。
+    """
+
+    def test_eight_threads_churn_without_error(self):
+        import json as _json
+
+        from gcm.db.settings import SettingsStore
+
+        tmp = pathlib.Path(tempfile.mkdtemp(prefix="gcm_g6723_"))
+        store = SettingsStore(tmp / "settings.json")
+        errors: list[str] = []
+        stop = threading.Event()
+
+        def _churn(k: int):
+            try:
+                while not stop.is_set():
+                    s = store.load()
+                    s.concurrency = 1 + (k % 31)
+                    store.save(s)
+                    # 半截 JSON 会在这里抛 —— 断言「任何时刻文件都是完整可解析的」
+                    _json.loads((tmp / "settings.json").read_text(encoding="utf-8"))
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"{type(e).__name__}: {e}")
+
+        threads = [threading.Thread(target=_churn, args=(i,), daemon=True) for i in range(8)]
+        for t in threads:
+            t.start()
+        time.sleep(6)
+        stop.set()
+        for t in threads:
+            t.join(timeout=30)
+
+        self.assertEqual(errors[:5], [], f"并发保存失败 {len(errors)} 次：{errors[:5]}")
+        self.assertTrue(_json.loads((tmp / "settings.json").read_text(encoding="utf-8")) is not None)
+        self.assertEqual([p.name for p in tmp.glob("*.tmp")], [],
+                         "残留 tmp 文件 —— 覆盖路径可能仍共用固定名")
+
+    def test_tmp_name_is_unique_per_process_and_thread(self):
+        """静态守卫：tmp 名必须含 pid 与线程 id（防止有人改回固定名）。"""
+        src = (ROOT / "gcm/db/settings.py").read_text(encoding="utf-8")
+        self.assertIn("threading.get_ident()", src,
+                      "tmp 名未含线程 id —— 同进程并发保存会互相踩")
+        self.assertIn("os.getpid()", src, "tmp 名未含 pid —— 多实例并发保存会互相踩")
+        self.assertNotIn('with_suffix(".json.tmp")', src,
+                         "又回到固定 tmp 名了（G67-23 回归）")
+
+
 if __name__ == "__main__":
     unittest.main()
