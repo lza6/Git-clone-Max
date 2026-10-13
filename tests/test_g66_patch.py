@@ -383,7 +383,10 @@ class TestShallowCloneDepth(unittest.TestCase):
                            capture_output=True, check=True)
 
             # file:// 才让 git 认 --depth
-            url = "file:///" + str(bare).replace("\\", "/")
+            # G66-14 跨平台修正：不能写 `"file:///" + str(path).replace("\\","/")`
+            # —— 在 POSIX 上路径本就以 `/` 开头，会拼出 `file:////tmp/...`（四个斜杠）。
+            # as_uri() 在两个平台上都生成合法 file:// URL。
+            url = bare.as_uri()
             svc = GitService(tmp / "out", fetch_depth=1, single_branch=False)
             spec = RepoSpec(owner="x", repo="r", url_https=url, folder_name="x__r")
             self.assertIn("--depth=1", svc.build_clone_cmd(spec))
@@ -488,9 +491,25 @@ class TestConsoleToolEncoding(unittest.TestCase):
         self.assertEqual(enc, locale.getpreferredencoding(False))
 
     def test_console_encoding_is_decodable_alias(self):
+        """编码名必须真的能被 codecs 接受（防呆：拼错名字运行时才炸）。
+
+        G66-14 跨平台修正：**不能拿中文去 encode** —— CI 上 ubuntu 的
+        `locale.getpreferredencoding(False)` 可能是 `ANSI_X3.4-1968`（ASCII）
+        或 `UTF-8`，用中文编码在 ASCII locale 下会抛 UnicodeEncodeError，
+        让这条「编码名合法性」断言变成平台相关的假失败。用 ASCII 字符验即可 ——
+        我们要验的是「名字是合法 codec」，不是「能编码中文」。
+        """
         from gcm.app.autostart import _console_encoding
-        # 编码名必须真的能被 codecs 接受（防呆：拼错名字会在运行时才炸）
-        "测试".encode(_console_encoding())
+        self.assertTrue("ok".encode(_console_encoding()))
+
+    @unittest.skipIf(os.name == "nt",
+                     "非 Windows 上 _console_encoding 只作为回退路径存在")
+    def test_console_encoding_posix_fallback_usable(self):
+        """POSIX 上不应返回 Windows 专有的 `mbcs`（那是无效 codec）。"""
+        import codecs
+
+        from gcm.app.autostart import _console_encoding
+        codecs.lookup(_console_encoding())  # 非法名字会抛 LookupError
 
     @unittest.skipIf(os.name != "nt", "schtasks 仅 Windows")
     def test_schtasks_output_is_readable_chinese(self):

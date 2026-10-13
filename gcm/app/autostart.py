@@ -56,7 +56,9 @@ def _console_encoding() -> str:
             return enc
     except Exception:  # noqa: BLE001
         pass
-    return "mbcs"
+    # 回退：Windows → `mbcs`（ANSI 的稳定别名）；其它平台 → utf-8
+    # （`mbcs` 是 Windows 专有 codec，在 POSIX 上查表会 LookupError）
+    return "mbcs" if os.name == "nt" else "utf-8"
 
 
 def set_autostart(enabled: bool, minimized: bool = False) -> tuple[bool, str]:
