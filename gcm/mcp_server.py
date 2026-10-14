@@ -145,9 +145,28 @@ def _open_db(data_dir: Path):
 
 
 def _export_report(db, fmt: str, out_dir: str | None) -> str:
-    """G56-2 报表导出：写产出文件到 out_dir（默认数据目录/reports）。"""
+    r"""G56-2 报表导出：写产出文件到 out_dir（默认数据目录/reports）。
+
+    G69-9：`out_dir` **必须限定在数据目录内**。原实现直接 `Path(out_dir)` +
+    `mkdir(parents=True)` —— MCP 客户端可传任意绝对路径，在用户可写范围
+    任意位置建目录并覆盖同名文件（实测写到了系统临时目录下的深层嵌套路径）。
+    报表文件名固定，危害上限是「任意目录创建 + 覆盖同名文件」，但没有任何理由放开。
+    """
     from .reports import export_csv, export_markdown
-    base = Path(out_dir) if out_dir else db.path.parent / "reports"
+    data_root = Path(db.path).parent.resolve()
+    if out_dir:
+        cand = Path(out_dir)
+        if not cand.is_absolute():
+            cand = data_root / cand
+        try:
+            cand = cand.resolve()
+        except Exception as e:
+            raise ValueError("out_dir 无法解析") from e
+        if cand != data_root and data_root not in cand.parents:
+            raise ValueError(f"out_dir 必须位于数据目录内：{data_root}")
+        base = cand
+    else:
+        base = data_root / "reports"
     base.mkdir(parents=True, exist_ok=True)
     if fmt == "csv":
         rows = export_csv(db, base / "repos_report.csv")

@@ -266,6 +266,13 @@ class RepoDetailDialog(QDialog):
         url 为空时回退为 https 形式；仍为空则复制空字符串，不抛异常。
         """
         url = str(self.repo.get("url") or "").strip()
+        # G69-11：兜底剥凭据 —— 写库时已剥（`Database._strip_url_creds`），
+        # 但这里再兜一层：URL 还可能来自旧库（升级前写入的行）或调用方直接传来的 dict。
+        try:
+            from ..app.url_lib import strip_embedded_credentials
+            url, _had = strip_embedded_credentials(url)
+        except Exception:
+            pass
         if not url:
             # 兜底：用 owner/repo 拼 https 地址；仍缺字段时留空
             owner = str(self.repo.get("owner") or "").strip()

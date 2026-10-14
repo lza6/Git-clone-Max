@@ -305,11 +305,35 @@ class ProgressTable(QWidget):
                 return r
         return None
 
+    def _row_for(self, index: int) -> int | None:
+        """engine index → 当前真实行号（G69-5）。
+
+        **为什么要这一步**：表格默认开启排序（`setSortingEnabled(True)`），
+        而 `_add_table_row` 插入时只是临时关掉、插完立刻恢复 —— 恢复的瞬间
+        `sortItems` 就会执行，行的**视觉位置不再等于 engine index**。
+        而进度/结果槽原来直接用 `index` 当行号，于是状态被写到别的仓库那一行。
+
+        实测（真实 `start_all` 路径）：3 个仓库时行序 `[(0,zeta),(1,mid),(2,alpha)]`
+        而 engine index 是 `{0:zeta,1:alpha,2:mid}` → 引擎报 `index=1`(alpha) 成功，
+        实际写到「行1 = mid」，alpha 那行仍显示「等待中」。300 行批量时 300/300 全部错位。
+        连带后果：「重试此仓库」会去重试**另一个**仓库（`_row_engine_index` 读回错行的
+        UserRole）、暂停选中同理、状态列排序结果无意义。
+
+        先按行内藏的 engine index 反查；查不到（行尚未建出）再退回 index 本身。
+        """
+        r = self._row_for_engine_index(index)
+        if r is not None:
+            return r
+        if 0 <= index < self.table.rowCount():
+            return index
+        return None
+
     @pyqtSlot(int, str)
     def _on_worker_progress(self, index, percent):
-        if not (0 <= index < self.table.rowCount()):
+        row = self._row_for(index)
+        if row is None:
             return
-        bar = self.table.cellWidget(index, 1)
+        bar = self.table.cellWidget(row, 1)
         if isinstance(bar, QProgressBar) and percent:
             try:
                 bar.setRange(0, 100)
@@ -332,7 +356,10 @@ class ProgressTable(QWidget):
             return
         batch, self._detail_batch = self._detail_batch, {}
         for idx, text in batch.items():
-            w = self.table.cellWidget(idx, 1)
+            row = self._row_for(idx)          # G69-5：排序态下 index ≠ 行号
+            if row is None:
+                continue
+            w = self.table.cellWidget(row, 1)
             if isinstance(w, QProgressBar):
                 try:
                     w.setFormat(f"%p%  {text}")
@@ -345,7 +372,6 @@ class ProgressTable(QWidget):
         # 批 spec 更多 —— 例如用户中途清空了部分行）→ `table.item(index, col)` 返回
         # None → `st.setText` 抛 AttributeError，异常从槽里冒出（结果丢失且日志无用）。
         # 越界时按 res.spec 补建该行，保证结果仍落到表里。
-        row = index
         if index >= 0 and index >= self.table.rowCount():
             was_sorting = self.table.isSortingEnabled()
             if was_sorting:
@@ -363,8 +389,9 @@ class ProgressTable(QWidget):
             finally:
                 if was_sorting:
                     self.table.setSortingEnabled(True)
-                    # 开了排序 → 行位置已变，按行内藏的 engine index 反查真实行
-                    row = self._row_for_engine_index(index)
+        # G69-5：**始终**按行内 engine index 反查真实行 —— 排序开启时行号 ≠ index，
+        # 直接用 index 会把状态/动作/详情写到别的仓库那一行（实测 300/300 错位）。
+        row = self._row_for(index)
         if row is None or not (0 <= row < self.table.rowCount()):
             return  # 补行失败 → 无可写目标，直接放弃（异常路径已留痕）
         bar = self.table.cellWidget(row, 1)

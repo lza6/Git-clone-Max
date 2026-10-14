@@ -232,11 +232,18 @@ def parse_remote_url(url: str) -> tuple:
     if spec is not None:
         return (spec.owner, spec.repo, spec.url_https, "github.com")
     # 兜底通用正则
-    m = re.match(r"^(?:https?://|ssh://(?:git@)?|git@)([^/:]+)[:/]([^/]+)/([^/]+?)(?:\.git)?/?$",
+    m = re.match(r"^(?:https?://|ssh://(?:git@)?|git@)([^/:@]+)(?::[^/@]*)?@?([^/:]+)?[:/]([^/]+)/([^/]+?)(?:\.git)?/?$",
                  url, re.IGNORECASE)
     if m:
-        host = m.group(1).lower().replace("www.", "")
-        owner, repo = m.group(2), m.group(3)
+        # G69-11：原正则把 `user:pass@host` 整段当 host → 凭据被拼进 url_https
+        # （实测 remote `https://ghp_SECRET@github.com/o/r.git` → url_https 里带着 token，
+        #  再经扫描列表上屏 / 入库 / 元数据导出外泄）。
+        if m.group(2):
+            host = m.group(2).lower().replace("www.", "")
+            owner, repo = m.group(3), m.group(4)
+        else:
+            host = m.group(1).lower().replace("www.", "")
+            owner, repo = m.group(3), m.group(4)
         url_https = f"https://{host}/{owner}/{repo}.git"
         return (owner, repo, url_https, host)
     return ("", "", "", host_of(url))

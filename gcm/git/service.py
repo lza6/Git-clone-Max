@@ -330,12 +330,19 @@ def run_git_ui(cmd: Iterable[str], cwd: str, on_line: LineCallback,
                 index=0,
                 text=f"git 输出读线程未及时退出，已放弃等待（{label}）",
                 level="warn"))
-        # 确保读线程已退出（其 finally 已关闭 stdout），兜底再关一次防 ResourceWarning
-        try:
-            if proc.stdout:
-                proc.stdout.close()
-        except Exception:
-            pass
+        # G69-2 修复（永久挂死，实测可达）：只有在读线程**确实已退出**时才关 stdout。
+        # 原实现无条件 `proc.stdout.close()`：读线程若仍阻塞在 `for raw in proc.stdout`，
+        # close() 会与它争同一把 BufferedReader 锁 → **永久阻塞**（实测 `close()` 40s
+        # 不返回）。而这段代码的上一句刚刚才说「已放弃等待读线程」—— 转身又掉回那次等待。
+        # 后果：该 worker 的 `finished` 永不发出 → `engine._pending` 不归零 → UI 永久
+        # 「同步中…」、取消无效、`drain()` 只能超时。
+        # 读线程是 daemon，留它自行消亡即可（进程退出不阻塞）。
+        if not pump.is_alive():
+            try:
+                if proc.stdout:
+                    proc.stdout.close()
+            except Exception:
+                pass
         rc = proc.returncode if proc.returncode is not None else -1
 
         # 成功：立即收尾，绝不重复启动
@@ -699,15 +706,40 @@ class GitService:
             # 半成品目录（断点残留）
             if repo_dir.exists():
                 self._emit(f"[警告] 发现不完整目录 {repo_dir.name}，尝试清理后重新克隆", "warn")
-                try:
-                    shutil.rmtree(repo_dir)
-                except Exception as e:
-                    res.status = SyncStatus.FAILED
-                    res.action = SyncAction.FAILED
-                    res.message = "无法清理残留目录"
-                    res.detail = str(e)
-                    res.ended = time.time()
-                    return res
+                # G69-1 修复（数据销毁，实测可达）：原为**无条件**裸 `shutil.rmtree(repo_dir)`。
+                #
+                # 危险面在于**路径来源**：`_repo_dir(spec)` 在 `spec.local_path` 非空时
+                # 直接返回它，而 `local_path` 可由**导入的元数据 JSON** 提供
+                # （`repo_db.import_metadata_json`，url 非空即视为非 local）。于是
+                # 「导入别人分享的元数据 → 点一键更新」能删除任意目录
+                # —— 审计实测：local_path 指向含资料的目录，同步后整棵消失。
+                #
+                # 但**不能改成「一律不删」**：`tests/test_core.py::test_broken_dir_recloned`
+                # 钉住了「克隆目标位上的坏目录要清掉重克隆」这一正式契约。
+                # 两者的区别正是路径来源，所以按来源分治：
+                #   - local_path 为空 → 路径是我们自己的 `root/folder_name`，维持原行为
+                #   - local_path 非空 → 是用户/外部数据，**绝不删除**；只清「含 .git 或为空」
+                #     的半成品，其余保留并如实报失败
+                if not spec.local_path:
+                    try:
+                        shutil.rmtree(repo_dir)
+                    except Exception as e:
+                        res.status = SyncStatus.FAILED
+                        res.action = SyncAction.FAILED
+                        res.message = "无法清理残留目录"
+                        res.detail = str(e)
+                        res.ended = time.time()
+                        return res
+                else:
+                    self._safe_rmtree_partial(repo_dir)
+                    if repo_dir.exists() and not (repo_dir / ".git").exists():
+                        res.status = SyncStatus.FAILED
+                        res.action = SyncAction.FAILED
+                        res.message = "目录已存在且非本工具克隆（已保留不清理）"
+                        res.detail = (f"{repo_dir} 非空且不是 git 仓库，"
+                                      "已跳过删除以免误删用户数据")
+                        res.ended = time.time()
+                        return res
             return self._clone(spec, res)
         finally:
             # 统一兜底：任何路径都必须有结束时间，否则 duration 会为 0

@@ -1293,9 +1293,11 @@ class MainWindow(QMainWindow):
     def _update_next_root(self):
         if not getattr(self, "_multi_root_update", None):
             return
-        root, rows = self._multi_root_update.pop(0)
+        # G69-4 修复：**先判 busy 再 pop**。原实现先 `pop(0)` 再 `if self.busy: return`，
+        # 被 pop 掉的那一组根目录再也不会被拉取（每次调用丢掉一组，用户完全看不到报错）。
         if self.busy:
             return  # 当前组仍在运行，等 finished 槽再拉下一组
+        root, rows = self._multi_root_update.pop(0)
         specs = self._rows_to_specs(rows)
         self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"一键更新：处理根目录 {root}（{len(specs)} 个仓库）")
         self._launch(specs, target_root=Path(root), shallow=False, depth=1,
@@ -1331,6 +1333,25 @@ class MainWindow(QMainWindow):
         self._multi_root_relay = multi_root_relay
 
         # 统一调度：engine 重建 root（根目录可变；超时/重试/代理/token 来自设置）
+        #
+        # G69-3 修复（永久死锁，实测可达）：**替换引擎前必须先让旧引擎收敛**。
+        # `SyncEngine` 是 Python 子类且持有 `QThreadPool(self)` 这个 C++ 子对象；
+        # 旧引擎若仍有在跑的 worker，Python 侧引用归零时会**持 GIL** 去析构 C++ 对象，
+        # 而 `~QThreadPool` 要等 worker 结束、worker 结束又要重新取 GIL → 互相死等，
+        # 进程永久卡死（faulthandler 实测：worker 卡在 run 里等 GIL、主线程卡在 `del engine`；
+        # 对照组「worker 已结束」时 del 用时 0.00s）。
+        # 旧引擎在本函数正常路径下应是空闲的，但仍要兜一层：自动重投定时器（`_retry_tick`）
+        # 可能刚刚自起了一批（那批对 `owner.busy` 不可见），此时旧引擎正在跑。
+        old_engine = getattr(self, "engine", None)
+        if old_engine is not None:
+            try:
+                # G69-13：用 `discard()` 而不是 `shutdown()` —— 后者内部 `drain()` 会
+                # `processEvents()`，在 UI 槽里泵事件会把刚排队的 finished 重入进来
+                # （触碰正在被替换的控件）。`discard()` 阻塞式等线程池排空，同样能避免
+                # 「析构 QThreadPool ⟷ worker 抢 GIL」死锁，且无重入。
+                old_engine.discard()
+            except Exception:
+                pass
         self.engine = SyncEngine(
             target_root,
             db=self.db,

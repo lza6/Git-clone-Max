@@ -208,7 +208,15 @@ class LocalReposDialog(QDialog):
             item = QTableWidgetItem(display)
             item.setData(Qt.ItemDataRole.UserRole, info.display)
             self.table.setItem(i, 1, item)
-            self.table.setItem(i, 2, QTableWidgetItem(info.remote_url or "（无远端）"))
+            # G69-11：扫描得到的是仓库 `.git/config` 里的**原始 remote**，
+            # 可能内嵌凭据（`https://ghp_xxx@github.com/...`）。上屏前必须打码 ——
+            # 这条路径不经数据库，所以入库口的收口管不到它。
+            try:
+                from ..util.redact import redact as _redact
+                _remote_show = _redact(info.remote_url or "")
+            except Exception:
+                _remote_show = info.remote_url or ""
+            self.table.setItem(i, 2, QTableWidgetItem(_remote_show or "（无远端）"))
             self.table.setItem(i, 3, QTableWidgetItem(info.path))
         self.table.setUpdatesEnabled(True)
 

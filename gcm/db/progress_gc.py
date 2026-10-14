@@ -11,10 +11,11 @@ data/progress.json 滚动保留 + 归档 + 超阈值裁剪：
 from __future__ import annotations
 
 import json
-import os
 import time
 from pathlib import Path
 from typing import Any, Optional
+
+from ..util.atomic_io import write_json_atomic
 
 # 每批完成滚动保留的 finished 条目上限（超出裁剪为 summary 归档）
 _DEFAULT_MAX_FINISHED = 200
@@ -41,10 +42,13 @@ def _load_raw(path: Path) -> dict[str, Any]:
 
 
 def _atomic_write(path: Path, data: dict[str, Any]) -> None:
-    """原子写（tmp + os.replace），保证裁剪/归档过程不损坏进度文件。"""
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, path)
+    """原子写（唯一 tmp + 跨进程锁 + os.replace），保证裁剪/归档不损坏进度文件。
+
+    G69-6：原为固定 `.json.tmp` 且**不持锁** —— 与 `save_progress` 并发时争同一个
+    tmp 路径，裁剪结果或进度写入会被覆盖，且失败被 `rotate_progress` 的
+    `except` 吞成零值（用户看不到任何异常）。
+    """
+    write_json_atomic(path, data, label="progress.json")
 
 
 def _archive_path(progress_path: Path) -> Path:
@@ -116,10 +120,9 @@ def rotate_progress(path: str | Path,
                 "summary": archived_rows,
                 "trimmed_rows": trimmed,
             }
-            tmp = dest.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
-                           encoding="utf-8")
-            os.replace(tmp, dest)
+            # G69-6：归档文件同样要走共享原子写 —— 固定 tmp 名在并发下会互相截断
+            # （同 `_atomic_write` 的理由；这是同一 bug 在本模块的第 2 处）
+            write_json_atomic(dest, payload, label="progress_archive")
 
         data["finished"] = finished
         data["in_progress"] = data.get("in_progress") or {}

@@ -865,6 +865,40 @@ class SyncEngine(QObject):
             pass
         return self._pending == 0
 
+    def discard(self) -> None:
+        """**不泵事件循环**地让本引擎收敛，供「即将被替换掉」的场景使用（G69-13）。
+
+        与 `shutdown()` 的区别在于**不调 `drain()`** —— `drain()` 为了接收跨线程
+        `finished` 信号会 `processEvents()`，而 `discard()` 的调用点是 UI 槽
+        （`MainWindow._launch` 里替换 `self.engine`），在里面泵事件会**重入** UI 槽
+        （例如刚排队的 finished → `_on_engine_finished` → 触碰已被替换的控件），
+        属于典型的 Qt 重入隐患。
+
+        这里只做「让 C++ 层安静下来」这一件事：取消 → 等线程池排空 → 停定时器/缓冲。
+        `pool.waitForDone(ms)` 会阻塞到 worker 真正结束，**这正是避免
+        「Python 持 GIL 析构 QThreadPool ⟷ worker 需重取 GIL」死锁的关键**。
+        """
+        try:
+            self.cancel_all()
+        except Exception:
+            pass
+        try:
+            self._retry_timer.stop()
+        except Exception:
+            pass
+        try:
+            self.pool.waitForDone(5000)   # 阻塞式收敛：不泵事件、不死锁
+        except Exception:
+            pass
+        try:
+            self.pool.clear()
+        except Exception:
+            pass
+        try:
+            self.flush_progress()
+        except Exception:
+            pass
+
     def shutdown(self):
         """取消剩余任务并落盘，供窗口关闭时调用。
 

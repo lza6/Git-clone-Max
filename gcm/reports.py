@@ -20,6 +20,20 @@ EXPORT_COLUMNS: tuple[str, ...] = (
     "message", "commits", "duration_ms", "started_at",
 )
 
+# G69-7：电子表格公式注入防护（CWE-1236）。
+# 报表的定位是「**发给别人**的文件」，而 `owner` 直接来自「粘贴别人的仓库清单」——
+# 一个叫 `=HYPERLINK(...)` 的仓库名会让 Excel 打开 CSV/xlsx 时把它当公式求值。
+# 实测：xlsx 里该单元格被写成 `data_type=f`（真公式），不是文本。
+# 处理：以 `= + - @` 或制表/回车开头的内容前面加一个 `'`，Excel/WPS 会当纯文本。
+_FORMULA_PREFIX = ("=", "+", "-", "@", "\t", "\r")
+
+
+def sanitize_cell(value):
+    """把「会被电子表格当公式求值」的单元格内容转成纯文本。非字符串原样返回。"""
+    if not isinstance(value, str) or not value:
+        return value
+    return "'" + value if value.startswith(_FORMULA_PREFIX) else value
+
 
 def _parse_date(s: str) -> datetime | None:
     """解析 'YYYY-MM-DD' 日期文本；无效返回 None。"""
@@ -104,9 +118,11 @@ def export_csv(db, out_path: str | Path, filters: dict | None = None) -> int:
         w.writerow(list(EXPORT_COLUMNS))  # G44-1 导出列不含凭据
         for r in rows:
             w.writerow([
-                r.get("owner") or "", r.get("repo") or "", r.get("host") or "",
+                # G69-7：出站前转义公式前缀（owner/repo 来自用户粘贴的清单）
+                sanitize_cell(r.get("owner") or ""), sanitize_cell(r.get("repo") or ""),
+                r.get("host") or "",
                 r.get("status") or "", r.get("action") or "",
-                r.get("message") or "", int(r.get("commits") or 0),
+                sanitize_cell(r.get("message") or ""), int(r.get("commits") or 0),
                 int(r.get("duration_ms") or 0), r.get("started_at") or "",
             ])
     return len(rows)
@@ -173,8 +189,9 @@ def export_xlsx(db, out_path: str | Path, filters: dict | None = None) -> int:
     ws.append(headers)
     for r in rows:
         ws.append([
-            redact_home(str(r.get(k, ""))) if k in _XLSX_HOME_REDACT_COLS
-            else r.get(k, "")
+            # G69-7：先按列做 home 打码，再统一防公式注入
+            sanitize_cell(redact_home(str(r.get(k, ""))) if k in _XLSX_HOME_REDACT_COLS
+                          else r.get(k, ""))
             for k in headers
         ])
     # 自动列宽（中文按 2 倍估算）+ 冻结首行

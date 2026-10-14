@@ -9,7 +9,6 @@ data/session_runtime.json 记录当前批次每任务状态（pending/running/fa
 from __future__ import annotations
 
 import json
-import os
 import threading
 import time
 from dataclasses import dataclass
@@ -17,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from ..models import RepoSpec
+from ..util.atomic_io import write_json_atomic
 from ..util.redact import redact
 
 # 清单结构版本（向前兼容：未知字段忽略）
@@ -105,10 +105,9 @@ class RuntimeSessionStore:
                     for k in ("url_https", "display", "message"):
                         if isinstance(t.get(k), str):
                             t[k] = redact(t[k])
-            tmp = self.path.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
-                           encoding="utf-8")
-            os.replace(tmp, self.path)
+            # G69-6：同 retry_queue —— 唯一 tmp 名 + 跨进程锁
+            # （实测双进程下对方 PermissionError 从 replace 抛出 → 整份 60 条续跑清单丢失）
+            write_json_atomic(self.path, payload, label="session_runtime.json")
 
     # ------------------------------------------------------------ 业务操作
     def replace(self, specs: list[RepoSpec], status: str = _STATUS_PENDING) -> None:

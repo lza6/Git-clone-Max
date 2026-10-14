@@ -76,6 +76,50 @@ class _ApiHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _host_is_loopback(self) -> bool:
+        """请求的 Host 头是否解析到回环（G69-8）。
+
+        只绑回环**不足以**防 DNS rebinding：攻击者把自己的域名解析到 127.0.0.1，
+        浏览器就会与本地服务**同源**（CORS 不参与），页面即可读取仓库清单
+        （实测伪造 `Host: evil.example.com` 仍返回 200；`local_path` 里的
+        用户目录名也随之泄露）。所以必须校验 Host 头本身。
+
+        `--allow-mutate` 下更严重：`POST /api/clone` 是 simple request，
+        任意网页无需 CORS 即可盲发写请求。
+        """
+        raw = (self.headers.get("Host") or "").strip()
+        if not raw:
+            return False          # 缺 Host 头 → 保守拒绝
+        host = raw
+        if host.startswith("["):  # IPv6 字面量（本服务不支持绑定，但不误判）
+            host = host.split("]", 1)[0][1:]
+        elif ":" in host:
+            host = host.split(":", 1)[0]
+        return host.strip().lower() in _LOOPBACK_HOSTS
+
+    def _origin_ok(self) -> bool:
+        """Origin 必须缺失（非浏览器）或指向回环。
+
+        浏览器发起的跨站写请求一定带 Origin；非浏览器客户端（curl / agent SDK）
+        通常不带 —— 因此「缺失」放行、「跨站」拒绝。
+        """
+        origin = (self.headers.get("Origin") or "").strip()
+        if not origin:
+            return True
+        try:
+            from urllib.parse import urlparse
+            oh = (urlparse(origin).hostname or "").strip().lower()
+        except Exception:
+            return False
+        return oh in _LOOPBACK_HOSTS
+
+    def _reject_cross_origin(self) -> bool:
+        """跨站/非回环 Host 直接 403；返回 True 表示已拒绝。"""
+        if self._host_is_loopback() and self._origin_ok():
+            return False
+        self._error(403, "拒绝：Host/Origin 非回环（防 DNS rebinding）", status=403)
+        return True
+
     def _error(self, code: int, message: str, status: int = 400) -> None:
         self._send_json({"error": {"code": code, "message": message,
                                    "redacted": redact(message)}}, status=status)
@@ -101,6 +145,8 @@ class _ApiHandler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------ GET
     def do_GET(self) -> None:
         server: GcmApiServer = self.server  # type: ignore[assignment]
+        if self._reject_cross_origin():   # G69-8
+            return
         self._audit("GET", self.path)
         from urllib.parse import parse_qs, urlparse
         parsed = urlparse(self.path)
@@ -135,15 +181,22 @@ class _ApiHandler(BaseHTTPRequestHandler):
                                  "readonly": not server.allow_mutate})
             elif parsed.path == "/api/report":
                 fmt = (qs.get("format") or ["json"])[0]
-                rows = db.list_repos(host=None)
+                # G69-10：原实现用 `db.list_repos()`（repos 表）却按 sync_history 的列名
+                # 取字段 → status/action/message/commits/duration_ms/started_at **恒为空**
+                # （实测输出 `a,b,github.com,,,,,,`），与 agent-contract 的「报表」承诺不符。
+                # 改走报表自己的数据源（repos LEFT JOIN sync_history），并复用同一套列定义，
+                # 避免第二份列名再漂移。
+                from .reports import EXPORT_COLUMNS, _fetch_rows, sanitize_cell
+                rows = _fetch_rows(db, None)
                 if fmt == "csv":
                     import io
                     buf = io.StringIO()
-                    cols = ("owner", "repo", "host", "status", "action",
-                            "message", "commits", "duration_ms", "started_at")
+                    cols = tuple(EXPORT_COLUMNS)
                     buf.write(",".join(cols) + "\r\n")
                     for r in rows:
-                        buf.write(",".join(str(r.get(c) or "") for c in cols) + "\r\n")
+                        buf.write(",".join(
+                            str(sanitize_cell(r.get(c)) if r.get(c) is not None else "")
+                            for c in cols) + "\r\n")
                     body = buf.getvalue().encode("utf-8-sig")
                     self.send_response(200)
                     self.send_header("Content-Type", "text/csv; charset=utf-8")
@@ -175,6 +228,8 @@ class _ApiHandler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------ POST（写，默认拒绝）
     def do_POST(self) -> None:
         server: GcmApiServer = self.server  # type: ignore[assignment]
+        if self._reject_cross_origin():   # G69-8
+            return
         if not server.allow_mutate:
             self._error(403, "写操作被拒绝：当前为只读模式（--allow-mutate 显式开启）", status=403)
             return

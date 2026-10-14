@@ -119,6 +119,25 @@ class Database:
         except sqlite3.OperationalError:
             pass  # 已在事务中（例如隐式开启）：沿用原语义
 
+    @staticmethod
+    def _strip_url_creds(url: str) -> str:
+        """入库前剥掉 URL 内嵌凭据（G69-11）。
+
+        **这是凭证外泄的单一收口点**：本地扫描会把仓库 `.git/config` 里的 remote
+        原样带出来（`https://ghp_xxx@github.com/team/private.git`），若不拦，
+        它会同时进入 ① 数据库 ② 元数据导出 JSON（该文件定位就是「便于分享」）
+        ③ 详情页「复制克隆命令」的剪贴板。在**写库**这一处剥掉，
+        读库的这三条下游就全都干净了（读库方无需各自记得打码）。
+
+        唯一例外是 UI 上直接展示**扫描结果**（不经库）的列表项，那里单独打码。
+        """
+        try:
+            from ..app.url_lib import strip_embedded_credentials
+            clean, _had = strip_embedded_credentials(url or "")
+            return clean
+        except Exception:
+            return url or ""
+
     def upsert_repo(self, spec: RepoSpec, local_path: str, host: str = "github.com",
                     default_branch: str | None = None, head_sha: str | None = None) -> int:
         """插入或更新仓库记录，返回 repo_id。"""
@@ -138,8 +157,10 @@ class Database:
                     head_sha=excluded.head_sha,
                     updated_at=datetime('now','localtime')
                 """,
-                (spec.owner, spec.repo, spec.folder_name, spec.url_https, local_path,
-                 host, default_branch, head_sha, time.strftime("%Y-%m-%d %H:%M:%S")),
+                (spec.owner, spec.repo, spec.folder_name,
+                 self._strip_url_creds(spec.url_https),   # G69-11：入库即剥凭据
+                 local_path, host, default_branch, head_sha,
+                 time.strftime("%Y-%m-%d %H:%M:%S")),
             )
             self._conn.commit()
             row = self._conn.execute(
@@ -158,8 +179,9 @@ class Database:
         if not items:
             return 0
         rows = [
-            (spec.owner, spec.repo, spec.folder_name, spec.url_https, local_path,
-             host or "local", None, head_sha,
+            (spec.owner, spec.repo, spec.folder_name,
+             self._strip_url_creds(spec.url_https),   # G69-11：入库即剥凭据
+             local_path, host or "local", None, head_sha,
              time.strftime("%Y-%m-%d %H:%M:%S"))
             for (spec, local_path, host, head_sha) in items
         ]

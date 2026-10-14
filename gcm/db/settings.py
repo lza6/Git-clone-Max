@@ -28,7 +28,25 @@ _enc_backend = None              # 惰性探测的后端名（dpapi/keyring/none
 
 
 def _detect_backend() -> str:
-    """探测可用的加密后端：win32crypt(DPAPI) > keyring > 无。"""
+    """探测可用的加密后端（G69-12 起优先 ctypes DPAPI）。
+
+    顺序：`dpapi_ctypes`（无依赖，打包产物也能用）> `win32crypt` > `keyring` > `xorfixed`。
+
+    **为什么把 ctypes 放第一**：项目依赖只有 PyQt6、spec 的 hiddenimports 为空 ——
+    打包产物里既无 win32crypt 也无 keyring，于是**所有实际安装都落到 `xorfixed`**，
+    即「用仓库源码里写死的 `_XOR_KEY` 做异或」。那不是加密：任何拿到 settings.json
+    的人都能用公开密钥还原全部 token（实测可离线还原出明文）。
+    ctypes 直调 crypt32 拿到了真正的 OS 级加密（密钥由登录凭据派生），且零新依赖。
+
+    格式兼容：ctypes 与 win32crypt 产出的都是同一种 DPAPI blob，
+    所以换后端后仍可透明解密历史文件。
+    """
+    try:
+        from ..util import dpapi
+        if dpapi.available():
+            return "dpapi_ctypes"
+    except Exception:
+        pass
     try:
         import win32crypt  # noqa: F401
         return "dpapi"
@@ -39,8 +57,8 @@ def _detect_backend() -> str:
         return "keyring"
     except Exception:
         pass
-    # 无系统密钥环（如最小化 Python/CI）：退化为进程内 XOR 弱加密，
-    # 保证 settings.json 中 token 不明文；解密同密钥即可还原。
+    # 兜底（非 Windows，且无 keyring）：固定密钥异或 —— 只防「明文直读」，
+    # **不是加密**。此时必须让用户知情（见 `crypto_warning()`）。
     return "xorfixed"
 
 
@@ -118,6 +136,10 @@ def _encrypt_token(plain: str) -> str:
         return ""
     backend = _get_backend()
     try:
+        if backend == "dpapi_ctypes":
+            from ..util import dpapi
+            blob = dpapi.protect(plain.encode("utf-8"))
+            return _ENC_PREFIX + base64.b64encode(blob).decode("ascii")
         if backend == "dpapi":
             import win32crypt
             blob = win32crypt.CryptProtectData(
@@ -147,10 +169,17 @@ def _decrypt_token(enc: str) -> str:
         if enc.startswith(_ENC_PREFIX):
             data = enc[len(_ENC_PREFIX):]
             backend = _get_backend()
-            if backend == "dpapi":
-                import win32crypt
+            if backend in ("dpapi_ctypes", "dpapi"):
                 blob = base64.b64decode(data)
-                return win32crypt.CryptUnprotectData(blob, None, None, None, 0)[1].decode("utf-8")
+                # 统一走 ctypes 解（与 win32crypt 同格式）；
+                # 极端情况下 ctypes 不可用再回退到 win32crypt。
+                try:
+                    from ..util import dpapi
+                    return dpapi.unprotect(blob).decode("utf-8")
+                except Exception:
+                    import win32crypt
+                    return win32crypt.CryptUnprotectData(
+                        blob, None, None, None, 0)[1].decode("utf-8")
             if backend == "keyring" and data == "keyring":
                 import keyring
                 try:
@@ -163,6 +192,20 @@ def _decrypt_token(enc: str) -> str:
             return ""  # 掩码不可逆
     except Exception:
         pass
+    return ""
+
+
+def crypto_warning() -> str:
+    """当前环境的凭据存储是否达到「加密」标准；不达标时返回给用户看的说明。
+
+    `xorfixed` 用的是写在源码里的固定密钥异或 —— 它只防「明文直读」，
+    拿到 settings.json 的任何人都能还原。必须显式告知，不能让用户误以为已加密
+    （审计实测：文档写「token 永不明文」，而打包产物 100% 走这条兜底路径）。
+    """
+    if _get_backend() == "xorfixed":
+        return ("当前环境没有可用的系统密钥环（Windows DPAPI / keyring 均不可用），"
+                "token 仅做了可逆混淆存储，**不等于加密**；"
+                "请勿在不受信任的机器或共享目录中保存 token。")
     return ""
 
 

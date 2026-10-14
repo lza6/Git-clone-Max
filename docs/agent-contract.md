@@ -1,6 +1,6 @@
 # Git-clone-Max Agent 契约（G56-5）
 
-> 适用版本：v9.2.1。本文档是所有 agent 接入点
+> 适用版本：v9.3.0。本文档是所有 agent 接入点
 > （CLI `--json` / MCP server / 本地 HTTP API / `skills/gcm-*`）的统一契约。
 > 任何实现与本文档冲突时，以实际输出为准（测试 `tests/test_g56_contract.py` 抽样断言）。
 
@@ -27,7 +27,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ```json
 {
-  "version": "9.2.1",
+  "version": "9.3.0",
   "ok": true,
   "counts": {"success": 2, "failed": 0, "other": 0, "total": 2},
   "results": [
@@ -107,7 +107,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ```
 → {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{}}}
-← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"gcm","version":"9.2.1"}}}
+← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"gcm","version":"9.3.0"}}}
 → {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
 ← {"jsonrpc":"2.0","id":2,"result":{"tools":[{...list_repos...}, ...]}}
 → {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_repos","arguments":{}}}
@@ -116,7 +116,12 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ## 5. 本地 HTTP API（G56-4）
 
-- 只绑定 `127.0.0.1`；无 CORS 头；默认只读。
+- 只绑定 `127.0.0.1`；默认只读。
+- **Host / Origin 校验（G69 起）**：只绑回环本身**不足以**防 DNS rebinding ——
+  攻击者把自己的域名解析到 `127.0.0.1`，浏览器就与本地服务**同源**，CORS 不参与，
+  页面即可读取仓库清单。因此 Host 缺失、Host 非回环、或带跨站 `Origin` 的请求
+  一律 **403**（错误 schema 同 §3）。agent/脚本用 `127.0.0.1` / `localhost` 访问
+  即可，无需额外处理。
 - 端点：
 
 | 方法 | 路径 | 说明 |

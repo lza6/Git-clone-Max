@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import json
-import os
 import threading
 import time
 from collections.abc import Callable
@@ -20,6 +19,7 @@ from typing import Any, Optional
 
 from ..git.service import _is_networkish_error
 from ..models import RepoSpec
+from ..util.atomic_io import write_json_atomic
 from ..util.redact import redact
 
 # 重试延迟上限（秒）：退避基数 * 次数 封顶，避免长时间挂起
@@ -82,10 +82,9 @@ class RetryQueue:
                     for k in ("url_https", "display", "message", "detail"):
                         if isinstance(rec.get(k), str):
                             rec[k] = redact(rec[k])
-            tmp = self.path.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
-                           encoding="utf-8")
-            os.replace(tmp, self.path)
+            # G69-6：唯一 tmp 名 + 跨进程锁（原为固定 .json.tmp 且无锁 —— 实测
+            # 同进程双实例写 300 条最终只剩 16 条、87 次 PermissionError 被吞掉）
+            write_json_atomic(self.path, payload, label="retry_queue.json")
 
     # ------------------------------------------------------------ 入队 / 判定
     def record_failure(self, spec: RepoSpec, message: str, detail: str = "") -> bool:
