@@ -1218,6 +1218,11 @@ class TestUpdateCheckThreading(unittest.TestCase):
         real_mb = mw_mod.QMessageBox
         try:
             win = MainWindow(tmp)
+            # G68-4：必须 show() —— `_on_update_checked` 只在窗口**可见**时弹模态
+            # （不可见还弹 = headless 下永久阻塞，已实测挂死 7 分钟）。
+            # 这里 setText 会走「已是最新/有新版」分支，窗口不可见则断言弹窗会落空。
+            win.show()
+            app.processEvents()
             updater_mod.check_latest = _fake_check_latest
 
             # 弹窗打桩：真 QMessageBox.question 会阻塞事件循环，测试无法收尾

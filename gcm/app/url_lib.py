@@ -44,10 +44,32 @@ _SHORT_RE = re.compile(
 
 _INVALID_DIR_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 
+# Windows 保留设备名（G68-3）：这些名字**不能**作为文件或目录名 ——
+# `open()` / `mkdir()` / `git archive --output` 全部失败，且报错毫无指向性。
+# 实测：`git archive --format=zip --output archives/CON.zip HEAD` → rc=128
+#       `fatal: could not open '.../CON.zip' for writing: No such file or directory`
+# 而 `sanitize_name` 只过滤了非法字符，`https://github.com/foo/CON` 这类仓库
+# 走到「归档」就会 100% 失败（克隆不受影响，因为目录名是 `owner__repo`）。
+# 判定规则与 Windows 一致：比较**第一个点之前**的整段（`CON.txt` 同样保留）。
+_RESERVED_DEVICE_NAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{i}" for i in range(1, 10)}
+    | {f"LPT{i}" for i in range(1, 10)}
+)
+
 
 def sanitize_name(name: str) -> str:
-    """清洗不可用作文件名的字符。"""
-    return _INVALID_DIR_CHARS.sub("_", name).strip().strip(".") or "repo"
+    """清洗不可用作文件名的字符（含 Windows 保留设备名）。"""
+    cleaned = _INVALID_DIR_CHARS.sub("_", name).strip().strip(".") or "repo"
+    # 必须在**第一个点之前的那一段**上改，不能简单在末尾追加 `_`：
+    # 实测（真实 `git archive --output`）：
+    #   CON.txt.zip   → rc=128 失败
+    #   CON.txt_.zip  → rc=128 **仍然失败**（点前段还是 CON）
+    #   CON_.txt.zip  → rc=0 成功
+    head, sep, rest = cleaned.partition(".")
+    if head.upper() in _RESERVED_DEVICE_NAMES:
+        head += "_"
+    return f"{head}{sep}{rest}"
 
 
 def _is_known_host(host: str) -> bool:

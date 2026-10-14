@@ -66,6 +66,7 @@ EN = {
     '部分网络环境下 HTTP/2 兼容问题可用此项规避': 'Workaround for HTTP/2 compatibility issues on some networks',
     'HTTP 版本：': 'HTTP version:',
     '外观（主题）': 'Appearance (Theme)',
+    '主题 / 语言 / 强调色 / 减弱动效；「恢复默认」会重置除 token 外的全部外观与行为设置': 'Theme / language / accent / reduced motion; "Restore defaults" resets everything except tokens',
     '跟随系统（自动）': 'Follow system (auto)',
     '界面主题：': 'Theme:',
     '中文': 'Chinese',

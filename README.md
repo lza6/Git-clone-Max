@@ -1,7 +1,7 @@
 # Git-clone-Max
 
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
-> **当前版本：v9.2.0**（G67 终局收尾：接线 host_probe 诊断 / xlsx 导出入口 / 全局 SSH key；删除零引用的 rate_limit；重投复用批次上下文；常用主机白名单改读真实数据目录；检查更新移出 GUI 线程；settings/progress 跨进程写锁；无法判定落后数不再假报「已是最新」）
+> **当前版本：v9.2.1**（G68 硬化：跨进程锁重入按路径判定（原会跳过内层文件锁）· 归档支持 Windows 保留设备名仓库（CON/COM1/NUL…）· 窗口不可见时不再弹模态（headless 下会永久阻塞）· 设置页 432 行巨型函数拆分）
 > **v5.0：多平台直克隆** — GitLab / Gitee / Codeberg / Bitbucket / 自建主机（HTTPS/SSH/短格式/子组）同样支持。
 > 克隆目录一律 `host__作者__仓库`（GitHub 为 `作者__仓库`），本地改动永不覆盖。
 

@@ -505,6 +505,120 @@ class TestShutdownClearsInProgress(unittest.TestCase):
                          "晚到的 _on_result 把已清空的清单写回去了")
 
 
+class TestCrossProcessLockNesting(unittest.TestCase):
+    """G68-2：**不同路径**嵌套获取时，内层锁必须仍然生效。
+
+    `cross_process_lock` 最初用「重入深度计数」判断是否跳过文件锁 —— 那是错的：
+    `RLock` 可重入、文件锁不可重入，所以**同一路径**重入要跳过（否则自锁死等），
+    但**不同路径**嵌套时若也跳过，内层那条路径就毫无跨进程保护。
+
+    **实测证据（修复前）**：P1 持锁 A 后进入锁 B（不同路径），P2 独立抢占锁 B ——
+    P1 临界区 [0, 2.51s] 与 P2 [1.43, 3.94s] **重叠 1.08 秒**，两个进程同时读-改-写 B。
+    修复后同一个探针：P2 在 P1 结束后 0.74s 才进入，不重叠。
+
+    判定方式刻意用**区间重叠**而不是「最终计数」：计数依赖两次操作恰好交错，
+    进程启动耗时会让它假通过（本测试的早期版本就是这么假 PASS 的）。
+    """
+
+    _NEST_CHILD = r"""
+import os, sys, time
+from pathlib import Path
+sys.path.insert(0, os.environ["GCM_ROOT"])
+from gcm.util.filelock import cross_process_lock
+A = Path(sys.argv[1]); B = Path(sys.argv[2]); bar = Path(sys.argv[3]); hold = float(sys.argv[4])
+with cross_process_lock(A, label="A"):
+    (bar / "p1_ready").write_text("1", encoding="utf-8")
+    with cross_process_lock(B, label="B"):          # 嵌套、**不同**路径
+        (bar / "p1_in").write_text(str(time.time()), encoding="utf-8")
+        time.sleep(hold)
+        (bar / "p1_out").write_text(str(time.time()), encoding="utf-8")
+"""
+
+    _PLAIN_CHILD = r"""
+import os, sys, time
+from pathlib import Path
+sys.path.insert(0, os.environ["GCM_ROOT"])
+from gcm.util.filelock import cross_process_lock
+B = Path(sys.argv[2]); bar = Path(sys.argv[3]); hold = float(sys.argv[4])
+while not (bar / "p1_ready").exists():
+    time.sleep(0.005)
+with cross_process_lock(B, label="B"):
+    (bar / "p2_in").write_text(str(time.time()), encoding="utf-8")
+    time.sleep(hold)
+    (bar / "p2_out").write_text(str(time.time()), encoding="utf-8")
+"""
+
+    def test_inner_lock_of_a_different_path_is_still_exclusive(self):
+        import subprocess
+        import time as _t
+
+        HOLD = "2.0"
+        tmp = pathlib.Path(tempfile.mkdtemp(prefix="gcm_g682_"))
+        lock_a, lock_b, bar = tmp / "a.json", tmp / "b.json", tmp / "bar"
+        bar.mkdir(parents=True, exist_ok=True)
+        env = dict(os.environ)
+        env["GCM_ROOT"] = str(ROOT)
+        env["PYTHONIOENCODING"] = "utf-8"
+
+        def spawn(code):
+            return subprocess.Popen(
+                [sys.executable, "-c", code, str(lock_a), str(lock_b), str(bar), HOLD],
+                cwd=str(ROOT), env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, encoding="utf-8", errors="replace")
+
+        p1 = spawn(self._NEST_CHILD)
+        try:
+            # 等 P1 **真正进入** B 再启动 P2 —— 否则进程启动耗时会让区间假不重叠
+            deadline = _t.monotonic() + 30
+            while not (bar / "p1_in").exists() and _t.monotonic() < deadline:
+                _t.sleep(0.01)
+            self.assertTrue((bar / "p1_in").exists(), "P1 未能在 30s 内进入内层锁")
+            p2 = spawn(self._PLAIN_CHILD)
+            o2, e2 = p2.communicate(timeout=120)
+            self.assertEqual(p2.returncode, 0, f"P2 失败：{e2 or o2}")
+            o1, e1 = p1.communicate(timeout=120)
+            self.assertEqual(p1.returncode, 0, f"P1 失败：{e1 or o1}")
+        finally:
+            for p in (p1,):
+                if p.poll() is None:
+                    p.kill()
+
+        def _ts(name):
+            f = bar / name
+            return float(f.read_text(encoding="utf-8")) if f.exists() else None
+
+        i1, o_1, i2, o_2 = _ts("p1_in"), _ts("p1_out"), _ts("p2_in"), _ts("p2_out")
+        self.assertNotIn(None, (i1, o_1, i2, o_2), "有进程没走完，判定不可靠")
+        overlap = max(i1, i2) < min(o_1, o_2)
+        self.assertFalse(
+            overlap,
+            f"内层锁未生效：两段临界区重叠（P1 [{i1:.3f},{o_1:.3f}] P2 [{i2:.3f},{o_2:.3f}]）"
+            " —— 不同路径嵌套时不得跳过文件锁")
+
+    def test_same_path_nesting_still_reentrant(self):
+        """反向约束：**同一路径**重入仍必须直接复用外层锁（否则 msvcrt 自锁死等）。"""
+        from gcm.util.filelock import cross_process_lock
+
+        tmp = pathlib.Path(tempfile.mkdtemp(prefix="gcm_g682_same_"))
+        target = tmp / "x.json"
+        done = threading.Event()
+        err: list = []
+
+        def _work():
+            try:
+                with cross_process_lock(target, label="outer"):
+                    with cross_process_lock(target, label="inner"):
+                        pass
+            except Exception as e:  # noqa: BLE001
+                err.append(e)
+            finally:
+                done.set()
+
+        threading.Thread(target=_work, daemon=True).start()
+        self.assertTrue(done.wait(15), "同一路径重入死锁了 —— 重入保护失效")
+        self.assertEqual(err, [], f"重入抛异常：{err}")
+
+
 class TestConcurrentSettingsSave(unittest.TestCase):
     """G67-23：同进程多线程并发 save 不得失败（tmp 名必须唯一）。
 

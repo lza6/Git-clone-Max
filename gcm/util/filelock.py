@@ -20,9 +20,27 @@ from pathlib import Path
 # 按文件句柄加锁的，同进程多线程各开各的句柄会互相死等；这里先用线程锁把
 # 同进程调用串行化，文件锁才只承担「跨进程」这一件事。
 _thread_lock = threading.RLock()
-# 重入深度（仅本线程）：`RLock` 是可重入的，但**文件锁不是** —— 同线程嵌套时若
-# 再开一个句柄加同一把 msvcrt 锁会自锁死等。所以只由最外层真正加文件锁。
-_depth = threading.local()
+# 本线程**已持有文件锁的路径集合**（G68-2）。
+# 这里必须按**路径**判断重入，不能只数深度：
+#   `RLock` 可重入，但**文件锁不是** —— 同一路径重入若再开句柄会自锁死等，所以同路径要跳过；
+#   而**不同路径**嵌套时若也跳过，那条路径就完全没有跨进程保护了。
+# 实测（两进程 + 区间重叠判定）：用深度计数时，P1 持锁 A 后进入锁 B（不同路径）会跳过 B 的文件锁，
+#   P1[0, 2.51s] 与 P2[1.43, 3.94s] **重叠 1.08s** → B 上没有互斥。
+_depth_paths = threading.local()
+
+
+def _held_paths() -> set[str]:
+    if not getattr(_depth_paths, "paths", None):
+        _depth_paths.paths = set()
+    return _depth_paths.paths
+
+
+def _lock_key(target: Path) -> str:
+    """锁的规范化标识：同一文件的不同写法（相对/绝对/大小写）必须归一到同一个 key。"""
+    try:
+        return os.path.normcase(os.path.abspath(str(target)))
+    except Exception:
+        return str(target)
 
 
 def _acquire(lock_fh) -> bool:
@@ -65,10 +83,13 @@ def cross_process_lock(path: Path | str, label: str = "文件") -> Iterator[None
     并写入 app.log 留痕（跨进程互斥失效这件事必须可观测，不能无声发生）。
     """
     target = Path(path)
+    key = _lock_key(target)
     with _thread_lock:
-        # 同线程重入 → 只复用外层的文件锁，不再开句柄（开了会自锁死等）
-        nested = getattr(_depth, "n", 0) > 0
-        _depth.n = getattr(_depth, "n", 0) + 1
+        # 只对**同一路径**判定为可重入（见 `_depth_paths` 注释：不同路径必须各自加锁）
+        held = _held_paths()
+        nested = key in held
+        if not nested:
+            held.add(key)
         lock_fh = None
         try:
             if not nested:
@@ -88,7 +109,8 @@ def cross_process_lock(path: Path | str, label: str = "文件") -> Iterator[None
         try:
             yield
         finally:
-            _depth.n -= 1
+            if not nested:
+                held.discard(key)
             if lock_fh is not None:
                 _release(lock_fh)
                 try:

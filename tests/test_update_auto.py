@@ -151,6 +151,10 @@ class TestCheckUpdateNow(unittest.TestCase):
         self.w = MainWindow(data_dir=self.tmp,
                             db=Database(self.tmp / "t.db"),
                             settings=SettingsStore(self.tmp / "settings.json"))
+        # G68-4：`_on_update_checked` 只在窗口**可见**时弹模态（不可见还弹 =
+        # headless 下永久阻塞，实测挂死 7 分钟+）。本类断言弹窗，因此必须 show()。
+        self.w.show()
+        _app.processEvents()
 
     def tearDown(self):
         try:

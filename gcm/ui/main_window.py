@@ -911,10 +911,37 @@ class MainWindow(QMainWindow):
 
         threading.Thread(target=_worker, daemon=True, name="gcm-update-check").start()
 
+    def _can_show_modal(self) -> bool:
+        """当前是否适合弹**模态**对话框（G68-4）。
+
+        模态窗（`QMessageBox.exec()`）必须有人点击才会返回。在没有交互界面的环境
+        （offscreen / CI / 已关闭的主窗）里弹模态会**永久阻塞**整个进程 ——
+        实测过一次真事故：一个**迟到的** `update_checked` 跨线程信号在
+        「窗口已 close()」之后才被派发，`_on_update_checked` 里真实 `QMessageBox.question()`
+        把测试进程挂死 7 分钟以上（faulthandler 栈：`main_window.py:930 ← _pump`）。
+
+        判据用 `isVisible()`：窗口已关闭 / 从未显示 → 不适合弹窗。
+        **交互环境不受影响**（用户能看见的窗口照常弹），测试里的 mock 断言也不受影响
+        （它们在窗口可见时执行）。
+        """
+        try:
+            return bool(self.isVisible())
+        except Exception:
+            return False
+
     def _on_update_checked(self, has_new: bool, ver: str, url: str, err: str):
         """`update_checked` 槽（GUI 线程）：负责弹窗与打开下载页。"""
         self._update_checking = False
         from .. import __version__
+        msg = (err or (f"发现新版本 {ver}，可到设置页下载" if has_new
+                       else f"已是最新版本（{__version__}）"))
+        if not self._can_show_modal():
+            # 没有可见窗口 → 不弹模态（会永久阻塞），改为写日志留痕
+            try:
+                self._emit_log(_fmt_dt(), LogLevel.INFO, f"检查更新：{msg}")
+            except Exception:
+                pass
+            return
         try:
             if err:
                 QMessageBox.information(self, "检查更新", err)
@@ -1041,7 +1068,16 @@ class MainWindow(QMainWindow):
 
         原实现在工作线程里 `QMessageBox.information(...)` —— 在工作线程创建并
         exec 模态窗口是 Qt 明确禁止的用法。
+
+        G68-4：窗口已关闭（诊断跑完前人把窗口关了）时不弹模态 —— 无交互界面下
+        `exec()` 会永久阻塞进程（见 `_can_show_modal`）。
         """
+        if not self._can_show_modal():
+            try:
+                self._emit_log(_fmt_dt(), LogLevel.INFO, f"{title}：{body}")
+            except Exception:
+                pass
+            return
         from PyQt6.QtWidgets import QMessageBox
         QMessageBox.information(self, title, body)
 
