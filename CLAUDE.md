@@ -133,9 +133,10 @@ docs/        工程/产品/契约文档
 
 ## 6. 已知边界（诚实清单，别当 bug 修）
 
-- **代码规模现状（G67-14，实测 ≠ 目标）**：`main_window.py` ~1740、`service.py` ~1170、
-  `settings_panel.py` ~899、`engine.py` ~888 行仍超 800 行软上限（`repo_db.py` 已拆到 ~741）；
-  33 个函数超 50 行（最大 `settings_panel.build_settings_ui` ~430 行）。
+- **代码规模现状（G68 实测）**：仅剩 **3 个**文件超 800 行 —— `main_window.py` 1800、
+  `service.py` 1170、`engine.py` 904（`settings_panel.py` 899→**454**、`repo_db.py` 806→**741**
+  已拆到线内）；8 个函数超 100 行（最大 `service._update` 178 行）。
+  `build_settings_ui` 曾达 432 行，已拆为 `settings_groups.py` 的 7 个构建器。
   **这是已登记的、被显式接受的技术债，不是缺陷**：`main_window.py` 的体量在
   「拆分收益 < 回归风险」区间，一次大规模 UI 重排会危及发布稳定性。
   约束是**增量的**：新增 UI 逻辑一律落独立模块（既有 `failure_panel` / `onboarding` /
