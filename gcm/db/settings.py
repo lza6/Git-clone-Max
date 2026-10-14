@@ -10,10 +10,15 @@ import base64
 import json
 import os
 import threading
+import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from ..util.filelock import cross_process_lock
+
+# G67-23：原子替换的退避重试（Windows 上目标被读者占用时会 PermissionError）
+_REPLACE_RETRIES = 5
+_REPLACE_BACKOFF_SEC = 0.02
 
 # token 加密封装：优先平台密钥环，缺失时用 DPAPI（Windows）或简单掩码。
 # 关键目标：settings.json 中 token 永不明文。
@@ -354,7 +359,25 @@ class SettingsStore:
                     bak.write_bytes(old)
                 except Exception:
                     pass
-            os.replace(tmp, self.path)  # 原子写
+            # G67-23：`os.replace` 在 Windows 上会因**目标文件被他人打开读取**而报
+            # `PermissionError [WinError 5]`（读写共享冲突）—— 即使 tmp 名唯一、
+            # 且我们持有跨进程写锁，同进程的读者仍可能恰好持有目标句柄。
+            # 因此做有限次退避重试；仍失败才上抛（不静默吞掉，那是上一版的另一个坑）。
+            last_err: Exception | None = None
+            for attempt in range(_REPLACE_RETRIES):
+                try:
+                    os.replace(tmp, self.path)  # 原子写
+                    last_err = None
+                    break
+                except PermissionError as e:
+                    last_err = e
+                    time.sleep(_REPLACE_BACKOFF_SEC * (attempt + 1))
+            if last_err is not None:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                raise last_err
 
 
 def _coerce(key: str, val):

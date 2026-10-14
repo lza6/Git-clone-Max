@@ -1,6 +1,6 @@
 """统一 Git URL 解析器：多平台直克隆 + 作者__仓库 命名。
 
-设计目标（对应 计划书/下一步改进指南.md G01-1/G01-2/G01-6）：
+设计目标（G01-1/G01-2/G01-6）：
 - 把「只认 github.com」升级为通用 Git 托管平台解析器。
 - 支持格式：HTTPS / SSH（git@host:o/r 与 ssh://git@host/o/r）/ 短格式 owner/repo。
 - 支持子组路径（gitlab 的 group/subgroup/repo）：取最后两段为 owner/repo。

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""G28-1 敏感信息打码 单测（计划书/下一步改进指南.md G28-1）。"""
+"""G28-1 敏感信息打码 单测。"""
 from __future__ import annotations
 
 import os

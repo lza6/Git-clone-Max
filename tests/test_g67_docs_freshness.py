@@ -28,7 +28,9 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 # --------------------------------------------------------------------------- 扫描范围
-SCAN_GLOBS = ("docs/**/*.md", "README.md")
+# G67-24：把仓库根与 skills/ 也纳入路径扫描 —— 只扫 docs/ 会漏掉
+# README 的「目录结构」表与 skills 技能包里的死链（本轮删 计划书/ 时全靠人肉 grep）。
+SCAN_GLOBS = ("docs/**/*.md", "README.md", "CLAUDE.md", "skills/**/*.md")
 
 
 def iter_scan_files() -> list[pathlib.Path]:
@@ -62,6 +64,9 @@ _ALLOWED_HISTORICAL_VERSIONS: dict[str, dict[str, str]] = {
         "1.2.0": "`owner/repo@v1.2.0` 是 git 引用语法示例（指定 tag），不是产品版本",
         "4.0.0": "`git tag v4.0.0` 是发布命令示例，逐字来自历史操作",
         "7.6.0": "「v7.6.0（G45-6）起 main_window 已拆分」是沿革说明",
+    },
+    "docs/data-model.md": {
+        "8.0.2": "说明「被删的旧 db_structure.md 停在 v8.0.2」这一事实，是考古语境",
     },
 }
 

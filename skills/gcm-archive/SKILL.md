@@ -20,7 +20,7 @@ python skills/gcm-archive/scripts/archive-list.py <urls.txt> --out ./zips [--ref
 ```
 
 ## 脚本
-- `scripts/archive-list.py`：逐行归档为 `owner__repo@ref.zip`，输出统一 JSON
+- `skills/gcm-archive/scripts/archive-list.py`：逐行归档为 `owner__repo@ref.zip`，输出统一 JSON
   `{version, ok, counts:{success,failed,other,total}, results:[{url,status,path,message,code}], invalid:[...]}`，
   退出码 0=全成功 / 1=有失败 / 2=无有效输入。
 

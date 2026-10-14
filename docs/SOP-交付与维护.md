@@ -15,7 +15,7 @@
 ## 2. 开发 → 验证 标准流程
 
 ```
-0. 读计划书/下一步改进指南.md 定位条目（禁止重复实施已落地项）
+0. 读 `gcm/__init__.py` 的 `__changelog__` + `CLAUDE.md` §6 定位未做的项（禁止重复实施已落地项）
 1. 先写测试（RED）→ 实现（GREEN）→ 重构（IMPROVE）
 2. 单测验证：python -m unittest tests.test_xxx -v
 3. 质量闸：ruff check gcm scripts && mypy gcm
@@ -65,7 +65,7 @@
 
 ## 6. 交接清单（给下一位开发者）
 
-- [ ] 计划书/下一步改进指南.md 状态与代码一致
+- [ ] 新增能力已在 `docs/验证记录-*.md` 留下证据行；`__changelog__` 已追加
 - [ ] docs/agent-contract.md 与 CLI/MCP/HTTP 实际行为一致
 - [ ] workflow_status.md 登记最新里程碑
 - [ ] 无未提交工作区改动（git status 干净）

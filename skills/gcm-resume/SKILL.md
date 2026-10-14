@@ -22,7 +22,7 @@ python skills/gcm-resume/scripts/resume.py <urls.txt> --dir <out>
 ```
 
 ## 脚本
-- `scripts/resume.py`：调 CLI `--json`，输出
+- `skills/gcm-resume/scripts/resume.py`：调 CLI `--json`，输出
   `{version, ok, counts, results, invalid, summary:{remaining_failed, already_ok}}`，
   退出码 0=无失败（含跳过）/ 1=仍有失败 / 2=无有效输入。
 

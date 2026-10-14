@@ -26,10 +26,10 @@ cat urls.txt | python -m gcm --cli --json --dir ./clones -
 ```
 
 ## 脚本
-- `scripts/clone-list.py`：读取 `urls.txt` 并调 CLI `--json`，输出汇总 + 失败清单，退出码透传（0/1/2）。
-- `scripts/gcm_smoke.py`：本地裸仓 E2E 冒烟（临时目录建 2 裸仓克隆），验证 CLI --json 全链路可用。
+- `skills/gcm-clone/scripts/clone-list.py`：读取 `urls.txt` 并调 CLI `--json`，输出汇总 + 失败清单，退出码透传（0/1/2）。
+- `skills/gcm-clone/scripts/gcm_smoke.py`：本地裸仓 E2E 冒烟（临时目录建 2 裸仓克隆），验证 CLI --json 全链路可用。
 
 ## 验收清单（本包交付即自检）
-1. `python scripts/gcm_smoke.py` 输出 `GCM-CLONE SMOKE OK`。
+1. `python skills/gcm-clone/scripts/gcm_smoke.py` 输出 `GCM-CLONE SMOKE OK`。
 2. 真实 3 裸仓 E2E（`tests/test_g49_cli.py` 与 `tests/test_g56_cli_json.py` 均可跑绿）。
 3. `--json` 顶层 schema 与 `docs/agent-contract.md` §2 一致。

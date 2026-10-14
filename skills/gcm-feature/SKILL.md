@@ -19,7 +19,7 @@
 | 1 | `CLAUDE.md` | 项目约定、目录职责、红线、常用命令、已知边界 |
 | 2 | `docs/architecture.md` + `docs/adr/ADR-001..004` | 目标区域的分层与既有决策（**别推翻已决策的事**） |
 | 3 | `docs/验证记录-*.md` | 这块最近改过吗？改了必须跑哪些测试？ |
-| 4 | `计划书/下一步改进指南.md` + `计划书/验收清单.md` | 这件事是不是已经做了？有什么现成缺口？ |
+| 4 | `gcm/__init__.py` 的 `__changelog__` + `CLAUDE.md` §6 | 这件事是不是已经做了？有什么现成缺口/已知边界？ |
 
 > **判断过期**：文档与代码冲突时**一律以代码为准**，并在同一次提交里顺手修掉那份文档。
 > 本项目已多次出现「文档说没做、代码已做」（如 G53 设置 UI、CI fast/slow 拆分），
@@ -29,7 +29,7 @@
 
 ```bash
 # 功能是否已存在（函数名 / 设置项 / UI 文案 / API 路径）
-grep -rn "<关键标识>" gcm/ tests/ docs/ skills/ 计划书/
+grep -rn "<关键标识>" gcm/ tests/ docs/ skills/ CLAUDE.md README.md
 
 # 某文件/函数是否真有调用方（防"写了但接不上"）
 grep -rn "<函数名>" gcm/ | grep -v "def <函数名>"
@@ -120,10 +120,8 @@ QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe scripts/e2e_smoke.py
 
 ## 第 7 步：登记（**不做这步等于没做完**）
 
-1. `计划书/下一步改进指南.md`：条目标 `[✅ 已落地]` + 复现→修复→验证三段证据
-2. `计划书/验收清单.md`：加一行证据（命令 + 输出摘要）
-3. `计划书/workflow_status.md`：本版本交付登记
-4. README 功能表 / `docs/agent-contract.md`（若涉及 agent 入口）/ `docs/architecture.md`（若涉及分层）
+1. `docs/验证记录-<日期>.md`：加一行证据（复现 → 修复 → 验证命令 + 真实输出摘要）
+2. README 功能表 / `docs/agent-contract.md`（若涉及 agent 入口）/ `docs/architecture.md`（若涉及分层）
 5. `docs/验证记录-*.md`：**记录这次改了哪些区域、跑过哪些验证** ——
    下次改同一区域的人（可能是未来的你）会先读它，避免重复跑同一批验证
 6. `gcm/__init__.py`：`__version__` bump + `__changelog__` 追加一行

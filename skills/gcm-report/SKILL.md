@@ -22,7 +22,7 @@ python skills/gcm-report/scripts/export-report.py --out ./reports --format markd
 ```
 
 ## 脚本
-- `scripts/export-report.py`：导出 CSV/Markdown 到 `--out`；JSON 汇总包含
+- `skills/gcm-report/scripts/export-report.py`：导出 CSV/Markdown 到 `--out`；JSON 汇总包含
   `{version, ok, counts, results:[{path, rows, format}], invalid: []}`，退出码 0=成功 / 1=失败。
 
 ## 验收清单（本包交付即自检）

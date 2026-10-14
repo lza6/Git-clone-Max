@@ -26,7 +26,7 @@ python skills/gcm-diag/scripts/diag.py [--json]
 ```
 
 ## 脚本
-- `scripts/diag.py`：包装 `--diag`，输出 `{grade, items:[{name,status,detail}]}`，
+- `skills/gcm-diag/scripts/diag.py`：包装 `--diag`，输出 `{grade, items:[{name,status,detail}]}`，
   退出码 0=绿 / 1=黄或红（文本模式）。
 
 ## 验收清单（本包交付即自检）

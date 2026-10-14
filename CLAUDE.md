@@ -18,9 +18,10 @@
 | 我该改哪、改动影响什么 | `docs/architecture.md` + `docs/adr/ADR-001..004` |
 | 可复用的代码范式 | `docs/code-gems.md`（单写者/原子写/redact/批聚合/流控/注入时钟/契约/纯校验） |
 | agent 接入契约（CLI/MCP/HTTP schema、退出码、打码规则） | `docs/agent-contract.md` |
-| 这个迭代还剩什么没做 | `计划书/下一步改进指南.md`（唯一总纲） |
-| 每条需求凭什么说"已完成" | `计划书/验收清单.md`（逐条证据，发布清单硬性要求） |
-| 当前版本交付了什么 | `计划书/workflow_status.md`（逐版本登记） |
+| 数据模型 / 迁移链 / 跨进程锁 | `docs/data-model.md` |
+| 历次验证证据与审计报告 | `docs/验证记录-*.md` + `docs/reports/` |
+| 每个版本交付了什么 | `gcm/__init__.py` 的 `__changelog__`（逐版本一行） |
+| 还没做的（已知边界/技术债） | 本文件 §6 + 代码里的 `G##` 注释 |
 | 跑过哪些验证、改哪块必跑哪些测试 | `docs/验证记录-*.md`（**改前先看，避免重复跑同一批验证**） |
 | 慢测定位与提速 | `docs/慢测定位.md` |
 | 发布流程 | `docs/RELEASE_CHECKLIST.md` |
@@ -67,7 +68,7 @@ gcm/i18n/    文案字典 zh/en（key 即中文，缺失回退中文）
 skills/      agent 技能包（SKILL.md + scripts/），每个必须自包含验收步骤
 scripts/     运维/CI/基准脚本（不参与打包）
 tests/       测试（113 文件）；**新增测试文件默认落在 CI 快集**（scripts/ci_run_fast.py 用黑名单，不是白名单）
-计划书/      迭代总纲与证据台账（中文名目录，保持）
+docs/reports/ 历次审计报告（HTML，只读快照）
 docs/        工程/产品/契约文档
 ```
 
@@ -104,7 +105,8 @@ docs/        工程/产品/契约文档
 3. **定点**：新能力落在哪一层（见 §2）？跨层调用是否已有现成契约（`docs/code-gems.md` 的范式可复用）？
 4. **TDD**：先写失败测试（RED）→ 最小实现（GREEN）→ 重构（IMPROVE）。业务逻辑真跑，只对**外部边界**（网络/时钟/对话框/子进程）mock。
 5. **加守卫**：如果这个 bug 属于"能再犯"的类型（版本漂移 / 编码 / 时间 / 安全边界），**补一个静态或 E2E 守卫测试**，别只修当下这一处。
-6. **登记**：`计划书/下一步改进指南.md` 条目标 `[✅ 已落地]` + `计划书/验收清单.md` 加证据行（命令 + 输出摘要）。
+6. **登记**：`gcm/__init__.py` 的 `__changelog__` 追加一行（版本号 + 一句话能力 + 测试/覆盖率）；
+   新能力的「凭什么算完成」写进 `docs/验证记录-<日期>.md`（命令 + 真实输出摘要）。
 7. **同步文档**：README 功能表 / `docs/agent-contract.md`（若涉及 agent 入口）/ `docs/architecture.md`（若涉及分层）/ 本文件（若涉及约定）。
 8. **收尾**：`ruff check gcm` + `mypy gcm` + 定向回归 → 必要时快集 → 版本 bump（`__version__` + `__changelog__` 一行）→ 打包 → 按 `docs/RELEASE_CHECKLIST.md` 发布。
 9. **agent 可调用**：新能力若要暴露给 agent，同步更新 `skills/` 与 `docs/agent-contract.md`，并保证退出码语义（0/1/2，MCP 未启用为 3）与 `--json` schema 不被破坏。
