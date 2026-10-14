@@ -307,5 +307,99 @@ class TestLifecycleGuards(unittest.TestCase):
                         "`pop(0)` 仍在 busy 判断之前 —— 该组会被静默丢弃")
 
 
+class TestConcurrencyHardening(unittest.TestCase):
+    """G69-14/15/16：压测（多进程 + 高并发）逼出来的三处并发缺陷。"""
+
+    def test_file_lock_does_not_use_msvcrt_LK_LOCK(self):
+        """G69-16：不得再用 `msvcrt.LK_LOCK` —— 它重试 10 次后抛错，导致静默降级。
+
+        实测（4 进程各写 200 次）：用 LK_LOCK 时有 1 个进程降级；
+        降级期间该进程**完全失去跨进程保护**，两个写方同时进入临界区 →
+        `os.replace` 报 `PermissionError [WinError 5]`（压测里那几次「写失败」的真因）。
+        改为 `LK_NBLCK` + 自己轮询后：降级 0 次、写失败 0 次。
+        """
+        # 只看**真实调用**的参数（注释里正解释「为什么不用 LK_LOCK」，全文匹配会误伤）
+        src = (ROOT / "gcm/util/filelock.py").read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        modes = []
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call)
+                    and getattr(node.func, "attr", None) == "locking"
+                    and len(node.args) >= 2):
+                m = node.args[1]
+                modes.append(getattr(m, "attr", None) or getattr(m, "id", None) or str(m))
+        self.assertTrue(modes, "找不到 msvcrt.locking 的调用点（守卫锚点过期）")
+        self.assertNotIn("LK_LOCK", modes,
+                         f"又用回了 LK_LOCK（内建 10 次上限 → 争用下会静默降级）：{modes}")
+        self.assertIn("LK_NBLCK", modes, f"应使用非阻塞锁 + 自行轮询：{modes}")
+        self.assertIn("_ACQUIRE_TIMEOUT_SEC", src, "缺少自主的抢锁超时预算")
+
+    def test_lock_is_not_degraded_under_sustained_contention(self):
+        """多进程持续争用下不得降级（降级 = 跨进程互斥失效）。"""
+        import subprocess
+
+        tmp = pathlib.Path(tempfile.mkdtemp(prefix="gcm_g6916_"))
+        child = r'''
+import os, sys
+sys.path.insert(0, os.environ["GCM_ROOT"])
+from pathlib import Path
+import gcm.util.filelock as fl
+degraded = []
+fl._warn = lambda m: degraded.append(m)
+from gcm.util.atomic_io import write_json_atomic
+p = Path(sys.argv[1]); n = int(sys.argv[2]); errs = 0
+for i in range(n):
+    try:
+        write_json_atomic(p, {"k": i}, label="probe")
+    except Exception:
+        errs += 1
+print(f"{len(degraded)} {errs}")
+'''
+        env = dict(os.environ)
+        env["GCM_ROOT"] = str(ROOT)
+        env["PYTHONIOENCODING"] = "utf-8"
+        target = tmp / "x.json"
+        procs = [subprocess.Popen([sys.executable, "-c", child, str(target), "150"],
+                                  cwd=str(ROOT), env=env, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, text=True,
+                                  encoding="utf-8", errors="replace") for _ in range(4)]
+        degraded = errs = 0
+        for p in procs:
+            out, err = p.communicate(timeout=300)
+            self.assertEqual(p.returncode, 0, f"子进程失败：{err[-200:]}")
+            d, e = out.strip().split()
+            degraded += int(d)
+            errs += int(e)
+        self.assertEqual(degraded, 0, "争用下降级了 —— 跨进程互斥在该进程内失效")
+        self.assertEqual(errs, 0, f"并发写失败 {errs} 次")
+        self.assertEqual([p.name for p in tmp.glob("*.tmp")], [], "残留 tmp")
+
+    def test_readers_take_the_cross_process_lock(self):
+        """G69-15：`load()` 也必须持跨进程锁。
+
+        Windows 上 `os.replace` 与「正持有目标句柄的读者」冲突会直接失败；
+        只锁写方挡不住（读者随时可能持着句柄）。
+        """
+        for rel, name in (("gcm/app/retry_queue.py", "retry_queue.json"),
+                          ("gcm/db/runtime_sessions.py", "session_runtime.json")):
+            src = (ROOT / rel).read_text(encoding="utf-8")
+            start = src.index("def load(self)")
+            body = src[start:start + 900]
+            self.assertIn("cross_process_lock", body,
+                          f"{rel} 的 load() 未持跨进程锁（G69-15 会复发）")
+            self.assertIn(name, body, f"{rel} 的锁标签应指向 {name}")
+
+    def test_http_server_backlog_is_raised(self):
+        """G69-14：HTTP API 的 listen backlog 不得留在默认 5。
+
+        实测 50 并发连接时出现 `WinError 10061 目标积极拒绝`（超 backlog 的连接被
+        内核直接拒绝，客户端只看到「连不上」）。抬高后 60 并发全部 200。
+        """
+        from gcm.http_api import GcmApiServer
+
+        self.assertGreaterEqual(GcmApiServer.request_queue_size, 64,
+                                "backlog 太小：并发调用会被直接拒绝")
+
+
 if __name__ == "__main__":
     unittest.main()

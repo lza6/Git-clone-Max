@@ -59,7 +59,16 @@ class RuntimeSessionStore:
 
     # ------------------------------------------------------------ 读写
     def load(self) -> dict[str, Any]:
-        """读取清单；缺失 / 损坏 / 结构非法 → 返回空结构（不抛异常）。"""
+        """读取清单；缺失 / 损坏 / 结构非法 → 返回空结构（不抛异常）。
+
+        G69-15：读也持跨进程锁（理由同 `RetryQueue.load`：Windows 上读者持着句柄时
+        写方的 `os.replace` 会直接失败）。
+        """
+        from ..util.filelock import cross_process_lock
+        with self._lock, cross_process_lock(self.path, label="session_runtime.json"):
+            return self._load_locked()
+
+    def _load_locked(self) -> dict[str, Any]:
         with self._lock:
             raw: dict[str, Any] = {}
             if self.path.exists():

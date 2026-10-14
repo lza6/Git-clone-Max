@@ -16,9 +16,10 @@ from pathlib import Path
 
 from ..util.filelock import cross_process_lock
 
-# G67-23：原子替换的退避重试（Windows 上目标被读者占用时会 PermissionError）
-_REPLACE_RETRIES = 5
-_REPLACE_BACKOFF_SEC = 0.02
+# 原子替换的退避重试（Windows 上目标被任何人持有句柄时会 PermissionError；
+# 持有者可能是杀软/索引器，不只是本进程的读者）—— 理由与预算见 util/atomic_io.py
+_REPLACE_RETRIES = 12
+_REPLACE_BACKOFF_SEC = 0.05
 
 # token 加密封装：优先平台密钥环，缺失时用 DPAPI（Windows）或简单掩码。
 # 关键目标：settings.json 中 token 永不明文。

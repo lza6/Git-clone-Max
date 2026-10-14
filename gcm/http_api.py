@@ -263,11 +263,20 @@ class _ApiHandler(BaseHTTPRequestHandler):
 
 
 class GcmApiServer(ThreadingHTTPServer):
-    """带 root/data_dir/allow_mutate 的线程化 HTTP 服务器。"""
+    """带 root/data_dir/allow_mutate 的线程化 HTTP 服务器。
+
+    G69-14（压测抓出）：`socketserver.TCPServer.request_queue_size` 默认只有 **5**，
+    即 `listen()` 的 backlog = 5。50 个并发连接实测出现
+    `WinError 10061 由于目标计算机积极拒绝` —— 超出 backlog 的连接被**直接拒绝**
+    （客户端看到的是「连不上」，不是「服务忙」，很难自查）。
+    本地 agent/脚本批量并发调用时完全可能超过 5，故显式抬高。
+    """
 
     root: Path = Path.cwd()
     data_dir: Path = Path.cwd()
     allow_mutate: bool = False
+    request_queue_size = 128          # 默认 5 太小：并发调用会被内核直接拒绝
+    daemon_threads = True             # 线程随进程退出，避免 shutdown 时挂住
 
 
 def create_server(bind: str = "127.0.0.1:8765", root: Path | str = Path.cwd(),

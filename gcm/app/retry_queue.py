@@ -52,7 +52,21 @@ class RetryQueue:
 
     # ------------------------------------------------------------ 持久化
     def load(self) -> dict[str, Any]:
-        """读取队列；缺失 / 损坏 → 空结构（不抛异常）。"""
+        """读取队列；缺失 / 损坏 → 空结构（不抛异常）。
+
+        G69-15：**读也要持跨进程锁**。Windows 上 `os.replace` 与「正打开着目标文件的
+        读者」冲突会直接 `PermissionError [WinError 5]` —— 实测 4 进程并发时出现
+        「写方的整次保存失败」。只锁写方挡不住：读者随时可能正持着句柄。
+        `progress_file.py` 的 `progress_guard` 早就同时包住 load/save，这里补齐一致。
+        """
+        # `path=None` 是纯内存模式（不落盘）—— 此时没有文件可锁，直接读内存态
+        if self.path is None:
+            return self._load_locked()
+        from ..util.filelock import cross_process_lock
+        with self._lock, cross_process_lock(self.path, label="retry_queue.json"):
+            return self._load_locked()
+
+    def _load_locked(self) -> dict[str, Any]:
         with self._lock:
             raw: dict[str, Any] = {"entries": {}, "dropped": []}
             if self.path is not None and self.path.exists():

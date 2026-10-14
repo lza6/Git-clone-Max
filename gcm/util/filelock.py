@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -43,14 +44,38 @@ def _lock_key(target: Path) -> str:
         return str(target)
 
 
+# 抢锁的总预算（秒）。超时才降级 —— 降级会失去跨进程互斥，必须是真的异常才发生。
+_ACQUIRE_TIMEOUT_SEC = 30.0
+_ACQUIRE_POLL_SEC = 0.02
+
+
 def _acquire(lock_fh) -> bool:
-    """对已打开的句柄加独占锁；成功返回 True。"""
+    """对已打开的句柄加独占锁；成功返回 True。
+
+    G69-16（压测抓出，重要）：**不能用 `msvcrt.LK_LOCK`**。它内建「重试 10 次、
+    每次间隔 1 秒」的上限，之后直接抛 `OSError` —— 而本函数一抛、调用方就
+    **静默降级为仅线程锁**，该进程从此**完全没有跨进程保护**。
+    实测：4 进程各写 200 次时，有 1 个进程降级；降级期间两个写方同时进入临界区，
+    于是 `os.replace` 开始报 `PermissionError [WinError 5]`（这正是压测里那几次
+    「写失败」的真因，不是退避不够）。
+
+    改为用 `LK_NBLCK`（非阻塞）**自己轮询**，超时预算由我们掌握；只有超过
+    `_ACQUIRE_TIMEOUT_SEC` 仍拿不到才降级（那才是真异常，值得告警）。
+    """
     if os.name == "nt":
         import msvcrt
-        msvcrt.locking(lock_fh.fileno(), msvcrt.LK_LOCK, 1)
-    else:
-        import fcntl
-        fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+        deadline = time.monotonic() + _ACQUIRE_TIMEOUT_SEC
+        while True:
+            try:
+                lock_fh.seek(0)                       # 锁定从第 0 字节起的 1 字节
+                msvcrt.locking(lock_fh.fileno(), msvcrt.LK_NBLCK, 1)
+                return True
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(_ACQUIRE_POLL_SEC)
+    import fcntl
+    fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)      # POSIX 阻塞式，无内建上限
     return True
 
 

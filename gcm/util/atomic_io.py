@@ -25,9 +25,14 @@ from typing import Any
 
 from .filelock import cross_process_lock
 
-# 替换退避重试：Windows 上目标文件被他人打开读取时 `os.replace` 会 PermissionError
-_REPLACE_RETRIES = 5
-_REPLACE_BACKOFF_SEC = 0.02
+# 替换退避重试：Windows 上目标文件被**任何人**打开着（不共享删除）时
+# `os.replace` 会 `PermissionError [WinError 5]`。持有者不限于本进程的读者 ——
+# 杀毒软件扫描、Windows Search 索引、备份/同步工具都会对刚写完的文件短暂持有句柄。
+# 实测：4 进程 × 150 次并发写中仍有 1 次落在 0.2s 的旧预算之外；
+# 预算抬到约 3.9s（12 次，线性退避）后可覆盖这类瞬时占用。
+# 这是**罕见**路径，最坏多等几秒，好过整次保存失败。
+_REPLACE_RETRIES = 12
+_REPLACE_BACKOFF_SEC = 0.05
 
 
 def _unique_tmp(path: Path) -> Path:
