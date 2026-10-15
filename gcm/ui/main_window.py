@@ -365,14 +365,40 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------ UI
 
     def _serialize_geometry(self) -> str:
-        """G36-4 当前窗口几何 → "WxH+X+Y"（含最大化状态前缀 M:）。"""
+        """G36-4 当前窗口几何 → "WxH+X+Y"（含最大化状态前缀 M:）。
+
+        最大化时**连普通几何的位置一起存**：原实现只写 `M:WxH`（2 个数字），
+        而 `_restore_geometry` 无条件按 4 个值解包 → `ValueError` 被 `except` 吞掉
+        → 最大化用户每次启动都恢复不了（实测复发）。
+        """
         try:
             if self.isMaximized():
-                return f"M:{self.normalGeometry().width()}x{self.normalGeometry().height()}"
+                ng = self.normalGeometry()          # 最大化前的普通几何（含位置）
+                return f"M:{ng.width()}x{ng.height()}+{ng.x()}+{ng.y()}"
             g = self.geometry()
             return f"{g.width()}x{g.height()}+{g.x()}+{g.y()}"
         except Exception:
             return ""
+
+    def _screen_contains_point(self, x: int, y: int) -> bool:
+        """点 (x, y) 是否落在任一**实际存在**的屏幕工作区内。
+
+        G69-17（用户实际遇到）：`QWidget.move()` **不会**矫正离屏坐标 ——
+        实测 `move(-21298, -21183)` 之后窗口真的停在那里。于是只要
+        `settings.geometry` 里留下了失效坐标（换过显示器 / 改过分辨率 /
+        拔掉过外接屏 / 远程桌面会话尺寸不同），每次启动窗口都会**停在屏幕外**：
+        进程活着、任务栏有它，但用户什么也看不到 —— 表现的正是「双击打不开」。
+        """
+        try:
+            from PyQt6.QtCore import QPoint
+            from PyQt6.QtWidgets import QApplication
+            app = QApplication.instance()
+            if app is None:
+                return True                     # 无 GUI（测试替身）：不做约束
+            pt = QPoint(x, y)
+            return any(s.availableGeometry().contains(pt) for s in app.screens())
+        except Exception:
+            return True                          # 判定不了就别乱改用户的位置
 
     def _restore_geometry(self) -> None:
         """G36-4 从 settings.geometry 恢复窗口几何（尺寸/位置/最大化）。"""
@@ -383,16 +409,41 @@ class MainWindow(QMainWindow):
             maximized = raw.startswith("M:")
             if maximized:
                 raw = raw[2:]
-            w, h, x, y = (int(v) for v in raw.replace("x", " ").replace("+", " ").split())
+            parts = [int(v) for v in raw.replace("x", " ").replace("+", " ").split()]
+            if len(parts) == 2:                 # 旧版 `M:WxH` 格式：只有尺寸
+                w, h = parts
+                x = y = None
+            elif len(parts) >= 4:               # 标准 `WxH+X+Y`
+                w, h, x, y = parts[:4]
+            else:
+                return                          # 格式不认识：保持默认几何
             # 防小屏溢出：只接受最小尺寸以上
             w = max(w, 1020)
             h = max(h, 700)
             self.resize(w, h)
-            self.move(x, y)
+            if x is None or y is None or not self._screen_contains_point(x, y):
+                # 位置不可用（旧格式 / 屏已不在）→ **居中显示**，绝不放到用户看不见的地方
+                self._center_on_primary_screen(w, h)
+            else:
+                self.move(x, y)
             if maximized:
                 self.showMaximized()
         except Exception:
             pass  # 几何串损坏 → 保持默认
+
+    def _center_on_primary_screen(self, w: int, h: int) -> None:
+        """把窗口放到主屏工作区中央（位置不可恢复时的安全落点）。"""
+        try:
+            from PyQt6.QtWidgets import QApplication
+            app = QApplication.instance()
+            screen = app.primaryScreen() if app is not None else None
+            if screen is None:
+                return
+            avail = screen.availableGeometry()
+            self.move(avail.x() + max(0, (avail.width() - w) // 2),
+                      avail.y() + max(0, (avail.height() - h) // 2))
+        except Exception:
+            pass
 
     def _build_ui(self):
         self.setWindowTitle("Git-clone-Max — GitHub 仓库批量并行下载")

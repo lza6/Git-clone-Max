@@ -401,5 +401,107 @@ print(f"{len(degraded)} {errs}")
                                 "backlog 太小：并发调用会被直接拒绝")
 
 
+class TestWindowNeverRestoresOffscreen(unittest.TestCase):
+    """G69-17：窗口几何恢复后必须**落在可见屏幕上**（用户报「双击打不开」的真因）。
+
+    复现（真实用户在用的机器上实测）：`settings.geometry` 里留下了失效坐标，
+    启动后窗口矩形是 `(-21298, -21183, -20263, -20446)` —— 与**任何**显示器都无交集。
+    进程活着、任务栏有它，但用户完全看不到窗口。
+
+    关键机制：`QWidget.move()` **不会**矫正离屏坐标 ——
+    实测 `move(-21298, -21183)` 之后窗口真的停在那里。所以「存的坐标失效」= 永久打不开。
+    失效来源很常见：换显示器、改分辨率、拔掉外接屏、远程桌面会话尺寸不同。
+    """
+
+    def _window_with_geometry(self, geo: str):
+        from gcm.db.repo_db import Database
+        from gcm.db.settings import SettingsStore
+        from gcm.ui.main_window import MainWindow
+
+        d = pathlib.Path(tempfile.mkdtemp(prefix="gcm_g6917_"))
+        store = SettingsStore(d / "s.json")
+        st = store.load()
+        st.geometry = geo
+        store.save(st)
+        w = MainWindow(data_dir=d, db=Database(d / "t.db"), settings=store)
+        w.show()
+        _app.processEvents()
+        return w
+
+    def _on_any_screen(self, w) -> bool:
+        g = w.geometry()
+        return any(s.availableGeometry().contains(g.center()) for s in _app.screens())
+
+    def test_offscreen_saved_position_falls_back_to_visible(self):
+        w = self._window_with_geometry("1035x737+-21298+-21183")
+        try:
+            self.assertTrue(self._on_any_screen(w),
+                            f"窗口被恢复到屏幕外：{w.geometry().getRect()}")
+        finally:
+            w.close()
+            w.deleteLater()
+            _app.processEvents()
+
+    def test_far_right_offscreen_also_recovered(self):
+        w = self._window_with_geometry("1035x737+99999+50")
+        try:
+            self.assertTrue(self._on_any_screen(w),
+                            f"窗口在右侧屏外：{w.geometry().getRect()}")
+        finally:
+            w.close()
+            w.deleteLater()
+            _app.processEvents()
+
+    def test_valid_position_is_kept(self):
+        """反向约束：坐标合法时必须**原样恢复**，不能一律居中（否则等于丢掉用户的选择）。"""
+        w = self._window_with_geometry("1035x737+40+40")
+        try:
+            self.assertTrue(self._on_any_screen(w))
+            g = w.geometry()
+            self.assertLess(abs(g.x() - 40), 40, f"合法位置未被尊重：{g.getRect()}")
+            self.assertLess(abs(g.y() - 40), 40, f"合法位置未被尊重：{g.getRect()}")
+        finally:
+            w.close()
+            w.deleteLater()
+            _app.processEvents()
+
+    def test_maximized_state_is_restored(self):
+        """顺带钉住：最大化使用户下次启动仍是最大化（原实现写 `M:WxH` 只有 2 个数字，
+        恢复时按 4 个解包 → ValueError 被 except 吞掉 → 永远恢复不了）。"""
+        w = self._window_with_geometry("M:1060x720+300+200")
+        try:
+            self.assertTrue(w.isMaximized(), "最大化状态未被恢复")
+        finally:
+            w.close()
+            w.deleteLater()
+            _app.processEvents()
+
+    def test_legacy_two_value_format_does_not_break(self):
+        """旧版存下的 `M:WxH`（2 个数字）不得让恢复逻辑整体失效。"""
+        w = self._window_with_geometry("M:1060x720")
+        try:
+            self.assertTrue(w.isMaximized())
+            self.assertTrue(self._on_any_screen(w))
+        finally:
+            w.close()
+            w.deleteLater()
+            _app.processEvents()
+
+    def test_serialize_keeps_position_when_maximized(self):
+        """静态守卫：最大化时序列化必须带上位置（4 个数字），否则位置永远丢。"""
+        src = (ROOT / "gcm/ui/main_window.py").read_text(encoding="utf-8")
+        start = src.index("def _serialize_geometry")
+        body = src[start:start + 700]
+        self.assertIn("normalGeometry()", body)
+        self.assertIn("+{ng.x()}+{ng.y()}", body,
+                      "最大化时未存位置 —— 恢复后位置会丢（G69-17 的伴生问题）")
+
+    def test_restore_checks_screen_containment(self):
+        """静态守卫：恢复位置前必须做「是否落在某块屏上」的判定。"""
+        src = (ROOT / "gcm/ui/main_window.py").read_text(encoding="utf-8")
+        self.assertIn("_screen_contains_point", src,
+                      "缺少离屏判定 —— 换显示器后窗口会永久跑到屏幕外")
+
+
 if __name__ == "__main__":
     unittest.main()
