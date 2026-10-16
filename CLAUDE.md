@@ -146,7 +146,10 @@ docs/        工程/产品/契约文档
   - `G54-4 引导清单`：台账标 ✅，**实际全库无该组件**；`OnboardingDialog` 仍是三步向导。
   - `G53-1 health_card`：台账称新增 JSON 列 + 雷达图，**实际仍是单值 `repo_health` + 纯文本**。
   - `G58-3 代理凭据`：台账称「解析 + 加密落盘」，**实际未解析、`settings.proxy` 明文落盘**。
-  - `v9.1.3 ~ v9.3.2` 未打 git tag（发布链断档，最新 tag 停在 `v9.1.2`）。
+  - ~~`v9.1.3 ~ v9.3.2` 未打 git tag~~ **该条不成立，已于 2026-10-17 更正**：
+    这些 tag **在远端一直存在**，是本地未 `git fetch --tags` 造成的误判。
+    实测 `git ls-remote --tags origin` 后逐个校验：v9.x 全部 tag 与其提交的
+    `__version__` **逐一对得上**。教训：**涉及远端状态的结论必须先 fetch 再下**。
 - **CI `test` job 的原生崩溃（根因已定，已有处置）**：
   Linux/macOS 表现为 `exit 139`（SIGSEGV），本机 Windows 可复现。
   **根因**：`MainWindow` 等 Qt 控件由**引用环**维持 —— 实测 `del w` 之后

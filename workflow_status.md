@@ -164,7 +164,7 @@ QTimerInfoList::activateTimers
 | P1-1 | `G54-4 引导清单` 零实现（台账标 ✅） | 未修（需立项） |
 | P1-2 | `G53-1` 未新增 `health_card` 列、无雷达图 | 未修（台账过度声称） |
 | P1-3 | `G58-3` 代理凭据未解析、明文落盘 | 未修（安全项） |
-| P1-4 | v9.1.3~v9.3.2 未打 git tag（发布链断档） | 未修 |
+| P1-4 | ~~v9.1.3~v9.3.2 未打 tag~~ **不成立**：远端一直有；本地未 `fetch --tags` 导致误判，已逐 tag 校验一致 | ✅ 更正 |
 | P1-5 | 孤立 zombie 字段：`shallow_default`/`auto_init_empty`/`mirror_default`/`sched_report_format`/`depth` | 未修 |
 
 ### P2（中）
