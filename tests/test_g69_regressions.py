@@ -847,7 +847,8 @@ class TestG69_18AgentSurfaceRobustness(unittest.TestCase):
         db.close()
         req = ('{"jsonrpc":"2.0","id":1,"method":"tools/call","params":'
                '{"name":"export_report","arguments":'
-               '{"format":"csv","out_dir":"C:/Windows/Temp/gcm_guard_pwn"}}}\n')
+               '{"format":"csv","out_dir":"%s"}}}\n') % (
+            pathlib.Path(_tf.gettempdir()) / "gcm_guard_pwn").as_posix()
         env = dict(os.environ, GCM_MCP_ENABLE="1", GCM_DATA_DIR=str(data_dir))
         r = subprocess.run([sys.executable, "-m", "gcm.mcp_server", "--allow-export"],
                            input=req, capture_output=True, text=True, encoding="utf-8",
@@ -870,3 +871,45 @@ class TestG69_18AgentSurfaceRobustness(unittest.TestCase):
         mcp = (self.ROOT / "gcm/mcp_server.py").read_text(encoding="utf-8")
         self.assertNotIn('parent.parent / "data"', mcp,
                          "mcp_server 又自拼 <repo>/data 了")
+
+
+class TestG69_18LogBufferTimerIsActivityArmed(unittest.TestCase):
+    """G69-18：日志节流定时器必须是**有积压才武装的单次**定时器。
+
+    根因链（本机 + Linux/macOS CI 实测一致）：
+
+        LogBuffer.__init__ 里 `self.timer.start()` 常驻循环
+        → 窗口销毁后事件队列里仍排着指向它的 QTimerEvent
+        → 下一次 processEvents() 在 QTimerInfoList::activateTimers 里
+          解引用**已释放**的定时器
+        → 进程原生崩溃（C 栈：activateTimers → QCoreApplication::notifyInternal2）
+
+    改成单次 + append 时武装后：空转不再唤醒事件循环，且没有积压时
+    根本不存在「等待触发的定时器」。120ms 批量渲染语义不变。
+    """
+
+    ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+    def test_timer_is_single_shot_and_not_started_at_construction(self):
+        from gcm.ui.log_buffer import LogBuffer
+        lb = LogBuffer()
+        self.addCleanup(lb.stop)
+        self.assertTrue(lb.timer.isSingleShot(),
+                        "必须是单次定时器，否则又会常驻循环")
+        self.assertFalse(lb.timer.isActive(),
+                         "构造时不应武装（无积压就不该有等待触发的定时器）")
+
+    def test_append_arms_timer_and_stop_disarms(self):
+        from gcm.ui.log_buffer import LogBuffer
+        from gcm.ui.theme import LogLevel, LogEvent
+        lb = LogBuffer()
+        self.addCleanup(lb.stop)
+        lb.append(LogEvent("12:00:00", LogLevel.INFO, "x"))
+        self.assertTrue(lb.timer.isActive(), "有积压后应武装定时器")
+        lb.stop()
+        self.assertFalse(lb.timer.isActive(), "stop() 后必须停表")
+
+    def test_close_event_stops_log_timer(self):
+        src = (self.ROOT / "gcm/ui/main_window.py").read_text(encoding="utf-8")
+        self.assertIn("_log_buffer.stop()", src,
+                      "closeEvent 必须停日志节流定时器")

@@ -1960,6 +1960,14 @@ class MainWindow(QMainWindow):
             self._flush_log_batch()
         except Exception:
             pass
+        # G69-18：停掉日志渲染节流定时器。
+        # 窗口销毁后若 Qt 事件队列里还排着指向它的 QTimerEvent，
+        # 下一次 processEvents() 会在 activateTimers 里解引用已释放对象 → 原生崩溃。
+        try:
+            if getattr(self, "_log_buffer", None) is not None:
+                self._log_buffer.stop()
+        except Exception:
+            pass
         # 引擎统一收尾：取消剩余任务、flush 进度、清空未启动队列
         try:
             if hasattr(self, "engine") and self.engine is not None:

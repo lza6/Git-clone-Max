@@ -31,12 +31,34 @@ class LogBuffer(QObject):
         self.log_count = log_count
         self.timer = QTimer(self)
         self.timer.setInterval(interval_ms)
+        # G69-18 修复：改为**单次**定时器 + 有积压才武装。
+        #
+        # 原实现 `self.timer.start()` 常驻循环，整个进程生命周期内每 120ms
+        # 触发一次。窗口被销毁（测试里大量构造后直接丢引用）时，若 Qt 事件
+        # 队列里已排着一个指向该定时器的 `QTimerEvent`，随后的
+        # `processEvents()` 会在 `QTimerInfoList::activateTimers` 里解引用
+        # **已释放**的定时器 → 进程原生崩溃（SIGSEGV，本机/Linux/macOS 实测，
+        # C 栈：activateTimers → QCoreApplication::notifyInternal2）。
+        #
+        # 改成「有日志才武装、flush 后自动停」：
+        #   ① 空转时不再唤醒事件循环（省电、少噪声）；
+        #   ② 没有积压就不存在「等待触发的定时器」，从根上消掉这类时序崩溃；
+        #   ③ 120ms 批量渲染的语义**完全不变**（首个 append 起算）。
+        self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.flush)
-        self.timer.start()
 
     # ------------------------------------------------------------ 缓冲
     def append(self, ev: LogEvent) -> None:
         self._batch.append(ev)
+        if not self.timer.isActive():
+            self.timer.start()          # 武装：interval_ms 后批量刷一次
+
+    def stop(self) -> None:
+        """停止渲染节流定时器（窗口关闭/销毁前调用，幂等）。"""
+        try:
+            self.timer.stop()
+        except Exception:
+            pass
 
     def flush(self) -> None:
         """批量渲染当前积压日志到 QPlainTextEdit（含滚动跟随）。"""
