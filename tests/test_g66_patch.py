@@ -740,10 +740,18 @@ class TestConsoleToolEncoding(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0, "不存在的任务应返回非 0")
         text = (r.stderr or "") + (r.stdout or "")
         self.assertTrue(text.strip(), "应捕获到错误文本")
-        # 乱码特征：替换字符占比过高
+        # 乱码特征：替换字符占比过高 —— 这才是本用例真正要守的回归
+        # （用错编码去解 schtasks 的 ANSI 输出 → U+FFFD 乱码）。
         self.assertNotIn("�", text,
                          f"中文提示被解码成乱码：{text[:80]!r}")
-        self.assertIn("错误", text, f"应含可读中文「错误」：{text[:80]!r}")
+        # G69-18 修正：**不要**无条件断言中文。GitHub 的 windows-latest runner
+        # 是英文系统（ANSI 代码页 1252），schtasks 输出的是英文
+        # `ERROR: The system cannot find the file specified.`——
+        # 硬断言「错误」会在英文环境必红，而那不是回归、是**平台语言差异**。
+        # 与 `_console_encoding()` 同源判断：CJK 代码页才要求中文可读。
+        enc = _console_encoding()
+        if enc.lower() in ("cp936", "cp950", "cp932", "cp949", "gbk", "gb2312", "big5"):
+            self.assertIn("错误", text, f"CJK 控制台下应含可读中文「错误」：{text[:80]!r}")
 
 
 class TestPostCloneHookInjection(unittest.TestCase):

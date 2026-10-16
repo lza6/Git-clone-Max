@@ -86,6 +86,26 @@ def _log(text: str) -> None:
     print(f"[mcp] {text}", file=sys.stderr)
 
 
+def _force_utf8_streams() -> None:
+    """把 stdio 两个流显式设成 UTF-8，避免**因控制台代码页而崩**。
+
+    G69-18 修复（真实产品缺陷）：本服务的 JSON-RPC 响应用
+    `ensure_ascii=False` 写 stdout，日志走 stderr，**都含中文**。
+    而 Windows 控制台默认是本地代码页（英文系统 cp1252、中文系统 cp936），
+    `sys.stdout.write` 遇到无法编码的字符会抛 `UnicodeEncodeError` ——
+    实测在英文 Windows runner 上直接以 rc=1 中断，
+    **把 JSON-RPC 通道打断在协议中途**，客户端只能拿到半截。
+
+    stdio 服务的正确做法是显式声明 UTF-8（MCP 协议本身即 UTF-8），
+    并对无法编码的字符降级替换而不是抛异常。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
 def _read_request(line_iter) -> McpRequest | None:
     """读取一行 JSON-RPC 请求；EOF 返回 None。"""
     line = next(line_iter, "")
@@ -259,6 +279,7 @@ def run_stdio(data_dir: Path, allow_export: bool) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     """入口：GCM_MCP_ENABLE=1 才启动；支持 --allow-export 显式放行报表导出。"""
+    _force_utf8_streams()      # 必须最先：其后所有输出都是中文/JSON
     args = list(sys.argv[1:] if argv is None else argv)
     allow_export = "--allow-export" in args
     if "--allow-export" in args:
