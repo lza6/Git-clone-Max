@@ -100,7 +100,10 @@ class MainWindow(QMainWindow):
     # 完成通知 Webhook 发送结束（状态栏文案）
     notify_sent = pyqtSignal(str)
     # 网络诊断结束（标题, 正文）—— 由 GUI 线程弹 QMessageBox
-    diag_finished = pyqtSignal(str, str)
+    # 诊断/体检结束（标题, 正文, 可外发的 redact 文本）—— 由 GUI 线程弹对话框。
+    # G69-18：由 2 参数扩为 3 —— `copy_paste_report()` 生成的打码文本
+    # 此前算不出来（该函数只在 tests 里被引用），「复制诊断文本」无从实现。
+    diag_finished = pyqtSignal(str, str, str)
     # 手动检查更新结束（has_new, ver, url, err）—— 网络请求在工作线程，弹窗回 GUI 线程
     update_checked = pyqtSignal(bool, str, str, str)
     # G67-9：工作线程日志桥（time, LogLevel, text）—— 线程内只 emit，槽回 GUI 线程
@@ -1226,14 +1229,18 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
-    def _on_diag_finished(self, title: str, body: str):
-        """G67-2：网络诊断结果回主线程后再弹 QMessageBox。
+    def _on_diag_finished(self, title: str, body: str, copy_text: str = ""):
+        """G67-2 / G69-18：诊断结果回主线程后再弹**报告对话框**。
 
         原实现在工作线程里 `QMessageBox.information(...)` —— 在工作线程创建并
         exec 模态窗口是 Qt 明确禁止的用法。
 
         G68-4：窗口已关闭（诊断跑完前人把窗口关了）时不弹模态 —— 无交互界面下
         `exec()` 会永久阻塞进程（见 `_can_show_modal`）。
+
+        G69-18：从只读 `QMessageBox` 换成 `DiagReportDialog` ——
+        后者带「复制诊断文本」按钮（G54-5），且用的是已经 redact 过的
+        `copy_text`，用户报障时可直接外发。
         """
         if not self._can_show_modal():
             try:
@@ -1241,8 +1248,14 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
             return
-        from PyQt6.QtWidgets import QMessageBox
-        QMessageBox.information(self, title, body)
+        try:
+            from .diag_dialog import DiagReportDialog
+            DiagReportDialog(title, body, copy_text, self).exec()
+        except Exception as exc:  # noqa: BLE001
+            # 对话框起不来不能把诊断结果一起吞掉 —— 退化为纯文本
+            from PyQt6.QtWidgets import QMessageBox
+            self._emit_log(_fmt_dt(), LogLevel.WARN, f"诊断对话框打开失败：{exc}")
+            QMessageBox.information(self, title, body)
 
     def _apply_ssh_key_to_engine(self):
         """G67-16：把设置里的 SSH 私钥路径立即同步到运行中的引擎。

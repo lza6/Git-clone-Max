@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 EN = {
+    '复制诊断文本': 'Copy diagnostics',
+    '已复制 ✓': 'Copied ✓',
     '🔍 设置搜索': '🔍 Settings Search',
     '搜索设置项（分组标题 / 行内标签）…': 'Search settings (group titles / row labels)…',
     '启动与后台运行（开机自启 / 托盘）': 'Startup & Background (Auto-start / Tray)',

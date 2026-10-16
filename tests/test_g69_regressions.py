@@ -959,3 +959,51 @@ class TestG69_18LogBufferTimerIsActivityArmed(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestG69_18DiagnosticsWiring(unittest.TestCase):
+    """G69-18：把两个「只在 tests 里被引用」的诊断函数接成真实功能。
+
+    - `diag.run_env_diagnostics`（G54-3 一键体检）此前无生产调用点；
+    - `diag.copy_paste_report`（G54-5 复制诊断文本）同理。
+    判据同 `TestG69_18WiringClosure`：**只在 tests 里出现 = 虚伪实现**。
+    """
+
+    ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+    def test_diag_functions_have_production_call_sites(self):
+        src = (self.ROOT / "gcm/ui/settings_panel.py").read_text(encoding="utf-8")
+        self.assertIn("run_env_diagnostics", src, "体检函数无生产调用点")
+        self.assertIn("copy_paste_report", src, "可外发诊断文本无生产调用点")
+
+    def test_diag_signal_carries_copy_text_and_dialog_exists(self):
+        src = (self.ROOT / "gcm/ui/main_window.py").read_text(encoding="utf-8")
+        self.assertIn("diag_finished = pyqtSignal(str, str, str)", src,
+                      "诊断信号未携带可外发文本")
+        self.assertIn("DiagReportDialog", src, "诊断结果未用带复制按钮的对话框")
+
+    def test_copy_actually_reaches_clipboard(self):
+        """行为断言：点「复制诊断文本」必须真的把 redact 文本放进剪贴板。"""
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PyQt6.QtWidgets import QApplication
+
+        from gcm.ui.diag_dialog import DiagReportDialog
+        app = QApplication.instance() or QApplication([])
+        marker = "Git-clone-Max 诊断（版本 9.9.9）"
+        d = DiagReportDialog("t", "body-text", marker)
+        self.addCleanup(d.close)
+        d._on_copy()
+        app.processEvents()
+        self.assertEqual(QApplication.clipboard().text(), marker)
+        self.assertNotEqual(d._btn_copy.text(), "复制诊断文本", "按钮应给出已复制反馈")
+
+    def test_env_diagnostics_returns_graded_items(self):
+        """体检必须返回带 status/name/detail 的条目（对话框按此渲染）。"""
+        from gcm.app.diag import run_env_diagnostics
+        items = run_env_diagnostics(self.ROOT)
+        self.assertGreater(len(items), 0)
+        for it in items:
+            with self.subTest(name=it.get("name")):
+                self.assertIn("status", it)
+                self.assertIn("name", it)
+                self.assertIn("detail", it)

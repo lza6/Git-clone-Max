@@ -468,28 +468,38 @@ class SettingsPanel(QWidget):
         self.owner.settings_store.save(self.owner.settings)
 
     def _run_diag(self):
-        """G48-8：后台运行网络诊断，QMessageBox 展示分级报告。
+        """G48-8 / G54-3：后台运行「环境体检 + 网络诊断」，结果回 GUI 线程展示。
 
-        G67-2：诊断（网络 IO）在后台线程，但 **QMessageBox 必须回 GUI 线程弹**。
-        原实现直接在 `threading.Thread` 里 `new + exec` 模态对话框 —— Qt 明确禁止
-        在工作线程创建/操作 widget，表现为随机崩溃或 UI 状态错乱。
-        改为 emit 主窗口信号，由 GUI 线程的槽 `_on_diag_finished` 弹窗。
+        G67-2：网络 IO 在后台线程，但弹窗**必须回 GUI 线程**（emit 信号）。
+        G69-18 修复：此前只跑 `run_diagnostics`（网络），而
+        `diag.run_env_diagnostics`（环境体检：数据目录/磁盘/git/Python-Qt）与
+        `diag.copy_paste_report`（redact 后的可外发报告）**只有测试在引用**
+        —— 也就是「一键体检」与「复制诊断文本」两个功能实际不存在。
+        现一并接上：体检结果进对话框，可外发文本由 `copy_paste_report` 生成。
         """
         import threading
 
         def _run():
             try:
-                from gcm.app.diag import grade, run_diagnostics
-                reports = run_diagnostics(
+                from gcm import __version__
+                from gcm.app.diag import (
+                    copy_paste_report,
+                    grade,
+                    run_diagnostics,
+                    run_env_diagnostics,
+                )
+                reports = run_env_diagnostics(self.owner.data_dir)
+                reports += run_diagnostics(
                     proxy=str(getattr(self.owner.settings, "proxy", "") or ""),
                     extra_hosts=tuple(getattr(self.owner.settings, "custom_hosts", ()) or ()))
                 lines = [f"[{r['status']}] {r['name']}: {r['detail']}" for r in reports]
-                title = "网络诊断：" + grade(reports)
-            except Exception as e:
-                lines, title = [f"诊断失败：{e}"], "网络诊断：失败"
+                title = "体检与网络诊断：" + grade(reports)
+                copy_text = copy_paste_report(reports, app_version=str(__version__))
+            except Exception as e:  # noqa: BLE001
+                lines, title, copy_text = [f"诊断失败：{e}"], "诊断：失败", ""
             # 跨线程：只允许 emit
             try:
-                self.owner.diag_finished.emit(title, "\n".join(lines))
+                self.owner.diag_finished.emit(title, "\n".join(lines), copy_text)
             except Exception:
                 pass
         threading.Thread(target=_run, daemon=True).start()
