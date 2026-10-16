@@ -97,7 +97,12 @@ jobs:
       # 真正的门禁是上一步的覆盖率阈值；为它把 job 弄红是过度反应（且会淹没真实失败）。
       # 但「静默缺失」本身是要避免的，所以在步骤内**显式打印文件是否存在与大小**，
       # 让它出现在日志里可诊断；artifact 缺失降级为警告。
+      # G69-18：本步骤是**信息性**的（真正的门禁是上一步的覆盖率阈值），
+      # 却因为脚本自身把中文写进 cp1252 控制台而 `UnicodeEncodeError` → 把 job 弄红。
+      # 两处修正：① 脚本内显式 reconfigure 为 UTF-8（与 gcm/cli.py 同款做法）；
+      # ② 整步 continue-on-error —— 信息性步骤不该有能力弄红 job。
       - name: Coverage summary
+        continue-on-error: true
         env:
           QT_QPA_PLATFORM: offscreen
         shell: pwsh
@@ -106,6 +111,14 @@ jobs:
           @"
           import json
           import os
+          import sys
+          # Windows runner 控制台是 cp1252，本脚本要打印中文 → 显式改 UTF-8，
+          # 无法编码的字符降级替换而不是抛异常。
+          for _s in (sys.stdout, sys.stderr):
+              try:
+                  _s.reconfigure(encoding="utf-8", errors="replace")
+              except Exception:
+                  pass
           with open("coverage.json", encoding="utf-8") as f:
               data = json.load(f)
           total = data["totals"]["percent_covered"]
