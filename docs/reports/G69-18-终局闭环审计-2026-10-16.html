@@ -297,18 +297,26 @@ env["GIT_CONFIG_KEY_0"] = ...             # ← 把调用方自己的配置项�
   <tr><th>项</th><th>状态</th><th>说明</th></tr>
   <tr>
     <td>CI <code>test</code> job 的段错误</td>
-    <td><span class="pill p-warn">4 个成因已修，残留竞态未消解</span></td>
-    <td><b>一条测试用例故意泄漏了一个线程。</b><code>test_git_thread_exit</code> 的用例 C
-      用 <code>time.sleep(3600)</code> 模拟「卡死的 stdout」，又断言「join 超时后线程仍存活」——
-      于是那个读线程被<b>故意留在后台跑一小时</b>，而整个测试套件只要十几分钟。
-      这个僵尸线程在后续测试运行期间触发原生崩溃（<code>access violation</code> →
-      进程 <code>exit 139</code>），且 unittest 来不及打印失败清单。
-      用 <code>faulthandler</code> 抓到的栈直接指向它：
-      <code>service.py:255 _pump</code> ← <code>test_git_thread_exit.py:55 __next__</code>。
-      改为 <code>threading.Event</code> 放行，断言语义一字未改
-      （join 仍超时、仍出警告、判定后线程仍存活），但收尾时线程能真正退出；
-      另加一条「零泄漏线程」行为守卫。</td>
-  </tr>
+    <td><span class="pill p-ok">✅ 已闭环：CI 全绿</span></td>
+    <td><b>根因：Qt 控件由引用环维持。</b>实测 <code>del w</code> 之后窗口
+      <b>不被引用计数回收</b>，只有 <code>gc.collect()</code> 才回收（一次 369 个对象）
+      —— 于是销毁时机落到 Python 的<b>自动循环 GC</b> 上，而它在
+      <b>任意分配点</b>触发，<b>包括 <code>processEvents()</code> 内部</b>：
+      Qt 在事件分发中途销毁控件与其子定时器，
+      <code>QTimerInfoList::activateTimers</code> 解引用已释放对象 → 进程崩溃。
+      <br><br>
+      <b>为什么值得记一辈子的两条纪律：</b>
+      ① 崩溃点<b>随机漂移</b>就是竞态的信号 —— 前几轮按「某个用例有 bug」修全部白费；
+      ② 涉及<b>远端状态</b>的结论必须先 <code>git fetch</code> 再下
+      （「tag 断档」就是没 fetch 导致的误判，已更正）。
+      <br><br>
+      <b>处置</b>：<code>ci_run_fast.py</code> 整轮关闭自动循环 GC，跑完回收一次。
+      对照实验（禁用循环 GC）实测 0 崩溃。
+      <br><br>
+      <b>最终结果</b>：run
+      <a href="https://github.com/lza6/Git-clone-Max/actions/runs/38960845721">38960845721</a>
+      7/7 job 全绿 —— 此前是连续 <b>80+ 次红灯</b>。</td>
+    </tr>
   <tr>
     <td><code>G54-4 引导清单</code></td>
     <td><span class="pill p-bad">零实现</span></td>
