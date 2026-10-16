@@ -114,7 +114,7 @@
 ### P0（阻塞）
 | ID | 问题 | 证据 | 状态 |
 |----|------|------|------|
-| P0-1 | CI 三平台全红；Linux/macOS **SIGSEGV** | `gh run list`；`exit 139` | **根因已定并处置**：Qt 控件由引用环维持 → 自动循环 GC 在 `processEvents()` 中途销毁它们 → 定时器解引用已释放对象。整轮关闭循环 GC 后本机快集 0 崩溃（见 §4.1） |
+| P0-1 | CI 三平台全红；Linux/macOS **SIGSEGV** | `gh run list`；`exit 139` | **✅ 已闭环：CI 全绿**（run 38960845721，7/7 job 通过）。根因已定并处置：Qt 控件由引用环维持 → 自动循环 GC 在 `processEvents()` 中途销毁它们 → 定时器解引用已释放对象。整轮关闭循环 GC 后本机快集 0 崩溃（见 §4.1） |
 | P0-2 | 覆盖率门禁形同虚设 | 同上 | ⏳ 随 P0-1 |
 | P0-3 | 台账「全部闭环」声明不成立（§2） | 独立复验 | ✅ 已修 4 类断链 |
 
@@ -206,3 +206,28 @@ QTimerInfoList::activateTimers
 4. HTML 报告 + 测验
 5. skills / SOP
 6. 提交 / 推送 / Release（含补 v9.1.3~v9.3.2 tag）
+
+
+---
+
+## 7. CI 收口登记（2026-10-17）
+
+**结果**：`completed / success`，7 个 job 全绿 ——
+`test (windows)` · `test (ubuntu)` · `test (macos)` · `e2e-smoke` · `fast-smoke` · `perf-baseline` · `slow`。
+run: https://github.com/lza6/Git-clone-Max/actions/runs/38960845721 （sha `a4ca7f3`）
+
+**从 80+ 次连续红灯到全绿，共 5 类独立成因**（每一类都有实测证据，非猜测）：
+
+| # | 成因 | 定位手段 | 修法 |
+|---|------|---------|------|
+| 1 | **无法诊断**：崩溃时不打印失败清单，只留点阵 + exit code | 拉全量 CI 日志 | `ci_run_fast.py` 逐模块落痕 + 失败逐条点名 + `faulthandler` |
+| 2 | **测试泄漏线程**：`test_git_thread_exit` 用 `sleep(3600)` 卡死 stdout 且断言「线程仍存活」→ `_pump` 僵尸线程活过整个套件 | `faulthandler` C 栈 | 改 `threading.Event` 放行 + 收尾断言线程真退出 |
+| 3 | **Qt 控件由引用环维持**：`del w` 不被引用计数回收，只有 `gc.collect()` 才回收（实测 369 个对象）→ 自动循环 GC 在 `processEvents()` 中途销毁控件/定时器 → `activateTimers` 解引用已释放对象 | 对照实验（禁用 GC 后 0 崩溃）+ `del`/`gc.collect()` 探针 | 整轮关闭循环 GC，结束回收一次 |
+| 4 | **MCP 服务在非 UTF-8 控制台崩溃**：`ensure_ascii=False` 写中文到 cp1252 stdout → `UnicodeEncodeError` 打断 JSON-RPC 通道 | CI 点名 + 本地 cp1252 复现 | `_force_utf8_streams()`（与 `gcm/cli.py` 同款守卫） |
+| 5 | **CI 自身**：覆盖率摘要步骤（信息性）把中文写进 cp1252 → 弄红 job | CI 日志尾部 | 脚本内 reconfigure + `continue-on-error: true` |
+
+**归因纪律（本轮最重要的方法论收获）**：
+崩溃点**随机漂移**就是竞态的信号。前几轮按「某个用例有 bug」去修全部白费 ——
+必须按「销毁时机不可控」这类**系统性成因**处理。
+另外：**涉及远端状态的结论必须先 `git fetch` 再下**
+（「tag 断档」就是未 fetch 导致的误判，已更正）。

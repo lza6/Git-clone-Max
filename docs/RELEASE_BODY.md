@@ -1,9 +1,16 @@
 # Git-clone-Max v{version} 发布说明
 
-> 本文件是发布模板，由 `scripts/publish_release.py` 读取、替换其中的版本号与
-> 两个产物 sha256 后，作为 GitHub Release body 发布。
-> 「本版重点」一节自动取自 `gcm/__init__.py` 的 `__changelog__` 对应版本条目 ——
-> 每次 bump 版本时补一行 changelog，Release 说明就会自动跟上，不必手改本文。
+<!--
+维护者注（**不会出现在 Release 页面**：HTML 注释在渲染时被隐藏）：
+本文件是发布模板，由 `scripts/publish_release.py` 读取、替换其中的版本号与
+两个产物 sha256 后，作为 GitHub Release body 发布。
+「本版重点」一节自动取自 `gcm/__init__.py` 的 `__changelog__` 对应版本条目 ——
+每次 bump 版本时补一行 changelog，Release 说明就会自动跟上，不必手改本文。
+
+G69-18：原先这段是**裸引用块**，会原样出现在公开的 Release 说明最上方，
+读者第一眼看到的是「本文件是发布模板…」这种内部维护说明。
+改用 HTML 注释后对维护者仍可见（源码里），对读者隐藏。
+-->
 
 ## 本版重点
 
