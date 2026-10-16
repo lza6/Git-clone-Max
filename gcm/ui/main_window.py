@@ -54,6 +54,33 @@ def _dur(ms: int) -> str:
     return f"{int(s // 60)}m{int(s % 60)}s"
 
 
+def _make_alert_emitter(owner: MainWindow):
+    """G69-18：构造一个「窗口已销毁则静默跳过」的告警发射器。
+
+    为什么不能直接传 `owner.alerts_fired.emit`：后台扫描线程比窗口活得久时
+    （测试里直接丢引用，或 closeEvent 后线程仍在收尾），对**已销毁**的 QObject
+    调 `emit` 会让进程**原生崩溃**（SIGSEGV / 0xC0000409），而不是抛 Python 异常
+    —— 这正是本轮 CI 连续红灯的形态之一。
+
+    这里用弱引用避免让线程强持有窗口（否则窗口永远无法回收），
+    并对「C++ 对象已删除」时 PyQt 抛出的 RuntimeError 兜底。
+    """
+    import weakref
+
+    def _emit(alerts):
+        w = owner_ref()
+        if w is None:
+            return
+        try:
+            w.alerts_fired.emit(alerts)
+        except RuntimeError:
+            # wrapped C/C++ object has been deleted —— 窗口已销毁，丢弃即可
+            pass
+
+    owner_ref = weakref.ref(owner)
+    return _emit
+
+
 class MainWindow(QMainWindow):
     """Git-clone-Max 主窗口。
 
@@ -75,6 +102,9 @@ class MainWindow(QMainWindow):
     update_checked = pyqtSignal(bool, str, str, str)
     # G67-9：工作线程日志桥（time, LogLevel, text）—— 线程内只 emit，槽回 GUI 线程
     _log_line = pyqtSignal(str, object, str)
+    # G69-18：阈值告警命中（list[dict]）—— AlertScanner 在后台线程扫描，
+    # 只 emit；通知/日志/状态栏一律回 GUI 线程执行（QObject 线程亲和性）。
+    alerts_fired = pyqtSignal(list)
 
     def __init__(self, data_dir: str | Path, db: Database | None = None,
                  settings: SettingsStore | None = None,
@@ -151,6 +181,8 @@ class MainWindow(QMainWindow):
         self.update_checked.connect(self._on_update_checked)
         # G67-9：工作线程日志桥 → GUI 线程写模型/视图（跨线程 emit 自动 QueuedConnection）
         self._log_line.connect(self._emit_log)
+        # G69-18：告警命中 → GUI 线程弹通知 + 写日志
+        self.alerts_fired.connect(self._on_alerts_fired)
 
         # G05-1 应用持久化主题（默认 deep）+ G10-1 字号缩放
         from ..ui import theme as _th
@@ -236,17 +268,68 @@ class MainWindow(QMainWindow):
                 interval_sec=max(60.0, float(getattr(self.settings, "g53_alerts_interval_min", 60) or 60)) * 60.0,
                 im_channel=str(getattr(self.settings, "alert_im_channel", "") or "").strip(),
                 im_url=str(getattr(self.settings, "alert_im_url", "") or "").strip(),
-                im_token=str(getattr(self.settings, "alert_im_token", "") or "").strip())
+                im_token=str(getattr(self.settings, "alert_im_token", "") or "").strip(),
+                # G69-18 修复：此前未接 on_alerts → 告警命中后除（多半未配置的）IM 外
+                # 用户**全程无感**：不弹通知、不写日志、UI 无任何痕迹。
+                # 现改为「worker emit → 主线程槽」：扫描在后台线程，绝不直接碰控件。
+                #
+                # 用弱引用 + 存活标志双重保护：扫描线程比窗口活得久时（测试里
+                # 直接丢引用、或 closeEvent 之后线程仍在收尾），对**已销毁**的
+                # QObject 调 emit 会让进程原生崩溃（SIGSEGV），而不是抛 Python 异常。
+                on_alerts=_make_alert_emitter(self))
             if bool(getattr(self.settings, "g53_alerts_enabled", False)):
                 self.alert_scanner.start()
         except Exception:
             self.alert_scanner = None
 
+        # G69-18 修复：定时报表此前**整条链路是假的** —— 设置页有「启用定时报表」
+        # 勾选框，`ReportScheduler` 却无任何生产实例化点（只在 tests 里被构造）。
+        # 勾了等于没勾。现按设置真实启动，并在 closeEvent 里随窗口收敛。
+        self.report_scheduler = None
+        self._start_report_scheduler()
+
         # G52-2：启动续跑对话框由 show 后统一调度（_schedule_resume_check），
         # 不在 __init__ 裸调度——避免 closeEvent/drain 泵事件时误弹阻塞对话框。
 
+    def _start_report_scheduler(self) -> None:
+        """G69-18：按 settings 启动/重启定时报表调度器（幂等）。
+
+        未设 `sched_report_dir` 时落到数据目录下的 `reports/`，避免
+        「开关打开了却写进当前工作目录」这种让用户找不到文件的行为。
+        """
+        try:
+            if self.report_scheduler is not None:
+                self.report_scheduler.stop()
+                self.report_scheduler = None
+            if not bool(getattr(self.settings, "sched_report_enabled", False)):
+                return
+            from ..app.sched_reports import ReportScheduler
+            from ..reports import export_csv, export_markdown
+            out = str(getattr(self.settings, "sched_report_dir", "") or "").strip()
+            out_dir = Path(out) if out else (self.data_dir / "reports")
+            fmt = str(getattr(self.settings, "sched_report_format", "csv") or "csv")
+
+            def _gen(dest: Path, _fmt: str) -> int:
+                # 报表函数是**同步**的且会查库；调度器在自己的线程里跑，不碰 GUI。
+                if _fmt == "csv":
+                    return export_csv(self.db, dest)
+                return export_markdown(self.db, dest)
+
+            self.report_scheduler = ReportScheduler(
+                _gen,
+                interval_min=float(getattr(self.settings, "sched_report_interval_min", 1440) or 1440),
+                out_dir=out_dir,
+                fmt=fmt)
+            self.report_scheduler.start()
+            self._emit_log(_fmt_dt(), LogLevel.INFO,
+                           f"定时报表已启用：每 {int(getattr(self.settings, 'sched_report_interval_min', 1440) or 1440)} "
+                           f"分钟 → {out_dir}")
+        except Exception as exc:  # noqa: BLE001
+            # 启动失败要留痕，不能静默 —— 否则又是「勾了没反应」
+            self.report_scheduler = None
+            self._emit_log(_fmt_dt(), LogLevel.WARN, f"定时报表启动失败：{exc}")
+
     def _restart_auto_update_timer(self):
-        """按 settings.auto_update_minutes 重启自动更新定时器（0=关）。"""
         try:
             self._auto_update_timer.stop()
             mins = int(getattr(self.settings, "auto_update_minutes", 0) or 0)
@@ -1114,6 +1197,26 @@ class MainWindow(QMainWindow):
         """G67-2：完成通知 Webhook 发送结果回主线程后更新状态栏。"""
         self.statusBar().showMessage(message, 5000)
 
+    def _on_alerts_fired(self, alerts):
+        """G69-18：阈值告警命中 → 状态栏 + 日志（GUI 线程）。
+
+        修的是「告警引擎跑得挺好，但用户永远看不到」：此前 `AlertScanner`
+        没接 `on_alerts`，命中后除（多半未配置的）企业 IM 外无任何出口。
+        这里只写日志与状态栏，**不弹模态** —— 告警是后台周期性产物，
+        在用户正忙时弹窗打断属负体验（详情可去统计中心/日志查看）。
+        """
+        if not alerts:
+            return
+        try:
+            titles = [str(a.get("title") or a.get("key") or "") for a in alerts]
+            summary = "；".join(t for t in titles if t) or f"{len(alerts)} 条"
+            self.statusBar().showMessage(f"阈警：{summary}", 8000)
+            self._emit_log(_fmt_dt(), LogLevel.WARN,
+                           f"阈值告警命中 {len(alerts)} 条：{summary}")
+        except Exception:
+            # 告警渲染失败绝不能连带影响扫描线程的收尾
+            pass
+
     def _on_diag_finished(self, title: str, body: str):
         """G67-2：网络诊断结果回主线程后再弹 QMessageBox。
 
@@ -1844,6 +1947,12 @@ class MainWindow(QMainWindow):
         try:
             if getattr(self, "alert_scanner", None) is not None:
                 self.alert_scanner.stop()
+        except Exception:
+            pass
+        # G69-18：停止定时报表线程（否则关窗后仍会周期性写文件）
+        try:
+            if getattr(self, "report_scheduler", None) is not None:
+                self.report_scheduler.stop()
         except Exception:
             pass
         # flush 剩余节流日志，避免关窗瞬间最后若干行（如"全部任务结束"）丢失

@@ -15,6 +15,7 @@ from __future__ import annotations
 # 项目约定：QT_QPA_PLATFORM 置为离屏（见 tests/test_local_dialog.py 头部）
 import os
 import sys
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -46,17 +47,42 @@ class _YieldingStdout:
 
 
 class _BlockingStdout:
-    """模拟卡死的 stdout：迭代永久阻塞（管道缓冲满/被杀进程未刷管道）。"""
+    """模拟卡死的 stdout：迭代阻塞，直到测试显式放行。
+
+    G69-18 **根因修复**：原实现用 `time.sleep(3600)` 阻塞 —— 用例 C 又断言
+    「join 超时后读线程仍存活」，于是这个 `_pump` 线程被**故意泄漏**，
+    并在**整套测试剩余的全部时间**里存活（3600s 远长于整个套件）。
+
+    实测后果（本机复现 + CI 同款）：该僵尸线程在下游测试运行期间触发
+    **access violation**，进程 `exit 139` / `0xC0000409`，且 unittest
+    来不及打印任何失败清单 —— 这正是 CI `test` job 连续 80+ 次红灯的成因。
+
+    改用 `threading.Event` 阻塞：**断言语义完全不变**
+    （`timeout=0.001` 时 join(5s) 依然超时 → 依然出「未及时退出」警告 →
+     判定后线程依然存活），但测试收尾时可以放行，
+    线程随即 `raise StopIteration` 让 `_pump` 正常退出。
+    """
+
+    def __init__(self) -> None:
+        self._release = threading.Event()
+        self._used = False
+
+    def release(self) -> None:
+        """放行：让阻塞的读线程退出（幂等）。"""
+        self._release.set()
 
     def __iter__(self):
         return self
 
     def __next__(self) -> str:
-        time.sleep(3600)
-        return "x\n"
+        # 首次进入即阻塞，模拟「管道被卡住」；被 release() 唤醒后结束迭代，
+        # 使 run_git_ui 的读线程走正常退出路径而不是被悬空。
+        self._used = True
+        self._release.wait(timeout=30)
+        raise StopIteration
 
     def close(self) -> None:
-        pass
+        self.release()
 
 
 def _fake_proc(stdout, returncode: int = 0, wait_raises: bool = False) -> mock.Mock:
@@ -134,7 +160,11 @@ class TestRunGitUiThreadExit(unittest.TestCase):
     def test_timeout_path_warns_when_reader_stuck(self):
         lines, on_line = self._collect()
         seen: list = []
-        proc = _fake_proc(_BlockingStdout(), returncode=None, wait_raises=True)
+        stuck = _BlockingStdout()
+        # G69-18：必须保证测试结束前放行读线程，否则它会被带进后续测试
+        # 并引发原生崩溃（见 _BlockingStdout 文档）。
+        self.addCleanup(stuck.release)
+        proc = _fake_proc(stuck, returncode=None, wait_raises=True)
         with mock.patch.object(service.subprocess, "Popen", return_value=proc), \
                 mock.patch.object(service, "_kill_tree", return_value=None):
             rc, _ = run_git_ui(
@@ -150,6 +180,11 @@ class TestRunGitUiThreadExit(unittest.TestCase):
         # join 判定后读线程仍存活（卡在阻塞 stdout 上，符合「放弃等待」语义）
         self.assertTrue(seen and seen[-1].is_alive(),
                         "卡死读线程在 join 判定后应仍存活")
+        # 收尾：放行后线程必须真的能退出（否则仍是泄漏）
+        stuck.release()
+        seen[-1].join(timeout=10)
+        self.assertFalse(seen[-1].is_alive(),
+                         "release() 后读线程应正常退出（不得遗留僵尸线程）")
 
 
 if __name__ == "__main__":

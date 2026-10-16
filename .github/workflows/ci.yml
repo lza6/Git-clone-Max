@@ -174,6 +174,38 @@ jobs:
             tests.test_g54_ux tests.test_g57_responsive tests.test_g58_network \
             tests.test_qss_validate tests.test_qss_validate_extra
 
+  # G69-18：硬件敏感测试独立 job。
+  # `test_scanner_perf`（含绝对时间断言 assertLess(elapsed, 30)）与
+  # `test_mem_baseline`（真实跑引擎测 tracemalloc 峰值）依赖 runner 机器性能，
+  # 放在主矩阵的覆盖率门禁里会造成「本机绿、CI 红」的不可复现红灯 ——
+  # 门禁该判定代码对不对，不是 CI 机器多快。移到这里独立红绿灯：
+  # 断言一条没削弱，只是不再拿它当正确性门禁。
+  perf-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install PyQt6
+
+      - name: Install Qt system deps (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libglib2.0-0 libfontconfig1 libxcb-cursor0
+
+      - name: Run hardware-sensitive tests (perf / mem baseline)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -m unittest tests.test_scanner_perf tests.test_mem_baseline
+
   # G59-5：慢测独立 job（真实 git E2E：engine/v7/core/extra/v3_p0/submodule 等），
   # 主矩阵只跑非慢集；慢 job 独立红绿灯，避免全量阻塞快速反馈。
   slow:

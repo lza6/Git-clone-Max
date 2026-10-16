@@ -112,8 +112,39 @@ class LocalReposDialog(QDialog):
         self._import_btn = btns.addButton("导入", QDialogButtonBox.ButtonRole.AcceptRole)
         self._import_btn.clicked.connect(self._on_import)
         btn_cancel = btns.addButton("取消", QDialogButtonBox.ButtonRole.RejectRole)
-        btn_cancel.clicked.connect(self.reject)
+        # G69-18：取消/关闭必须**先停扫描线程**再退对话框。原实现直接 reject()，
+        # 而 `ScanWorker.cancel()` 从未被调用 → 线程继续对着已析构的 QObject
+        # `emit`，导致本地扫描「点取消 / 关窗口偶发原生崩溃」。
+        btn_cancel.clicked.connect(self._on_cancel_clicked)
         v.addWidget(btns)
+
+    def _on_cancel_clicked(self):
+        """取消按钮：走 reject()（其中已收敛扫描线程）。"""
+        self.reject()
+
+    def _stop_scan_worker(self):
+        """停止后台扫描线程（幂等）。所有关闭路径都必须经过这里。"""
+        w = getattr(self, "_worker", None)
+        if w is not None:
+            try:
+                w.stop()
+            except Exception:
+                pass
+            self._worker = None
+
+    def reject(self):
+        """G69-18：**所有**退出路径的收敛点（取消按钮 / Esc / 程序化关闭）。
+
+        重写 reject 而不是只连按钮，是因为 Esc 会直接调 reject()，
+        漏掉它同样会留下对着已析构 QObject emit 的僵尸线程 → 原生崩溃。
+        """
+        self._stop_scan_worker()
+        super().reject()
+
+    def closeEvent(self, e):  # noqa: N802 (Qt 命名)
+        # G69-18：右上角 × 关闭也收敛线程（它与 reject 是不同路径）。
+        self._stop_scan_worker()
+        super().closeEvent(e)
 
     def _load_roots(self):
         if self._roots:

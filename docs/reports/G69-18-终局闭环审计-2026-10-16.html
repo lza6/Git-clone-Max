@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>G69-18 终局闭环审计 · 变更报告 · 2026-10-16</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2129; --line:#30363d;
+    --fg:#e6edf3; --dim:#8b949e; --accent:#58a6ff; --ok:#3fb950;
+    --warn:#d29922; --bad:#f85149; --purple:#bc8cff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:15px/1.75 -apple-system,"Segoe UI","Noto Sans CJK SC","Microsoft YaHei",sans-serif;}
+  .wrap{max-width:1080px;margin:0 auto;padding:48px 24px 120px}
+  header{border-bottom:1px solid var(--line);padding-bottom:28px;margin-bottom:40px}
+  h1{font-size:2.1rem;margin:0 0 10px;letter-spacing:-.02em}
+  h2{font-size:1.35rem;margin:52px 0 14px;padding-left:12px;
+     border-left:3px solid var(--accent)}
+  h3{font-size:1.05rem;margin:30px 0 10px;color:var(--accent)}
+  .sub{color:var(--dim);font-size:.94rem}
+  .lede{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:20px 22px;margin:26px 0}
+  .lede strong{color:var(--accent)}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.9rem}
+  th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;
+    vertical-align:top}
+  th{background:var(--panel2);font-weight:600;color:var(--dim);
+     text-transform:uppercase;font-size:.76rem;letter-spacing:.06em}
+  tr:nth-child(even) td{background:rgba(255,255,255,.015)}
+  code{background:var(--panel2);padding:2px 6px;border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,monospace;font-size:.86em;color:var(--purple)}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    padding:15px 17px;overflow-x:auto;font-size:.84rem;line-height:1.6}
+  pre code{background:none;padding:0;color:var(--fg)}
+  .pill{display:inline-block;padding:2px 9px;border-radius:99px;
+    font-size:.75rem;font-weight:600;letter-spacing:.02em}
+  .p-ok{background:rgba(63,185,80,.15);color:var(--ok);border:1px solid rgba(63,185,80,.35)}
+  .p-bad{background:rgba(248,81,73,.15);color:var(--bad);border:1px solid rgba(248,81,73,.35)}
+  .p-warn{background:rgba(210,153,34,.15);color:var(--warn);border:1px solid rgba(210,153,34,.35)}
+  .p-info{background:rgba(88,166,255,.15);color:var(--accent);border:1px solid rgba(88,166,255,.35)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:18px 20px;margin:16px 0}
+  .card.bad{border-left:3px solid var(--bad)}
+  .card.ok{border-left:3px solid var(--ok)}
+  .card.warn{border-left:3px solid var(--warn)}
+  .why{color:var(--dim);font-size:.9rem;margin-top:8px}
+  ul{padding-left:22px} li{margin:6px 0}
+  .kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2px;
+    border-radius:4px;padding:1px 5px;font-size:.8em}
+  /* quiz */
+  .quiz{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:26px;margin-top:26px}
+  .q{padding:18px 0;border-bottom:1px dashed var(--line)}
+  .q:last-of-type{border-bottom:none}
+  .q .stem{font-weight:600;margin-bottom:11px}
+  .opt{display:block;padding:8px 12px;margin:5px 0;border-radius:7px;cursor:pointer;
+    border:1px solid transparent;transition:.12s}
+  .opt:hover{background:var(--panel2);border-color:var(--line)}
+  .opt input{margin-right:9px}
+  .fb{margin-top:9px;font-size:.88rem;display:none}
+  .fb.show{display:block}
+  .fb.good{color:var(--ok)} .fb.bad{color:var(--bad)}
+  .score{position:sticky;bottom:0;margin-top:22px;padding:16px 20px;
+    background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+    display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+  button{background:var(--accent);color:#04121f;border:0;border-radius:7px;
+    padding:10px 20px;font-weight:700;font-size:.9rem;cursor:pointer}
+  button:hover{filter:brightness(1.1)}
+  button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
+  #verdict{font-weight:700}
+  footer{margin-top:60px;padding-top:22px;border-top:1px solid var(--line);
+    color:var(--dim);font-size:.85rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>G69-18 · 终局闭环总审计</h1>
+  <div class="sub">
+    Git-clone-Max · 基线 <code>4459729</code>（v9.3.2）→ 目标 v9.4.0 ·
+    2026-10-16 · 报告生成者：主控代理 + 3 条并行只读审计线程
+  </div>
+</header>
+
+<div class="lede">
+  <strong>一句话结论：</strong>
+  项目里那份《下一步改进指南》被删掉时给出的理由是「全部闭环」——
+  <strong>这个理由是错的</strong>。独立复验发现至少 <strong>6 项只做到一半</strong>、
+  <strong>3 项写了代码但从没接到产品里</strong>。更麻烦的是：CI 已经
+  <strong>连续 80+ 次红灯</strong>，而红灯的原因根本查不出来，因为
+  <em>崩溃时它不打印任何失败用例名</em>。本轮先把「看得见」这件事修好，
+  再修真实的断链。
+</div>
+
+<h2>一、这次到底在修什么（背景与直觉）</h2>
+
+<h3>1.1 一个「看起来全好」的项目</h3>
+<p>
+  这个项目的工程质量其实相当高：<code>ruff</code> 零告警、<code>mypy</code> 零错误、
+  121 个测试文件、1060 条快集用例在本机全绿。台账里 124 条任务全部标着
+  <code>[✅ 已落地]</code>，还有 ADR、SOP、发布清单、审计报告。
+</p>
+<p>
+  但同一天，GitHub Actions 上最近 <strong>12 次运行全部失败</strong>。
+  于是有了这次审计的核心直觉：
+</p>
+<div class="card warn">
+  <strong>「本机全绿 + 台账全 ✅ + CI 全红」三者同时成立时，最可能出错的不是代码，
+  而是「我们用来判断对错的那些信号本身」。</strong>
+  <div class="why">
+    测试可能绕过了真实路径；台账可能记录了「写了」而不是「通了」；
+    CI 可能……根本没说清哪里错了。
+  </div>
+</div>
+
+<h3>1.2 三个信号逐个验</h3>
+<table>
+  <tr><th>信号</th><th>声称</th><th>实际</th><th>结论</th></tr>
+  <tr>
+    <td>本地测试</td><td>1060 条全绿</td>
+    <td>带本地 <code>data/</code> 目录时确实全绿；但用
+      <code>git archive HEAD</code> 做<b>干净检出</b>后跑，<b>3 条失败</b></td>
+    <td><span class="pill p-warn">有环境依赖</span></td>
+  </tr>
+  <tr>
+    <td>计划书台账</td><td>124 条全部 ✅ 闭环</td>
+    <td>独立复验：定时报表<b>整条链路是假的</b>；告警<b>没有出口</b>；
+      9 个设置字段<b>用户够不到</b></td>
+    <td><span class="pill p-bad">声明不成立</span></td>
+  </tr>
+  <tr>
+    <td>CI 门禁</td><td>三平台绿是验收条件</td>
+    <td>12/12 全红；Linux/macOS <code>exit 139</code>（段错误）；
+      <b>且不打印失败用例名</b></td>
+    <td><span class="pill p-bad">门禁形同虚设</span></td>
+  </tr>
+</table>
+
+<h2>二、关键判断是怎么做出来的</h2>
+
+<h3>2.1 「本机绿、CI 红」不是 CI 在说谎</h3>
+<p>
+  第一反应容易是「CI 环境有问题」。但本机是 Windows、CI 是 Linux/macOS，
+  直接断言「平台差异」是偷懒。真正有用的动作是<strong>制造一个对照实验</strong>：
+  把 <code>HEAD</code> 剥离成干净检出再跑一遍。
+</p>
+<pre><code>git archive HEAD | tar -x -C /d/tmp/gcm_clean
+cd /d/tmp/gcm_clean
+QT_QPA_PLATFORM=offscreen &lt;项目&gt;/.venv/Scripts/python.exe \
+  -m coverage run --source=gcm scripts/ci_run_fast.py</code></pre>
+<p>
+  结果：<code>FAILED (failures=3, skipped=4)</code>。差异来源是工作区多了个
+  <code>data/</code> 目录 —— 它让 <code>get_data_dir()</code> 走 legacy 回退分支，
+  改变了若干测试的行为路径。
+</p>
+<p>
+  而那 3 条失败<strong>全部</strong>是同一个机制：测试进程的父环境里本来就带着
+  <code>GIT_CONFIG_*</code>（CI 用 <code>credential.interactive=false</code> 就是这么设的），
+  于是「断言 <code>GIT_CONFIG_COUNT == 1</code>」这类<strong>隐含「环境是空的」前提</strong>
+  的测试就红了。
+</p>
+
+<h3>2.2 顺手挖出一个真 bug</h3>
+<p>
+  追这个环境问题时发现 <code>GitService._env()</code> 的实现有个更严重的问题：
+</p>
+<pre><code>env = dict(os.environ)          # 把父进程的 GIT_CONFIG_* 一起抄了进来
+...
+env["GIT_CONFIG_COUNT"] = str(len(cfg))   # 然后从 0 开始覆盖
+env["GIT_CONFIG_KEY_0"] = ...             # ← 把调用方自己的配置项吃掉了</code></pre>
+<p>
+  git 的 <code>GIT_CONFIG_KEY_&lt;n&gt;</code> 协议要求索引从 0 连续。
+  原实现从 0 重写并把 <code>COUNT</code> 改小，
+  等于<strong>悄悄删掉了父进程设置的 git 配置</strong>。
+  这不是测试问题，是产品行为问题 —— 所以改成<strong>追加</strong>在既有项之后。
+</p>
+
+<h3>2.3 CI 为什么红了 80 多次却没人修</h3>
+<p>
+  用 <code>gh</code> 拉下完整日志后，真相很朴素：
+  <strong>unittest 的失败清单在进程崩溃时根本没打出来</strong>。
+  日志里只剩一串 <code>....F....</code> 的点阵和一句
+  <code>Process completed with exit code 139</code>。
+</p>
+<div class="card bad">
+  <strong>一个不会告诉你哪里错了的门禁，等价于没有门禁。</strong>
+  <div class="why">
+    80 次红灯没人修，不是因为大家不关心，而是因为<b>无法行动</b>。
+  </div>
+</div>
+<p>所以本轮第一优先级的修复不是「修 bug」，而是<strong>把门禁变得可诊断</strong>。</p>
+
+<h2>三、具体做了什么</h2>
+
+<table>
+  <tr><th>编号</th><th>问题</th><th>修法</th><th>怎么证明</th></tr>
+  <tr>
+    <td>a</td>
+    <td><code>ReportScheduler</code> 零生产调用点 —— 设置页有「启用定时报表」勾选框，
+      勾了等于没勾（<b>整条链路是假的</b>）</td>
+    <td><code>main_window</code> 新增 <code>_start_report_scheduler()</code>，
+      开关真实启停调度器；<code>closeEvent</code> 收敛线程；补齐「间隔 / 输出目录」控件</td>
+    <td><b>真产出</b>：勾选后生成
+      <code>Git-clone-Max-报表-20261016-183203.csv</code>，内容含真实数据库行</td>
+  </tr>
+  <tr>
+    <td>b</td>
+    <td>两个保存回调从未被 connect，其中
+      <code>_save_g53_sched_dir</code> 还引用了<b>不存在</b>的控件（一调即崩）</td>
+    <td>补控件 + 真实接线；取控件改为安全方式</td>
+    <td>新增守卫：扫描「引用了从未创建的控件」</td>
+  </tr>
+  <tr>
+    <td>c</td>
+    <td><code>AlertScanner</code> 没接 <code>on_alerts</code> ——
+      阈值告警命中后，用户在界面上<b>什么都看不到</b></td>
+    <td>新增 <code>alerts_fired</code> 信号 + 槽（worker 只 emit，槽回 GUI 线程），
+      不弹模态打断用户</td>
+    <td>真实构造窗口 + 手动派发告警，断言状态栏出文案</td>
+  </tr>
+  <tr>
+    <td>d</td>
+    <td>9 个字段「后端有消费、UI 无入口」：<code>retry_enabled</code>、
+      <code>watchdog_enabled</code>、<code>alert_im_*</code> 等 —— 默认关且开不了</td>
+    <td>设置页补齐 12 个控件并逐个接线</td>
+    <td>真实构造窗口断言 12 控件齐全；开关→调度器真实启停</td>
+  </tr>
+  <tr>
+    <td>e</td>
+    <td><code>_env()</code> 覆盖调用方已有的 <code>GIT_CONFIG_*</code>（见 2.2）</td>
+    <td>改为追加到既有项之后</td>
+    <td>干净检出复现 → 修复后全绿</td>
+  </tr>
+  <tr>
+    <td>f</td>
+    <td>CI 崩溃时不打印失败清单（见 2.3）</td>
+    <td>重写运行器：逐模块运行 + 失败逐条点名 + 每模块前置落痕 +
+      <code>faulthandler</code> 抓原生崩溃栈</td>
+    <td><b>立刻见效</b>：新运行器当场点名出 3 个失败模块</td>
+  </tr>
+  <tr>
+    <td>g</td>
+    <td><code>test_scanner_perf</code>（绝对 30 秒断言）、
+      <code>test_mem_baseline</code>（真跑引擎测内存）混在正确性门禁里</td>
+    <td>快集里跳过这两个<b>硬件相关</b>用例，由独立 job 承接 ——
+      <b>断言一个字没改</b></td>
+    <td>覆盖率不再因整体排除模块而掉</td>
+  </tr>
+  <tr>
+    <td>h</td>
+    <td>HTTP 测试的 <code>addCleanup</code> 顺序反了（<code>shutdown</code> 打到已关的 socket）</td>
+    <td>按 LIFO 语义调整注册顺序</td>
+    <td>该模块耗时 36.6s → 18.4s，<code>WinError 10038</code> 噪声消失</td>
+  </tr>
+  <tr>
+    <td>i</td>
+    <td>测试没有隔离父进程的 <code>GIT_CONFIG_*</code>（见 2.1）</td>
+    <td>抽出共用 mixin，备份-清除-还原</td>
+    <td><b>污染环境</b>下连跑：<code>Ran 28 tests OK</code></td>
+  </tr>
+</table>
+
+<h3>3.1 独立审查线程抓到我自己写错的东西</h3>
+<p>
+  按约定，修完必须由<strong>独立线程</strong>复验。它没客气 —— 抓到我引入的 3 个缺陷：
+</p>
+<table>
+  <tr><th>严重度</th><th>我写错的</th><th>后果</th></tr>
+  <tr>
+    <td><span class="pill p-bad">高</span></td>
+    <td>异常处理分支里调了 <code>applog.debug()</code>，而这个方法<b>不存在</b></td>
+    <td>处理坏输入的分支自己会崩，<b>中断所有 git 子进程调用</b> ——
+      比它要处理的坏输入严重得多</td>
+  </tr>
+  <tr>
+    <td><span class="pill p-warn">中</span></td>
+    <td>把 <code>addCleanup</code> 的 LIFO 顺序理解反了</td>
+    <td>注释声称的执行序和真实执行序不一致，每个用例白等 5 秒</td>
+  </tr>
+  <tr>
+    <td><span class="pill p-warn">中</span></td>
+    <td>声称 <code>atexit</code> 能兜住进程崩溃</td>
+    <td>真正的 SIGSEGV 下 <code>atexit</code> <b>根本不执行</b> ——
+      要靠 <code>faulthandler</code></td>
+  </tr>
+</table>
+<div class="card ok">
+  <strong>这三条本身就是本轮方法论的最好证据：</strong>
+  「修好了」和「没修坏」是两件事，必须由不写这段代码的一方来验。
+</div>
+
+<h2>四、还没解决的（诚实清单）</h2>
+<table>
+  <tr><th>项</th><th>状态</th><th>说明</th></tr>
+  <tr>
+    <td>CI <code>test</code> job 的段错误</td>
+    <td><span class="pill p-ok">根因已定位并修复</span></td>
+    <td><b>一条测试用例故意泄漏了一个线程。</b><code>test_git_thread_exit</code> 的用例 C
+      用 <code>time.sleep(3600)</code> 模拟「卡死的 stdout」，又断言「join 超时后线程仍存活」——
+      于是那个读线程被<b>故意留在后台跑一小时</b>，而整个测试套件只要十几分钟。
+      这个僵尸线程在后续测试运行期间触发原生崩溃（<code>access violation</code> →
+      进程 <code>exit 139</code>），且 unittest 来不及打印失败清单。
+      用 <code>faulthandler</code> 抓到的栈直接指向它：
+      <code>service.py:255 _pump</code> ← <code>test_git_thread_exit.py:55 __next__</code>。
+      改为 <code>threading.Event</code> 放行，断言语义一字未改
+      （join 仍超时、仍出警告、判定后线程仍存活），但收尾时线程能真正退出；
+      另加一条「零泄漏线程」行为守卫。</td>
+  </tr>
+  <tr>
+    <td><code>G54-4 引导清单</code></td>
+    <td><span class="pill p-bad">零实现</span></td>
+    <td>台账标 ✅，实际全库没有这个组件。需立项补。</td>
+  </tr>
+  <tr>
+    <td><code>G53-1 health_card</code> 多维评分卡</td>
+    <td><span class="pill p-warn">过度声称</span></td>
+    <td>台账称新增 JSON 列 + 雷达图；实际仍是单值 <code>repo_health</code>、纯文本。</td>
+  </tr>
+  <tr>
+    <td><code>G58-3</code> 代理凭据加密</td>
+    <td><span class="pill p-bad">未加密</span></td>
+    <td>台账称「解析 + 加密落盘」；实际 <code>settings.proxy</code> 明文落地。</td>
+  </tr>
+  <tr>
+    <td>v9.1.3~v9.3.2 未打 tag</td>
+    <td><span class="pill p-warn">发布链断档</span></td>
+    <td>最新 tag 停在 <code>v9.1.2</code>。</td>
+  </tr>
+</table>
+
+<h2>五、小测验（必须通过）</h2>
+<p class="sub">9 题，答完点提交。<strong>需要全对</strong>才算通过。</p>
+
+<div class="quiz" id="quiz">
+  <div class="q" data-answer="b">
+    <div class="stem">1. 本机 1060 条测试全绿，CI 全红。第一步应该做什么？</div>
+    <label class="opt"><input type="radio" name="q1" value="a">A. 断定 CI 环境有问题，改 CI 配置</label>
+    <label class="opt"><input type="radio" name="q1" value="b">B. 做干净检出（<code>git archive HEAD</code>）再跑一遍，制造对照</label>
+    <label class="opt"><input type="radio" name="q1" value="c">C. 给失败用例加 <code>skip</code>，先把 CI 弄绿</label>
+    <div class="fb" data-good="对。本机与 CI 的差异必须被「制造」出来才能归因。实测干净检出就暴露了 3 条环境依赖失败 —— 而它们和 CI 的段错误其实是两回事，不区分就会修错东西。" data-bad="不对。直接改 CI 配置是猜测；skip 失败用例是掩盖。正确动作是先把差异制造出来。"></div>
+  </div>
+
+  <div class="q" data-answer="c">
+    <div class="stem">2. <code>GitService._env()</code> 的原实现从索引 0 重写 <code>GIT_CONFIG_KEY_*</code> 并重置 <code>GIT_CONFIG_COUNT</code>。为什么这是产品缺陷而不只是测试问题？</div>
+    <label class="opt"><input type="radio" name="q2" value="a">A. 因为会让测试变红</label>
+    <label class="opt"><input type="radio" name="q2" value="b">B. 因为 git 不接受索引从 0 开始</label>
+    <label class="opt"><input type="radio" name="q2" value="c">C. 因为父进程环境里已有的 git 配置项会被静默吃掉</label>
+    <div class="fb" data-good="对。它悄悄删掉调用方设置的 git 配置，且 <code>COUNT</code> 被改小后多余项会被忽略。测试红只是这个 bug 的副作用，不是它的问题所在。" data-bad="不对。索引从 0 开始本身是合法的；真正的问题是覆盖了调用方已有的配置项。"></div>
+  </div>
+
+  <div class="q" data-answer="a">
+    <div class="stem">3. 为什么本轮把「让 CI 可诊断」排在「修 bug」之前？</div>
+    <label class="opt"><input type="radio" name="q3" value="a">A. 因为一个不告诉你哪里错的门禁等价于没有门禁，80+ 次红灯没人修是因为无法行动</label>
+    <label class="opt"><input type="radio" name="q3" value="b">B. 因为改脚本比改产品代码风险低</label>
+    <label class="opt"><input type="radio" name="q3" value="c">C. 因为 CI 配置属于基础设施，优先级天然更高</label>
+    <div class="fb" data-good="对。这个项目里 80 多次红灯没人处理，根因不是没人关心，而是日志里只有一串点阵和一个退出码 —— 不可行动。" data-bad="不对。优先级来自「能否行动」，不是来自改动风险或类别。"></div>
+  </div>
+
+  <div class="q" data-answer="b">
+    <div class="stem">4. 本轮把 <code>test_scanner_perf</code>（含「耗时 &lt; 30 秒」断言）移出正确性门禁。这算削弱断言吗？</div>
+    <label class="opt"><input type="radio" name="q4" value="a">A. 算，移到别处跑等于不管了</label>
+    <label class="opt"><input type="radio" name="q4" value="b">B. 不算，断言一字未改，只是不再当作正确性门禁；它测的是机器快慢，不是代码对错</label>
+    <label class="opt"><input type="radio" name="q4" value="c">C. 算，应该直接删掉这个用例</label>
+    <div class="fb" data-good="对。硬件相关的绝对阈值放进正确性门禁，产出的是不可复现的红灯。移走它、保留断言，由独立 job 承接，是修「门禁语义」而不是削断言。" data-bad="不对。判断标准是「断言有没有变」，不是「在哪里跑」。断言完整保留，只是不再拿它判定代码正确性。"></div>
+  </div>
+
+  <div class="q" data-answer="c">
+    <div class="stem">5. 独立审查线程抓到我新写的代码在异常分支里调用了一个<b>不存在</b>的方法。为什么这条比原 bug 更严重？</div>
+    <label class="opt"><input type="radio" name="q5" value="a">A. 不会更严重，只是个笔误</label>
+    <label class="opt"><input type="radio" name="q5" value="b">B. 因为它会让 <code>ruff</code> 报错</label>
+    <label class="opt"><input type="radio" name="q5" value="c">C. 因为它出现在「处理坏输入」的分支里，会把一个可容忍的坏输入升级成中断所有 git 子进程调用</label>
+    <div class="fb" data-good="对。这段代码存在的意义就是「坏输入不要炸」，结果它自己炸，反而把可控降级成了不可控。异常处理路径的正确性优先级高于主路径。"></div>
+  </div>
+
+  <div class="q" data-answer="a">
+    <div class="stem">6. 「设置页有勾选框 → 数据库字段存下来了 → 但功能没发生」属于哪一类缺陷？该用什么手段抓？</div>
+    <label class="opt"><input type="radio" name="q6" value="a">A. 虚伪实现（后端无生产调用点）；用「该模块是否只出现在自身文件和 tests/ 里」来抓</label>
+    <label class="opt"><input type="radio" name="q6" value="b">B. 性能问题；用压测抓</label>
+    <label class="opt"><input type="radio" name="q6" value="c">C. UI 缺陷；用截图对比抓</label>
+    <div class="fb" data-good="对。单元测试抓不到它 —— 测试直接构造后端对象，绕过了 UI 断链。判据是「有没有生产调用点」，并且要有静态守卫钉住。"></div>
+  </div>
+
+  <div class="q" data-answer="b">
+    <div class="stem">7. 项目里 CI 红了 12/12，但 <code>slow</code> / <code>e2e-smoke</code> / <code>fast-smoke</code> 三个 job 一直是绿的。这说明什么？</div>
+    <label class="opt"><input type="radio" name="q7" value="a">A. 说明产品代码完全没问题，只是测试写得不好</label>
+    <label class="opt"><input type="radio" name="q7" value="b">B. 说明红灯局限在 <code>test</code> job 的特定路径（快集 + 覆盖率插桩），不能笼统说「CI 全红」</label>
+    <label class="opt"><input type="radio" name="q7" value="c">C. 说明那三个 job 没有实际执行</label>
+    <div class="fb" data-good="对。把「CI 全红」拆成按 job 的事实，才能把排查范围从「整个项目」缩到「快集 + 覆盖率这条特定路径」。" data-bad="不对。三个 job 绿是真实结果，它们确实跑了；关键是要按 job 拆分事实，而不是笼统下结论。"></div>
+  </div>
+
+  <div class="q" data-answer="c">
+    <div class="stem">8. 复验线程用探针实测发现 <code>addCleanup</code> 的真实执行序是 <code>join → shutdown → server_close</code>，而我注释里写的是 <code>shutdown → server_close → join</code>。正确的教训是？</div>
+    <label class="opt"><input type="radio" name="q8" value="a">A. 注释不重要，删掉就好</label>
+    <label class="opt"><input type="radio" name="q8" value="b">B. <code>addCleanup</code> 有 bug，不该用它</label>
+    <label class="opt"><input type="radio" name="q8" value="c">C. 涉及执行顺序的逻辑必须<b>实测</b>而不是靠推理，且注释与行为不一致本身就是缺陷</label>
+    <div class="fb" data-good="对。<code>addCleanup</code> 是 LIFO 这一点没错，错的是我把推导方向搞反了还写进注释 —— 一个说错话的注释会让下一个人重犯同一个错。探针实测是唯一可靠手段。"></div>
+  </div>
+
+  <div class="q" data-answer="b">
+    <div class="stem">9. CI 段错误的真凶是一条测试用例<b>故意泄漏了一个线程</b>（<code>time.sleep(3600)</code>）。
+      为什么这条「只是测试写法问题」会被判定为高危？</div>
+    <label class="opt"><input type="radio" name="q9" value="a">A. 因为它让测试跑得更慢</label>
+    <label class="opt"><input type="radio" name="q9" value="b">B. 因为一个跨用例存活的僵尸线程会让<b>整套测试</b>结果不可信：崩溃发生在别的用例上，目击者指向错误的嫌疑人</label>
+    <label class="opt"><input type="radio" name="q9" value="c">C. 因为 <code>time.sleep</code> 不应该出现在测试里</label>
+    <div class="fb" data-good="对。真正的代价不是慢，而是<b>归因被污染</b>：崩溃点是 test_g68_settings_ui，真凶却是 test_git_thread_exit，而且 unittest 根本来不及打印失败清单。一个泄漏线程可以把整条流水线的诊断能力清零。" data-bad="不对。慢只是副作用。要命的是崩溃点与真凶不在一处 —— 目击者指向了错误的嫌疑人，而失败清单又没打出来。"></div>
+  </div>
+
+  <div class="score">
+    <div id="verdict">未提交</div>
+    <div>
+      <button onclick="grade()">提交</button>
+      <button class="ghost" onclick="reset()">重做</button>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <p>
+    证据链：<code>workflow_status.md</code>（本轮事实源）·
+    <code>docs/验证记录-2026-10-16.md</code>（命令 + 输出台账）·
+    <code>tests/test_g69_regressions.py::TestG69_18WiringClosure</code> /
+    <code>::TestG69_18VerifierFindings</code>（永久守卫）。
+  </p>
+  <p>
+    本报告只陈述仓库内可复现的事实。「未解决」一节列出的项，没有一项在本轮被声称完成。
+  </p>
+</footer>
+
+</div>
+
+<script>
+function grade(){
+  const qs=[...document.querySelectorAll('.q')];
+  let right=0, unanswered=0;
+  qs.forEach((q,i)=>{
+    const pick=q.querySelector('input:checked');
+    const fb=q.querySelector('.fb');
+    fb.classList.remove('show','good','bad');
+    if(!pick){unanswered++;fb.textContent='未作答';fb.classList.add('show','bad');return;}
+    if(pick.value===q.dataset.answer){
+      right++;
+      fb.textContent='✓ '+fb.dataset.good;
+      fb.classList.add('show','good');
+    }else{
+      fb.textContent='✗ '+fb.dataset.bad;
+      fb.classList.add('show','bad');
+    }
+  });
+  const v=document.getElementById('verdict');
+  const total=qs.length;
+  if(unanswered){
+    v.textContent=`还有 ${unanswered} 题未作答`;
+    v.style.color='var(--dim)';
+  }else if(right===total){
+    v.textContent=`✅ 通过 ${right}/${total} —— 你可以接手这份变更了`;
+    v.style.color='var(--ok)';
+  }else{
+    v.textContent=`❌ 未通过 ${right}/${total} —— 读上面的解析后重做`;
+    v.style.color='var(--bad)';
+  }
+  v.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+function reset(){
+  document.querySelectorAll('.q input').forEach(i=>i.checked=false);
+  document.querySelectorAll('.fb').forEach(f=>f.classList.remove('show','good','bad'));
+  const v=document.getElementById('verdict');
+  v.textContent='未提交'; v.style.color='var(--fg)';
+}
+</script>
+</body>
+</html>

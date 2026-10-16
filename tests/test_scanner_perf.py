@@ -1,6 +1,7 @@
 """P-perf 扫描重构测试：无子进程读取 / 裸仓 / worktree / packed-refs / 进度取消 / 批量写库。"""
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -126,6 +127,9 @@ class TestProgressAndCancel(unittest.TestCase):
         self.assertEqual(seen[0], (0, 5))
         self.assertEqual(seen[-1][0], 5)
 
+    @unittest.skipIf(
+        os.environ.get("GCM_FAST_SUITE") == "1",
+        "硬件敏感：绝对时间断言，由 CI 的 perf-baseline job 承接（断言未削弱）")
     def test_cancelled_stops_early(self):
         d = Path(tempfile.mkdtemp())
         base = d / "clones"

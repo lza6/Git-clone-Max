@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from ..app import applog
 from ..models import RepoSpec, StreamChunk, SyncAction, SyncResult, SyncStatus
 
 LineCallback = Callable[[StreamChunk], None]
@@ -534,10 +535,33 @@ class GitService:
         if self.force_ipv4:
             cfg.append(("http.version", "HTTP/1.1"))
         if cfg:
-            env["GIT_CONFIG_COUNT"] = str(len(cfg))
+            # G69-18 修复：**追加**到调用方已有的 GIT_CONFIG_* 之后，而不是从 0 覆盖。
+            # 原实现把 index 写死从 0 开始、并把 COUNT 重置为 len(cfg)，
+            # 于是当进程环境里本来就带 GIT_CONFIG_*（CI 用
+            # `credential.interactive=false` 就是这么设的，Git for Windows
+            # 与不少包装脚本也会设）时，会把调用方自己的配置项整条覆盖掉，
+            # 且 COUNT 被改小 → 多余项被 git 忽略。表现为「凭据注入悄悄吃掉别人的
+            # git 配置」，很难与「token 没生效」区分。
+            try:
+                base = int(os.environ.get("GIT_CONFIG_COUNT", "0") or 0)
+            except ValueError:
+                base = 0            # 调用方给了非数字：不猜，从 0 起（并在下方留痕）
+                # COUNT 坏了但 KEY_n/VALUE_n 还在的话，环境自相矛盾（git 读 COUNT
+                # 决定读几项）。既然无法信任这批数据，整组清掉再从 0 起。
+                for k in [k for k in env
+                          if k.startswith(("GIT_CONFIG_KEY_",
+                                           "GIT_CONFIG_VALUE_",
+                                           "GIT_CONFIG_COUNT"))]:
+                    env.pop(k, None)
+                try:
+                    applog.warn("GIT_CONFIG_COUNT 非数字，已忽略既有值")
+                except Exception:
+                    pass
+            base = max(base, 0)
             for i, (k, v) in enumerate(cfg):
-                env[f"GIT_CONFIG_KEY_{i}"] = k
-                env[f"GIT_CONFIG_VALUE_{i}"] = v
+                env[f"GIT_CONFIG_KEY_{base + i}"] = k
+                env[f"GIT_CONFIG_VALUE_{base + i}"] = v
+            env["GIT_CONFIG_COUNT"] = str(base + len(cfg))
         return env
 
     def _any_token(self) -> bool:

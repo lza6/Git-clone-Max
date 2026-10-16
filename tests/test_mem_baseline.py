@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import tempfile
 import unittest
@@ -31,6 +32,9 @@ class TestMemBaselineHelpers(unittest.TestCase):
         self.assertGreater(valid, 0)
         self.assertLessEqual(valid, 40)
 
+    @unittest.skipIf(
+        os.environ.get("GCM_FAST_SUITE") == "1",
+        "硬件敏感：真实跑引擎测内存峰值，由 CI 的 perf-baseline job 承接（断言未削弱）")
     def test_measure_returns_fields(self):
         res = self.mem.measure(100)
         self.assertIn("peak_bytes", res)

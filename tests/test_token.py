@@ -39,6 +39,22 @@ class TestEnvToken(unittest.TestCase):
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
+        # G69-18：本文件断言 GIT_CONFIG_* 的**精确索引**（KEY_0 / COUNT==1），
+        # 而调用方进程环境里可能本来就带 GIT_CONFIG_*（CI 用
+        # `credential.interactive=false` 就是这么设的，Git for Windows 包装脚本也会设）。
+        # 不隔离会得到「本机绿、CI 红」的假红灯 —— 属于测试污染环境，不是产品缺陷。
+        self._gitcfg_backup = {
+            k: v for k, v in os.environ.items() if k.startswith("GIT_CONFIG_")
+        }
+        for k in list(os.environ):
+            if k.startswith("GIT_CONFIG_"):
+                os.environ.pop(k, None)
+
+    def tearDown(self):
+        for k in list(os.environ):
+            if k.startswith("GIT_CONFIG_"):
+                os.environ.pop(k, None)
+        os.environ.update(self._gitcfg_backup)
 
     def test_no_proxy_no_token_returns_none(self):
         svc = GitService(self.tmp, proxy="", token="")

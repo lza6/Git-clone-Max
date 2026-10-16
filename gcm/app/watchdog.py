@@ -73,7 +73,17 @@ class Watchdog(QObject):
 
     @interval_min.setter
     def interval_min(self, value: int) -> None:
+        """G69-18：改间隔必须**立即**应用到运行中的定时器。
+
+        原实现只更新字段，`_timer` 的 interval 还是旧值 → 用户在设置页把
+        间隔从 5 分钟改成 15 分钟，实际仍按 5 分钟跑（要重启才生效），
+        属于「设置存了但没作用」。
+        """
         self._interval_min = clamp_interval(value)
+        try:
+            self._timer.setInterval(self._interval_min * 60 * 1000)
+        except Exception:
+            pass
 
     def is_active(self) -> bool:
         return self._timer.isActive()

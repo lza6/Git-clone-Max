@@ -91,8 +91,19 @@ class SettingsPanel(QWidget):
 
     # ---- G53 数据洞察保存（评分卡/告警/历史保留/定时报表）
     def _save_g53_alerts(self, checked):
+        """G69-18：切换告警开关必须真实启停扫描器。
+
+        此前只写 settings —— 勾了要重启才生效（与定时报表同一类断链）。
+        """
         self.owner.settings.g53_alerts_enabled = bool(checked)
         self.owner.settings_store.save(self.owner.settings)
+        scanner = getattr(self.owner, "alert_scanner", None)
+        if scanner is None:
+            return
+        try:
+            scanner.start() if checked else scanner.stop()
+        except Exception:
+            pass
 
     def _save_g53_interval(self, value):
         self.owner.settings.g53_alerts_interval_min = int(value)
@@ -121,13 +132,70 @@ class SettingsPanel(QWidget):
     def _save_g53_sched(self, checked):
         self.owner.settings.sched_report_enabled = bool(checked)
         self.owner.settings_store.save(self.owner.settings)
+        # G69-18：开关必须真的驱动调度器（此前只存字段，调度器从不启动）
+        if hasattr(self.owner, "_start_report_scheduler"):
+            self.owner._start_report_scheduler()
 
     def _save_g53_sched_interval(self, value):
         self.owner.settings.sched_report_interval_min = int(value)
         self.owner.settings_store.save(self.owner.settings)
+        if hasattr(self.owner, "_start_report_scheduler"):
+            self.owner._start_report_scheduler()
 
     def _save_g53_sched_dir(self):
-        self.owner.settings.sched_report_dir = self.owner.edit_g53_sched_dir.text().strip()
+        edit = getattr(self.owner, "edit_g53_sched_dir", None)
+        self.owner.settings.sched_report_dir = edit.text().strip() if edit else ""
+        self.owner.settings_store.save(self.owner.settings)
+        if hasattr(self.owner, "_start_report_scheduler"):
+            self.owner._start_report_scheduler()
+
+    def _save_retry_enabled(self, checked):
+        """G69-18：失败自动重试开关（此前字段有、UI 无 → 用户永远开不了）。"""
+        self.owner.settings.retry_enabled = bool(checked)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_retry_max(self, value):
+        self.owner.settings.retry_max = int(value)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_watchdog_enabled(self, checked):
+        """G69-18：看门狗开关（同上）。"""
+        self.owner.settings.watchdog_enabled = bool(checked)
+        self.owner.settings_store.save(self.owner.settings)
+        wd = getattr(self.owner, "watchdog", None)
+        if wd is not None:
+            try:
+                wd.start() if checked else wd.stop()
+            except Exception:
+                pass
+
+    def _save_watchdog_interval(self, value):
+        self.owner.settings.watchdog_interval_min = int(value)
+        self.owner.settings_store.save(self.owner.settings)
+        # G69-18：改间隔要立刻作用到运行中的定时器，否则要重启才生效
+        wd = getattr(self.owner, "watchdog", None)
+        if wd is not None:
+            try:
+                wd.interval_min = int(value)
+            except Exception:
+                pass
+
+    def _save_alert_im(self):
+        """G69-18：企业 IM 告警渠道/URL/Token（此前无 UI → 不可达）。"""
+        ch = getattr(self.owner, "combo_im_channel", None)
+        url = getattr(self.owner, "edit_im_url", None)
+        tok = getattr(self.owner, "edit_im_token", None)
+        self.owner.settings.alert_im_channel = ch.currentData() if ch else ""
+        self.owner.settings.alert_im_url = url.text().strip() if url else ""
+        self.owner.settings.alert_im_token = tok.text().strip() if tok else ""
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_g53_stale_days(self, value):
+        self.owner.settings.g53_alerts_stale_days = int(value)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_g53_disk_min(self, value):
+        self.owner.settings.g53_alerts_disk_min_gb = int(value)
         self.owner.settings_store.save(self.owner.settings)
 
     def _save_concurrency(self, value):

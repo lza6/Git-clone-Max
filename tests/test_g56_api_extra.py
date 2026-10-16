@@ -33,7 +33,7 @@ def _serve(tmp: Path, allow_mutate: bool = False):
     port = httpd.server_address[1]
     th = threading.Thread(target=httpd.serve_forever, daemon=True)
     th.start()
-    return httpd, port
+    return httpd, port, th
 
 
 def _get(port: int, path: str) -> tuple[int, str, dict]:
@@ -50,9 +50,16 @@ class TestHttpApiEndpoints(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="gcm_api_extra_"))
         _make_db(self.tmp)
-        self.httpd, self.port = _serve(self.tmp)
-        self.addCleanup(self.httpd.shutdown)
+        self.httpd, self.port, self.th = _serve(self.tmp)
+        # G69-18：addCleanup 是 **LIFO**（后注册的先跑）。目标执行顺序为
+        # `shutdown()`（让 serve_forever 退出）→ `server_close()`（关 socket）
+        # → `join()`（收线程），因此**注册顺序必须反过来**：
+        #   addCleanup(join) → addCleanup(server_close) → addCleanup(shutdown)
+        # 第一版把顺序写反了：join 最先跑，而 shutdown 还没调用 → 线程仍活 →
+        # join 白等满 5s（实测每例多付 5s），注释与行为不符。
+        self.addCleanup(self.th.join, 5.0)
         self.addCleanup(self.httpd.server_close)
+        self.addCleanup(self.httpd.shutdown)
 
     def test_repos_list_and_host_filter(self):
         code, _, body = _get(self.port, "/api/repos?host=github.com")

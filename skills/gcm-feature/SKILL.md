@@ -148,3 +148,42 @@ QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe scripts/e2e_smoke.py
 | UI 写 key、消费端读不到 | 认证头下拉永不生效 | `TestAuthHeaderGlobalFallback` |
 | 两个开关被错误 AND | 「浅克隆」静默退化为全量克隆 | `TestShallowCloneDepth` |
 | 测试端口 TOCTOU | 间歇性红灯 → 训练人忽略红灯 | 端口 0 内核分配 |
+| **虚伪实现**：后端写全了但没接进产品 | 设置页勾选无效果；模块只在 tests 里被构造 | `TestG69_18WiringClosure`（查生产调用点 + UI 入口） |
+| **只写不读 / 只读不写**的设置项 | 用户改了没用，或功能存在却够不到 | 同上（`test_settings_ui_has_entry_*`） |
+| **死回调**：定义了从未 connect，还引用不存在的控件 | 一调即崩 / 静默无效果 | `test_no_handler_referencing_nonexistent_widget` |
+| **回调没接出口** | 告警/事件命中后用户全程无感 | `test_alerts_callback_wired` |
+| **进程环境未隔离** | 本机绿、CI 红（父进程带 `GIT_CONFIG_*`） | `tests/_gitcfg_isolation.py` mixin |
+| **异常分支自己抛** | 引用不存在的 API（如 `applog.debug`）→ 把可容忍坏输入升级为全局中断 | `test_env_uses_only_existing_applog_api` |
+| **`addCleanup` 顺序写反** | LIFO 方向搞反 → 白等超时 / socket 噪声 | `test_httpd_cleanup_executes_shutdown_before_join` |
+| **门禁不可诊断** | 崩溃时不打印失败清单 → 红灯 80+ 次无人能修 | `scripts/ci_run_fast.py`（逐模块落痕 + `faulthandler`） |
+| **硬件相关断言进门禁** | 绝对时间/内存阈值 → 不可复现红灯 | 快集 `GCM_FAST_SUITE=1` 跳过，独立 job 承接 |
+
+---
+
+## 附录：本项目的三条「反虚伪实现」铁律（G69-18 沉淀）
+
+### 铁律 1：新增任何「能力」时，必须确认它有**生产调用点**
+
+判据（一条命令）：
+
+```bash
+grep -rn "<模块名或函数名>" gcm/ --include=*.py | grep -v "def <名字>"
+```
+
+**若结果为空（或只有自身定义），它就是虚伪实现** —— 单测全绿也不改变这一点，
+因为测试往往直接构造后端对象，绕过真实入口。
+
+### 铁律 2：新增任何「设置项」时，必须**两侧都接线**
+
+| 侧 | 检查 | 命令 |
+|----|------|------|
+| 写入侧 | UI 控件存在且 connect 到处理函数 | `grep -n "<字段名>" gcm/ui/` |
+| 消费侧 | 有模块真的读它并据此改变行为 | `grep -rn "<字段名>" gcm/ --include=*.py` |
+
+只写不读 = 用户改了没用；只读不写 = 用户够不到。**两样都算没做完。**
+
+### 铁律 3：涉及顺序 / 环境 / 时序的判断，必须**实测**，不能靠推理
+
+本轮为此付了三次学费（`addCleanup` LIFO 方向、`atexit` 兜不兜得住崩溃、
+「构造 UI 会不会启动线程」）。写进注释前先跑一遍探针。
+

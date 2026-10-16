@@ -127,12 +127,37 @@ docs/        工程/产品/契约文档
 | 数据目录解析**唯一来源**是 `gcm.__main__.get_data_dir()`，任何模块不得自行拼 `<exe>/data` 或 `<源码>/data`（否则安装版读不到 `%APPDATA%` 里的配置） | `tests/test_g67_closure.py::TestExtraHostsUsesRealDataDir` |
 | 同步网络 I/O（检查更新、诊断、归档、通知）**不得在 GUI 线程**执行：worker 只 `emit`，槽回主线程 | `tests/test_g66_patch.py::TestNoCrossThreadWidgetAccess` / `TestUpdateCheckThreading` |
 | 自动重投（retry）必须复用上一批的 `host_by_key` / `fetch_depth` / `mirror`（否则污染 `host` 列、克隆语义错位） | `tests/test_g67_closure.py::TestRetryReusesBatchContext` |
+| 新增的模块/函数/设置项**必须有生产调用点或 UI 入口**（只在 tests 里出现 = 虚伪实现） | `tests/test_g69_regressions.py::TestG69_18WiringClosure` |
+| 新增设置项必须**写入侧与消费侧都接线**（只写不读 = 用户改了没用） | 同上 |
+| 断言 `GIT_CONFIG_*` 精确索引的测试必须隔离进程环境（父进程可能已带该变量） | `tests/_gitcfg_isolation.py` mixin |
+| 异常处理分支不得引用不存在的 API（会把可容忍坏输入升级为全局中断） | `TestG69_18VerifierFindings::test_env_uses_only_existing_applog_api` |
 | 绝不为了绿灯削弱断言、跳过测试、mock 生产逻辑 | 代码审查 |
 
 ---
 
 ## 6. 已知边界（诚实清单，别当 bug 修）
 
+- **`计划书/` 台账已删，但「全部闭环」的说法不成立（G69-18 独立复验）**。
+  该目录在提交 `e6a8759`（2026-10-14）被删，理由写的是「台账全部闭环并经用户确认」。
+  2026-10-16 的独立复验推翻了它：**定时报表整条链路零生产调用点**、**阈值告警未接
+  `on_alerts`**、**9 个设置字段只读不写**（用户够不到）—— 均已在本轮接线；
+  但仍有未闭环项，见下方「未闭环（需立项）」。**不要再以「台账已删」当作已完成的证据。**
+- **未闭环（需立项，勿当成已完成）**：
+  - `G54-4 引导清单`：台账标 ✅，**实际全库无该组件**；`OnboardingDialog` 仍是三步向导。
+  - `G53-1 health_card`：台账称新增 JSON 列 + 雷达图，**实际仍是单值 `repo_health` + 纯文本**。
+  - `G58-3 代理凭据`：台账称「解析 + 加密落盘」，**实际未解析、`settings.proxy` 明文落盘**。
+  - `v9.1.3 ~ v9.3.2` 未打 git tag（发布链断档，最新 tag 停在 `v9.1.2`）。
+- **CI `test` job 的间歇性原生崩溃（未定根因，已知缓解）**：
+  Linux/macOS 表现为 `exit 139`（SIGSEGV），本机 Windows 可复现（约 2/3 概率）。
+  崩溃点落在 `test_g68_settings_ui` 附近，但 `faulthandler` 报
+  `<invalid frame>` —— 属**内存已损坏后的延时表现**，不是干净崩溃点，故判为**竞态**。
+  已做的缓解：① `ci_run_fast.py` 逐模块落痕 + 失败逐条点名 + `faulthandler`，
+  保证**即便崩溃也能定位到模块**；② 告警线程 → GUI 的 emit 改用弱引用包装
+  （`_make_alert_emitter`），避免对已销毁的 QObject `emit` 引发原生崩溃。
+  **尚未找到并消除根因** —— 下次复现时优先用 `PYTHONMALLOC=debug`（实测它改变了时序、
+  本次运行未崩，可作为二分定位手段）。
+- **CI 未锁定 PyQt6 版本**：主矩阵用 `pip install PyQt6`（取最新），
+  而 `requirements-build.txt` 锁了 ruff/mypy/coverage/pyinstaller。上游发新版会让 CI 行为漂移。
 - **代码规模现状（G68 实测）**：仅剩 **3 个**文件超 800 行 —— `main_window.py` 1800、
   `service.py` 1170、`engine.py` 904（`settings_panel.py` 899→**454**、`repo_db.py` 806→**741**
   已拆到线内）；8 个函数超 100 行（最大 `service._update` 178 行）。

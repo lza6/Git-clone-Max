@@ -33,10 +33,15 @@ class TestHttpApiWrite(unittest.TestCase):
         self.httpd = create_server("127.0.0.1:0", root=self.tmp / "out",
                                    data_dir=self.tmp, allow_mutate=True)
         self.port = self.httpd.server_address[1]
-        th = threading.Thread(target=self.httpd.serve_forever, daemon=True)
-        th.start()
-        self.addCleanup(self.httpd.shutdown)
+        self.th = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.th.start()
+        # G69-18：addCleanup 是 LIFO → 注册序须反过来，实际执行序才是
+        # shutdown()（退出 serve_forever）→ server_close()（关 socket）→ join()（收线程）。
+        # 顺序写反会让 join 先跑而线程未停 → 白等满超时；server_close 先跑则
+        # shutdown 打到已关 socket，抛 WinError 10038 噪声。
+        self.addCleanup(self.th.join, 5.0)
         self.addCleanup(self.httpd.server_close)
+        self.addCleanup(self.httpd.shutdown)
 
     def test_post_clone_allowed_and_clones(self):
         req = urllib.request.Request(

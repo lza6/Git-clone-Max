@@ -11,8 +11,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from tests._gitcfg_isolation import GitConfigEnvIsolation  # noqa: E402
 
-class TestRateLimit(unittest.TestCase):
+
+class TestRateLimit(GitConfigEnvIsolation, unittest.TestCase):
+    """断言 GIT_CONFIG_* 的**精确索引**，必须隔离进程环境（见 mixin 文档）。"""
+
     def test_env_injects_low_speed(self):
         from gcm.git.service import GitService
         svc = GitService(Path(tempfile.mkdtemp()), rate_limit_kbps=500)

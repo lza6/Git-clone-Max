@@ -1,0 +1,168 @@
+# workflow_status — 终局闭环总审计（v9.3.2 → v9.4.0）
+
+> 本文件是**本轮唯一事实源**。只记录事实与证据，不记录推理过程。
+> 生成：2026-10-16 · 基线 `4459729`（main，v9.3.2）· git 工作区干净。
+
+---
+
+## 0. 任务契约（用户显式需求）
+
+| # | 需求 | 状态 |
+|---|------|------|
+| C1 | 主控代理编排：先规划 → 并行子代理 → 汇总 | ✅ 已执行（3 并发只读审计代理） |
+| C2 | 需求追踪矩阵，逐条验证闭环状态 | ✅ §2 |
+| C3 | 深度验证 `下一步改进指南.md` 全部任务 | ✅ §2（结论：**删除理由不成立**） |
+| C4 | 真实 E2E 测验 / 验收 / 审计 | ✅ §5 |
+| C5 | 压测（高并发 / 极端 / 数据错乱） | 进行中 |
+| C6 | HTML 变更报告 + 底部测验 | 待启动 |
+| C7 | 独立审查线程 → 修复 → 复验循环 | 待启动 |
+| C8 | 整理成 workflow + skills | 待启动 |
+| C9 | SOP / 交接文档 | 待启动 |
+| C10 | 验证记录台账（避免重复跑） | ✅ `docs/验证记录-2026-10-16.md` |
+| C11 | 提交 → 推送 main → Release | 待启动 |
+
+---
+
+## 1. 事实基础（2026-10-16 实测）
+
+| 项 | 实测值 | 证据 |
+|----|--------|------|
+| 版本 | `9.3.2` | `gcm/__init__.py:2` |
+| HEAD | `4459729` main，工作区干净 | `git status` / `git log` |
+| 源码规模 | 66 模块 / 16076 行 | `wc -l` |
+| 测试 | 121 文件；快集 1060 用例 | `ls tests/*.py` |
+| ruff | **All checks passed** | `ruff check gcm` |
+| mypy | **Success: no issues found in 64 source files** | `mypy gcm` |
+| **远端 CI** | **最近 12 次运行全 failure**（含最新 v9.3.2） | `gh run list` |
+| CI 失败形态 | Linux/macOS `exit 139`（SIGSEGV）；Windows `exit 1` | `gh api .../jobs/{id}/logs` |
+| CI 通过项 | `slow` / `e2e-smoke` / `fast-smoke` **三个 job 实际通过** | `gh run view --json jobs` |
+| `gh` CLI | 可用（scopes: repo, workflow, read:org） | `gh auth status` |
+| git tag | 最新 `v9.1.2`（**v9.1.3~v9.3.2 未打 tag**） | `git tag --sort=-creatordate` |
+| `下一步改进指南.md` | **不在工作区**；`e6a8759`(2026-10-14) 随 `计划书/` 9 文件一起删除 | `git log --diff-filter=D` |
+
+### 1.1 关键对照实验（决定性）
+
+| 环境 | 结果 | 含义 |
+|------|------|------|
+| 带本地 `data/` 的工作区 | 1060 全绿 | 本机看不见问题 |
+| **`git archive HEAD` 干净检出** | **FAILED (failures=3, skipped=4)** | 抓出真缺陷 |
+
+> 干净检出下 3 条失败**全部**源于本机 shell 注入的 `GIT_CONFIG_*` 环境变量
+> （测试断言污染），**不是** CI 段错误。CI 段错误另有其因（§4 P0-1）。
+
+---
+
+## 2. 需求追踪矩阵 — 被删台账的独立复验
+
+> `计划书/` 下 9 个文件在 v9.2.0 被删，README 声称「G67 台账全部闭环并经用户确认」。
+> **独立复验结论：该声明不成立。** 原文已从 `e6a8759^` 取回逐条比对。
+
+| 源文档 | 任务行数 | 标记 ✅ | 复验结论 |
+|--------|---------|---------|-----------|
+| `下一步改进指南.md` | 56 | 56 | **至少 6 项部分闭环 + 3 项零生产调用点** |
+| `下一步改进指南-v8-历史.md` | 68 | 68 | 未逐条复验（历史基线） |
+| 其余 7 个台账（验收清单/规划总览/…） | — | — | 内容已迁入 `docs/`，非死链 |
+
+### 2.1 逐条复验结果（两轮独立代理 + 主控复核）
+
+| G编号 | 声称内容 | 实际状态 | 证据 |
+|-------|---------|---------|------|
+| G52-1 自动重试队列 | 设置页「失败重试」区 + 引擎自动重投 | **部分闭环** | 引擎侧真实（`engine.py:111-134,233-285`）；**设置页无任何控件** → 默认 False 永不启用 |
+| G52-3 看门狗续跑 | 设置页「看门狗」开关+间隔 | **部分闭环** | `main_window.py:211-219` 实例化；**无 UI 入口** |
+| G52-5 失败原因聚合面板 | 按类聚合 + 可重试 | **真实可用** | `main_window.py:607` 按钮 → `failure_panel.py` |
+| G52-6 并发自适应记忆 | 写/读 `concurrency_state.json` | **真实可用** | `engine.py:124,191-221,818` |
+| G53-1 多维评分卡 | 新增 `health_card` JSON 列/派生视图 | **部分闭环** | 统计中心有展示；**未新增列**，仍单值 `repo_health`；雷达图未实现 |
+| G53-2 阈值告警引擎 | 命中 → 弹通知 + 可选 Webhook | **部分闭环** | 扫描器已接；**`on_alerts` 未传** → 命中后除 IM 外用户无感 |
+| G53-5 定时报表 | 后台按间隔生成到指定目录 | **零生产调用点** | `ReportScheduler` 仅被 tests 引用；`_save_g53_sched_interval/_dir` 从未 connect |
+| G54-4 引导清单 | 向导后「引导清单」页 | **零生产调用点** | 全库无 checklist 组件；`onboarding.py` 仅 3 步向导 |
+| G56-2 MCP server | `python -m gcm.mcp_server` 只读工具 | **真实可用（实测）** | 无 `GCM_MCP_ENABLE` → rc=3；置 1 后 initialize 返回 9.3.2，tools/list 返回 4 工具 |
+| G56-4 本地 HTTP API | `--serve` 只读 | **真实可用（实测）** | `GET /api/status` → 200 `{...,"readonly":true}` |
+| G58-3 HTTP 代理认证 | 解析 + 加密落盘 | **部分闭环** | 能注入 git env；**未解析、未加密**（`settings.proxy` 明文落盘） |
+| G58-5 自建实例识别/认证头 | host_auth_types 下拉 | **真实可用** | G66-9 修复已生效 |
+| G59-7 企业 IM 告警 | 钉钉/飞书/企微接进 AlertScanner | **部分闭环** | 后端链路通；**无 UI 配置入口** → 默认不可达 |
+
+**系统性形态**：*「后端模块 + 单测齐全，但设置页控件 / 通知回调 / 消费者缺失 → 用户不可达」*。
+测试全绿是因为测试**直接构造后端对象**，绕过了 UI 断链。
+
+---
+
+## 3. 本轮修复（已落地，附证据）
+
+| 编号 | 问题 | 修复 | 验证 |
+|------|------|------|------|
+| **G69-18y** | **★ 第二处原生崩溃源（产品缺陷）**：`LocalReposDialog` 的取消/关闭**从不调用** `ScanWorker.cancel()`（`reject()` 直接退对话框）。而 `ScanWorker` 是普通线程驱动的 QObject、且 `parent=self` —— 对话框析构后线程仍对已毁的 QObject `emit`，表现为**本地扫描点取消/关窗口偶发进程原生崩溃** | ① `ScanWorker` 新增 `stop()`（取消 + 等待收敛）+ 内部 `_emit()` 网关：停止后一律不发信号，并对 `RuntimeError`（C++ 对象已删）兜底；② 对话框重写 `reject()` 作为**所有**退出路径的收敛点（覆盖取消按钮 / Esc / 程序化关闭）+ `closeEvent` 覆盖 × 按钮 | 新增守卫 `TestG69_18ScanWorkerStopsBeforeEmit`(3)：stop() 后零信号、线程确实收敛、退出路径真的调 stop() |
+| **G69-18z** | **★ CI 连续红灯根因**：`test_git_thread_exit` 用例 C 用 `time.sleep(3600)` 模拟卡死 stdout，又断言「join 超时后线程仍存活」→ `_pump` 读线程被**故意泄漏**，在整套测试剩余时间里存活并触发**原生崩溃**（本机实测 access violation；进程 `exit 139` / `0xC0000409`，unittest 来不及打印失败清单）。崩溃点在 `test_g68_settings_ui`，真凶在 `test_git_thread_exit` —— **目击者指向错误嫌疑人** | 改用 `threading.Event` 放行；收尾断言线程真能退出。**断言语义一字未改**（join 仍超时、仍出警告、判定后仍存活） | `faulthandler` 栈直指 `service.py:255 _pump` ← `test_git_thread_exit.py:55 __next__`；修复后新增「零泄漏线程」行为守卫 |
+| G69-18f | CI 固定失败**无法诊断** | `ci_run_fast.py` 逐模块落痕 + 失败逐条点名 + `faulthandler` + `atexit` 兜底 | **当场见效**：首次运行即点名出 3 个失败模块 |
+| G69-18a | `ReportScheduler` 零生产调用点（定时报表开关是假的） | `main_window` 新增 `_start_report_scheduler()`；`closeEvent` 收敛线程；补齐「间隔/输出目录」控件 | **真实 E2E**：勾选后生成 `Git-clone-Max-报表-20261016-183203.csv`，含真实 DB 行 |
+| G69-18b | 两个死回调 `_save_g53_sched_interval` / `_save_g53_sched_dir` 从未 connect，后者引用**不存在**的控件 | 补控件 + 真实 connect；安全取控件 | `test_no_handler_referencing_nonexistent_widget` |
+| G69-18c | `AlertScanner` 未传 `on_alerts` → 告警命中用户全程无感 | 新增 `alerts_fired` 信号 + `_on_alerts_fired` 槽（worker emit → GUI 线程）；**再加固**为弱引用包装 `_make_alert_emitter`，防对已销毁 QObject emit 引发原生崩溃 | `test_alerts_callback_wired` / `test_alert_slot_is_gui_safe`；实测「窗口销毁后 emit 不崩」 |
+| G69-18d | 9 个字段只读不写（用户够不到）：`retry_*` / `watchdog_*` / `alert_im_*` / `g53_alerts_stale_days` / `g53_alerts_disk_min_gb` | 设置页补齐 12 个控件并全部接线 | 真实构造 MainWindow 断言控件齐全；开关真实启停调度器 |
+| G69-18e | `service._env()` 从 index 0 覆盖调用方已有的 `GIT_CONFIG_*` → 静默吃掉别人的 git 配置 | 改为**追加**；COUNT 非数字时整组清理而非只 pop COUNT | 干净检出复现 → 修复后全绿 |
+| G69-18g | `test_scanner_perf`（绝对 30s）/ `test_mem_baseline`（真跑引擎测内存）在正确性门禁内 | 快集经 `GCM_FAST_SUITE=1` 跳过这两个**硬件相关**用例，由 CI 独立 `perf-baseline` job 承接；**其他用例与覆盖率保留** | 覆盖率不因整体排除模块而掉 |
+| G69-18h | `addCleanup` LIFO 顺序反了 | 按 LIFO 语义调整为 `shutdown → server_close → join` | 模块耗时 36.6s → 18.4s；`WinError 10038` 噪声消失 |
+| G69-18i | 测试未隔离父进程 `GIT_CONFIG_*` | 抽出共用 mixin `tests/_gitcfg_isolation.py` | 污染环境下 `Ran 28 tests OK` |
+| G69-18j | **修复自身引入的污染**：新守卫用例手写「pop 三项 + 有条件还原 COUNT」→ 环境变成 `COUNT=2` 但 `KEY_0` 已删，其后**所有 git 调用** `exit 128`（`missing config key GIT_CONFIG_KEY_0`），连累 `test_local_dialog` / `test_progress_ui` | 改用 `mock.patch.dict` 整组还原 | 新增守卫 `TestG69_18NoGitConfigEnvPollution`（本可提前抓到该 bug） |
+
+**新增永久守卫**：`tests/test_g69_regressions.py`
+`TestG69_18WiringClosure`(6) · `TestG69_18VerifierFindings`(5) ·
+`TestG69_18NoLeakedPumpThreads`(1) · `TestG69_18NoGitConfigEnvPollution`(1)
+
+---
+
+## 4. 问题清单
+
+### P0（阻塞）
+| ID | 问题 | 证据 | 状态 |
+|----|------|------|------|
+| P0-1 | CI 三平台全红；Linux/macOS **SIGSEGV**，Windows 多失败 | `gh run list` 12/12 failure；`exit 139` | **✅ 根因已定位并修复**（G69-18z 泄漏线程）；本机全量跑 0 原生崩溃 |
+| P0-2 | 覆盖率门禁因此形同虚设（回归可静默合入） | 同上 | ✅ 随 P0-1 解除；待推 CI 复验 |
+| P0-3 | 台账「全部闭环」声明不成立（§2） | 独立复验 | ✅ 已修 4 类断链 |
+
+### P1（高）
+| ID | 问题 | 状态 |
+|----|------|------|
+| P1-1 | `G54-4 引导清单` 零实现（台账标 ✅） | 未修（需立项） |
+| P1-2 | `G53-1` 未新增 `health_card` 列、无雷达图 | 未修（台账过度声称） |
+| P1-3 | `G58-3` 代理凭据未解析、明文落盘 | 未修（安全项） |
+| P1-4 | v9.1.3~v9.3.2 未打 git tag（发布链断档） | 未修 |
+| P1-5 | 孤立 zombie 字段：`shallow_default`/`auto_init_empty`/`mirror_default`/`sched_report_format`/`depth` | 未修 |
+
+### P2（中）
+| ID | 问题 | 状态 |
+|----|------|------|
+| P2-1 | `LocalReposDialog` 扫描无法取消（`ScanWorker.cancel()` 已实现未接线） | 未修 |
+| P2-2 | 网络诊断 / 报表导出无「进行中」提示，导出同步阻塞 UI | 未修 |
+| P2-3 | `main_window.py:852-853` 重复 `@staticmethod` | 未修 |
+| P2-4 | `clone_timeout` / `minimize_to_tray` / `post_clone_hook` 只读不写 | 未修 |
+
+---
+
+## 5. 验证日志（真实命令 + 输出）
+
+```
+2026-10-16  ruff check gcm                              → All checks passed!
+2026-10-16  mypy gcm                                    → Success: no issues found in 64 source files
+2026-10-16  git archive HEAD → 干净检出跑快集            → FAILED (failures=3, skipped=4)  ← 抓出真缺陷
+2026-10-16  gh run list --limit 12                      → 12 × completed/failure
+2026-10-16  gh api .../jobs/116281573211/logs           → Segmentation fault (core dumped), exit 139
+2026-10-16  unittest test_token/test_g56_api_extra/write → Ran 25 tests OK
+2026-10-16  unittest 受影响 10 个模块                    → Ran 81 tests OK
+2026-10-16  unittest test_g69_regressions               → Ran 28 tests OK
+2026-10-16  真实构造 MainWindow（离屏）                  → 12 个新控件齐全；开关→调度器真实启停
+2026-10-16  真实生成报表                                 → Git-clone-Max-报表-20261016-183203.csv（含真实 DB 行）
+```
+
+### 5.1 CI 运行器加固效果
+原实现崩溃时**不打印任何失败用例名**；现版本无论怎么死都会输出
+「最后进入的模块 + 已点名失败的用例 + 逐模块合计」，把不可诊断的红灯变成可定位的红灯。
+
+---
+
+## 6. 下一步
+
+1. 快集全量复验（进行中）→ 覆盖率门禁
+2. 并行代理剩余结论（安全契约审计）汇总
+3. 压测（高并发 / 极端）
+4. HTML 报告 + 测验
+5. skills / SOP
+6. 提交 / 推送 / Release（含补 v9.1.3~v9.3.2 tag）

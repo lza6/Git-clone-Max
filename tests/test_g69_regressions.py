@@ -22,6 +22,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -505,3 +506,359 @@ class TestWindowNeverRestoresOffscreen(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestG69_18WiringClosure(unittest.TestCase):
+    """G69-18：终结「后端有、用户够不到」的虚伪实现。
+
+    本轮独立审计（两份并行代理 + 主控复核）确认的断链形态：
+    模块/字段/回调都写好了、单测也绿，但**没有任何生产调用点或 UI 入口**，
+    于是对真实用户等价于不存在。这类缺陷测试抓不到（测试直接构造后端对象，
+    绕过了 UI 断链），必须用静态守卫钉住。
+    """
+
+    ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+    def _read(self, rel: str) -> str:
+        return (self.ROOT / rel).read_text(encoding="utf-8")
+
+    def test_report_scheduler_has_production_call_site(self):
+        """ReportScheduler 必须被生产代码实例化（此前只在 tests 里被构造）。"""
+        src = self._read("gcm/ui/main_window.py")
+        self.assertIn("ReportScheduler", src,
+                      "ReportScheduler 无生产实例化点 → 定时报表开关是假的")
+        self.assertIn("_start_report_scheduler", src)
+
+    def test_report_scheduler_stopped_on_close(self):
+        """关窗必须停调度器，否则退出后仍周期性写文件。"""
+        src = self._read("gcm/ui/main_window.py")
+        self.assertIn("report_scheduler.stop()", src,
+                      "closeEvent 未停 ReportScheduler")
+
+    def test_settings_ui_has_entry_for_previously_unreachable_fields(self):
+        """这些字段此前「有消费点、无 UI 写入点」→ 用户永远开不了。"""
+        src = self._read("gcm/ui/settings_groups.py")
+        for field, label in [
+            ("retry_enabled", "失败自动重试"),
+            ("watchdog_enabled", "看门狗"),
+            ("alert_im_channel", "IM 告警渠道"),
+            ("alert_im_url", "IM Webhook URL"),
+            ("sched_report_interval_min", "报表间隔"),
+            ("sched_report_dir", "报表输出目录"),
+        ]:
+            with self.subTest(field=field):
+                self.assertIn(field, src, f"{label}({field}) 无 UI 入口")
+
+    def test_no_handler_referencing_nonexistent_widget(self):
+        """`_save_g53_sched_dir` 曾引用不存在的 `edit_g53_sched_dir` → 一调即崩。
+
+        判据：settings_panel 里 `self.owner.<attr>` 形式的控件引用，
+        若以 `edit_`/`spin_`/`ck_`/`combo_`/`btn_` 开头，该名字必须
+        在 settings_groups / main_window 里真实创建过。
+        """
+        panel = self._read("gcm/ui/settings_panel.py")
+        creators = (self._read("gcm/ui/settings_groups.py")
+                    + self._read("gcm/ui/main_window.py"))
+        import re
+        refs = set(re.findall(
+            r"self\.owner\.((?:edit|spin|ck|combo|btn)_[A-Za-z0-9_]+)", panel))
+        missing = sorted(n for n in refs if f"owner.{n} =" not in creators)
+        self.assertEqual(missing, [],
+                         f"引用了从未创建的控件：{missing}")
+
+    def test_alerts_callback_wired(self):
+        """AlertScanner 未接 on_alerts → 告警命中后用户全程无感。"""
+        src = self._read("gcm/ui/main_window.py")
+        self.assertIn("on_alerts=", src, "AlertScanner 未接 on_alerts 回调")
+        self.assertIn("alerts_fired", src)
+
+    def test_alert_slot_is_gui_safe(self):
+        """告警槽必须在 GUI 线程执行且不得弹模态（后台周期产物）。
+
+        只截取**该函数自身**的函数体（到下一个同级 `def` 为止），
+        否则会把相邻函数的 QMessageBox 也算进来 —— 这个守卫第一版就踩了这个坑。
+        """
+        import re
+        src = self._read("gcm/ui/main_window.py")
+        self.assertIn("def _on_alerts_fired", src)
+        start = src.index("def _on_alerts_fired")
+        nxt = re.search(r"\n    def ", src[start + 10:])
+        body = src[start:start + 10 + nxt.start()] if nxt else src[start:]
+        self.assertNotIn("QMessageBox", body,
+                         "告警槽不应弹模态对话框")
+
+
+class TestG69_18VerifierFindings(unittest.TestCase):
+    """G69-18 独立复验线程抓到的、**由本轮改动自身引入**的缺陷。
+
+    这组守卫的教训：修复也要被独立验证 —— 下面 3 条都是主线程自己写错的。
+    """
+
+    ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+    def test_env_uses_only_existing_applog_api(self):
+        """`_env()` 的非数字 COUNT 分支曾调用不存在的 `applog.debug`。
+
+        异常处理分支自己抛 AttributeError 会**中断所有 git 子进程调用**，
+        比原本要处理的坏输入严重得多。
+        """
+        src = (self.ROOT / "gcm/git/service.py").read_text(encoding="utf-8")
+        from gcm.app import applog
+        # 该分支引用的每个 applog.<name> 都必须是真实存在的属性
+        import re
+        for name in set(re.findall(r"applog\.([A-Za-z_][A-Za-z0-9_]*)", src)):
+            with self.subTest(api=name):
+                self.assertTrue(hasattr(applog, name),
+                                f"applog.{name} 不存在（service.py 引用了它）")
+
+    def test_env_tolerates_non_numeric_git_config_count(self):
+        """坏输入不得让 `_env()` 抛异常（也不得留下自相矛盾的 KEY_n/VALUE_n）。
+
+        ⚠️ 本用例**必须**用 `GitConfigEnvIsolation` 隔离环境。第一版手写
+        「pop 三项 + 有条件还原 COUNT」，实测把进程环境搞成
+        `COUNT=2` 但 `KEY_0` 已删的**自相矛盾**状态 —— 之后所有 `git` 调用
+        都报 `fatal: unable to parse command-line config` /
+        `error: missing config key GIT_CONFIG_KEY_0`（exit 128），
+        连累 `test_local_dialog` / `test_progress_ui` 两条用例。
+        教训：**改环境就要整组备份-整组还原**，不能只还原自己动过的那几个键。
+        """
+        import tempfile
+        from pathlib import Path as _P
+
+        from gcm.git.service import GitService
+        with mock.patch.dict(os.environ, {
+            "GIT_CONFIG_COUNT": "abc",
+            "GIT_CONFIG_KEY_0": "stale.key",
+            "GIT_CONFIG_VALUE_0": "stale",
+        }, clear=False):
+            svc = GitService(_P(tempfile.mkdtemp()), rate_limit_kbps=100)
+            env = svc._env()          # 不得抛
+        self.assertIsNotNone(env)
+        self.assertEqual(env.get("GIT_CONFIG_COUNT"), "2")
+        # 坏的那组必须被清掉，不能残留 stale.key 冒充有效项
+        self.assertNotEqual(env.get("GIT_CONFIG_VALUE_0"), "stale")
+        self.assertIn("http.lowSpeedLimit",
+                      [env.get(f"GIT_CONFIG_KEY_{i}") for i in range(2)])
+
+    def test_httpd_cleanup_executes_shutdown_before_join(self):
+        """addCleanup 是 LIFO —— 注册序必须让执行序为 shutdown→close→join。
+
+        第一版写反了：join 最先跑而线程还没停 → 每例白等满 5s 超时。
+        这里**真实注册并真实执行**一遍 cleanups，断言实际顺序。
+        """
+        import threading
+
+        from tests.test_g56_api_extra import _serve
+        order: list[str] = []
+
+        class _Probe(unittest.TestCase):
+            def runTest(self):
+                pass
+
+        t = _Probe()
+        httpd, _port, th = _serve(pathlib.Path(tempfile.mkdtemp()))
+        real_shutdown, real_close = httpd.shutdown, httpd.server_close
+
+        def _sh():
+            order.append("shutdown")
+            real_shutdown()
+
+        def _cl():
+            order.append("close")
+            real_close()
+
+        def _jn(*a):
+            order.append("join")
+            th.join(timeout=5.0)
+
+        httpd.shutdown, httpd.server_close = _sh, _cl
+        t.addCleanup(_jn, 5.0)
+        t.addCleanup(httpd.server_close)
+        t.addCleanup(httpd.shutdown)
+        t.doCleanups()
+
+        self.assertEqual(order.index("shutdown") < order.index("join"), True,
+                         f"shutdown 必须在 join 之前执行，实际：{order}")
+        self.assertFalse(th.is_alive(), "join 后 serve_forever 线程应已退出")
+
+    def test_alert_toggle_live_starts_and_stops_scanner(self):
+        """勾选「启用阈值告警」必须真实启停扫描器（此前要重启才生效）。"""
+        from gcm.ui.settings_panel import SettingsPanel  # noqa: F401
+        src = (self.ROOT / "gcm/ui/settings_panel.py").read_text(encoding="utf-8")
+        seg_start = src.index("def _save_g53_alerts")
+        seg = src[seg_start:seg_start + 900]
+        self.assertIn("scanner.start()", seg)
+        self.assertIn("scanner.stop()", seg)
+
+    def test_watchdog_interval_applies_live(self):
+        """改看门狗间隔必须立刻作用到运行中定时器。"""
+        from gcm.app.watchdog import Watchdog
+        wd = Watchdog(pathlib.Path(tempfile.mkdtemp()) / "s.json", interval_min=5)
+        wd.interval_min = 15
+        self.assertEqual(wd.interval_min, 15)
+        self.assertEqual(wd._timer.interval(), 15 * 60 * 1000,
+                         "_timer 的 interval 未随 interval_min 更新")
+
+
+class TestG69_18NoLeakedPumpThreads(unittest.TestCase):
+    ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+    """G69-18 **根因守卫**：测试不得把读线程泄漏到后续测试。
+
+    CI `test` job 连续 80+ 次 `exit 139` 的根因就是这里：
+    `test_git_thread_exit` 用例 C 用 `time.sleep(3600)` 模拟卡死的 stdout，
+    又断言「join 超时后线程仍存活」→ `_pump` 线程被故意泄漏，
+    在整套测试的剩余时间里存活并最终触发原生崩溃（实测 access violation）。
+
+    这条守卫在**真实运行**该模块后断言：`_pump` 线程数必须归零。
+    它是行为断言，不是静态扫描 —— 因为「有没有泄漏」只有跑过才知道。
+    """
+
+    def test_git_thread_exit_leaves_no_pump_threads(self):
+        import subprocess
+        code = (
+            "import sys, threading, unittest\n"
+            "sys.path.insert(0, r'%s')\n"
+            "import tests.test_git_thread_exit as m\n"
+            "r = unittest.TextTestRunner(verbosity=0).run(\n"
+            "        unittest.TestLoader().loadTestsFromModule(m))\n"
+            "alive = [t.name for t in threading.enumerate()\n"
+            "         if t.is_alive() and ('_pump' in t.name or 'Thread-' in t.name)]\n"
+            "print('RESULT', r.wasSuccessful(), len(alive), alive)\n"
+        ) % str(self.ROOT)
+        r = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                           text=True, encoding="utf-8", errors="replace", timeout=180,
+                           cwd=str(self.ROOT))
+        self.assertEqual(r.returncode, 0, f"子进程异常：{r.stderr[-500:]}")
+        last = (r.stdout or "").strip().splitlines()[-1]
+        self.assertIn("RESULT True", last, f"该模块自身未通过：{last}")
+        leaked = int(last.split()[2])
+        self.assertEqual(leaked, 0, f"泄漏了 {leaked} 个线程：{last}")
+
+
+class TestG69_18NoGitConfigEnvPollution(unittest.TestCase):
+    """G69-18：测试**不得**把进程环境里的 `GIT_CONFIG_*` 改成自相矛盾的状态。
+
+    git 要求 `GIT_CONFIG_COUNT=N` 时 `GIT_CONFIG_KEY_0..N-1` 与
+    `GIT_CONFIG_VALUE_0..N-1` **全部存在**。一旦出现「COUNT 还在、KEY_0 没了」
+    这种状态，**其后每一次 git 调用**都会失败：
+
+        error: missing config key GIT_CONFIG_KEY_0
+        fatal: unable to parse command-line config      (exit 128)
+
+    本轮真发生过：新加的守卫用例手写「pop 三项 + 有条件还原 COUNT」，
+    结果把环境搞坏，连累 `test_local_dialog` / `test_progress_ui` 报
+    `CalledProcessError: git init returned non-zero exit status 128`。
+    崩在别人的用例上 —— 又一次「目击者指向错误嫌疑人」。
+
+    这条守卫在**本进程**内断言一致性；任何测试把环境弄坏，它会立刻红。
+    """
+
+    def test_git_config_env_is_self_consistent(self):
+        count_raw = os.environ.get("GIT_CONFIG_COUNT")
+        if count_raw is None:
+            # 没有 COUNT 就不该有孤立的 KEY_n/VALUE_n？
+            # 有也不致命（git 忽略），但属可疑残留，一并提示。
+            stray = sorted(k for k in os.environ if k.startswith("GIT_CONFIG_KEY_")
+                           or k.startswith("GIT_CONFIG_VALUE_"))
+            self.assertEqual(stray, [], f"存在孤立的 GIT_CONFIG_* 键：{stray}")
+            return
+        self.assertTrue(count_raw.isdigit(),
+                        f"GIT_CONFIG_COUNT 非数字：{count_raw!r} —— git 会直接报错")
+        n = int(count_raw)
+        missing = [f"GIT_CONFIG_{kind}_{i}"
+                   for i in range(n) for kind in ("KEY", "VALUE")
+                   if f"GIT_CONFIG_{kind}_{i}" not in os.environ]
+        self.assertEqual(missing, [],
+                         f"GIT_CONFIG_COUNT={n} 但缺少 {missing} —— "
+                         "其后所有 git 调用会以 exit 128 失败")
+
+
+class TestG69_18ScanWorkerStopsBeforeEmit(unittest.TestCase):
+    """G69-18：`ScanWorker` 在宿主析构后**不得再 emit**。
+
+    `gcm/ui/scan_worker.py` 用普通线程驱动一个 QObject，
+    而 `LocalReposDialog` 把它 `parent=self`。用户点「取消」/按 Esc/关窗口时，
+    原实现只 `reject()` 对话框、**从不调用 `worker.cancel()`** ——
+    线程继续对着 C++ 侧已析构的 QObject `emit`，
+    表现为**进程原生崩溃**（本机实测在本地扫描链路复现 access violation）。
+
+    这条守卫做**行为**断言：stop() 之后线程必须收敛，且不再产生任何信号。
+    """
+
+    ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+    def test_scan_worker_has_stop_and_is_signal_safe(self):
+        from gcm.ui.scan_worker import ScanWorker
+        self.assertTrue(hasattr(ScanWorker, "stop"),
+                        "ScanWorker 必须提供 stop()（取消 + 等待收敛）")
+        w = ScanWorker([], max_depth=1)
+        got: list[str] = []
+        w.finished.connect(lambda *_: got.append("finished"))
+        w.failed.connect(lambda *_: got.append("failed"))
+        w.progress.connect(lambda *_: got.append("progress"))
+        w.stop()                       # 幂等；未 start 也要安全
+        w._emit(w.progress, 1, 2)      # 停止后不得再发
+        self.assertEqual(got, [], f"stop() 后仍发出了信号：{got}")
+
+    def test_scan_worker_stop_joins_running_thread(self):
+        import threading
+        import time as _t
+        from gcm.ui.scan_worker import ScanWorker
+        w = ScanWorker([], max_depth=1)
+        w.start()                      # 空 roots，会很快结束
+        w.stop(timeout=5.0)
+        self.assertFalse(w._thread is not None and w._thread.is_alive(),
+                         "stop() 后扫描线程不应仍存活")
+        self.assertLessEqual(
+            len([t for t in threading.enumerate() if t.is_alive()]), 8,
+            "不应遗留大量线程")
+
+    def test_dialog_cancel_stops_worker(self):
+        """对话框的取消/关闭路径必须真的停线程（静态 + 行为双重确认）。"""
+        src = (self.ROOT / "gcm/ui/local_repos_dialog.py").read_text(encoding="utf-8")
+        self.assertIn("def reject", src, "必须重写 reject() 覆盖 Esc/程序化关闭")
+        self.assertIn("_stop_scan_worker", src)
+        self.assertIn("w.stop()", src, "必须真的调用 ScanWorker.stop()")
+
+
+class TestG69_18AgentSurfaceRobustness(unittest.TestCase):
+    """G69-18：MCP / HTTP 两个 agent 接入面的两处缺陷（独立安全审计报出）。
+
+    A. MCP `export_report` 的 `out_dir` 越界校验**抛出的 ValueError 逃逸出
+       stdio 循环** → 进程以 traceback 退出、通道中断（客户端拿到裸栈，
+       后续请求再无响应）。校验本身是对的，错在没转成 JSON-RPC 错误。
+    B. MCP 与 HTTP 各自自拼数据目录，未复用 `gcm.__main__.get_data_dir()`
+       —— 违反 CLAUDE.md §5 红线；安装版会读到 `_internal/data` 或克隆输出
+       目录里的（甚至新建的）空库，而不是 `%APPDATA%/Git-clone-Max` 的真实库。
+    """
+
+    ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+    def test_mcp_export_out_dir_returns_jsonrpc_error_not_crash(self):
+        import subprocess
+        req = ('{"jsonrpc":"2.0","id":1,"method":"tools/call","params":'
+               '{"name":"export_report","arguments":'
+               '{"format":"csv","out_dir":"C:/Windows/Temp/gcm_guard_pwn"}}}\n')
+        env = dict(os.environ, GCM_MCP_ENABLE="1", GCM_DATA_DIR=str(self.ROOT / "data"))
+        r = subprocess.run([sys.executable, "-m", "gcm.mcp_server", "--allow-export"],
+                           input=req, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", cwd=str(self.ROOT), env=env, timeout=120)
+        self.assertEqual(r.returncode, 0,
+                         f"MCP 不应因参数错误崩溃/中断：rc={r.returncode} {r.stderr[-300:]}")
+        self.assertNotIn("Traceback", r.stderr, f"不得抛出裸栈：{r.stderr[-300:]}")
+        out = json.loads((r.stdout or "").strip().splitlines()[-1])
+        self.assertIn("error", out, f"应返回 JSON-RPC 错误：{out}")
+        self.assertEqual(out["error"]["code"], -32602)
+
+    def test_agent_surfaces_use_single_data_dir_source(self):
+        """MCP/HTTP 不得自拼数据目录，必须复用 get_data_dir()。"""
+        for rel in ("gcm/mcp_server.py", "gcm/cli.py"):
+            src = (self.ROOT / rel).read_text(encoding="utf-8")
+            with self.subTest(file=rel):
+                self.assertIn("get_data_dir", src,
+                              f"{rel} 未复用 get_data_dir()（数据目录单源红线）")
+        # 防回归：不得再出现自拼 <repo>/data 的写法
+        mcp = (self.ROOT / "gcm/mcp_server.py").read_text(encoding="utf-8")
+        self.assertNotIn('parent.parent / "data"', mcp,
+                         "mcp_server 又自拼 <repo>/data 了")

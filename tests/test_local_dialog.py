@@ -561,6 +561,9 @@ class TestScanWorker(unittest.TestCase):
         base = self.tmp / "clones"
         _init_git(base / "owner__repo")
         w = ScanWorker([base], max_depth=2)
+        # G69-18：必须收敛线程再让 w 离开作用域 —— 否则线程会在 QObject
+        # 析构后继续 emit（原生崩溃来源，实测在本文件复现 access violation）
+        self.addCleanup(w.stop)
         results, errors = [], []
         w.finished.connect(results.append)
         w.failed.connect(errors.append)
@@ -581,6 +584,7 @@ class TestScanWorker(unittest.TestCase):
         """目录不存在 → scan_git_dirs 返回空 → finished 收到空列表。"""
         # Arrange
         w = ScanWorker([self.tmp / "not_exist"], max_depth=2)
+        self.addCleanup(w.stop)   # G69-18：见 test_start_emits_finished_with_real_repo
         results, errors = [], []
         w.finished.connect(results.append)
         w.failed.connect(errors.append)
@@ -598,6 +602,7 @@ class TestScanWorker(unittest.TestCase):
         """scan_git_dirs 抛异常 → failed 信号收到错误信息。"""
         # Arrange
         w = ScanWorker([self.tmp], max_depth=2)
+        self.addCleanup(w.stop)   # G69-18：见 test_start_emits_finished_with_real_repo
         results, errors = [], []
         w.finished.connect(results.append)
         w.failed.connect(errors.append)

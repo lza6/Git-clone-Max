@@ -203,6 +203,14 @@ def _handle_call(msg_id: Any, params: dict[str, Any], data_dir: Path,
             out = _export_report(db, fmt, args.get("out_dir"))
             return _result(msg_id, {"message": out})
         return _error(msg_id, -32601, f"未知工具：{name}")
+    except ValueError as e:
+        # G69-18 修复：参数类错误（如 out_dir 越界）必须转成 **JSON-RPC 错误**返回。
+        # 原实现让它逃逸出 stdio 循环 → 进程以 traceback 退出、通道中断，
+        # MCP 客户端拿到的是裸栈而不是结构化错误，且后续请求再无响应。
+        return _error(msg_id, -32602, str(e))
+    except Exception as e:  # noqa: BLE001
+        # 工具内部异常同理：不能把 stdio 通道带崩
+        return _error(msg_id, -32603, f"工具执行失败：{e}")
     finally:
         db.close()
 
@@ -258,8 +266,12 @@ def main(argv: list[str] | None = None) -> int:
     if str(os.environ.get("GCM_MCP_ENABLE") or "").strip() != "1":
         _log(f"MCP 默认不启用：设置 GCM_MCP_ENABLE=1 后再运行（退出码 {_MCP_DISABLED_RC}）")
         return _MCP_DISABLED_RC
-    base_dir = Path(__file__).resolve().parent.parent / "data"
-    data_dir = Path(os.environ.get("GCM_DATA_DIR") or base_dir)
+    # G69-18 修复：数据目录**必须**复用 `gcm.__main__.get_data_dir()`。
+    # 原实现自拼 `<repo>/data`，违反 CLAUDE.md §5 红线（数据目录解析唯一来源），
+    # 安装版（frozen）会指向 `_internal/data`，读不到 `%APPDATA%/Git-clone-Max`
+    # 里的真实库 → MCP 客户端看到的是另一份（甚至新建的空）库。
+    from .__main__ import get_data_dir
+    data_dir = Path(os.environ.get("GCM_DATA_DIR") or get_data_dir())
     return run_stdio(data_dir, allow_export)
 
 

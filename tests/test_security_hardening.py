@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from gcm.app.url_lib import parse_any_repo_url, _is_valid_ref
+from tests._gitcfg_isolation import GitConfigEnvIsolation  # noqa: E402
 
 
 class TestHostWhitelist(unittest.TestCase):
@@ -64,7 +65,9 @@ class TestRefValidation(unittest.TestCase):
             self.assertFalse(_is_valid_ref(ref), ref)
 
 
-class TestTokenHostScoped(unittest.TestCase):
+class TestTokenHostScoped(GitConfigEnvIsolation, unittest.TestCase):
+    """断言 GIT_CONFIG_KEY_0 的内容 → 必须隔离进程环境（见 mixin 文档）。"""
+
     def test_token_injected_only_for_github(self):
         from gcm.git.service import GitService
         # github.com 仓库 → 注入 token

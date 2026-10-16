@@ -188,8 +188,14 @@ def run_clone(app, specs, invalid: list[str], root: Path, json_mode: bool,
 
 def _serve_main(root: Path, bind: str, allow_mutate: bool, json_mode: bool) -> int:
     """启动只读本地 HTTP API（G56-4 可选）：--serve 127.0.0.1:port。"""
+    from gcm.__main__ import get_data_dir
     from gcm.http_api import serve
-    return serve(bind=bind, root=root, allow_mutate=allow_mutate, json_mode=json_mode)
+    # G69-18 修复：`root` 是**克隆输出目录**，业务数据库不在那里。
+    # 原实现不传 data_dir → create_server 把 data_dir 兜底成 root
+    # → /api/repos、/api/status 读的是克隆目录里的库（干净安装下还会
+    # 静默新建一个空库），与数据目录单源红线（CLAUDE.md §5）冲突。
+    return serve(bind=bind, root=root, data_dir=get_data_dir(),
+                 allow_mutate=allow_mutate, json_mode=json_mode)
 
 
 def _diag_main(root: Path, json_mode: bool) -> int:
