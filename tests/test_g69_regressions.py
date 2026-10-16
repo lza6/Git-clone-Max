@@ -183,6 +183,29 @@ class TestSyncDoesNotDeleteArbitraryDirs(unittest.TestCase):
 
 
 # ============================================================ G69-5
+def _teardown_window(w):
+    """G69-18：显式收掉测试里构造的 MainWindow。
+
+    只靠 GC 回收会留下**已排队但接收者已释放**的 Qt 定时器事件；
+    下一次 `processEvents()` 在 `QTimerInfoList::activateTimers` 里解引用它
+    → 进程原生崩溃（CI Linux/macOS 实测 exit 139，崩点落在本文件）。
+    关闭 → deleteLater → 泵空事件队列，让定时器与待处理事件一起收干净。
+    """
+    from PyQt6.QtWidgets import QApplication
+    try:
+        w.close()
+    except Exception:
+        pass
+    try:
+        w.deleteLater()
+    except Exception:
+        pass
+    app = QApplication.instance()
+    if app is not None:
+        for _ in range(3):
+            app.processEvents()
+
+
 class TestProgressRowsMatchRepoWhileSorting(unittest.TestCase):
     """排序开启时，进度/结果必须落到**对应仓库**那一行（实测原实现 300/300 错位）。"""
 
@@ -196,7 +219,14 @@ class TestProgressRowsMatchRepoWhileSorting(unittest.TestCase):
                        settings=SettingsStore(d / "s.json"))
         w._check_update_silent = lambda *a, **k: None
         w._maybe_show_onboarding = lambda *a, **k: None
+        # G69-18：只靠 GC 回收窗口会在 Linux/macOS 上留下**已排队但接收者
+        # 已释放**的 Qt 定时器事件，下一次 processEvents() 在
+        # QTimerInfoList::activateTimers 里解引用它 → 进程原生崩溃
+        # （CI ubuntu/macOS 实测 exit 139，且崩点落在本用例）。
+        # 显式关闭并泵空事件队列，让定时器与待处理事件一起收干净。
+        self.addCleanup(_teardown_window, w)
         return w
+
 
     def test_result_lands_on_the_matching_repo_row(self):
         from gcm.models import RepoSpec, SyncAction, SyncResult, SyncStatus
@@ -427,6 +457,10 @@ class TestWindowNeverRestoresOffscreen(unittest.TestCase):
         w = MainWindow(data_dir=d, db=Database(d / "t.db"), settings=store)
         w.show()
         _app.processEvents()
+        # G69-18：`show()` 会让窗口真正可见并激活 QWidget 级定时器；
+        # 不显式收干净就可能在后续 processEvents() 里解引用已释放的定时器
+        # → 原生崩溃（CI Linux/macOS 实测）。见 _teardown_window 说明。
+        self.addCleanup(_teardown_window, w)
         return w
 
     def _on_any_screen(self, w) -> bool:
