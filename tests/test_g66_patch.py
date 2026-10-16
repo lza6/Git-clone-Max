@@ -206,7 +206,14 @@ class TestHttpApiBindHardening(unittest.TestCase):
         from gcm.http_api import create_server
         for bind in ("127.0.0.1:0", "localhost:0", "127.0.0.2:0"):
             with self.subTest(bind=bind):
-                httpd = create_server(bind, root=ROOT)
+                try:
+                    httpd = create_server(bind, root=ROOT)
+                except OSError as e:
+                    # G69-18：`127.0.0.2` 属回环网段，白名单**应当**放行，
+                    # 但个别平台（实测 macOS runner）未给 lo0 配该别名 →
+                    # 内核拒绝 bind。这是**平台能力**差异，不是守卫失效：
+                    # 守卫只会在非回环 host 上抛 ValueError，那里另有用例覆盖。
+                    self.skipTest(f"平台不支持绑定 {bind}：{e}")
                 self.addCleanup(httpd.server_close)
                 self.assertTrue(httpd.allow_mutate is False)
 

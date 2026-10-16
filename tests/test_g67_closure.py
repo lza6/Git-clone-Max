@@ -231,9 +231,17 @@ class TestExtraHostsUsesRealDataDir(unittest.TestCase):
         (other_dir / "settings.json").write_text(
             json.dumps({"custom_hosts": ["decoy.example"]}), encoding="utf-8")
 
-        # 前提：仓库里确实存在 <repo>/data/settings.json（旧实现正是读它）
-        self.assertTrue((ROOT / "data" / "settings.json").exists(),
-                        "前提不成立：仓库无 data/settings.json，旧 bug 无法复现")
+        # G69-18：原实现硬断言「仓库里存在 <repo>/data/settings.json」，
+        # 用来证明旧实现确实读它。但**干净检出（CI）里没有 data/ 目录**
+        # （它在本机是开发残留，且已被 .gitignore 忽略）→ 该前提在 CI 必不成立，
+        # 测试以「前提不成立」失败。这是环境依赖，不是产品缺陷。
+        # 改为：诱饵存在时**额外**验证旧路径不被读取；不存在也照样跑主断言
+        # （主断言已由下面「换 get_data_dir → 结果跟着变」充分覆盖）。
+        repo_lure = ROOT / "data" / "settings.json"
+        if repo_lure.exists():
+            self.assertNotIn(
+                "decoy.example", ul._extra_hosts(),
+                "读到了 <repo>/data 而非 get_data_dir() 指向的目录")
 
         original = main_mod.get_data_dir
         try:

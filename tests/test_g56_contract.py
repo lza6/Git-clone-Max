@@ -104,8 +104,13 @@ class TestHttpApiReadonly(unittest.TestCase):
         finally:
             httpd.shutdown()
             httpd.server_close()
-        # 端口释放验证
+        # 端口释放验证：server_close() 后该端口应能被重新绑定。
+        # G69-18：原实现直接 bind，在 Linux/macOS 上会因刚关闭的连接留下
+        # TIME_WAIT 而抛 `OSError: [Errno 48/98] Address already in use`
+        # —— 那是内核的正常语义，不是「端口没释放」，CI 上必红。
+        # 用 SO_REUSEADDR 消除 TIME_WAIT 干扰，仍保留「端口回到可用状态」的语义。
         with socket.socket() as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind(("127.0.0.1", port))
 
 
