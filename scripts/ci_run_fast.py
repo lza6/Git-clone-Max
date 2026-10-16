@@ -54,7 +54,23 @@ def _load(stem: str):
     return __import__(f"tests.{stem}", fromlist=["*"])
 
 
+def _force_utf8_stdout() -> None:
+    """让本脚本的输出**永不因编码而崩**。
+
+    G69-18：Windows runner 的控制台代码页是 cp1252，而本脚本会打印中文进度。
+    不处理的话 `print` 直接抛 `UnicodeEncodeError` —— 一个诊断脚本自己
+    把 CI 弄红，把「可诊断」变成「新的红灯」。GitHub 日志本身是 UTF-8，
+    所以这里显式改用 UTF-8，并对无法编码的字符降级替换而不是抛异常。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
 def main() -> int:
+    _force_utf8_stdout()
     sys.path.insert(0, str(ROOT))
     # G69-18：**原生崩溃**（SIGSEGV / 0xC0000409）不会执行 atexit、也不会抛
     # Python 异常 —— 此时唯一的线索是 faulthandler 在信号处理里打出的 C 级栈。
@@ -124,6 +140,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    _force_utf8_stdout()          # 兜底：顶层异常消息也必须是可打印的
     try:
         raise SystemExit(main())
     except SystemExit:

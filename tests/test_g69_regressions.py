@@ -757,11 +757,10 @@ class TestG69_18NoGitConfigEnvPollution(unittest.TestCase):
     def test_git_config_env_is_self_consistent(self):
         count_raw = os.environ.get("GIT_CONFIG_COUNT")
         if count_raw is None:
-            # 没有 COUNT 就不该有孤立的 KEY_n/VALUE_n？
-            # 有也不致命（git 忽略），但属可疑残留，一并提示。
-            stray = sorted(k for k in os.environ if k.startswith("GIT_CONFIG_KEY_")
-                           or k.startswith("GIT_CONFIG_VALUE_"))
-            self.assertEqual(stray, [], f"存在孤立的 GIT_CONFIG_* 键：{stray}")
+            # 没有 COUNT 时孤立 KEY_n/VALUE_n 是**无害**的：git 只按 COUNT
+            # 决定读几项，多余的键会被忽略。CI runner 确实会留这类键
+            # （GitHub Actions 通过 GIT_CONFIG_* 传 credential.* 设置），
+            # 在这里判失败等于把平台环境当缺陷 —— 第一版就是这么误红的。
             return
         self.assertTrue(count_raw.isdigit(),
                         f"GIT_CONFIG_COUNT 非数字：{count_raw!r} —— git 会直接报错")
@@ -837,10 +836,19 @@ class TestG69_18AgentSurfaceRobustness(unittest.TestCase):
 
     def test_mcp_export_out_dir_returns_jsonrpc_error_not_crash(self):
         import subprocess
+        import tempfile as _tf
+
+        from gcm.db.repo_db import Database
+        # 数据目录必须**真实存在且含可用库**，否则失败会发生在「打开数据库」
+        # 那一步（-32603），而不是我们要验的 out_dir 校验（-32602）。
+        # 第一版直接指向 <repo>/data —— 干净检出（CI）里没有该目录，用例必红。
+        data_dir = pathlib.Path(_tf.mkdtemp(prefix="gcm_mcp_guard_"))
+        db = Database(data_dir / "repos.db")
+        db.close()
         req = ('{"jsonrpc":"2.0","id":1,"method":"tools/call","params":'
                '{"name":"export_report","arguments":'
                '{"format":"csv","out_dir":"C:/Windows/Temp/gcm_guard_pwn"}}}\n')
-        env = dict(os.environ, GCM_MCP_ENABLE="1", GCM_DATA_DIR=str(self.ROOT / "data"))
+        env = dict(os.environ, GCM_MCP_ENABLE="1", GCM_DATA_DIR=str(data_dir))
         r = subprocess.run([sys.executable, "-m", "gcm.mcp_server", "--allow-export"],
                            input=req, capture_output=True, text=True, encoding="utf-8",
                            errors="replace", cwd=str(self.ROOT), env=env, timeout=120)
