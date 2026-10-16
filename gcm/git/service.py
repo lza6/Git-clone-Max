@@ -545,7 +545,17 @@ class GitService:
             try:
                 base = int(os.environ.get("GIT_CONFIG_COUNT", "0") or 0)
             except ValueError:
-                base = 0            # 调用方给了非数字：不猜，从 0 起（并在下方留痕）
+                base = -1           # 非数字：走下方「整组不可信」分支
+            # 校验调用方那批 **自身是否完整**：git 要求 KEY_i/VALUE_i (i<base)
+            # 全部存在。若 COUNT=3 却只有 KEY_0/1，我们直接追加会写出 KEY_3，
+            # 留下 index=2 的空洞 —— git 会报
+            # `error: missing config key GIT_CONFIG_KEY_2` / `unable to parse command-line config`。
+            # 既然这批数据不可信，就整组丢弃（与非数字分支同一处置）。
+            if base > 0 and any(
+                    f"GIT_CONFIG_{kind}_{i}" not in env
+                    for i in range(base) for kind in ("KEY", "VALUE")):
+                base = -1
+            if base < 0:
                 # COUNT 坏了但 KEY_n/VALUE_n 还在的话，环境自相矛盾（git 读 COUNT
                 # 决定读几项）。既然无法信任这批数据，整组清掉再从 0 起。
                 for k in [k for k in env
@@ -553,8 +563,9 @@ class GitService:
                                            "GIT_CONFIG_VALUE_",
                                            "GIT_CONFIG_COUNT"))]:
                     env.pop(k, None)
+                base = 0
                 try:
-                    applog.warn("GIT_CONFIG_COUNT 非数字，已忽略既有值")
+                    applog.warn("调用方 GIT_CONFIG_* 不完整或非数字，已忽略既有值")
                 except Exception:
                     pass
             base = max(base, 0)

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QObject, Qt
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
@@ -16,27 +16,43 @@ def ensure_supported() -> bool:
     return QSystemTrayIcon.isSystemTrayAvailable()
 
 
-class TrayController:
-    """封装系统托盘生命周期。独立于 MainWindow，便于测试注入。"""
+class TrayController(QObject):
+    """封装系统托盘生命周期。独立于 MainWindow，便于测试注入。
+
+    G69-18：改为 `QObject`。
+    原实现是**普通 Python 类**，却把 `_tip_timer.timeout` 连到自己的绑定方法上 ——
+    定时器的 C++ 生命周期挂在 `MainWindow`（父对象），而槽属于一个非 QObject 的
+    Python 对象。一旦 `TrayController` 先于定时器被回收（例如窗口重建、或
+    在循环 GC 中被回收），定时器触发就会打到**已失效的槽**上。
+    继承 QObject 后由 Qt 管理连接生命周期（对象析构即自动断开），
+    定时器也改为挂在自身之下，二者同生共死。
+    """
 
     def __init__(self, parent=None, notify=None):
-        self.parent = parent
+        super().__init__(parent)
         self._notify = notify or _default_notify
         self.tray = None
         self._base_title = "Git-clone-Max"
         # G22-4：进度计数内存态 + 节流合并（32 并发高频信号不刷爆 tooltip）
         self._counts = {"running": 0, "ok": 0, "bad": 0}
         from PyQt6.QtCore import QTimer
-        self._tip_timer = QTimer(self.parent)
+        self._tip_timer = QTimer(self)
         self._tip_timer.setSingleShot(True)
         self._tip_timer.setInterval(300)
         self._tip_timer.timeout.connect(self._flush_tooltip)
+
+    def stop(self) -> None:
+        """停止节流定时器（幂等）。宿主析构前调用，避免残留待触发的定时器。"""
+        try:
+            self._tip_timer.stop()
+        except Exception:
+            pass
 
     def install(self, title: str = "Git-clone-Max"):
         if not ensure_supported():
             return None
         self._base_title = title
-        tray = QSystemTrayIcon(self.parent)
+        tray = QSystemTrayIcon(self.parent())
         tray.setIcon(self._app_icon())
         tray.setToolTip(title)
         menu = self._build_menu()
@@ -61,8 +77,8 @@ class TrayController:
         act_auto = menu.addAction("开机自启（登录时启动）")
         act_auto.setCheckable(True)
         try:
-            if self.parent is not None and hasattr(self.parent, "ck_autostart"):
-                act_auto.setChecked(bool(self.parent.ck_autostart.isChecked()))
+            if self.parent() is not None and hasattr(self.parent(), "ck_autostart"):
+                act_auto.setChecked(bool(self.parent().ck_autostart.isChecked()))
         except Exception:
             pass
         menu.addSeparator()
@@ -79,24 +95,24 @@ class TrayController:
     def _show_stats(self):
         """打开统计中心（parent.show_statistics）。"""
         try:
-            if self.parent is not None and hasattr(self.parent, "show_statistics"):
-                self.parent.show_statistics()
+            if self.parent() is not None and hasattr(self.parent(), "show_statistics"):
+                self.parent().show_statistics()
         except Exception:
             pass
 
     def _check_update(self):
         """检查更新（parent.check_update_now）。"""
         try:
-            if self.parent is not None and hasattr(self.parent, "check_update_now"):
-                self.parent.check_update_now()
+            if self.parent() is not None and hasattr(self.parent(), "check_update_now"):
+                self.parent().check_update_now()
         except Exception:
             pass
 
     def _toggle_autostart(self, checked: bool):
         """开机自启勾选：联动设置页 ck_autostart，触发任务计划写入逻辑。"""
         try:
-            if self.parent is not None and hasattr(self.parent, "ck_autostart"):
-                self.parent.ck_autostart.setChecked(bool(checked))
+            if self.parent() is not None and hasattr(self.parent(), "ck_autostart"):
+                self.parent().ck_autostart.setChecked(bool(checked))
         except Exception:
             pass
 
@@ -130,8 +146,8 @@ class TrayController:
     def _quit_gracefully(self):
         """G21-4：先关主窗（触发 closeEvent 优雅收尾），事件循环随之自然退出。"""
         try:
-            if self.parent is not None:
-                self.parent.close()
+            if self.parent() is not None:
+                self.parent().close()
                 return
         except Exception:
             pass
@@ -149,10 +165,10 @@ class TrayController:
         return QIcon(pm)
 
     def _show_window(self):
-        if self.parent is not None:
-            self.parent.showNormal()
-            self.parent.raise_()
-            self.parent.activateWindow()
+        if self.parent() is not None:
+            self.parent().showNormal()
+            self.parent().raise_()
+            self.parent().activateWindow()
 
     def _on_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:

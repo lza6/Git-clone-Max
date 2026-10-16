@@ -98,7 +98,7 @@
 | G69-18c | `AlertScanner` 未传 `on_alerts` → 告警命中用户全程无感 | 新增 `alerts_fired` 信号 + `_on_alerts_fired` 槽（worker emit → GUI 线程）；**再加固**为弱引用包装 `_make_alert_emitter`，防对已销毁 QObject emit 引发原生崩溃 | `test_alerts_callback_wired` / `test_alert_slot_is_gui_safe`；实测「窗口销毁后 emit 不崩」 |
 | G69-18d | 9 个字段只读不写（用户够不到）：`retry_*` / `watchdog_*` / `alert_im_*` / `g53_alerts_stale_days` / `g53_alerts_disk_min_gb` | 设置页补齐 12 个控件并全部接线 | 真实构造 MainWindow 断言控件齐全；开关真实启停调度器 |
 | G69-18e | `service._env()` 从 index 0 覆盖调用方已有的 `GIT_CONFIG_*` → 静默吃掉别人的 git 配置 | 改为**追加**；COUNT 非数字时整组清理而非只 pop COUNT | 干净检出复现 → 修复后全绿 |
-| G69-18g | `test_scanner_perf`（绝对 30s）/ `test_mem_baseline`（真跑引擎测内存）在正确性门禁内 | 快集经 `GCM_FAST_SUITE=1` 跳过这两个**硬件相关**用例，由 CI 独立 `perf-baseline` job 承接；**其他用例与覆盖率保留** | 覆盖率不因整体排除模块而掉 |
+| G69-18g | `test_scanner_perf`（绝对 30s）/ `test_mem_baseline`（真跑引擎测内存）在正确性门禁内 | 快集设 `GCM_FAST_SUITE=1`，由这两个**用例自己** `skipIf` 跳过；模块其余用例照跑，CI 另有 `perf-baseline` job 完整跑 | ⚠️ 早期版本按**整模块**排除，连带砍掉 13 条与硬件无关的正确性用例、覆盖率 81.26%→80.76%（余量仅 0.24pp）—— 已修正为「只跳用例」 |
 | G69-18h | `addCleanup` LIFO 顺序反了 | 按 LIFO 语义调整为 `shutdown → server_close → join` | 模块耗时 36.6s → 18.4s；`WinError 10038` 噪声消失 |
 | G69-18i | 测试未隔离父进程 `GIT_CONFIG_*` | 抽出共用 mixin `tests/_gitcfg_isolation.py` | 污染环境下 `Ran 28 tests OK` |
 | G69-18j | **修复自身引入的污染**：新守卫用例手写「pop 三项 + 有条件还原 COUNT」→ 环境变成 `COUNT=2` 但 `KEY_0` 已删，其后**所有 git 调用** `exit 128`（`missing config key GIT_CONFIG_KEY_0`），连累 `test_local_dialog` / `test_progress_ui` | 改用 `mock.patch.dict` 整组还原 | 新增守卫 `TestG69_18NoGitConfigEnvPollution`（本可提前抓到该 bug） |

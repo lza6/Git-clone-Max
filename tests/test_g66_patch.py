@@ -203,19 +203,28 @@ class TestHttpApiBindHardening(unittest.TestCase):
     """
 
     def test_loopback_binds_accepted(self):
+        """回环地址必须**通过白名单**（不等同于「本机一定能 bind」）。
+
+        G69-18 修正：早期实现用 `skipTest` 兜住 bind 失败 —— 那会在
+        Windows（本工具主平台）上把整条用例静默跳过，等于削弱守卫。
+        这里改成区分两种失败：
+          - `ValueError` = 白名单**拒绝了回环地址** → 真 bug，判失败；
+          - `OSError`   = 白名单放行了，只是**该平台/该别名绑不上**
+            （实测 macOS 无 lo0 别名、Windows 对 127.0.0.2 返回 WinError 10013）
+            → 属平台能力，不算守卫失效，但也不跳过：断言「不是 ValueError」。
+        """
         from gcm.http_api import create_server
-        for bind in ("127.0.0.1:0", "localhost:0", "127.0.0.2:0"):
+        for bind in ("127.0.0.1:0", "localhost:0", "127.0.0.2:0", "127.0.0.3:0"):
             with self.subTest(bind=bind):
                 try:
                     httpd = create_server(bind, root=ROOT)
-                except OSError as e:
-                    # G69-18：`127.0.0.2` 属回环网段，白名单**应当**放行，
-                    # 但个别平台（实测 macOS runner）未给 lo0 配该别名 →
-                    # 内核拒绝 bind。这是**平台能力**差异，不是守卫失效：
-                    # 守卫只会在非回环 host 上抛 ValueError，那里另有用例覆盖。
-                    self.skipTest(f"平台不支持绑定 {bind}：{e}")
+                except ValueError as e:      # 白名单误杀回环 → 真缺陷
+                    self.fail(f"回环地址 {bind} 被白名单拒绝：{e}")
+                except OSError:
+                    continue                 # 平台绑不上该别名，白名单本身没问题
                 self.addCleanup(httpd.server_close)
-                self.assertTrue(httpd.allow_mutate is False)
+                self.assertTrue(httpd.allow_mutate is False,
+                                "默认必须是只读")
 
     def test_ipv6_bind_rejected_with_clear_message(self):
         """G67-5：IPv6 绑定必须给出**明确**的「暂不支持」，而不是崩溃或误报「非回环」。

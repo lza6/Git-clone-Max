@@ -67,6 +67,10 @@ def _make_alert_emitter(owner: MainWindow):
     """
     import weakref
 
+    # 先建引用再定义闭包：虽然闭包延迟绑定也能跑通，但把依赖藏在
+    # 「定义顺序」里太脆弱（以后有人调换两行就无声失效）。
+    owner_ref = weakref.ref(owner)
+
     def _emit(alerts):
         w = owner_ref()
         if w is None:
@@ -77,7 +81,6 @@ def _make_alert_emitter(owner: MainWindow):
             # wrapped C/C++ object has been deleted —— 窗口已销毁，丢弃即可
             pass
 
-    owner_ref = weakref.ref(owner)
     return _emit
 
 
@@ -1208,14 +1211,20 @@ class MainWindow(QMainWindow):
         if not alerts:
             return
         try:
-            titles = [str(a.get("title") or a.get("key") or "") for a in alerts]
+            titles = [str(a.get("title") or a.get("key") or "")
+                      for a in alerts if isinstance(a, dict)]
             summary = "；".join(t for t in titles if t) or f"{len(alerts)} 条"
             self.statusBar().showMessage(f"阈警：{summary}", 8000)
             self._emit_log(_fmt_dt(), LogLevel.WARN,
                            f"阈值告警命中 {len(alerts)} 条：{summary}")
-        except Exception:
-            # 告警渲染失败绝不能连带影响扫描线程的收尾
-            pass
+        except Exception as exc:  # noqa: BLE001
+            # 告警渲染失败绝不能连带影响扫描线程的收尾；
+            # 但**不能静默** —— 否则整批告警无声无息，比不显示更难查。
+            try:
+                self._emit_log(_fmt_dt(), LogLevel.WARN,
+                               f"告警渲染失败（{type(exc).__name__}），已跳过本批")
+            except Exception:
+                pass
 
     def _on_diag_finished(self, title: str, body: str):
         """G67-2：网络诊断结果回主线程后再弹 QMessageBox。
@@ -1966,6 +1975,12 @@ class MainWindow(QMainWindow):
         try:
             if getattr(self, "_log_buffer", None) is not None:
                 self._log_buffer.stop()
+        except Exception:
+            pass
+        # G69-18：托盘 tooltip 节流定时器同理（TrayController 现已是 QObject）
+        try:
+            if getattr(self, "tray", None) is not None:
+                self.tray.stop()
         except Exception:
             pass
         # 引擎统一收尾：取消剩余任务、flush 进度、清空未启动队列

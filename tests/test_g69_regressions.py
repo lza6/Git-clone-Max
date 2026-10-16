@@ -1,4 +1,4 @@
-"""G69 回归守卫：独立审计线程报出的 6 项缺陷（每条都有实测复现）。
+"""G69 回归守卫：独立审计线程报出的缺陷 + G69-18 接线/生命周期/环境守卫（每条都有实测复现）。
 
 本文件的写法刻意统一为「**反证对照**」：除了断言修复后的正确行为，
 还就地跑一遍「错误写法」证明这套判定确实能抓到问题 —— 否则「跑绿」可能只是
@@ -98,9 +98,21 @@ class TestAtomicJsonWrite(unittest.TestCase):
         for t in threads:
             t.join(timeout=120)
         final = json.loads(path.read_text(encoding="utf-8"))
-        self.assertTrue(errors, "对照组的错误写法竟然一次都没失败 —— 判定方式没有检测力")
-        self.assertLess(len(final), 240,
-                        "对照组竟然没丢数据 —— 说明本机时序恰好无冲突，上面的守卫需要重审")
+        # G69-18 修正：原实现无条件断言 `errors` 非空（即「竞态必须发生」）。
+        # 这是**非确定性**断言：单核 / 高负载 / 时序恰好串行化的 runner 上
+        # 两个线程可能根本不冲突 → 对照组「没失败」→ 用例红。
+        # 而它自己就是本仓库一直在消灭的「本机绿、CI 红」那类假红灯。
+        #
+        # 对照组的作用是证明**判定方式有检测力**，不是证明「这台机器一定抢不到」。
+        # 因此改为条件式：**一旦观察到冲突，就必须伴随数据丢失**；
+        # 未观察到冲突时该对照在本轮不具结论性（不判红，但也不假装验证过）。
+        if errors:
+            self.assertLess(
+                len(final), 240,
+                f"对照组出现了 {errors} 却仍然没丢数据 —— 判定方式没有检测力")
+        else:
+            self.skipTest("本轮未复现线程冲突（时序无争用），对照组不具结论性；"
+                          "生产侧的守卫由 test_concurrent_writers_lose_nothing 承担")
 
     def test_three_more_writers_use_the_shared_writer(self):
         """静态守卫：这三处不得再自己拼 tmp 名（G69-6 的根因就是各写各的）。"""
@@ -538,10 +550,6 @@ class TestWindowNeverRestoresOffscreen(unittest.TestCase):
                       "缺少离屏判定 —— 换显示器后窗口会永久跑到屏幕外")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestG69_18WiringClosure(unittest.TestCase):
     """G69-18：终结「后端有、用户够不到」的虚伪实现。
 
@@ -947,3 +955,7 @@ class TestG69_18LogBufferTimerIsActivityArmed(unittest.TestCase):
         src = (self.ROOT / "gcm/ui/main_window.py").read_text(encoding="utf-8")
         self.assertIn("_log_buffer.stop()", src,
                       "closeEvent 必须停日志节流定时器")
+
+
+if __name__ == "__main__":
+    unittest.main()

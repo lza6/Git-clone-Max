@@ -460,87 +460,116 @@ def _build_group_webhook(owner: MainWindow, settings: Settings):
     f6.addRow(tr("Webhook Token（可选）："), owner.edit_webhook_token)
     return g6
 
-def _build_group_data_insights(owner: MainWindow):
-    """G53 数据洞察（阈值告警 / 历史保留 / 定时报表）。"""
-    g7 = QGroupBox(tr("G53 数据洞察（告警 / 历史保留 / 定时报表）"))
-    g7.setToolTip(tr("多维评分卡/阈值告警/历史保留天数/定时报表 设置"))
-    l7 = QGridLayout(g7)
+def _add_alert_section(owner, l7, row: int) -> int:
+    """阈值告警：开关 / 间隔 / 陈旧天数 / 磁盘水位。返回下一可用行号。"""
     owner.ck_g53_alerts = QCheckBox(tr("启用阈值告警（陈旧/失败率/磁盘水位）"))
+    owner.ck_g53_alerts.setChecked(bool(getattr(owner.settings, "g53_alerts_enabled", False)))
     owner.ck_g53_alerts.toggled.connect(owner.settings_panel._save_g53_alerts)
-    l7.addWidget(owner.ck_g53_alerts, 0, 0, 1, 2)
-    l7.addWidget(QLabel(tr("告警间隔(分钟)：")), 1, 0)
+    l7.addWidget(owner.ck_g53_alerts, row, 0, 1, 2)
+    l7.addWidget(QLabel(tr("告警间隔(分钟)：")), row + 1, 0)
     owner.spin_g53_interval = QSpinBox()
     owner.spin_g53_interval.setRange(5, 1440)
-    owner.spin_g53_interval.setValue(int(getattr(owner.settings, "g53_alerts_interval_min", 60) or 60))
+    owner.spin_g53_interval.setValue(
+        int(getattr(owner.settings, "g53_alerts_interval_min", 60) or 60))
     owner.spin_g53_interval.valueChanged.connect(owner.settings_panel._save_g53_interval)
-    l7.addWidget(owner.spin_g53_interval, 1, 1)
-    l7.addWidget(QLabel(tr("历史保留天数：")), 2, 0)
+    l7.addWidget(owner.spin_g53_interval, row + 1, 1)
+    # G69-18：补齐告警判定口径（此前字段有、UI 无 → 用户无法调整）
+    l7.addWidget(QLabel(tr("陈旧告警阈值(天)：")), row + 2, 0)
+    owner.spin_g53_stale = QSpinBox()
+    owner.spin_g53_stale.setRange(1, 3650)
+    owner.spin_g53_stale.setValue(
+        int(getattr(owner.settings, "g53_alerts_stale_days", 30) or 30))
+    owner.spin_g53_stale.valueChanged.connect(owner.settings_panel._save_g53_stale_days)
+    l7.addWidget(owner.spin_g53_stale, row + 2, 1)
+    l7.addWidget(QLabel(tr("磁盘水位阈值(GB)：")), row + 3, 0)
+    owner.spin_g53_disk = QSpinBox()
+    owner.spin_g53_disk.setRange(1, 100000)
+    owner.spin_g53_disk.setValue(
+        int(getattr(owner.settings, "g53_alerts_disk_min_gb", 5) or 5))
+    owner.spin_g53_disk.valueChanged.connect(owner.settings_panel._save_g53_disk_min)
+    l7.addWidget(owner.spin_g53_disk, row + 3, 1)
+    return row + 4
+
+
+def _add_history_section(owner, l7, row: int) -> int:
+    """历史保留天数 + 立即清理。返回下一可用行号。"""
+    l7.addWidget(QLabel(tr("历史保留天数：")), row, 0)
     owner.spin_g53_history = QSpinBox()
     owner.spin_g53_history.setRange(1, 3650)
-    owner.spin_g53_history.setValue(int(getattr(owner.settings, "history_retention_days", 90) or 90))
+    owner.spin_g53_history.setValue(
+        int(getattr(owner.settings, "history_retention_days", 90) or 90))
     owner.spin_g53_history.valueChanged.connect(owner.settings_panel._save_g53_history)
-    l7.addWidget(owner.spin_g53_history, 2, 1)
+    l7.addWidget(owner.spin_g53_history, row, 1)
     owner.btn_g53_clean = QPushButton(tr("立即清理历史"))
     owner.btn_g53_clean.clicked.connect(owner.settings_panel._clean_g53_history)
-    l7.addWidget(owner.btn_g53_clean, 3, 0, 1, 2)
+    l7.addWidget(owner.btn_g53_clean, row + 1, 0, 1, 2)
+    return row + 2
+
+
+def _add_sched_report_section(owner, l7, row: int) -> int:
+    """定时报表：开关 / 间隔 / 输出目录。返回下一可用行号。
+
+    G69-18：原实现只有开关，而 `_save_g53_sched_interval` / `_save_g53_sched_dir`
+    从未被 connect，后者还引用了根本不存在的 `edit_g53_sched_dir`（一调即 AttributeError）。
+    """
     owner.ck_g53_sched = QCheckBox(tr("启用定时报表"))
     owner.ck_g53_sched.setChecked(bool(getattr(owner.settings, "sched_report_enabled", False)))
     owner.ck_g53_sched.toggled.connect(owner.settings_panel._save_g53_sched)
-    l7.addWidget(owner.ck_g53_sched, 4, 0, 1, 2)
-    # G69-18：补齐「间隔 / 目录」控件 —— 原实现只有开关，而
-    # `_save_g53_sched_interval` / `_save_g53_sched_dir` 从未被连接，
-    # 后者还引用了根本不存在的 `edit_g53_sched_dir`（一旦被调用即 AttributeError）。
-    l7.addWidget(QLabel(tr("报表间隔(分钟)：")), 5, 0)
+    l7.addWidget(owner.ck_g53_sched, row, 0, 1, 2)
+    l7.addWidget(QLabel(tr("报表间隔(分钟)：")), row + 1, 0)
     owner.spin_g53_sched_interval = QSpinBox()
     owner.spin_g53_sched_interval.setRange(1, 43200)
     owner.spin_g53_sched_interval.setValue(
         int(getattr(owner.settings, "sched_report_interval_min", 1440) or 1440))
     owner.spin_g53_sched_interval.valueChanged.connect(
         owner.settings_panel._save_g53_sched_interval)
-    l7.addWidget(owner.spin_g53_sched_interval, 5, 1)
-    l7.addWidget(QLabel(tr("报表输出目录：")), 6, 0)
+    l7.addWidget(owner.spin_g53_sched_interval, row + 1, 1)
+    l7.addWidget(QLabel(tr("报表输出目录：")), row + 2, 0)
     owner.edit_g53_sched_dir = QLineEdit(
         str(getattr(owner.settings, "sched_report_dir", "") or ""))
     owner.edit_g53_sched_dir.setPlaceholderText(tr("留空 = 数据目录下 reports/"))
     owner.edit_g53_sched_dir.editingFinished.connect(owner.settings_panel._save_g53_sched_dir)
-    l7.addWidget(owner.edit_g53_sched_dir, 6, 1)
-    # G53-2 告警阈值（此前字段有、UI 无 → 用户无法调整判定口径）
-    l7.addWidget(QLabel(tr("陈旧告警阈值(天)：")), 7, 0)
-    owner.spin_g53_stale = QSpinBox()
-    owner.spin_g53_stale.setRange(1, 3650)
-    owner.spin_g53_stale.setValue(int(getattr(owner.settings, "g53_alerts_stale_days", 30) or 30))
-    owner.spin_g53_stale.valueChanged.connect(owner.settings_panel._save_g53_stale_days)
-    l7.addWidget(owner.spin_g53_stale, 7, 1)
-    l7.addWidget(QLabel(tr("磁盘水位阈值(GB)：")), 8, 0)
-    owner.spin_g53_disk = QSpinBox()
-    owner.spin_g53_disk.setRange(1, 100000)
-    owner.spin_g53_disk.setValue(int(getattr(owner.settings, "g53_alerts_disk_min_gb", 5) or 5))
-    owner.spin_g53_disk.valueChanged.connect(owner.settings_panel._save_g53_disk_min)
-    l7.addWidget(owner.spin_g53_disk, 8, 1)
-    # G52-1 失败自动重试（此前后端齐备但用户无入口 → 默认永不启用）
+    l7.addWidget(owner.edit_g53_sched_dir, row + 2, 1)
+    return row + 3
+
+
+def _add_reliability_section(owner, l7, row: int) -> int:
+    """稳定性：失败自动重试 + 看门狗续跑。返回下一可用行号。
+
+    G69-18：两者后端早已齐备（engine 读 `retry_enabled` / `watchdog_enabled`），
+    但默认 False 且**没有任何 UI 入口** → 用户永远开不了 = 用户不可达。
+    """
     owner.ck_retry = QCheckBox(tr("失败自动重试（仅网络类错误）"))
     owner.ck_retry.setChecked(bool(getattr(owner.settings, "retry_enabled", False)))
     owner.ck_retry.toggled.connect(owner.settings_panel._save_retry_enabled)
-    l7.addWidget(owner.ck_retry, 9, 0, 1, 2)
-    l7.addWidget(QLabel(tr("最多重试次数：")), 10, 0)
+    l7.addWidget(owner.ck_retry, row, 0, 1, 2)
+    l7.addWidget(QLabel(tr("最多重试次数：")), row + 1, 0)
     owner.spin_retry = QSpinBox()
     owner.spin_retry.setRange(0, 3)
     owner.spin_retry.setValue(int(getattr(owner.settings, "retry_max", 1) or 0))
     owner.spin_retry.valueChanged.connect(owner.settings_panel._save_retry_max)
-    l7.addWidget(owner.spin_retry, 10, 1)
-    # G52-3 看门狗续跑（同上）
+    l7.addWidget(owner.spin_retry, row + 1, 1)
     owner.ck_watchdog = QCheckBox(tr("看门狗自动续跑（中断后自动接续未完成任务）"))
     owner.ck_watchdog.setChecked(bool(getattr(owner.settings, "watchdog_enabled", False)))
     owner.ck_watchdog.toggled.connect(owner.settings_panel._save_watchdog_enabled)
-    l7.addWidget(owner.ck_watchdog, 11, 0, 1, 2)
-    l7.addWidget(QLabel(tr("看门狗间隔(分钟)：")), 12, 0)
+    l7.addWidget(owner.ck_watchdog, row + 2, 0, 1, 2)
+    l7.addWidget(QLabel(tr("看门狗间隔(分钟)：")), row + 3, 0)
     owner.spin_watchdog = QSpinBox()
     owner.spin_watchdog.setRange(1, 240)
-    owner.spin_watchdog.setValue(int(getattr(owner.settings, "watchdog_interval_min", 5) or 5))
+    owner.spin_watchdog.setValue(
+        int(getattr(owner.settings, "watchdog_interval_min", 5) or 5))
     owner.spin_watchdog.valueChanged.connect(owner.settings_panel._save_watchdog_interval)
-    l7.addWidget(owner.spin_watchdog, 12, 1)
-    # G59-7 企业 IM 告警（此前后端全通但无 UI → 用户配不了渠道）
-    l7.addWidget(QLabel(tr("企业 IM 告警渠道：")), 13, 0)
+    l7.addWidget(owner.spin_watchdog, row + 3, 1)
+    return row + 4
+
+
+def _add_im_alert_section(owner, l7, row: int) -> int:
+    """企业 IM 告警：渠道 / URL / Token。返回下一可用行号。
+
+    G69-18：后端链路（模板 + token 加密落盘 + AlertScanner 调用）早已打通，
+    但**没有任何 UI 写入点** → 默认空 = 永不发送 = 用户不可达。
+    """
+    l7.addWidget(QLabel(tr("企业 IM 告警渠道：")), row, 0)
     owner.combo_im_channel = QComboBox()
     for _label, _val in ((tr("关闭"), ""), ("钉钉", "dingtalk"),
                          ("飞书", "feishu"), ("企业微信", "wecom")):
@@ -549,16 +578,33 @@ def _build_group_data_insights(owner: MainWindow):
     _idx = owner.combo_im_channel.findData(_cur_ch)
     owner.combo_im_channel.setCurrentIndex(_idx if _idx >= 0 else 0)
     owner.combo_im_channel.currentIndexChanged.connect(owner.settings_panel._save_alert_im)
-    l7.addWidget(owner.combo_im_channel, 13, 1)
-    l7.addWidget(QLabel(tr("IM Webhook URL：")), 14, 0)
+    l7.addWidget(owner.combo_im_channel, row, 1)
+    l7.addWidget(QLabel(tr("IM Webhook URL：")), row + 1, 0)
     owner.edit_im_url = QLineEdit(str(getattr(owner.settings, "alert_im_url", "") or ""))
     owner.edit_im_url.editingFinished.connect(owner.settings_panel._save_alert_im)
-    l7.addWidget(owner.edit_im_url, 14, 1)
-    l7.addWidget(QLabel(tr("IM Webhook Token（可选）：")), 15, 0)
+    l7.addWidget(owner.edit_im_url, row + 1, 1)
+    l7.addWidget(QLabel(tr("IM Webhook Token（可选）：")), row + 2, 0)
     owner.edit_im_token = QLineEdit(str(getattr(owner.settings, "alert_im_token", "") or ""))
     owner.edit_im_token.setEchoMode(QLineEdit.EchoMode.Password)
     owner.edit_im_token.editingFinished.connect(owner.settings_panel._save_alert_im)
-    l7.addWidget(owner.edit_im_token, 15, 1)
+    l7.addWidget(owner.edit_im_token, row + 2, 1)
+    return row + 3
+
+
+def _build_group_data_insights(owner: MainWindow):
+    """G53 数据洞察（阈值告警 / 历史保留 / 定时报表 / 稳定性 / IM 告警）。
+
+    G69-18：本函数曾因补齐控件涨到 100 行（项目上限 50 行），
+    现按主题拆为 5 个子构建器，本函数只做编排。
+    """
+    g7 = QGroupBox(tr("G53 数据洞察（告警 / 历史保留 / 定时报表）"))
+    g7.setToolTip(tr("多维评分卡/阈值告警/历史保留天数/定时报表 设置"))
+    l7 = QGridLayout(g7)
+    row = _add_alert_section(owner, l7, 0)
+    row = _add_history_section(owner, l7, row)
+    row = _add_sched_report_section(owner, l7, row)
+    row = _add_reliability_section(owner, l7, row)
+    _add_im_alert_section(owner, l7, row)
     return g7
 
 

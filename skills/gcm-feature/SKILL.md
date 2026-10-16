@@ -156,7 +156,7 @@ QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe scripts/e2e_smoke.py
 | **异常分支自己抛** | 引用不存在的 API（如 `applog.debug`）→ 把可容忍坏输入升级为全局中断 | `test_env_uses_only_existing_applog_api` |
 | **`addCleanup` 顺序写反** | LIFO 方向搞反 → 白等超时 / socket 噪声 | `test_httpd_cleanup_executes_shutdown_before_join` |
 | **门禁不可诊断** | 崩溃时不打印失败清单 → 红灯 80+ 次无人能修 | `scripts/ci_run_fast.py`（逐模块落痕 + `faulthandler`） |
-| **硬件相关断言进门禁** | 绝对时间/内存阈值 → 不可复现红灯 | 快集 `GCM_FAST_SUITE=1` 跳过，独立 job 承接 |
+| **硬件相关断言进门禁** | 绝对时间/内存阈值 → 不可复现红灯 | 用例级 `@skipIf(GCM_FAST_SUITE==1)`；**不要按整模块排除**（会连带砍掉同文件里无关的正确性用例 + 掉覆盖率） |
 
 ---
 

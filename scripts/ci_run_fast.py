@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import atexit
 import faulthandler
+import gc
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -31,12 +33,18 @@ SLOW = {
     "test_progress_search",
 }
 
-# 依赖 runner 机器性能/时序的测试：其断言本身没错，但不该进「正确性 + 覆盖率」
-# 门禁 —— 门禁要判定的是代码对不对，不是 CI 机器有多快。
-# 这些模块由独立 job 承接（见 .github/workflows/ci.yml 的 perf-baseline job）。
+# 依赖 runner 机器性能/时序的**单个用例**：其断言本身没错，但不该进
+# 「正确性 + 覆盖率」门禁 —— 门禁要判定的是代码对不对，不是 CI 机器有多快。
+# 这些用例由独立 job 承接（见 .github/workflows/ci.yml 的 perf-baseline job）。
+#
+# ⚠️ G69-18 更正：早期版本按**整模块**排除这两个文件，导致
+#   `test_scanner_perf` / `test_mem_baseline` 里另外 **13 条与硬件无关的正确性用例**
+#   在 Windows/macOS 主矩阵里被静默跳过，覆盖率也从 81.26% 掉到 80.76%
+#   （只剩 0.24pp 余量）。现在改为：**模块照跑**，只让那两个用例自己跳过 ——
+#   由 `GCM_FAST_SUITE=1` 驱动（见下方 main() 设置）。
 HARDWARE_SENSITIVE = {
-    "test_scanner_perf",     # 含绝对时间断言 assertLess(elapsed, 30)
-    "test_mem_baseline",     # 真实构造引擎跑 100 仓库测 tracemalloc 峰值
+    "test_scanner_perf",     # 其中 test_cancelled_stops_early 含绝对时间断言
+    "test_mem_baseline",     # 其中 test_measure_returns_fields 真实跑引擎测内存
 }
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -48,10 +56,6 @@ _current: list[str] = ["<未开始>"]
 def _dump_inflight() -> None:
     """进程异常退出（含崩溃）时的兜底留痕，避免只留下一个 dot 流。"""
     print(f"\n[ci_run_fast] 进程退出，最后进入的模块：{_current[0]}", flush=True)
-
-
-def _load(stem: str):
-    return __import__(f"tests.{stem}", fromlist=["*"])
 
 
 def _force_utf8_stdout() -> None:
@@ -83,16 +87,19 @@ def main() -> int:
     atexit.register(_dump_inflight)
 
     tests_dir = ROOT / "tests"
+    # G69-18：让硬件敏感用例**自己**跳过（它们用 `GCM_FAST_SUITE=1` 判定），
+    # 而不是整模块排除 —— 后者会连带砍掉同文件里与硬件无关的正确性用例，
+    # 并静默缩小跨平台测试面与覆盖率。
+    os.environ["GCM_FAST_SUITE"] = "1"
     stems = sorted(p.stem for p in tests_dir.glob("test_*.py")
-                   if p.stem not in SLOW and p.stem not in HARDWARE_SENSITIVE)
-    excluded = sorted(p.stem for p in tests_dir.glob("test_*.py")
-                      if p.stem in HARDWARE_SENSITIVE)
+                   if p.stem not in SLOW)
+    hw_modules = sorted(p.stem for p in tests_dir.glob("test_*.py")
+                        if p.stem in HARDWARE_SENSITIVE)
     print(f"[ci_run_fast] 快集模块 {len(stems)} 个；"
-          f"硬件敏感（另由独立 job 承接）{len(excluded)} 个：{excluded}", flush=True)
+          f"其中 {len(hw_modules)} 个模块只跳过其硬件敏感用例：{hw_modules}", flush=True)
 
     loader = unittest.TestLoader()
     failed_modules: list[str] = []
-    total_run = total_fail = total_err = total_skip = 0
 
     for stem in stems:
         _current[0] = stem
@@ -100,37 +107,19 @@ def main() -> int:
         # 这行是「死在哪个模块」的唯一可靠线索。
         print(f"[ci_run_fast] >>> {stem}", flush=True)
         try:
-            mod = _load(stem)
-        except Exception as exc:  # noqa: BLE001
-            # 导入失败本身就是红灯，且必须点名——否则只会看到「0 test」。
-            print(f"[ci_run_fast] !! import {stem} 失败: {exc!r}", flush=True)
-            failed_modules.append(stem)
-            total_err += 1
-            continue
-
-        suite = loader.loadTestsFromModule(mod)
-        runner = unittest.TextTestRunner(verbosity=1, buffer=False)
-        try:
-            result = runner.run(suite)
+            _run_one(stem, loader, failed_modules)
         except Exception as exc:  # noqa: BLE001
             # runner 自身炸了（例如测试里 os._exit / 解释器状态损坏）
             print(f"[ci_run_fast] !! run {stem} 异常: {exc!r}", flush=True)
             failed_modules.append(stem)
-            total_err += 1
-            continue
+        finally:
+            # G69-18 ★根因修复：循环回收只在**模块之间**做。
+            gc.enable()
+            gc.collect()
 
-        total_run += result.testsRun
-        total_fail += len(result.failures)
-        total_err += len(result.errors)
-        total_skip += len(result.skipped)
-        if not result.wasSuccessful():
-            failed_modules.append(stem)
-            # 逐条点名，确保失败用例名一定出现在 CI 日志里。
-            for case, _tb in list(result.failures) + list(result.errors):
-                print(f"[ci_run_fast] FAIL {case.id()}", flush=True)
-
-    print(f"\n[ci_run_fast] 合计：Ran {total_run} tests · "
-          f"failures={total_fail} errors={total_err} skipped={total_skip}", flush=True)
+    print(f"\n[ci_run_fast] 合计：Ran {_totals['run']} tests · "
+          f"failures={_totals['fail']} errors={_totals['err']} "
+          f"skipped={_totals['skip']}", flush=True)
     if failed_modules:
         print(f"[ci_run_fast] 失败模块：{sorted(set(failed_modules))}", flush=True)
         return 1
@@ -139,12 +128,60 @@ def main() -> int:
     return 0
 
 
+_totals = {"run": 0, "fail": 0, "err": 0, "skip": 0}
+
+
+def _run_one(stem: str, loader, failed_modules: list[str]) -> None:
+    """跑单个模块。
+
+    G69-18 ★**CI 连续红灯的根因**就在这里。
+
+    实测（本机 + Linux/macOS CI 一致）：`MainWindow` 等 Qt 控件由**引用环**维持 ——
+    `del w` 之后**不会**被引用计数回收，只有 `gc.collect()` 才回收（实测一次回收 369 个对象）。
+
+    这意味着它们的销毁时机由 Python 的**自动循环 GC** 决定，而自动 GC 在**任意分配点**
+    触发 —— 包括 `QApplication.processEvents()` 内部。于是 Qt 会在**事件分发中途**
+    销毁控件与其子定时器，随后 `QTimerInfoList::activateTimers` 解引用已释放的对象
+    → 进程原生崩溃（SIGSEGV / exit 139 / access violation）。
+
+    这与观测完全吻合：崩溃点**随机漂移**（哪个模块只是「当时 GC 恰好在那儿跑」）、
+    `PYTHONMALLOC=debug` 会改变结果（分配模式变了）、测试越多越容易崩。
+
+    修法：模块运行期间**关闭自动循环 GC**，改在模块之间（安全点，不在事件分发中）
+    显式回收。这样控件不会在 Qt 分发事件时被销毁。
+    """
+    gc.disable()          # 关键：模块运行期间不做自动循环回收（见 docstring）
+    try:
+        mod = __import__(f"tests.{stem}", fromlist=["*"])
+    except Exception as exc:  # noqa: BLE001
+        # 导入失败本身就是红灯，且必须点名——否则只会看到「0 test」。
+        print(f"[ci_run_fast] !! import {stem} 失败: {exc!r}", flush=True)
+        failed_modules.append(stem)
+        _totals["err"] += 1
+        return
+
+    suite = loader.loadTestsFromModule(mod)
+    result = unittest.TextTestRunner(verbosity=1, buffer=False).run(suite)
+
+    _totals["run"] += result.testsRun
+    _totals["fail"] += len(result.failures)
+    _totals["err"] += len(result.errors)
+    _totals["skip"] += len(result.skipped)
+    if not result.wasSuccessful():
+        failed_modules.append(stem)
+        # 逐条点名，确保失败用例名一定出现在 CI 日志里。
+        for case, _tb in list(result.failures) + list(result.errors):
+            print(f"[ci_run_fast] FAIL {case.id()}", flush=True)
+
 if __name__ == "__main__":
     _force_utf8_stdout()          # 兜底：顶层异常消息也必须是可打印的
     try:
         raise SystemExit(main())
     except SystemExit:
         raise
+    except KeyboardInterrupt:
+        # 别把 Ctrl-C 报成「未捕获异常」并吞掉退出码语义（130 = SIGINT）
+        raise SystemExit(130) from None
     except BaseException as exc:  # noqa: BLE001
         print(f"[ci_run_fast] 顶层未捕获异常: {exc!r}", flush=True)
-        raise SystemExit(1)
+        raise SystemExit(1) from exc
