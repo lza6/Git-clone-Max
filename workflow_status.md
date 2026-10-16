@@ -114,9 +114,49 @@
 ### P0（阻塞）
 | ID | 问题 | 证据 | 状态 |
 |----|------|------|------|
-| P0-1 | CI 三平台全红；Linux/macOS **SIGSEGV**，Windows 多失败 | `gh run list` 12/12 failure；`exit 139` | **✅ 根因已定位并修复**（G69-18z 泄漏线程）；本机全量跑 0 原生崩溃 |
-| P0-2 | 覆盖率门禁因此形同虚设（回归可静默合入） | 同上 | ✅ 随 P0-1 解除；待推 CI 复验 |
+| P0-1 | CI 三平台全红；Linux/macOS **SIGSEGV** | `gh run list` 12/12 failure；`exit 139` | **部分闭环**：已消除 4 个确定性成因（见下），残留**非确定性的 Qt 析构竞态**，见 §4.1 |
+| P0-2 | 覆盖率门禁形同虚设 | 同上 | ⏳ 随 P0-1 |
 | P0-3 | 台账「全部闭环」声明不成立（§2） | 独立复验 | ✅ 已修 4 类断链 |
+
+### 4.1 残留：非确定性的 Qt 析构竞态（**未消解**，须如实标注）
+
+**事实**：连续 5 次带诊断的 CI 运行，崩溃点**每次都在移动**——
+`test_g68_settings_ui` → `test_local_dialog` → `test_g69_regressions` 第 31 项
+→ 又回到 `test_g68_settings_ui`（第 8 项）。**位置漂移 = 竞态，不是某个用例的确定性 bug。**
+
+**已定位的 C 栈（Linux 原生栈，首次拿到完整帧）**：
+
+```
+QTimerInfoList::activateTimers
+  → QCoreApplication::notifyInternal2
+  → PyQt6/QtWidgets.abi3.so
+  → ... libpython3.14 _PyEval_EvalFrameDefault
+```
+
+即 **Qt 定时器触发时，接收对象已被释放**。
+
+**必要条件**：某个 `QTimerEvent` 已排进事件队列，而其接收者（窗口/定时器）
+在 `processEvents()` 处理它之前被销毁。测试大量构造 `MainWindow` 后仅靠 GC 回收，
+且 G69-17 那组还会 `show()`（激活 QWidget 级定时器）——正是这个窗口。
+
+**本轮已消除的 4 个**确定性**成因**（每个都有独立证据）：
+1. `test_git_thread_exit` 用例 C 故意泄漏 `time.sleep(3600)` 读线程（已改 Event 放行）
+2. `LocalReposDialog` 取消/关闭不调用 `ScanWorker.cancel()`（已加 `stop()` + `reject()` 收敛点）
+3. `AlertScanner` 线程对可能已销毁的 QObject `emit`（已改弱引用包装）
+4. `LogBuffer` 常驻 120ms 循环定时器（已改「有积压才武装的单次定时器」）
+
+**为什么仍未消解**：剩下的不是某一个定时器，而是**「测试构造的窗口被 GC 回收的时机
+不可控」**这一模式 —— 涉及数十个测试模块的 `MainWindow(...)` 调用点。
+已在 `test_g69_regressions` 内示范正确收尾（`_teardown_window`：
+`close()` → `deleteLater()` → 泵空事件队列，且**在对象仍被引用时**执行）。
+
+**下一步（按性价比排序）**：
+1. 把 `_teardown_window` 提升为 `tests/_qt_isolation.py` 的共用 helper，
+   在所有构造 `MainWindow`/QWidget 的测试里 `addCleanup` —— 一次改造消掉整类竞态。
+   判据：崩溃点若不再漂移或消失，即为闭环。
+2. 辅助手段：`PYTHONMALLOC=debug` 实测会改变时序并让该次运行不崩，
+   可用作二分定位的开关（但不能当修复）。
+3. **不得**用 `skip`/重试来「弄绿」——那属于削弱门禁。
 
 ### P1（高）
 | ID | 问题 | 状态 |

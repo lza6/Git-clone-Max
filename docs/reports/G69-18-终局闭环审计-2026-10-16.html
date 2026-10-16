@@ -297,7 +297,7 @@ env["GIT_CONFIG_KEY_0"] = ...             # ← 把调用方自己的配置项�
   <tr><th>项</th><th>状态</th><th>说明</th></tr>
   <tr>
     <td>CI <code>test</code> job 的段错误</td>
-    <td><span class="pill p-ok">根因已定位并修复</span></td>
+    <td><span class="pill p-warn">4 个成因已修，残留竞态未消解</span></td>
     <td><b>一条测试用例故意泄漏了一个线程。</b><code>test_git_thread_exit</code> 的用例 C
       用 <code>time.sleep(3600)</code> 模拟「卡死的 stdout」，又断言「join 超时后线程仍存活」——
       于是那个读线程被<b>故意留在后台跑一小时</b>，而整个测试套件只要十几分钟。
