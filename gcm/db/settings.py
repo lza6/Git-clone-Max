@@ -196,6 +196,26 @@ def _decrypt_token(enc: str) -> str:
     return ""
 
 
+def _decrypt_or_keep(value: str) -> str:
+    """解密「可能已加密」的值；**未加密的历史明文原样保留**。
+
+    G58-3：`_decrypt_token` 对任何非 `enc:` 前缀的值一律返回空串 —— 对 token 是
+    有意为之（避免把损坏密文当成可用凭据），但对**后来才加密的字段**（如 proxy）
+    会造成**静默数据丢失**：老用户 settings.json 里的明文代理串在升级后会被读成
+    空，代理设置凭空消失且无任何提示。
+
+    这里区分三种情况：
+      - `enc:` 前缀 → 真解密（失败返回空，与 token 一致）；
+      - `mask:` 前缀 → 掩码不可逆 → 空；
+      - 其它      → 视为历史明文，**原样保留**（升级不丢配置）。
+    """
+    if not value:
+        return ""
+    if value.startswith(_ENC_PREFIX) or value.startswith(_MASK_PREFIX):
+        return _decrypt_token(value)
+    return value
+
+
 def crypto_warning() -> str:
     """当前环境的凭据存储是否达到「加密」标准；不达标时返回给用户看的说明。
 
@@ -339,6 +359,9 @@ class SettingsStore:
             # G59-7：企业 IM webhook token 读回解密
             ait = getattr(s, "alert_im_token", "") or ""
             s.alert_im_token = _decrypt_token(str(ait))
+            # G58-3：HTTP 代理串可能内嵌 `user:pass@` —— 读回解密；
+            # 历史明文**原样保留**（否则升级会把用户代理设置静默清空）。
+            s.proxy = _decrypt_or_keep(str(getattr(s, "proxy", "") or ""))
             return s
 
     def _try_restore_backup(self) -> dict:
@@ -376,6 +399,12 @@ class SettingsStore:
             # G59-7：企业 IM webhook token 同策略加密落盘
             if payload.get("alert_im_token"):
                 payload["alert_im_token"] = _encrypt_token(payload["alert_im_token"])
+            # G58-3：HTTP 代理串可能内嵌 `user:pass@` —— 与 token 同策略加密落盘。
+            # 原实现直接 `asdict` 落盘 → 代理口令**明文**留在 settings.json，
+            # 与「凭据绝不明文落盘」的项目红线冲突（token/host_tokens/webhook/IM
+            # 都已加密，唯独 proxy 漏了）。
+            if payload.get("proxy"):
+                payload["proxy"] = _encrypt_token(payload["proxy"])
             # G67-23：tmp 文件名**必须含 pid+线程 id**。
             # 原实现固定用 `settings.json.tmp`：同进程多线程并发保存时，两个线程
             # 会同时 open 同一个 tmp 路径 —— 后开者截断前者的内容，先完成者

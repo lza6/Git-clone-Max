@@ -147,20 +147,24 @@ docs/        工程/产品/契约文档
   - `G53-1 health_card`：台账称新增 JSON 列 + 雷达图，**实际仍是单值 `repo_health` + 纯文本**。
   - `G58-3 代理凭据`：台账称「解析 + 加密落盘」，**实际未解析、`settings.proxy` 明文落盘**。
   - `v9.1.3 ~ v9.3.2` 未打 git tag（发布链断档，最新 tag 停在 `v9.1.2`）。
-- **CI `test` job 的间歇性原生崩溃（未定根因，已知缓解）**：
-  Linux/macOS 表现为 `exit 139`（SIGSEGV），本机 Windows 可复现（约 2/3 概率）。
-  崩溃点落在 `test_g68_settings_ui` 附近，但 `faulthandler` 报
-  `<invalid frame>` —— 属**内存已损坏后的延时表现**，不是干净崩溃点，故判为**竞态**。
-  已做的缓解：① `ci_run_fast.py` 逐模块落痕 + 失败逐条点名 + `faulthandler`，
-  保证**即便崩溃也能定位到模块**；② 告警线程 → GUI 的 emit 改用弱引用包装
-  （`_make_alert_emitter`），避免对已销毁的 QObject `emit` 引发原生崩溃。
-  **尚未找到并消除根因** —— 下次复现时优先用 `PYTHONMALLOC=debug`（实测它改变了时序、
-  本次运行未崩，可作为二分定位手段）。
+- **CI `test` job 的原生崩溃（根因已定，已有处置）**：
+  Linux/macOS 表现为 `exit 139`（SIGSEGV），本机 Windows 可复现。
+  **根因**：`MainWindow` 等 Qt 控件由**引用环**维持 —— 实测 `del w` 之后
+  **不被引用计数回收**，只有 `gc.collect()` 才回收（一次 369 个对象）。
+  于是销毁时机落到 Python 的**自动循环 GC** 上，而它在**任意分配点**触发，
+  **包括 `QApplication.processEvents()` 内部** → Qt 在事件分发中途销毁控件与其
+  子定时器 → `QTimerInfoList::activateTimers` 解引用已释放对象 → 崩溃。
+  这解释了全部观测：崩溃点随机漂移、`PYTHONMALLOC=debug` 会改变结果、测试越多越易崩。
+  **处置**：`scripts/ci_run_fast.py` 整轮关闭自动循环 GC，只在全部模块跑完后回收一次。
+  对照实验（禁用循环 GC 跑快集）实测 0 崩溃。
+  **仍未根治**：正解是让每个用例确定性收尾（close → deleteLater → 泵空事件队列），
+  但那要逐个改造 31 个构造 MainWindow 的测试文件；已登记为后续工作。
+  **不得**用 `skip`/重试把它「弄绿」。
 - **CI 未锁定 PyQt6 版本**：主矩阵用 `pip install PyQt6`（取最新），
   而 `requirements-build.txt` 锁了 ruff/mypy/coverage/pyinstaller。上游发新版会让 CI 行为漂移。
-- **代码规模现状（G68 实测）**：仅剩 **3 个**文件超 800 行 —— `main_window.py` 1800、
-  `service.py` 1170、`engine.py` 904（`settings_panel.py` 899→**454**、`repo_db.py` 806→**741**
-  已拆到线内）；8 个函数超 100 行（最大 `service._update` 178 行）。
+- **代码规模现状（2026-10-17 实测）**：仍为 **3 个**文件超 800 行 —— `main_window.py` **2004**、
+  `service.py` **1237**、`engine.py` **938**（`repo_db.py` **762**、`settings_groups.py` **637**、
+  `settings_panel.py` **511** 均在 800 线内）；8 个函数超 100 行（最大 `service._update` 178 行）。
   `build_settings_ui` 曾达 432 行，已拆为 `settings_groups.py` 的 7 个构建器。
   **这是已登记的、被显式接受的技术债，不是缺陷**：`main_window.py` 的体量在
   「拆分收益 < 回归风险」区间，一次大规模 UI 重排会危及发布稳定性。

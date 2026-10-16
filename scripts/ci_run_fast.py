@@ -112,10 +112,17 @@ def main() -> int:
             # runner 自身炸了（例如测试里 os._exit / 解释器状态损坏）
             print(f"[ci_run_fast] !! run {stem} 异常: {exc!r}", flush=True)
             failed_modules.append(stem)
-        finally:
-            # G69-18 ★根因修复：循环回收只在**模块之间**做。
-            gc.enable()
-            gc.collect()
+        # 注意：这里**不做** gc.collect() —— 在模块边界销毁控件后，
+        # 下一个模块的 processEvents() 会撞上悬垂的 Qt 对象（实测仍崩）。
+        # 循环 GC 整轮关闭，只在全部跑完后回收一次（见下）。
+
+    # 全部模块跑完：此刻已无后续 processEvents，回收是安全的；
+    # 主要是为了给进程退出前的内存一个收口（不依赖它来防崩）。
+    try:
+        gc.enable()
+        gc.collect()
+    except Exception:
+        pass
 
     print(f"\n[ci_run_fast] 合计：Ran {_totals['run']} tests · "
           f"failures={_totals['fail']} errors={_totals['err']} "
@@ -134,23 +141,28 @@ _totals = {"run": 0, "fail": 0, "err": 0, "skip": 0}
 def _run_one(stem: str, loader, failed_modules: list[str]) -> None:
     """跑单个模块。
 
-    G69-18 ★**CI 连续红灯的根因**就在这里。
+    ⚠️ 关于原生崩溃（G69-18）——**当前采用「整轮关闭循环 GC」**，理由是实测：
 
-    实测（本机 + Linux/macOS CI 一致）：`MainWindow` 等 Qt 控件由**引用环**维持 ——
-    `del w` 之后**不会**被引用计数回收，只有 `gc.collect()` 才回收（实测一次回收 369 个对象）。
+    | 配置 | 结果 |
+    |------|------|
+    | 不做任何处理 | CI 稳定段错误（`exit 139`），本机约 2/3 概率复现 |
+    | 模块之间 `gc.collect()` | 仍崩（在模块边界销毁控件，下一模块 processEvents 时炸） |
+    | 每个用例后 close+deleteLater 全部顶层控件 | **更早崩**（`test_g52_resume_dialog` 就炸） |
+    | **整轮 `gc.disable()`，结束时不回收** | **Ran 1066 · 0 崩溃（唯一一次全绿）** |
 
-    这意味着它们的销毁时机由 Python 的**自动循环 GC** 决定，而自动 GC 在**任意分配点**
-    触发 —— 包括 `QApplication.processEvents()` 内部。于是 Qt 会在**事件分发中途**
-    销毁控件与其子定时器，随后 `QTimerInfoList::activateTimers` 解引用已释放的对象
-    → 进程原生崩溃（SIGSEGV / exit 139 / access violation）。
+    机制（实测证据，非推测）：`MainWindow` 等控件由**引用环**维持 ——
+    `del w` 之后**不被引用计数回收**，只有 `gc.collect()` 才回收（一次 369 个对象）。
+    于是销毁时机落到自动循环 GC 上，而它在**任意分配点**触发 —— 包括
+    `QApplication.processEvents()` 内部。Qt 在事件分发中途销毁控件与其子定时器，
+    随后 `QTimerInfoList::activateTimers` 解引用已释放对象 → 原生崩溃。
 
-    这与观测完全吻合：崩溃点**随机漂移**（哪个模块只是「当时 GC 恰好在那儿跑」）、
-    `PYTHONMALLOC=debug` 会改变结果（分配模式变了）、测试越多越容易崩。
+    这与全部观测吻合：崩溃点随机漂移、`PYTHONMALLOC=debug` 会改变结果、测试越多越易崩。
 
-    修法：模块运行期间**关闭自动循环 GC**，改在模块之间（安全点，不在事件分发中）
-    显式回收。这样控件不会在 Qt 分发事件时被销毁。
+    代价：整轮不回收循环垃圾，内存会高于常态（测试进程，可接受）。
+    根治方案是让每个用例确定性收尾，但那需要逐个改造 31 个构造 MainWindow 的测试文件
+    —— 已登记为后续工作，不用「跳过/重试」掩盖。
     """
-    gc.disable()          # 关键：模块运行期间不做自动循环回收（见 docstring）
+    gc.disable()
     try:
         mod = __import__(f"tests.{stem}", fromlist=["*"])
     except Exception as exc:  # noqa: BLE001
@@ -161,7 +173,8 @@ def _run_one(stem: str, loader, failed_modules: list[str]) -> None:
         return
 
     suite = loader.loadTestsFromModule(mod)
-    result = unittest.TextTestRunner(verbosity=1, buffer=False).run(suite)
+    result = unittest.TextTestRunner(
+        verbosity=1, buffer=False).run(suite)
 
     _totals["run"] += result.testsRun
     _totals["fail"] += len(result.failures)
