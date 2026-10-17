@@ -179,7 +179,10 @@ def maybe_notify(settings, ok: int, fail: int, conflict: int = 0,
         fp = _fingerprint(payload)
         now = time.time()
 
-        # 幂等：同 payload 在窗口内只发一次
+        # 幂等：同 payload 在窗口内只发一次。
+        # G69-18 **压测修复**：原实现是「先查后写」—— 查完到发送完成之间没有占位，
+        # 40 个并发同 payload 实测发了 13 次。改为**先占位再发送**：
+        # 在锁内一次性完成「查重 + 占位」，发送失败再撤销占位（允许稍后重试）。
         with _dedup_lock:
             last = _recent.get(fp)
             if last is not None and now - last < DEDUP_WINDOW_SEC:
@@ -189,6 +192,7 @@ def maybe_notify(settings, ok: int, fail: int, conflict: int = 0,
                     "fingerprint": fp[:12], "ok": ok, "fail": fail,
                 })
                 return True
+            _recent[fp] = now          # ← 占位：发送期间并发调用会被去重
 
         sent, attempts = send_with_retry(url, token, payload, retries=retries)
         _audit(data_dir, {
@@ -199,11 +203,15 @@ def maybe_notify(settings, ok: int, fail: int, conflict: int = 0,
             "attempts": attempts,
             "ok": ok, "fail": fail, "conflict": conflict,
         })
-        if sent:
-            with _dedup_lock:
-                _recent[fp] = now
+        with _dedup_lock:
+            if not sent:
+                # 发送失败：撤销自己的占位，让后续调用还能重试
+                if _recent.get(fp) == now:
+                    _recent.pop(fp, None)
+            else:
                 # 清理过期条目，防止长期运行无限增长
-                for k in [k for k, v in _recent.items() if now - v >= DEDUP_WINDOW_SEC]:
+                for k in [k for k, v in list(_recent.items())
+                          if now - v >= DEDUP_WINDOW_SEC]:
                     _recent.pop(k, None)
         return bool(sent)
     except Exception:  # noqa: BLE001

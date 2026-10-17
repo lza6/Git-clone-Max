@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -170,6 +171,67 @@ class TestAuditNeverLeaksCredentials(unittest.TestCase):
         # 但仍要保留「发往哪个服务」这个有用信息
         self.assertIn("https://sctapi.ftqq.com", raw)
         self.assertIn("https://api.telegram.org", raw)
+
+
+class TestConcurrentIdempotency(unittest.TestCase):
+    """压测回归：并发同 payload 只能发一次。
+
+    原实现是「先查后写」——查完到发送完成之间没有占位，
+    实测 **40 个并发同 payload 发了 13 次**（通知刷屏 + 重复打扰）。
+    现在改为锁内「查重 + 占位」一步完成，失败再撤销占位。
+    """
+
+    def test_forty_concurrent_identical_calls_send_once(self):
+        import threading
+
+        notify.reset_dedup_for_tests()
+        tmp = Path(tempfile.mkdtemp(prefix="gcm_notify_conc_"))
+        settings = _Settings(url="https://hook.example/<KEY>.send")
+        sent: list[int] = []
+        lock = threading.Lock()
+
+        def _fake(*a, **k):
+            with lock:
+                sent.append(1)
+            time.sleep(0.01)          # 放大竞态窗口
+            return True
+
+        n = 40
+        barrier = threading.Barrier(n)
+
+        def _worker(_i):
+            barrier.wait()
+            notify.maybe_notify(settings, ok=5, fail=1, data_dir=tmp)
+
+        # 注意：**不要** patch `notify.time.sleep` —— 那会连 `_fake` 里的
+        # `time.sleep(0.01)` 一起变成 no-op，竞态窗口消失，测试就不再验证竞态了。
+        with mock.patch.object(notify, "send_webhook", side_effect=_fake):
+            threads = [threading.Thread(target=_worker, args=(i,)) for i in range(n)]
+            for th in threads:
+                th.start()
+            for th in threads:
+                th.join()
+
+        self.assertEqual(len(sent), 1, "并发同 payload 只允许真正发送一次")
+        events = [json.loads(x)["event"]
+                  for x in (tmp / "notify.log").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(events.count("sent"), 1)
+        self.assertEqual(events.count("dedup-skip"), n - 1)
+
+    def test_failed_send_releases_reservation_for_retry(self):
+        """发送失败必须撤销占位，否则「一次失败 = 整个窗口内再也不发」。"""
+        notify.reset_dedup_for_tests()
+        tmp = Path(tempfile.mkdtemp(prefix="gcm_notify_rel_"))
+        settings = _Settings()
+        with mock.patch.object(notify, "send_webhook", return_value=False),                 mock.patch.object(notify.time, "sleep", lambda s: None):
+            self.assertFalse(notify.maybe_notify(settings, ok=0, fail=1, data_dir=tmp))
+        # 第二次（仍失败）应当**再次真正尝试**，而不是被当成已发送跳过
+        with mock.patch.object(notify, "send_webhook", return_value=False) as m,                 mock.patch.object(notify.time, "sleep", lambda s: None):
+            notify.maybe_notify(settings, ok=0, fail=1, data_dir=tmp)
+        m.assert_called()
+        events = [json.loads(x)["event"]
+                  for x in (tmp / "notify.log").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(events.count("failed"), 2)
 
 
 class TestReadAudit(unittest.TestCase):
