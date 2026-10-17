@@ -1,16 +1,38 @@
-"""G49-7 完成通知 Webhook（Server酱 / Telegram Bot 兼容 JSON POST）。
+"""G49-7 / G67-6 完成通知 Webhook（Server酱 / Telegram Bot 兼容 JSON POST）。
 
 红线约定（与规划一致）：
 - 仅当设置页「显式开启」且 URL 非空时才发送（调用方先判断）；
 - 网络失败绝不抛异常、绝不阻塞主流程（后台线程调用）；
 - payload 中失败列表经 util.redact 打码，杜绝 token/URL 凭据外泄；
 - 单测全 mock（urllib），真实外部调用需用户显式批准。
+
+G67-6 / G69-18 补全（原实现只有「发一次」）：
+1. **幂等去重**：同一 payload 在 `DEDUP_WINDOW_SEC` 内只发一次 ——
+   引擎重投/多批次收尾时不会把同一条完成通知刷屏。
+2. **审计台账**：每次尝试（含被去重跳过、失败重试）追加一行 JSONL 到
+   `<data_dir>/notify.log`；URL 与 token 经 `redact` 打码，可安全查看与转发。
+3. **失败重试 1 次**：短暂退避后重试，仍失败则记为失败并返回 False。
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import threading
+import time
 import urllib.request
+from datetime import datetime
+from pathlib import Path
 from typing import Any
+
+# 同一 payload 的去重窗口（秒）。10 分钟足以覆盖「同批次重投/多次收尾」。
+DEDUP_WINDOW_SEC = 600.0
+# 审计文件上限（字节）。超出后滚动为 .1（只保留一代），避免无限增长。
+AUDIT_MAX_BYTES = 512 * 1024
+# 每个 Webhook 的默认重试次数（不含首次）。
+DEFAULT_RETRIES = 1
+
+_dedup_lock = threading.Lock()
+_recent: dict[str, float] = {}
 
 
 def build_payload(ok: int, fail: int, conflict: int = 0, cancelled: int = 0,
@@ -29,6 +51,74 @@ def build_payload(ok: int, fail: int, conflict: int = 0, cancelled: int = 0,
                 + (f" · 冲突 {conflict}" if conflict else "")
                 + (f" · 失败列表：{'、'.join(failed)}" if failed else ""),
     }
+
+
+def _fingerprint(payload: dict[str, Any]) -> str:
+    """payload 的稳定指纹（用于幂等去重，不含时间戳）。"""
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _redact_url(url: str) -> str:
+    """审计里**只保留 scheme://host**，丢弃 path 与 query。
+
+    为什么不能只用 `redact()`：它按**已知参数名**（token/api_key…）打码，
+    而 Webhook URL 的凭据常常在**路径**里（Server酱 `.../<KEY>.send`、
+    Telegram `/bot<TOKEN>/sendMessage`），或用了自定义参数名（`?k=SECRET`）。
+    这类值 redact 认不出来 → 会明文落进审计台账。
+
+    台账的用途是「排查有没有发、发了几次、成不成功」，
+    只需要知道**发往哪个服务**，不需要完整 URL。故只留 scheme://host。
+    """
+    try:
+        from urllib.parse import urlsplit
+        parts = urlsplit(str(url))
+        if parts.scheme and parts.hostname:
+            return f"{parts.scheme}://{parts.hostname}" + (f":{parts.port}" if parts.port else "")
+    except Exception:
+        pass
+    return "(invalid-url)"
+
+
+def _audit(data_dir: str | Path | None, record: dict[str, Any]) -> None:
+    """追加一行审计（best-effort：**任何**异常都不得影响主流程）。"""
+    if not data_dir:
+        return
+    try:
+        base = Path(data_dir)
+        base.mkdir(parents=True, exist_ok=True)
+        path = base / "notify.log"
+        # 滚动：超限则保留一代 .1
+        try:
+            if path.exists() and path.stat().st_size > AUDIT_MAX_BYTES:
+                path.replace(path.with_suffix(".log.1"))
+        except Exception:
+            pass
+        line = json.dumps(record, ensure_ascii=False)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except Exception:
+        pass
+
+
+def read_audit(data_dir: str | Path, limit: int = 200) -> list[dict[str, Any]]:
+    """读取审计记录（供设置页「查看通知审计」；坏行跳过，不抛）。"""
+    out: list[dict[str, Any]] = []
+    try:
+        path = Path(data_dir) / "notify.log"
+        if not path.exists():
+            return []
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        for line in lines[-max(1, int(limit)):]:
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(rec, dict):
+                out.append(rec)
+    except Exception:
+        return []
+    return out
 
 
 def send_webhook(url: str, token: str, payload: dict[str, Any],
@@ -51,10 +141,34 @@ def send_webhook(url: str, token: str, payload: dict[str, Any],
         return False
 
 
+def send_with_retry(url: str, token: str, payload: dict[str, Any],
+                    timeout: int = 15, retries: int = DEFAULT_RETRIES,
+                    backoff: float = 1.0) -> tuple[bool, int]:
+    """发送，失败重试 `retries` 次（短暂退避）。返回 (是否成功, 尝试次数)。"""
+    attempts = 0
+    total = max(0, int(retries)) + 1
+    while attempts < total:
+        attempts += 1
+        if send_webhook(url, token, payload, timeout=timeout):
+            return True, attempts
+        if attempts < total:
+            try:
+                time.sleep(max(0.0, float(backoff)))
+            except Exception:
+                pass
+    return False, attempts
+
+
 def maybe_notify(settings, ok: int, fail: int, conflict: int = 0,
                  cancelled: int = 0, total: int = 0,
-                 failed_repos: list[str] | None = None) -> bool:
-    """设置页显式开启 + URL 非空时发送；否则不发送（返回 False）。"""
+                 failed_repos: list[str] | None = None,
+                 data_dir: str | Path | None = None,
+                 retries: int = DEFAULT_RETRIES) -> bool:
+    """设置页显式开启 + URL 非空时发送；否则不发送（返回 False）。
+
+    返回 True 表示「已完成通知职责」—— 包括**被幂等去重跳过**的情况
+    （那不是错误，而是有意不重复打扰）。
+    """
     try:
         enabled = bool(getattr(settings, "notify_webhook_enabled", False))
         url = str(getattr(settings, "notify_webhook_url", "") or "").strip()
@@ -62,6 +176,41 @@ def maybe_notify(settings, ok: int, fail: int, conflict: int = 0,
             return False
         token = str(getattr(settings, "notify_webhook_token", "") or "").strip()
         payload = build_payload(ok, fail, conflict, cancelled, total, failed_repos)
-        return send_webhook(url, token, payload)
+        fp = _fingerprint(payload)
+        now = time.time()
+
+        # 幂等：同 payload 在窗口内只发一次
+        with _dedup_lock:
+            last = _recent.get(fp)
+            if last is not None and now - last < DEDUP_WINDOW_SEC:
+                _audit(data_dir, {
+                    "ts": datetime.now().isoformat(timespec="seconds"),
+                    "event": "dedup-skip", "url": _redact_url(url),
+                    "fingerprint": fp[:12], "ok": ok, "fail": fail,
+                })
+                return True
+
+        sent, attempts = send_with_retry(url, token, payload, retries=retries)
+        _audit(data_dir, {
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "event": "sent" if sent else "failed",
+            "url": _redact_url(url),
+            "fingerprint": fp[:12],
+            "attempts": attempts,
+            "ok": ok, "fail": fail, "conflict": conflict,
+        })
+        if sent:
+            with _dedup_lock:
+                _recent[fp] = now
+                # 清理过期条目，防止长期运行无限增长
+                for k in [k for k, v in _recent.items() if now - v >= DEDUP_WINDOW_SEC]:
+                    _recent.pop(k, None)
+        return bool(sent)
     except Exception:  # noqa: BLE001
         return False
+
+
+def reset_dedup_for_tests() -> None:
+    """清空去重记忆（仅测试用）。"""
+    with _dedup_lock:
+        _recent.clear()

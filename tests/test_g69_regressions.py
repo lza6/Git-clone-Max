@@ -1007,3 +1007,45 @@ class TestG69_18DiagnosticsWiring(unittest.TestCase):
                 self.assertIn("status", it)
                 self.assertIn("name", it)
                 self.assertIn("detail", it)
+
+
+class TestG69_18NoMainWindowRefCycle(unittest.TestCase):
+    """G69-18 **根因守卫**：`MainWindow` 必须能靠**引用计数**释放。
+
+    历史事实：窗口被引用环维持，`del w` 之后**不会**被回收（只能等循环 GC），
+    而循环 GC 在**任意分配点**（含 `QApplication.processEvents()` 内部）销毁控件与
+    子定时器 → `QTimerInfoList::activateTimers` 解引用已释放对象 → **进程原生崩溃**。
+    这正是 CI 连续 80+ 次红灯的成因。
+
+    根因修复：打断环（Panel 的 owner 改弱引用；信号连接不用 lambda 捕获 self；
+    扫描闭包 / 剪贴板回调 / 拖拽 handler 全改弱引用）。
+
+    本守卫直接断言「引用计数即可释放」—— 一旦有人重新引入 lambda 捕获 self
+    或强引用 owner，这条会立刻变红，而不是等到 CI 上随机段错误。
+    """
+
+    def test_mainwindow_released_without_cyclic_gc(self):
+        import gc as _gc
+        import weakref as _weakref
+
+        from gcm.db.repo_db import Database
+        from gcm.db.settings import SettingsStore
+        from gcm.ui.main_window import MainWindow
+
+        d = pathlib.Path(tempfile.mkdtemp(prefix="gcm_cycle_"))
+        w = MainWindow(data_dir=d, db=Database(d / "t.db"),
+                       settings=SettingsStore(d / "s.json"))
+        w._check_update_silent = lambda *a, **k: None
+        w._maybe_show_onboarding = lambda *a, **k: None
+        _app.processEvents()
+        _gc.collect()
+        _gc.collect()
+
+        ref = _weakref.ref(w)
+        del w
+        # **关键**：这里不调用 gc.collect()。若仍存活，说明引用环又回来了。
+        self.assertIsNone(
+            ref(),
+            "MainWindow 未能由引用计数释放 —— 引用环重新出现。"
+            "常见原因：信号连接用了 lambda 捕获 self；或某个 Panel/回调强引用了 owner。"
+        )

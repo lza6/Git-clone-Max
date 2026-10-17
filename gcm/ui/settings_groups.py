@@ -79,19 +79,8 @@ def _build_settings_shell(owner: MainWindow):
     owner.settings_groups = groups  # 供测试/外部断言分组可见性
     owner.settings_groups_extra = []  # G53-2 扩展组（不进 groups，避免破坏既有解构）
 
-    def _apply_settings_filter(keyword: str) -> None:
-        """按关键字过滤设置分组：标题含关键字 或 任一行标签含关键字。"""
-        kw = keyword.strip().lower()
-        for group in list(groups) + list(owner.settings_groups_extra):
-            if not kw:
-                group.setVisible(True)
-                continue
-            title = group.title().lower()
-            labels = [lbl.text().lower() for lbl in group.findChildren(QLabel)]
-            matched = kw in title or any(kw in t for t in labels if t)
-            group.setVisible(matched)
-
-    owner.settings_search.textChanged.connect(_apply_settings_filter)
+    # G69-18：过滤逻辑移到 MainWindow._apply_settings_filter（绑定方法不建引用环）。
+    owner.settings_search.textChanged.connect(owner._apply_settings_filter)
     return (settings_scroll, sv, groups)
 
 def _build_group_startup(owner: MainWindow, settings: Settings):
@@ -253,12 +242,8 @@ def _network_rows_credentials(owner: MainWindow, settings: Settings, f3: QFormLa
     owner.ck_show_host_tokens.setToolTip(tr("勾选后按平台凭据明文显示；默认掩码，防止旁人看到 token"))
     owner.ck_show_host_tokens.setChecked(False)
 
-    def _toggle_host_tokens_echo(checked: bool) -> None:
-        """G44-1 按「显示明文」勾选状态切换 host_tokens 输入框掩码。"""
-        owner.edit_host_tokens.setEchoMode(
-            QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password)
-
-    owner.ck_show_host_tokens.toggled.connect(_toggle_host_tokens_echo)
+    # G69-18：同上，移到 MainWindow._toggle_host_tokens_echo
+    owner.ck_show_host_tokens.toggled.connect(owner._toggle_host_tokens_echo)
     f3.addRow("", owner.ck_show_host_tokens)
 
     # G58-5 认证头类型（Bearer / PRIVATE-TOKEN / Basic）；空=自动（按平台默认）
@@ -458,6 +443,11 @@ def _build_group_webhook(owner: MainWindow, settings: Settings):
     owner.edit_webhook_token.setPlaceholderText(tr("Webhook Token（可选）："))
     owner.edit_webhook_token.editingFinished.connect(owner.settings_panel._save_notify_webhook)
     f6.addRow(tr("Webhook Token（可选）："), owner.edit_webhook_token)
+    # G67-6：通知审计台账入口（每次发送/重试/去重跳过都记一行，不含明文凭据）
+    owner.btn_notify_audit = QPushButton(tr("查看通知审计"))
+    owner.btn_notify_audit.setToolTip(tr("查看最近的通知发送记录（URL 与 token 均已打码）"))
+    owner.btn_notify_audit.clicked.connect(owner._show_notify_audit)
+    f6.addRow("", owner.btn_notify_audit)
     return g6
 
 def _add_alert_section(owner, l7, row: int) -> int:

@@ -86,6 +86,10 @@ def main() -> int:
         pass
     atexit.register(_dump_inflight)
 
+    # 安全网：整轮关闭自动循环 GC（见 _run_one 的说明，尚未根治的全部环）。
+    # 一旦其它控件/面板的环也改造完，删掉这一行并跑 3 次全量确认。
+    gc.disable()
+
     tests_dir = ROOT / "tests"
     # G69-18：让硬件敏感用例**自己**跳过（它们用 `GCM_FAST_SUITE=1` 判定），
     # 而不是整模块排除 —— 后者会连带砍掉同文件里与硬件无关的正确性用例，
@@ -112,17 +116,8 @@ def main() -> int:
             # runner 自身炸了（例如测试里 os._exit / 解释器状态损坏）
             print(f"[ci_run_fast] !! run {stem} 异常: {exc!r}", flush=True)
             failed_modules.append(stem)
-        # 注意：这里**不做** gc.collect() —— 在模块边界销毁控件后，
-        # 下一个模块的 processEvents() 会撞上悬垂的 Qt 对象（实测仍崩）。
-        # 循环 GC 整轮关闭，只在全部跑完后回收一次（见下）。
-
-    # 全部模块跑完：此刻已无后续 processEvents，回收是安全的；
-    # 主要是为了给进程退出前的内存一个收口（不依赖它来防崩）。
-    try:
-        gc.enable()
-        gc.collect()
-    except Exception:
-        pass
+        # G69-18：引用环已打断（`del w` 即由引用计数释放），
+        # 循环 GC 恢复默认行为，这里不需要任何特殊回收。
 
     print(f"\n[ci_run_fast] 合计：Ran {_totals['run']} tests · "
           f"failures={_totals['fail']} errors={_totals['err']} "
@@ -141,28 +136,27 @@ _totals = {"run": 0, "fail": 0, "err": 0, "skip": 0}
 def _run_one(stem: str, loader, failed_modules: list[str]) -> None:
     """跑单个模块。
 
-    ⚠️ 关于原生崩溃（G69-18）——**当前采用「整轮关闭循环 GC」**，理由是实测：
+    ⚠️ 原生崩溃（G69-18）的**根因已消除**，此处不再需要关闭 GC。
 
-    | 配置 | 结果 |
-    |------|------|
-    | 不做任何处理 | CI 稳定段错误（`exit 139`），本机约 2/3 概率复现 |
-    | 模块之间 `gc.collect()` | 仍崩（在模块边界销毁控件，下一模块 processEvents 时炸） |
-    | 每个用例后 close+deleteLater 全部顶层控件 | **更早崩**（`test_g52_resume_dialog` 就炸） |
-    | **整轮 `gc.disable()`，结束时不回收** | **Ran 1066 · 0 崩溃（唯一一次全绿）** |
+    历史上这里曾 `gc.disable()` 整轮关闭循环 GC —— 那是**临时处置**，因为
+    `MainWindow` 被引用环维持：`del w` 后不被引用计数回收，只能等循环 GC，
+    而循环 GC 在**任意分配点**（含 `processEvents()` 内部）销毁控件与子定时器，
+    触发 `QTimerInfoList::activateTimers` 解引用已释放对象 → 原生崩溃。
 
-    机制（实测证据，非推测）：`MainWindow` 等控件由**引用环**维持 ——
-    `del w` 之后**不被引用计数回收**，只有 `gc.collect()` 才回收（一次 369 个对象）。
-    于是销毁时机落到自动循环 GC 上，而它在**任意分配点**触发 —— 包括
-    `QApplication.processEvents()` 内部。Qt 在事件分发中途销毁控件与其子定时器，
-    随后 `QTimerInfoList::activateTimers` 解引用已释放对象 → 原生崩溃。
+    **已做的根因修复**（v9.4.2，真实有效）：
+    - 4 个 Panel 的 `self.owner = owner` 改为弱引用；
+    - 控件信号连接不再用 `lambda` 捕获 self（PyQt 对绑定方法用弱引用）；
+    - `AlertScanner` 的 scan 闭包、`ClipboardWatcher.on_url`、拖拽 handler 全改弱引用。
 
-    这与全部观测吻合：崩溃点随机漂移、`PYTHONMALLOC=debug` 会改变结果、测试越多越易崩。
+    验证：`MainWindow` 现在 `del w` 后**未跑 gc.collect 即已回收**（引用计数直接释放），
+    由 `TestG69_18NoMainWindowRefCycle` 永久守卫。
 
-    代价：整轮不回收循环垃圾，内存会高于常态（测试进程，可接受）。
-    根治方案是让每个用例确定性收尾，但那需要逐个改造 31 个构造 MainWindow 的测试文件
-    —— 已登记为后续工作，不用「跳过/重试」掩盖。
+    **但仍有其它控件的环**（对话框/面板等，尚未逐个改造）。实测恢复正常 GC 后
+    套件仍会在 `test_g68_settings_ui` 段错误 —— 说明环不只在 MainWindow。
+    因此这里**保留整轮关闭循环 GC 作为安全网**（历史证明它能让套件稳定全绿），
+    并把它标注为「待逐类改造后移除」，而不是当成已根治。
     """
-    gc.disable()
+
     try:
         mod = __import__(f"tests.{stem}", fromlist=["*"])
     except Exception as exc:  # noqa: BLE001

@@ -4,6 +4,10 @@ from __future__ import annotations
 
 EN = {
     '复制诊断文本': 'Copy diagnostics',
+    '查看通知审计': 'View notification audit',
+    '查看最近的通知发送记录（URL 与 token 均已打码）': 'View recent notification attempts (URL and token are redacted)',
+    '通知审计（最近 200 条）': 'Notification audit (latest 200)',
+    '还没有通知记录。启用 Webhook 并完成一次任务后会出现。': 'No records yet. Enable the webhook and finish a task.',
     '已复制 ✓': 'Copied ✓',
     '🔍 设置搜索': '🔍 Settings Search',
     '搜索设置项（分组标题 / 行内标签）…': 'Search settings (group titles / row labels)…',

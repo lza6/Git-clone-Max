@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import sys
+import weakref
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSlot
@@ -33,7 +34,9 @@ class ProgressTable(QWidget):
 
     def __init__(self, owner, parent=None):
         super().__init__(parent)
-        self.owner = owner
+        # owner 允许为 None（测试会构造无宿主的面板单独验证数据逻辑）
+        self._owner_ref = (weakref.ref(owner) if owner is not None
+                           else (lambda: None))
         # 高频进度详情节流：速率/对象数批量刷新（32 并发时不阻塞主线程）
         self._detail_batch: dict = {}
         self._detail_timer = QTimer(self)
@@ -41,6 +44,16 @@ class ProgressTable(QWidget):
         self._detail_timer.timeout.connect(self._flush_detail_batch)
         self._progress_filter_text = ""
         self._build_ui()
+
+    @property
+    def owner(self):
+        """G69-18：**弱引用**持有宿主，避免 Panel↔MainWindow 引用环。
+
+        原实现 `self.owner = owner` 是强引用：MainWindow 持有 Panel、Panel 又持有
+        MainWindow → 环 → 只能靠循环 GC 回收 → 回收时机不可控（可能在 Qt 分发
+        事件中途）→ 原生崩溃。弱引用后窗口由引用计数立即释放。
+        """
+        return self._owner_ref()
 
     def _build_ui(self):
         v = QVBoxLayout(self)
@@ -561,7 +574,9 @@ class ProgressTable(QWidget):
                 def _kl():
                     try:
                         from ..app.notify import maybe_notify as _mn
-                        if _mn(_s, *_params):
+                        # G67-6：传 data_dir 以便写审计台账（notify.log）
+                        if _mn(_s, *_params,
+                               data_dir=getattr(self.owner, "data_dir", None)):
                             # G67-2：工作线程不得直接触碰 QWidget。原实现此处调
                             # owner.statusBar().showMessage(...) —— 改为 emit 信号，
                             # 由 GUI 线程的槽更新状态栏（Qt 自动走 QueuedConnection）。

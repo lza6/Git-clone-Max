@@ -28,7 +28,20 @@ class ClipboardWatcher(QObject):
                  interval_ms: int = 1500):
         super().__init__(parent)
         self._enabled_flag = bool(enabled)
-        self.on_url = on_url or (lambda u: None)
+        # G69-18：回调若是**绑定方法**（MainWindow._on_clipboard_url），强引用会形成
+        # watcher → 绑定方法 → MainWindow → watcher 的引用环，只能靠循环 GC 回收。
+        # 用 WeakMethod：窗口销毁后回调自动失效（返回 None 时静默跳过）。
+        if on_url is not None and hasattr(on_url, "__self__") and hasattr(on_url, "__func__"):
+            try:
+                import weakref as _wr
+                self._on_url_ref = _wr.WeakMethod(on_url)
+                self.on_url = self._invoke_on_url
+            except TypeError:
+                self._on_url_ref = None
+                self.on_url = on_url
+        else:
+            self._on_url_ref = None
+            self.on_url = on_url or (lambda u: None)
         self._last_seen: list[str] = []
         self._timer = QTimer(self)
         self._timer.setInterval(max(500, interval_ms))
@@ -49,6 +62,15 @@ class ClipboardWatcher(QObject):
 
     def stop(self):
         self._timer.stop()
+
+    def _invoke_on_url(self, url: str) -> None:
+        """调用回调；绑定方法走弱引用，宿主已销毁则静默跳过（G69-18）。"""
+        ref = getattr(self, "_on_url_ref", None)
+        if ref is None:
+            return
+        fn = ref()
+        if fn is not None:
+            fn(url)
 
     def check_once(self):
         """取剪贴板 → 提取 URL → 去重 → 回调。"""

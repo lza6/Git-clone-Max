@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import threading
 import time
+import weakref
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
@@ -260,14 +261,24 @@ class MainWindow(QMainWindow):
         try:
             from ..app.alerts import AlertScanner, scan_alerts
 
+            # G69-18：扫描闭包被 AlertScanner 长期持有 —— 直接捕获 self 同样会
+            # 构成引用环（scanner ← self ← scanner）。改用弱引用，窗口销毁后
+            # 扫描自然返回空，不再需要 GC 才能在窗口死前回收。
+            _self_ref = weakref.ref(self)
+
             def _scan_repos():
-                repos = self.db.list_repos(host=None) if hasattr(self.db, "list_repos") else []
+                me = _self_ref()
+                if me is None:
+                    return []
+                repos = me.db.list_repos(host=None) if hasattr(me.db, "list_repos") else []
                 return scan_alerts(
                     repos or [],
-                    lambda rid: self.db.history(rid, 20) if hasattr(self.db, "history") else [],
-                    data_dir=self.data_dir,
-                    stale_days=int(getattr(self.settings, "g53_alerts_stale_days", 30) or 30),
-                    disk_min_gb=int(getattr(self.settings, "g53_alerts_disk_min_gb", 5) or 5))
+                    lambda rid: me.db.history(rid, 20) if hasattr(me.db, "history") else [],
+                    data_dir=me.data_dir,
+                    # 注意：这里也必须走 `me` —— 写成 self 会把 self 重新捕获进闭包，
+                    # 环就又回来了（本轮实测抓到的最后一处）。
+                    stale_days=int(getattr(me.settings, "g53_alerts_stale_days", 30) or 30),
+                    disk_min_gb=int(getattr(me.settings, "g53_alerts_disk_min_gb", 5) or 5))
 
             self.alert_scanner = AlertScanner(
                 _scan_repos,
@@ -615,15 +626,34 @@ class MainWindow(QMainWindow):
         self.repo_input.customContextMenuRequested.connect(self._repo_input_menu)
         # G35-3 拖拽导入：.txt/.csv → 读入每行地址；目录 → 本地扫描检测
         self.repo_input.setAcceptDrops(True)
-        self.repo_input.dragEnterEvent = self._repo_input_drag_enter
-        self.repo_input.dropEvent = self._repo_input_drop
+        # G69-18：**不能**把绑定方法直接挂成控件属性 —— 控件持有绑定方法、
+        # 绑定方法持有窗口、窗口又持有控件 → 引用环。改为弱引用包装，
+        # 窗口销毁后 handler 自动失效（Qt 不会再调它，因为控件也随之销毁）。
+        _self_ref = weakref.ref(self)
+
+        def _drag_enter(e):
+            me = _self_ref()
+            if me is not None:
+                me._repo_input_drag_enter(e)
+
+        def _drop(e):
+            me = _self_ref()
+            if me is not None:
+                me._repo_input_drop(e)
+
+        self.repo_input.dragEnterEvent = _drag_enter
+        self.repo_input.dropEvent = _drop
         quick = QHBoxLayout()
         quick.addWidget(QLabel(tr("快捷填充：")))
         # G35-7 快捷填充可配置：跟随 settings.quick_repos（持久化，可编辑）
         for repo in getattr(self.settings, "quick_repos", None) or ():
             btn = QPushButton(repo)
-            btn.clicked.connect(lambda _=False, r=repo: self.repo_input.appendPlainText(
-                f"https://github.com/{r}"))
+            # G69-18：**不要**用 lambda 捕获 self —— 控件持有连接、连接持有闭包、
+            # 闭包持有 MainWindow，而 MainWindow 又持有控件 → 引用环 → 只能靠循环 GC
+            # 回收 → 回收时机不可控（可能在 Qt 分发事件中途）→ 原生崩溃。
+            # PyQt 对**绑定方法**用弱引用（不建环），参数经控件属性传递。
+            btn.setProperty("quick_repo", repo)
+            btn.clicked.connect(self._on_quick_fill)
             quick.addWidget(btn)
         quick.addStretch()
         # G35-4 任务清单：保存当前输入区为命名清单 / 下拉载入（分享用 data/lists/*.json）
@@ -665,8 +695,8 @@ class MainWindow(QMainWindow):
         self.depth_spin.setValue(1)
         self.depth_spin.setSuffix(" 层")
         self.depth_spin.setEnabled(False)
-        self.mode_combo.currentIndexChanged.connect(
-            lambda i: self.depth_spin.setEnabled(i in (1, 2)))
+        # G69-18：绑定方法替代 lambda（避免引用环，见 _on_quick_fill 处说明）
+        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         l2.addWidget(self.mode_combo)
         l2.addWidget(self.depth_spin)
         opts.addWidget(g2)
@@ -1150,10 +1180,10 @@ class MainWindow(QMainWindow):
 
         def _extra(menu):
             act = menu.addAction("📦 归档下载（zip，免入库）")
-            act.triggered.connect(lambda _=False: self._archive_current_line())
+            act.triggered.connect(self._archive_current_line)   # G69-18：绑定方法
         _rim(self, pos, _fmt_dt, extra_actions=_extra)
 
-    def _archive_current_line(self):
+    def _archive_current_line(self, _checked: bool = False):
         """G48-7：对输入区光标所在行地址执行归档下载到 data/archives/。
 
         G67-2：网络下载在后台线程，但**结果回传必须经信号回到 GUI 线程** ——
@@ -1268,6 +1298,79 @@ class MainWindow(QMainWindow):
         if eng is not None:
             eng._ssh_key_global = key  # noqa: SLF001 - 引擎按批次读该字段
         return key
+
+    def _show_notify_audit(self) -> None:
+        """G67-6：查看通知审计台账（`<data>/notify.log`，字段已打码）。
+
+        该台账记录每一次发送尝试：成功 / 失败 / 因幂等被跳过，以及尝试次数。
+        排查「为什么没收到通知」时先看这里 —— 比翻应用日志快得多。
+        """
+        try:
+            from ..app.notify import read_audit
+            rows = read_audit(self.data_dir, limit=200)
+        except Exception as exc:  # noqa: BLE001
+            rows = []
+            self._emit_log(_fmt_dt(), LogLevel.WARN, f"读取通知审计失败：{exc}")
+        if not rows:
+            body = tr("还没有通知记录。启用 Webhook 并完成一次任务后会出现。")
+        else:
+            lines = []
+            for r in rows:
+                lines.append(
+                    f"{r.get('ts','')}  [{r.get('event','')}]  "
+                    f"ok={r.get('ok','')} fail={r.get('fail','')}  "
+                    f"attempts={r.get('attempts','-')}  {r.get('url','')}")
+            body = "\n".join(lines)
+        # G68-4 同类问题：窗口已关闭/不可见时 `exec()` 会**永久阻塞进程**。
+        # 不可见时退化为写日志（与 `_on_diag_finished` 的处置一致）。
+        if not self._can_show_modal():
+            try:
+                self._emit_log(_fmt_dt(), LogLevel.INFO, tr("通知审计") + "：" + body)
+            except Exception:
+                pass
+            return
+        try:
+            from .diag_dialog import DiagReportDialog
+            DiagReportDialog(tr("通知审计（最近 200 条）"), body, body, self).exec()
+        except Exception as exc:  # noqa: BLE001
+            from PyQt6.QtWidgets import QMessageBox
+            self._emit_log(_fmt_dt(), LogLevel.WARN, f"通知审计对话框打开失败：{exc}")
+            QMessageBox.information(self, tr("通知审计"), body)
+
+    def _on_quick_fill(self, _checked: bool = False) -> None:
+        """G35-7：快捷填充按钮 → 把对应仓库地址追加进输入区。
+
+        G69-18：由 lambda 改为绑定方法。PyQt 对 QObject 的绑定方法用弱引用保存，
+        不会形成「控件→连接→闭包→窗口→控件」的引用环。
+        仓库名经控件属性 `quick_repo` 传入（`self.sender()` 取回）。
+        """
+        btn = self.sender()
+        repo = btn.property("quick_repo") if btn is not None else None
+        if repo:
+            self.repo_input.appendPlainText(f"https://github.com/{repo}")
+
+    def _on_mode_changed(self, index: int) -> None:
+        """克隆模式变化 → 仅「浅克隆」相关档位启用深度微调（G69-18：绑定方法）。"""
+        self.depth_spin.setEnabled(index in (1, 2))
+
+    def _apply_settings_filter(self, keyword: str) -> None:
+        """G69-18：设置页搜索过滤（原为 settings_groups 内的闭包，会捕获 owner 成环）。"""
+        from PyQt6.QtWidgets import QLabel
+        kw = (keyword or "").strip().lower()
+        groups = list(getattr(self, "settings_groups", []) or []) + list(
+            getattr(self, "settings_groups_extra", []) or [])
+        for group in groups:
+            if not kw:
+                group.setVisible(True)
+                continue
+            title = group.title().lower()
+            labels = [lbl.text().lower() for lbl in group.findChildren(QLabel)]
+            group.setVisible(kw in title or any(kw in x for x in labels if x))
+
+    def _toggle_host_tokens_echo(self, checked: bool) -> None:
+        """G44-1：按平台凭据「显示明文」勾选切换掩码（G69-18：绑定方法）。"""
+        self.edit_host_tokens.setEchoMode(
+            QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password)
 
     def _on_adapt_changed(self, n: int, text: str):
         """G48-1：并发自适应状态栏提示。"""

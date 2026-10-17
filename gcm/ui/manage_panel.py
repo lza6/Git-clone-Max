@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import threading
+import weakref
 
 from PyQt6.QtCore import QEvent, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -34,8 +35,20 @@ class ManagePanel(QWidget):
 
     def __init__(self, owner, parent=None):
         super().__init__(parent)
-        self.owner = owner
+        # owner 允许为 None（测试会构造无宿主的面板单独验证数据逻辑）
+        self._owner_ref = (weakref.ref(owner) if owner is not None
+                           else (lambda: None))
         self._build_ui()
+
+    @property
+    def owner(self):
+        """G69-18：**弱引用**持有宿主，避免 Panel↔MainWindow 引用环。
+
+        原实现 `self.owner = owner` 是强引用：MainWindow 持有 Panel、Panel 又持有
+        MainWindow → 环 → 只能靠循环 GC 回收 → 回收时机不可控（可能在 Qt 分发
+        事件中途）→ 原生崩溃。弱引用后窗口由引用计数立即释放。
+        """
+        return self._owner_ref()
 
     def _build_ui(self):
         v = QVBoxLayout(self)

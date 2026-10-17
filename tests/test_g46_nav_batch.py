@@ -39,10 +39,13 @@ class TestBatchOverview(unittest.TestCase):
 
     def _panel(self):
         tmp, db, w = _make_window()
-        try:
-            return w.progress_panel
-        finally:
-            db.close()
+        db.close()
+        # G69-18：返回的是 w 的**子控件**，而 QWidget 的 C++ 生命周期归父对象。
+        # 引用环修好之后 w 会按引用计数立即释放（这是我们要的），
+        # 所以测试必须自己把 w 留到用例结束，否则拿到的是已销毁的 QTableWidget。
+        self.addCleanup(w.close)
+        self._win = w
+        return w.progress_panel
 
     def test_overview_after_results(self):
         panel = self._panel()
