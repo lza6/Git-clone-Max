@@ -330,10 +330,42 @@ Light 下对比度不足）、校验条强制 `PlainText`（用户原文含 `<>`
 2026-10-17  ruff check gcm                                    → All checks passed!
 2026-10-17  mypy gcm                                          → Success（66 文件）
 2026-10-17  unittest 文档新鲜度 + 版本单源 + 打包同步           → Ran 22 tests OK
-2026-10-17  全量快集（coverage）                               → Ran 1122 · failures=0 · errors=0 · skipped=3 · 原生崩溃 0 · 覆盖 81%
+2026-10-18  全量快集（coverage，v9.4.7）                       → Ran 1143 · failures=0 · errors=0 · skipped=3 · 原生崩溃 0 · 覆盖 82%
 ```
 
 ### 10.5 仍未闭环
 
 `G53-1` · `G58-2` · 两个跨进程测试高负载偶发 · CI 未锁 PyQt6。均登记在
 `.agent/memory/known-issues.md` 与 `CLAUDE.md` §6。
+
+
+---
+
+## 11. 盲点扫描与接线（G69-20 · v9.4.7 · 2026-10-17/18）
+
+独立只读代理（AST 符号使用统计 + grep，排除 tests 与 Qt 框架回调）报告 15 项
+「定义了但用户不可达」。**逐条核实后修 8 项、登记 7 项**。
+
+### 11.1 已修（每项都有守卫，`tests/test_g69_wiring_gaps.py` 13 用例）
+
+| # | 缺陷 | 修复 | 证据 |
+|---|------|------|------|
+| 1 | 管理页搜索：`filter_rows` 无控件，`_vis` 写了也没人读 | 搜索框 + `setRowHidden` + 刷新后保持过滤 | 2 用例：隐藏行数、重载后仍生效 |
+| 2 | 过期高亮：`is_stale` 无颜色角色 | `BackgroundRole`/`ForegroundRole` + tooltip；阈值随设置 | 2 用例 |
+| 3 | 日志关键字高亮：`make_highlighter` 零调用 | 安装到 `log_view` | 1 用例 |
+| 4 | `crypto_warning()` 零调用 | 启动写 WARN 日志 | 1 用例（mock 后端文案） |
+| 5 | 收藏/黑名单：无 UI 写入点 | 管理页右键两项（批量切换） | 2 用例（写入 + 可逆） |
+| 6 | Star 导入：`fetch_starred` 无 UI | 输入区按钮 + worker 线程 + 去重回填 | 2 用例（去重、错误分支） |
+| 7 | `CloneWorker.on_line` 只存不用 | `run()` 接到 service，按仓库归属 | 1 用例（stub service） |
+| 8 | AlertScanner 配置构造期固化 | `reconfigure()` + 设置保存即推送 | 1 用例 |
+
+### 11.2 仍未修（已登记 `.agent/memory/known-issues.md`）
+
+`post_clone_hook` 无 UI · `rowsChanged/visChanged` 无 connect（无功能影响）·
+`ScanWorker.progress` 未接 · `check_latest_with_sha` 无调用 ·
+目录隐私检测/迁移无调用 · 5 个只读不写设置字段 · `quick_repos` 无编辑入口与 `depth` 僵尸字段。
+
+### 11.3 发布
+
+版本 `9.4.7`：`__changelog__` 已登记；`pyproject.toml` / `Git-clone-Max.spec` /
+`packaging/installer.iss` / `docs/agent-contract.md` 已同步；版本单源守卫绿。

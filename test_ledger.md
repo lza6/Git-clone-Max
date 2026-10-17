@@ -18,10 +18,10 @@
 | S01 | 原始输入 → URL 解析 | `ui/main_window` 输入区、文件导入 | `app/url_lib.parse_urls` | 跳过 `#` 注释；支持 6 平台 + SSH + 短格式；错误逐条回显 | `test_themes.TestThemeLogAndHighlight.test_maybe_validate_url` · `test_url_lib*` |
 | S02 | 引擎 → git 子进程 | `app/engine` | `git/service.GitService` | `encoding="utf-8", errors="replace"`；`GIT_CONFIG_*` **追加**不覆盖；代理/令牌注入 | `test_g66_patch.TestSubprocessTextDecoding` · `TestG69_18NoGitConfigEnvPollution` |
 | S03 | worker 结果 → SQLite | `app/engine._on_result`（单线程写） | `db/repo_db` | `BEGIN IMMEDIATE` + `busy_timeout=30000`；参数化查询 | `test_g67_closure` · `test_db*` |
-| S04 | DB → UI 模型 | `db/repo_db` | `ui/progress_table` · `ui/manage_model` | 行数/列语义一致；越界补行 | `test_progress_ui` · `test_g67_closure`（重投复用批次上下文） |
+| S04 | DB → UI 模型 | `db/repo_db` | `ui/progress_table` · `ui/manage_model` | 行数/列语义一致；越界补行；**过滤条件必须被视图消费**；过期行有颜色角色 | `test_progress_ui` · `test_g67_closure`（重投复用批次上下文）· `test_g69_wiring_gaps`（过滤/高亮/收藏黑名单） |
 | S05 | 设置控件 → 落盘 | `ui/settings_panel` | `db/settings.SettingsStore` | 每个控件都有保存回调；敏感字段加密（token/host_tokens/ssh_key/**proxy**）；跨进程锁；pid/tid 唯一 tmp 名 | `test_g68_settings_ui` · `test_g67_closure.TestCrossProcessLock` · `TestG69_18WiringClosure` |
-| S06 | 设置字段 → 消费方 | `db/settings.Settings` | 引擎/扫描器/调度器 | **只写不读 = 用户改了没用**；只读不写 = 用户够不到 | `TestG69_18WiringClosure` · `TestG69_18NoZombieSettingsFields`（AST） |
-| S07 | 后台线程 → GUI | `AlertScanner`/`ReportScheduler`/扫描线程 | `ui/main_window` 槽 | 只能 `emit`，槽回主线程；对已销毁 QObject emit 必须被弱引用包装挡住 | `TestG69_18ScanWorkerStopsBeforeEmit` · `TestG69_18LogBufferTimerIsActivityArmed` |
+| S06 | 设置字段 → 消费方 | `db/settings.Settings` | 引擎/扫描器/调度器 | **只写不读 = 用户改了没用**；只读不写 = 用户够不到；告警间隔/IM 改完必须即时生效 | `TestG69_18WiringClosure` · `TestG69_18NoZombieSettingsFields`（AST）· `test_g69_wiring_gaps.TestAlertScannerReconfigure` |
+| S07 | 后台线程 → GUI | `AlertScanner`/`ReportScheduler`/扫描线程/Star 拉取 | `ui/main_window` 槽 | 只能 `emit`，槽回主线程；对已销毁 QObject emit 必须被弱引用包装挡住 | `TestG69_18ScanWorkerStopsBeforeEmit` · `TestG69_18LogBufferTimerIsActivityArmed` · `test_g69_wiring_gaps.TestStarredImport` |
 | S08 | Webhook 发送 | `app/notify.maybe_notify` | 外部 HTTP | 600s 幂等（锁内查重+占位，失败撤销）；审计只记 `scheme://host`；重试 1 次 | `test_g69_notify_hardening`（16，含 40 线程并发） |
 | S09 | 进度持久化 / 续跑 | `app/engine` | `db/progress_file` + `util/filelock` | 原子写（tmp+replace）+ **跨进程**锁；`shutdown` 后不残留 in_progress | `test_g67_closure.TestShutdownClearsInProgress`（高负载偶发） |
 | S10 | 数据目录解析 | `gcm/__main__.get_data_dir()` | 所有模块 | **唯一来源**；安装版必须读 `%APPDATA%`，不得自拼 `<exe>/data` | `TestG69_18DiagnosticsWiring` · `test_g67_closure.TestExtraHostsUsesRealDataDir` |
@@ -40,7 +40,7 @@
 |----|------|------|------|
 | ruff | `python -m ruff check gcm` | **All checks passed** | 2026-10-17 |
 | mypy | `python -m mypy gcm` | **Success**（66 文件） | 2026-10-17 |
-| 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 1122 · failures=0 · errors=0 · skipped=3 · 原生崩溃 0 · 覆盖 81%` | 2026-10-17（v9.4.6） |
+| 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 1143 · failures=0 · errors=0 · skipped=3 · 原生崩溃 0 · 覆盖 82%` | 2026-10-18（v9.4.7） |
 | 连跑稳定性 | 同一命令 ×3 | `1115 / 1115 / 1122`，0 崩溃 | 2026-10-17（已移除 GC 安全网） |
 | CI | GitHub Actions | 7/7 job 绿（windows/ubuntu/macos + e2e + fast + perf + slow） | 2026-10-17 |
 

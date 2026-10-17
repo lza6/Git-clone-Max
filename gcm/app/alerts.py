@@ -274,6 +274,25 @@ class AlertScanner:
         self._stop_evt: Optional[threading.Event] = None
         self._thread: Optional[threading.Thread] = None
 
+    def reconfigure(self, interval_sec: Optional[float] = None,
+                    im_channel: Optional[str] = None,
+                    im_url: Optional[str] = None,
+                    im_token: Optional[str] = None) -> None:
+        """让设置页的修改**立即**作用到运行中的扫描器。
+
+        G69-18：原先 interval / IM 三件套都在构造期固化成实例字段，
+        设置页保存后只有写盘 —— 用户必须重启应用才生效（与「勾了没反应」同类）。
+        循环体每轮重新读取 `self._interval`，因此新间隔从下一轮起生效。
+        """
+        if interval_sec is not None:
+            self._interval = max(1.0, float(interval_sec))
+        if im_channel is not None:
+            self._im_channel = str(im_channel or "").strip()
+        if im_url is not None:
+            self._im_url = str(im_url or "").strip()
+        if im_token is not None:
+            self._im_token = str(im_token or "").strip()
+
     def scan_once(self, now: Optional[float] = None) -> list[dict[str, Any]]:
         """执行一次扫描并应用 24h 去重；返回本次实际触发的告警。"""
         now = now or self._now_fn()

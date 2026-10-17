@@ -18,6 +18,39 @@
 | `G58-3` 代理凭据 | **已闭环**：`proxy` 已加密落盘（`_encrypt_token` / `_decrypt_or_keep`）；完整代理 URL 直接注入 `http_proxy`，git 原生支持 `user:pass@host` | `gcm/db/settings.py:366,407-409`；`gcm/git/service.py:492-494` |
 | `G54-4` 引导清单 | **已闭环**（v9.4.3） | `gcm/ui/checklist.py`；`tests/test_g69_checklist.py` |
 
+## G69-20 盲点扫描（2026-10-17）
+
+> 独立只读代理做 AST + grep 全量扫描，找出 15 项「定义了但用户不可达」。
+> **已修 8 项**（有 `tests/test_g69_wiring_gaps.py` 守卫），**仍在 7 项**。
+
+### 已修
+
+| # | 问题 | 修法 |
+|---|------|------|
+| 1 | `filter_rows` 有定义、无控件，且 `_vis` 从未被视图消费 | 管理页搜索框 + `setRowHidden` + 刷新后保持过滤 |
+| 2 | `is_stale` 有定义，`data()` 无颜色角色 | `BackgroundRole`/`ForegroundRole` + tooltip |
+| 3 | 日志「关键字高亮」未安装 | 设置页安装 `make_highlighter` |
+| 4 | `crypto_warning()` 从不调用 | 启动写 WARN 日志 |
+| 5 | `set_favorite`/`set_excluded` 无 UI 写入点 | 管理页右键菜单两项（批量切换） |
+| 6 | `fetch_starred` 无 UI 入口 | 输入区「⭐ 导入 Star」+ 工作线程 + 去重回填 |
+| 7 | `CloneWorker.on_line` 从未使用（所有输出记到 index=0） | `run()` 把外部回调接到 service |
+| 8 | AlertScanner 间隔/IM 构造期固化，改完要重启 | `reconfigure()` + 设置保存即推送 |
+
+### 仍未修（已登记）
+
+| # | 问题 | 影响 | 建议 |
+|---|------|------|------|
+| 9 | `post_clone_hook` 只读不写（无 UI） | 正常 UI 无法启用克隆后钩子 | 加设置项前先确认是否允许执行任意 shell |
+| 10 | `manage_model.rowsChanged/visChanged` 无 connect | 无功能影响（视图自己刷新） | 可删信号或接状态栏 |
+| 11 | `ScanWorker.progress` 已 emit 但对话框未接 | 本地扫描进度条是不确定态 | 接 `progress` → 确定进度 |
+| 12 | `check_latest_with_sha` 无调用 | 更新提示不展示 sha256 | 低价值，可删 |
+| 13 | `is_data_dir_private` / `migrate_data_dir` 无调用 | 目录隐私提示与迁移不可达 | 需产品决策 |
+| 14 | 只读不写字段：`clone_timeout` / `minimize_to_tray` / `watchdog_silent` / `sched_report_format` / `retry_backoff_base_sec` | 只能手改 settings.json | 逐项补 UI 或删字段 |
+| 15 | `quick_repos` 无编辑入口；`depth` 字段完全无引用 | 只能手改 settings.json | 补编辑对话框 / 删 `depth` |
+
+其余仅测试引用的内部函数（`token.py`、`slow_remote_hint`、`backup_to`、`TaskLists.delete` 等）
+记录在 `workflow_status.md` §11，未删除 —— 删代码前需确认没有外部脚本依赖。
+
 ## 已知不稳定
 
 | 项 | 现象 | 频率 | 说明 |

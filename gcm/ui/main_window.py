@@ -112,6 +112,8 @@ class MainWindow(QMainWindow):
     # G69-18：阈值告警命中（list[dict]）—— AlertScanner 在后台线程扫描，
     # 只 emit；通知/日志/状态栏一律回 GUI 线程执行（QObject 线程亲和性）。
     alerts_fired = pyqtSignal(list)
+    # G35-10：Star 列表拉取结束（repos, error）—— 网络在 worker 线程，回填在 GUI 线程。
+    starred_fetched = pyqtSignal(list, str)
 
     def __init__(self, data_dir: str | Path, db: Database | None = None,
                  settings: SettingsStore | None = None,
@@ -190,6 +192,8 @@ class MainWindow(QMainWindow):
         self._log_line.connect(self._emit_log)
         # G69-18：告警命中 → GUI 线程弹通知 + 写日志
         self.alerts_fired.connect(self._on_alerts_fired)
+        # G35-10：Star 列表拉取结束 → 回填输入区（网络在 worker 线程）
+        self.starred_fetched.connect(self._on_starred_fetched)
 
         # G05-1 应用持久化主题（默认 deep）+ G10-1 字号缩放
         from ..ui import theme as _th
@@ -307,6 +311,17 @@ class MainWindow(QMainWindow):
         # 勾了等于没勾。现按设置真实启动，并在 closeEvent 里随窗口收敛。
         self.report_scheduler = None
         self._start_report_scheduler()
+
+        # 凭据存储强度：`crypto_warning()` 会说明当前环境是否只做了「可逆混淆」。
+        # 该函数早已实现却从未被调用 —— 而 README 无条件宣称「token 加密落盘」。
+        # 兜底后端（xorfixed）下必须让用户在日志里看得见。
+        try:
+            from ..db.settings import crypto_warning
+            _warn = crypto_warning()
+            if _warn:
+                self._emit_log(_fmt_dt(), LogLevel.WARN, "凭据存储：" + _warn)
+        except Exception:
+            pass
 
         # G52-2：启动续跑对话框由 show 后统一调度（_schedule_resume_check），
         # 不在 __init__ 裸调度——避免 closeEvent/drain 泵事件时误弹阻塞对话框。
@@ -751,6 +766,14 @@ class MainWindow(QMainWindow):
         quick.addWidget(self.btn_save_list)
         quick.addWidget(self.combo_load_list)
         quick.addWidget(self.btn_load_list)
+        # G35-10 GitHub Star 列表导入：`gh_api.fetch_starred` 早已实现（含分页与
+        # 错误语义），但此前**没有任何 UI 入口** —— 帮助文档与 README 却宣称
+        # 「设置页可一键导入」。这里补真实入口，网络请求走 worker 线程。
+        self.btn_star_import = QPushButton(tr("⭐ 导入 Star"))
+        self.btn_star_import.setToolTip(
+            tr("按 GitHub 用户名拉取 Star 列表并填入输入区（需要时在设置页填写令牌）"))
+        self.btn_star_import.clicked.connect(self.import_starred)
+        quick.addWidget(self.btn_star_import)
         b.addLayout(quick)
         v.addWidget(box)
 
@@ -1475,6 +1498,71 @@ class MainWindow(QMainWindow):
         repo = btn.property("quick_repo") if btn is not None else None
         if repo:
             self.repo_input.appendPlainText(f"https://github.com/{repo}")
+
+    # ------------------------------------------------------------ G35-10 Star 导入
+    def import_starred(self) -> None:
+        """按 GitHub 用户名拉取 Star 列表并追加进输入区。
+
+        网络 I/O 在 daemon 线程执行，结果经 `starred_fetched` 信号回到 GUI 线程
+        （跨线程 emit 自动 QueuedConnection）。`fetch_starred` 自带分页与
+        「返回已拉部分 + 错误信息」语义，不抛异常。
+        """
+        if getattr(self, "_star_busy", False):
+            self._emit_log(_fmt_dt(), LogLevel.INFO, tr("Star 列表正在拉取，请稍候"))
+            return
+        user, ok = QInputDialog.getText(
+            self, tr("导入 GitHub Star"),
+            tr("GitHub 用户名（github.com/ 后面那段）："),
+            text=str(getattr(self, "_last_star_user", "") or ""))
+        user = (user or "").strip()
+        if not ok or not user:
+            return
+        self._last_star_user = user
+        self._star_busy = True
+        token = str(getattr(self.settings, "token", "") or "").strip()
+        self._emit_log(_fmt_dt(), LogLevel.INFO, tr("正在拉取 Star 列表…"))
+        # 不把 self 捕进闭包：只捕信号与局部变量；线程结束后闭包随之释放。
+        sig = self.starred_fetched
+
+        def _run() -> None:
+            # 兜底：`fetch_starred` 内部已把网络异常转成 (partial, err)，
+            # 但畸形 JSON（例如顶层是数字/字符串）仍可能在解析时抛 TypeError。
+            # 不兜住的话信号永远不发，`_star_busy` 会卡死，用户再点也没反应。
+            try:
+                from ..app.gh_api import fetch_starred
+                repos, err = fetch_starred(user, token)
+            except Exception as exc:  # noqa: BLE001 —— 线程边界，必须转成结果
+                repos, err = [], str(exc)
+            sig.emit(repos, err)
+
+        threading.Thread(target=_run, daemon=True, name="gcm-star-fetch").start()
+
+    @pyqtSlot(list, str)
+    def _on_starred_fetched(self, repos, err) -> None:
+        """Star 拉取结束（GUI 线程）：去重后回填输入区。"""
+        self._star_busy = False
+        if err:
+            self._emit_log(_fmt_dt(), LogLevel.WARN, tr("Star 列表获取失败") + "：" + err)
+        names = [str(x).strip() for x in (repos or []) if str(x).strip()]
+        if not names:
+            if not err:
+                self._emit_log(_fmt_dt(), LogLevel.INFO, tr("该用户没有 Star 仓库"))
+            return
+        current = self.repo_input.toPlainText().splitlines()
+        seen = {ln.strip().lower() for ln in current if ln.strip()}
+        added = []
+        for name in names:
+            key = name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            added.append(name)
+        if not added:
+            self._emit_log(_fmt_dt(), LogLevel.INFO, tr("Star 列表均已存在于输入区"))
+            return
+        text = self.repo_input.toPlainText().rstrip()
+        self.repo_input.setPlainText((text + "\n" if text else "") + "\n".join(added))
+        self._emit_log(_fmt_dt(), LogLevel.INFO, tr("已导入 Star 仓库到输入区"))
 
     def _on_mode_changed(self, index: int) -> None:
         """克隆模式变化 → 仅「浅克隆」相关档位启用深度微调（G69-18：绑定方法）。"""

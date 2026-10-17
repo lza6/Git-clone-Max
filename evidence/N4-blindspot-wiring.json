@@ -1,0 +1,61 @@
+{
+  "task_id": "N4-blindspot-wiring",
+  "goal": "独立只读代理的盲点扫描结果 → 逐条核实 → 修复可安全修复项并补守卫",
+  "status": "done",
+  "date": "2026-10-17/18",
+  "source": "独立 Explore 代理（AST 符号使用统计 + grep，排除 tests 与 Qt 框架回调）",
+  "findings_total": 15,
+  "fixed": 8,
+  "open": 7,
+  "commands": [
+    {"cmd": "ruff check gcm", "exit_code": 0, "output_tail": "All checks passed!"},
+    {"cmd": "mypy gcm", "exit_code": 0, "output_tail": "Success: no issues found in 66 source files"},
+    {"cmd": "unittest tests.test_g69_wiring_gaps", "exit_code": 0, "output_tail": "Ran 13 tests ... OK"},
+    {"cmd": "unittest 受影响回归 8 模块", "exit_code": 0, "output_tail": "Ran 191 tests ... OK (skipped=1)"},
+    {"cmd": "unittest tests.test_engine tests.test_local_dialog tests.test_g69_notify_hardening", "exit_code": 0, "output_tail": "Ran 50 tests ... OK"},
+    {"cmd": "unittest tests.test_g53_extra tests.test_g53_scorecards tests.test_g59_im_notify tests.test_g68_settings_ui", "exit_code": 0, "output_tail": "Ran 55 tests ... OK"}
+  ],
+  "files_changed": [
+    "gcm/ui/manage_model.py（is_visible / stale_days / 颜色角色 / 缓存）",
+    "gcm/ui/manage_panel.py（搜索框 + setRowHidden + 收藏/黑名单右键菜单）",
+    "gcm/ui/settings_panel.py（安装 highlighter + _apply_alert_config）",
+    "gcm/ui/main_window.py（crypto_warning 日志 + Star 导入按钮/信号/槽）",
+    "gcm/app/alerts.py（AlertScanner.reconfigure）",
+    "gcm/app/worker.py（on_line 真正接到 service）",
+    "gcm/i18n/zh.py / en.py（16 个新文案 key）",
+    "tests/test_g69_wiring_gaps.py（13 用例）",
+    "README.md（token 加密措辞按真实后端校准）"
+  ],
+  "tests": {"ran": 13, "failures": 0, "errors": 0},
+  "coverage": null,
+  "seams_touched": ["S04-db-ui", "S05-settings", "S07-thread-gui", "S01-url-input"],
+  "mock_scenarios": [
+    "crypto_warning 被 mock 为固定文案，验证启动日志确实写入",
+    "Star 拉取不触网：直接测 _on_starred_fetched 的回填/去重/错误分支"
+  ],
+  "verdicts": {
+    "fixed": [
+      "管理页搜索过滤（原 filter_rows 无控件且 _vis 无人消费）",
+      "过期高亮（原 is_stale 无颜色角色）",
+      "日志关键字高亮（原 make_highlighter 零调用）",
+      "crypto_warning 启动告警（原零调用）",
+      "收藏/黑名单 UI 写入点（原 set_favorite/set_excluded 无入口）",
+      "GitHub Star 导入入口（原 fetch_starred 无 UI）",
+      "CloneWorker.on_line 归属（原全部记到 index=0）",
+      "AlertScanner 配置即时生效（原构造期固化）"
+    ],
+    "open": [
+      "post_clone_hook 无 UI（需先决定是否允许执行任意 shell）",
+      "ManageModel.rowsChanged/visChanged 无 connect（无功能影响）",
+      "ScanWorker.progress 未接（扫描进度条为不确定态）",
+      "check_latest_with_sha 无调用（低价值）",
+      "is_data_dir_private / migrate_data_dir 无调用（需产品决策）",
+      "5 个只读不写设置字段",
+      "quick_repos 无编辑入口；depth 字段完全无引用"
+    ]
+  },
+  "limitations": [
+    "Star 导入的真实网络路径未在离线环境跑；已测 GUI 侧回填与错误分支，网络层由既有 gh_api 单测覆盖",
+    "未在真实桌面上目视确认颜色对比度（offscreen 只能断言角色有值）"
+  ]
+}

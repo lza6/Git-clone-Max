@@ -1,0 +1,42 @@
+{
+  "task_id": "N6-final-fast-suite",
+  "goal": "v9.4.7 最终全量快集（盲点接线 + 覆盖率补齐后）",
+  "status": "done",
+  "date": "2026-10-18",
+  "runs": [
+    {
+      "run": 1,
+      "note": "首次最终运行：1 个失败（文档引用了尚未创建的 evidence 文件）",
+      "tests": 1136,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 3,
+      "failure_module": "test_g67_docs_freshness",
+      "failure_reason": "docs/验证记录-2026-10-17.md 引用了尚未创建的 evidence/N6-final-fast-suite.json（守卫正确拦截）",
+      "resolution": "创建本文件后该模块复跑 Ran 11 tests OK"
+    },
+    {
+      "run": 2,
+      "note": "覆盖率补齐后最终运行（本条为准）",
+      "command": "QT_QPA_PLATFORM=offscreen python -m coverage run --source=gcm scripts/ci_run_fast.py && python -m coverage report --include=\"gcm/*\"",
+      "exit_code": 0,
+      "tests": 1143,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 3,
+      "native_crashes": 0,
+      "coverage": 0.82,
+      "coverage_detail": "TOTAL 10085 stmts · 1607 miss · 2508 branch · 430 BrPart · 82%",
+      "why_rerun": "新增 8 项接线使覆盖率降到 80%（Windows 门禁 81）→ 补 8 条真实回调/线程用例后回到 82%"
+    }
+  ],
+  "seams_touched": ["全部（回归）"],
+  "mock_scenarios": [
+    "Star 拉取：mock fetch_starred 返回结果，验证 worker 线程 emit 后回填输入区",
+    "代理检测：mock detect_system_proxy 的空/非空两个分支"
+  ],
+  "limitations": [
+    "覆盖率是快集口径（Windows 门禁 81%），不是全量口径",
+    "未跑慢集与 perf-baseline；由 CI 的 slow / perf-baseline job 承接"
+  ]
+}

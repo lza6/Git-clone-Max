@@ -73,6 +73,9 @@
   结果是：<strong>12 条已闭环、2 条仍未闭环、1 条判定不适用</strong>；
   `计划书/` 目录完成归档后删除；同时补上了让这类判断可重复执行的骨架
   （`policy.md` / `test_ledger.md` / `evidence/`）。
+  <br><br>
+  另外做了一次独立盲点扫描，抓到 <strong>15 项「代码写了但用户够不到」</strong>，
+  本轮修掉 <strong>8 项</strong>并各配守卫，其余 7 项如实登记。
 </div>
 
 <h2>一、为什么这件事不能只看文档</h2>
@@ -196,7 +199,7 @@ rmdir 计划书
 <pre><code>ruff check gcm                                   → All checks passed!
 mypy gcm                                         → Success（66 文件）
 unittest 文档新鲜度 + 版本单源 + 打包同步          → Ran 22 tests OK
-全量快集（coverage）                            → Ran 1122 · failures=0 · errors=0 · skipped=3 · 原生崩溃 0 · 覆盖 81%</code></pre>
+全量快集（coverage）                            → Ran 1143 · failures=0 · errors=0 · skipped=3 · 原生崩溃 0 · 覆盖 82%（证据见 evidence/N6-final-fast-suite.json）</code></pre>
 
 <div class="card warn">
   <strong>守卫这一轮抓到了我自己两处问题（没有放水）：</strong>
@@ -209,8 +212,51 @@ unittest 文档新鲜度 + 版本单源 + 打包同步          → Ran 22 tests
   </div>
 </div>
 
-<h2>八、测验（必须通过）</h2>
-<p class="sub">7 题，答完点提交。<strong>需要全对</strong>。</p>
+<h2>八、盲点扫描：15 项「写了但用户够不到」</h2>
+
+<p>计划文档审计之外，又跑了一次独立只读扫描（AST 符号使用统计 + grep，排除测试与 Qt 框架回调）。
+结果和文档审计是<strong>同一种病</strong>：代码写好了，但没有人调用它。</p>
+
+<h3>8.1 已修 8 项（每项都有守卫）</h3>
+<table>
+  <tr><th>缺陷</th><th>为什么用户够不到</th><th>修法</th></tr>
+  <tr><td>管理页搜索</td><td><code>filter_rows</code> 没有控件；它写下的 <code>_vis</code> 也从没被视图读过 —— 等于完全没实现</td>
+      <td>搜索框 + <code>setRowHidden</code> + 刷新后保持过滤</td></tr>
+  <tr><td>过期高亮</td><td><code>is_stale</code> 有布尔结果，<code>data()</code> 却没有颜色角色</td>
+      <td>背景/前景角色 + tooltip，阈值跟随设置</td></tr>
+  <tr><td>日志关键字高亮</td><td><code>make_highlighter</code> 从未安装到日志视图</td>
+      <td>安装到 <code>log_view.document()</code></td></tr>
+  <tr><td>凭据存储强度提示</td><td><code>crypto_warning()</code> 从未被调用，用户以为一定加密</td>
+      <td>启动写 WARN 日志</td></tr>
+  <tr><td>收藏 / 黑名单</td><td><code>set_favorite</code>/<code>set_excluded</code> 没有直接 UI 写入点</td>
+      <td>管理页右键菜单（批量切换）</td></tr>
+  <tr><td>GitHub Star 导入</td><td><code>fetch_starred</code> 无 UI 入口，但 README/帮助都宣称有</td>
+      <td>输入区「⭐ 导入 Star」+ worker 线程 + 去重回填</td></tr>
+  <tr><td>git 输出归属</td><td><code>CloneWorker.on_line</code> 只保存不使用 → 所有仓库的输出都记到第 0 行</td>
+      <td><code>run()</code> 把外部回调接到 service</td></tr>
+  <tr><td>告警配置</td><td>间隔/IM 在构造期固化，设置页保存后要重启才生效</td>
+      <td><code>reconfigure()</code> + 保存即推送</td></tr>
+</table>
+
+<h3>8.2 仍未修 7 项（已登记，不冒充完成）</h3>
+<p class="sub">
+<code>post_clone_hook</code> 无 UI · <code>rowsChanged/visChanged</code> 无 connect（无功能影响）·
+<code>ScanWorker.progress</code> 未接 · <code>check_latest_with_sha</code> 无调用 ·
+目录隐私检测/迁移无调用 · 5 个只读不写字段 · <code>quick_repos</code> 无编辑入口与 <code>depth</code> 僵尸字段。
+逐条在 <code>.agent/memory/known-issues.md</code>。
+</p>
+
+<div class="card bad">
+  <strong>同一个失效模式，第二次出现：</strong>
+  <div class="why">
+    上一轮是「计划文档说 ✅，但 UI 没有入口」；这一轮是「函数写好了，但生产代码没有调用点」。
+    共同点：<b>验证的是「代码存在」，不是「用户路径通」</b>。
+    所以这一轮补的不是功能，而是<b>判定标准</b>（<code>policy.md</code> / <code>test_ledger.md</code> / <code>evidence/</code>）。
+  </div>
+</div>
+
+<h2>九、测验（必须通过）</h2>
+<p class="sub">9 题，答完点提交。<strong>需要全对</strong>。</p>
 
 <div class="quiz" id="quiz">
   <div class="q" data-answer="c">
@@ -267,6 +313,22 @@ unittest 文档新鲜度 + 版本单源 + 打包同步          → Ran 22 tests
     <label class="opt"><input type="radio" name="q7" value="b">B. 因为它们不重要</label>
     <label class="opt"><input type="radio" name="q7" value="c">C. 因为前者需要 <b>DB 迁移 + 回填</b>（T3），后者需要<b>改变设置模型</b>（每 host 多候选）—— 都属产品决策，不应当在文档审计里顺手改</label>
     <div class="fb" data-good="对。把它们保留并写清「为什么不做、需要什么才能做」，比仓促实现更诚实。" data-bad="不对。关键是需要产品决策与迁移，不是难度。"></div>
+  </div>
+
+  <div class="q" data-answer="b">
+    <div class="stem">8. 一个函数存在、单测全绿，为什么仍可能「用户完全够不到」？</div>
+    <label class="opt"><input type="radio" name="q8" value="a">A. 因为单测可能写错了</label>
+    <label class="opt"><input type="radio" name="q8" value="b">B. 因为测试可以直接调用它，而生产路径可能没有控件、没有 connect、没有调用点</label>
+    <label class="opt"><input type="radio" name="q8" value="c">C. 因为函数名不好看</label>
+    <div class="fb" data-good="对。这一轮 15 项里绝大多数都是这个形态：逻辑正确，接线为零。" data-bad="不对。问题在「被测到」和「被用户走到」是两件事。"></div>
+  </div>
+
+  <div class="q" data-answer="a">
+    <div class="stem">9. 修管理页搜索时发现：<code>filter_rows</code> 会写 <code>_vis</code>，但 <code>rowCount</code>/<code>data</code> 从不读它。这说明什么？</div>
+    <label class="opt"><input type="radio" name="q9" value="a">A. 「有过滤函数」不等于「过滤生效」—— 视图必须消费结果（这里用 <code>setRowHidden</code>）</label>
+    <label class="opt"><input type="radio" name="q9" value="b">B. 只要函数返回了正确数字就算完成</label>
+    <label class="opt"><input type="radio" name="q9" value="c">C. 应该删掉这个函数</label>
+    <div class="fb" data-good="对。判定标准是「用户看到的行为变了」，不是「函数被调用了」。" data-bad="不对。返回正确数字只是中间结果，没接到视图上就是零。"></div>
   </div>
 
   <div class="score">

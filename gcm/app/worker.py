@@ -82,11 +82,21 @@ class CloneWorker(QRunnable):
                     action=SyncAction.FETCHED, message="更新中…"))
             # 复用传入的 service；若外部未配置浅克隆语义则按 payload 深度覆盖
             svc = self.service
+            # G69-20：把**本 worker** 的行回调接到 service 上。
+            # 此前 `on_line` 参数只被保存、从未使用：所有输出都走引擎
+            # `_service()` 里固定 `index=0` 的 lambda —— 多仓库并发时
+            # 每个仓库的 git 输出全部记到第 0 行（日志归属错误）。
+            if self._external_line is not None:
+                try:
+                    svc.on_line = self._external_line
+                except Exception:
+                    pass
             # 进度附加文本（速率/对象数）注入点：把解析结果透传给本 worker 的进度详情信号
             svc.send_progress_detail = self._emit_progress_detail
             if svc.fetch_depth != self._fetch_depth or svc.unshallow != self._unshallow:
                 svc = GitService(
-                    svc.root, on_line=svc.on_line, cancelled=svc.cancelled,
+                    svc.root, on_line=self._external_line or svc.on_line,
+                    cancelled=svc.cancelled,
                     fetch_timeout=svc.fetch_timeout, clone_timeout=svc.clone_timeout,
                     retries=svc.retries, backoff=svc._backoff, proxy=svc.proxy,
                     fetch_depth=self._fetch_depth, unshallow=self._unshallow,

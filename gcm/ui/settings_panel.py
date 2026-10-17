@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import (
 
 from ..i18n import tr  # G49-1
 from . import main_window as _mw  # noqa: F401 - 迁移回调引用 main_window 模块级符号
-from .theme import LogLevel
+from .theme import LogLevel, make_highlighter
 
 if TYPE_CHECKING:  # 仅类型标注（避免循环导入）
     pass
@@ -58,6 +58,12 @@ def build_log_box(owner: MainWindow) -> QGroupBox:
     owner.log_view.setMaximumBlockCount(4000)
     owner.log_view.setMinimumHeight(100)
     l2.addWidget(owner.log_view, 1)
+    # 关键字高亮：`theme.make_highlighter` 早已实现，但此前从未安装到日志视图
+    # （README 宣称的「关键字高亮」实际不可见）。保留在 owner 上，避免包装对象被回收。
+    try:
+        owner.log_highlighter = make_highlighter(owner.log_view.document())
+    except Exception:
+        owner.log_highlighter = None
     return g2
 
 
@@ -103,6 +109,21 @@ class SettingsPanel(QWidget):
         return out
 
     # ---- G53 数据洞察保存（评分卡/告警/历史保留/定时报表）
+    def _apply_alert_config(self):
+        """把当前设置推给运行中的 AlertScanner（间隔/IM 渠道即时生效）。"""
+        scanner = getattr(self.owner, "alert_scanner", None)
+        if scanner is None:
+            return
+        s = self.owner.settings
+        try:
+            scanner.reconfigure(
+                interval_sec=max(60.0, float(getattr(s, "g53_alerts_interval_min", 60) or 60)) * 60.0,
+                im_channel=str(getattr(s, "alert_im_channel", "") or ""),
+                im_url=str(getattr(s, "alert_im_url", "") or ""),
+                im_token=str(getattr(s, "alert_im_token", "") or ""))
+        except Exception:
+            pass
+
     def _save_g53_alerts(self, checked):
         """G69-18：切换告警开关必须真实启停扫描器。
 
@@ -113,6 +134,7 @@ class SettingsPanel(QWidget):
         scanner = getattr(self.owner, "alert_scanner", None)
         if scanner is None:
             return
+        self._apply_alert_config()
         try:
             scanner.start() if checked else scanner.stop()
         except Exception:
@@ -121,6 +143,7 @@ class SettingsPanel(QWidget):
     def _save_g53_interval(self, value):
         self.owner.settings.g53_alerts_interval_min = int(value)
         self.owner.settings_store.save(self.owner.settings)
+        self._apply_alert_config()
 
     def _save_g53_history(self, value):
         self.owner.settings.history_retention_days = int(value)
@@ -202,6 +225,7 @@ class SettingsPanel(QWidget):
         self.owner.settings.alert_im_url = url.text().strip() if url else ""
         self.owner.settings.alert_im_token = tok.text().strip() if tok else ""
         self.owner.settings_store.save(self.owner.settings)
+        self._apply_alert_config()
 
     def _save_g53_stale_days(self, value):
         self.owner.settings.g53_alerts_stale_days = int(value)

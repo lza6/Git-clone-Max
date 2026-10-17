@@ -51,6 +51,10 @@ class ManageModel(QAbstractItemModel):
         self._vis: list[bool] = []
         self.db = db  # G47-1 健康度懒加载数据源
         self._health_cache: dict[int, int] = {}
+        # 过期判定缓存：`data()` 每格每角色都会问一次，避免重复解析时间字符串。
+        self._stale_cache: dict[tuple[int, int], bool] = {}
+        # G03-6 过期高亮阈值：由管理面板按设置覆盖，默认 30 天。
+        self.stale_days: int = 30
         if rows:
             self.set_rows(rows)
         else:
@@ -84,6 +88,7 @@ class ManageModel(QAbstractItemModel):
 
     def _sync_vis(self):
         self._vis = [True] * len(self._rows)
+        self._stale_cache = {}
 
     def row_at(self, row: int) -> Optional[ManageRow]:
         if 0 <= row < len(self._rows):
@@ -110,16 +115,30 @@ class ManageModel(QAbstractItemModel):
         """
         return " · ".join(f"{host}: {n}" for host, n in self.host_counts().items())
 
-    def is_stale(self, row: int, days: int = 30) -> bool:
-        """该行是否「超过 days 天未同步」（G03-6 过期高亮）。"""
+    def is_stale(self, row: int, days: Optional[int] = None) -> bool:
+        """该行是否「超过 days 天未同步」（G03-6 过期高亮）。
+
+        `days` 省略时用 `self.stale_days`（由管理面板从设置写入，默认 30）。
+        """
+        limit = self.stale_days if days is None else days
         r = self.row_at(row)
         if r is None or not r.last_sync_at:
             return False
+        key = (row, int(limit))
+        cached = self._stale_cache.get(key)
+        if cached is not None:
+            return cached
         try:
             last = datetime.datetime.strptime(r.last_sync_at[:19], "%Y-%m-%d %H:%M:%S")
-            return (datetime.datetime.now() - last).days > days
+            result = (datetime.datetime.now() - last).days > limit
         except Exception:
-            return False
+            result = False
+        self._stale_cache[key] = result
+        return result
+
+    def is_visible(self, row: int) -> bool:
+        """该行是否通过当前过滤条件（G03-1；由视图 `setRowHidden` 消费）。"""
+        return bool(0 <= row < len(self._vis) and self._vis[row])
 
     def filter_rows(self, query: str) -> int:
         """按仓库名/owner/repo/host/tags 过滤行；返回可见行数（G03-1）。"""
@@ -191,7 +210,24 @@ class ManageModel(QAbstractItemModel):
                       (r.last_sync_at if col == 3 else
                        (r.head_sha if col == 4 else "")))))
         if role == Qt.ItemDataRole.ToolTipRole and col == 0:
-            return r.url or r.local_path
+            tip = r.url or r.local_path
+            if self.is_stale(index.row()):
+                tip = f"{tip}\n超过 {self.stale_days} 天未同步"
+            return tip
+        # G03-6 过期高亮：背景淡色 + 任意列 tooltip 说明（原先 is_stale 定义了却
+        # 没有任何颜色角色——README 宣称的「过期高亮」实际不可见）。
+        if role == Qt.ItemDataRole.BackgroundRole and self.is_stale(index.row()):
+            from PyQt6.QtGui import QBrush, QColor
+
+            from .theme import current_palette
+            color = QColor(str(current_palette().get("warning", "#d29922")))
+            color.setAlpha(38)
+            return QBrush(color)
+        if role == Qt.ItemDataRole.ForegroundRole and self.is_stale(index.row()):
+            from PyQt6.QtGui import QColor
+
+            from .theme import current_palette
+            return QColor(str(current_palette().get("warning", "#d29922")))
         return None
 
 

@@ -14,12 +14,14 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QPushButton,
     QTableView,
     QVBoxLayout,
     QWidget,
 )
 
+from ..i18n import tr
 from . import main_window as _mw  # 兼容测试对 main_window.QMessageBox 等模块级 patch
 from .theme import LogLevel
 
@@ -60,6 +62,14 @@ class ManagePanel(QWidget):
         self.manage_stats = QLabel("共 0 个仓库")
         self.manage_stats.setObjectName("muted")
         top.addWidget(self.manage_stats)
+        # G03-1 管理页搜索过滤：此前 `ManageModel.filter_rows` 定义了却**没有任何控件**，
+        # 而且它写下的 `_vis` 也从没被视图消费 —— README 宣称的「搜索过滤」实际不存在。
+        self._filter_text = ""
+        self.manage_search = QLineEdit()
+        self.manage_search.setPlaceholderText(tr("搜索仓库 / 作者 / 标签 / host"))
+        self.manage_search.setClearButtonEnabled(True)
+        self.manage_search.setMaximumWidth(240)
+        top.addWidget(self.manage_search)
         top.addStretch()
         self.btn_update_all = QPushButton("一键更新全部")
         self.btn_update_all.setObjectName("primary")
@@ -105,7 +115,15 @@ class ManagePanel(QWidget):
 
         # 模型化视图：数据与视图解耦，大批量行不卡（共享按钮 + 懒加载）
         from .manage_model import ManageModel
-        self.manage_model = ManageModel(parent=self, db=self.owner.db)
+        self.manage_model = ManageModel(parent=self, db=getattr(self.owner, "db", None))
+        # 过期高亮阈值跟随设置（只读消费；设置页已有 g53_alerts_stale_days 控件）。
+        try:
+            self.manage_model.stale_days = int(
+                getattr(getattr(self.owner, "settings", None),
+                        "g53_alerts_stale_days", 30) or 30)
+        except Exception:
+            self.manage_model.stale_days = 30
+        self.manage_search.textChanged.connect(self._on_manage_search)
         self.manage_table = QTableView()
         self.manage_table.setModel(self.manage_model)
         # G47-1/5 健康 + 大小列（末两列，原 0-5 列语义不变）
@@ -159,15 +177,7 @@ class ManagePanel(QWidget):
     def _load_db_into_grid(self):
         """从 DB 加载仓库列表到模型（全 host，含本地导入仓库；批量懒渲染）。"""
         self.manage_model.set_rows(self.owner.db.list_repos())
-        base = f"共 {self.manage_model.rowCount()} 个仓库"
-        # G35-6 平台分布：内存聚合（host_summary 由 manage_model 提供）
-        try:
-            hs = self.manage_model.host_summary()
-            if hs:
-                base += f" ｜ {hs}"
-        except Exception:
-            pass
-        self.manage_stats.setText(base)
+        self._apply_manage_filter()
         # G36-5 管理页空态：无仓库时显示引导 overlay
         try:
             ov = getattr(self, "_empty_manage", None)
@@ -181,6 +191,38 @@ class ManagePanel(QWidget):
             pass
         # G47-5 懒加载磁盘大小
         self._start_size_loader()
+
+    # ------------------------------------------------------------ G03-1 搜索过滤
+    def _on_manage_search(self, text: str) -> int:
+        self._filter_text = (text or "").strip()
+        return self._apply_manage_filter()
+
+    def _apply_manage_filter(self, visible: int | None = None) -> int:
+        """应用当前过滤词到视图（`is_visible` 判定 + `setRowHidden`）。
+
+        模型保留原始行号：删除/历史/打标签等动作仍按源行索引工作，
+        不需要在代理模型与源模型之间来回映射。
+        """
+        n = self.manage_model.filter_rows(getattr(self, "_filter_text", ""))
+        for row in range(len(self.manage_model)):
+            self.manage_table.setRowHidden(row, not self.manage_model.is_visible(row))
+        self._update_manage_stats(n if visible is None else visible)
+        return n
+
+    def _update_manage_stats(self, visible: int | None = None) -> None:
+        total = self.manage_model.rowCount()
+        base = f"共 {total} 个仓库"
+        try:
+            hs = self.manage_model.host_summary()
+            if hs:
+                base += f" ｜ {hs}"
+        except Exception:
+            pass
+        q = getattr(self, "_filter_text", "")
+        if q:
+            shown = total if visible is None else visible
+            base += f" ｜ {tr('筛选')}「{q}」：{shown}"
+        self.manage_stats.setText(base)
 
     def _refresh_manage(self):
         self.owner._load_db_into_grid()
@@ -310,13 +352,66 @@ class ManagePanel(QWidget):
         act_tag.triggered.connect(lambda _=False: self.batch_tag_selected())
         act_export = menu.addAction("导出所选 CSV")
         act_export.triggered.connect(lambda _=False: self.export_selected_csv())
+        # G03 收藏置顶 / 黑名单：`set_favorite` / `set_excluded` 早已存在且被
+        # `list_pending_updates`（favorite DESC / excluded=0）消费，但此前没有任何
+        # UI 写入点 —— 用户只能手改元数据 JSON。
+        act_fav = menu.addAction(tr("收藏 / 取消收藏（置顶）"))
+        act_fav.triggered.connect(lambda _=False: self._toggle_flag("favorite"))
+        act_excl = menu.addAction(tr("加入 / 移出黑名单（一键更新跳过）"))
+        act_excl.triggered.connect(lambda _=False: self._toggle_flag("excluded"))
         act_del = menu.addAction("删除选中记录")
         act_del.triggered.connect(lambda _=False: self.delete_selected())
         has_sel = bool(self.manage_table.selectedIndexes())
-        for a in (act_tag, act_export, act_del):
+        for a in (act_tag, act_export, act_fav, act_excl, act_del):
             a.setEnabled(has_sel)
             a.setToolTip("请先选择仓库行" if not has_sel else "")
         return menu
+
+    def _selected_rows(self) -> list:
+        """当前选中的模型行（按 repo_id 去重；多选跨列不会重复）。"""
+        seen: set[int] = set()
+        out = []
+        try:
+            indexes = self.manage_table.selectionModel().selectedRows()
+        except Exception:
+            indexes = []
+        for i in indexes:
+            r = self.manage_model.row_at(i.row())
+            if r is None or r.repo_id in seen:
+                continue
+            seen.add(r.repo_id)
+            out.append(r)
+        return out
+
+    def _toggle_flag(self, field: str) -> int:
+        """批量切换收藏/黑名单。
+
+        目标值规则：选中的行里只要有一行未置位 → 全部置位；全部已置位 → 全部取消。
+        这样「收藏选中的」「取消收藏选中的」都能用同一个入口。
+        """
+        rows = self._selected_rows()
+        if not rows:
+            return 0
+        db = getattr(self.owner, "db", None)
+        setter = getattr(db, "set_favorite" if field == "favorite" else "set_excluded", None)
+        if setter is None:
+            return 0
+        target = not all(bool(getattr(r, field, 0)) for r in rows)
+        changed = 0
+        for r in rows:
+            try:
+                setter(r.repo_id, target)
+                changed += 1
+            except Exception:
+                continue
+        self._load_db_into_grid()
+        try:
+            self.owner._emit_log(
+                _mw._fmt_dt(), LogLevel.INFO,
+                tr("已更新收藏状态") if field == "favorite" else tr("已更新黑名单状态"))
+        except Exception:
+            pass
+        return changed
 
     def _manage_context_menu(self, pos):
         """G46-12：管理表右键菜单入口。"""
