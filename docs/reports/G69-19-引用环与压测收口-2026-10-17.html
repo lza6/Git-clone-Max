@@ -276,6 +276,19 @@ if not sent:                         # 失败要撤销占位，否则「一次�
   </div>
 </div>
 
+<div class="card ok">
+  <strong>复验线程的结论：5 个阻塞项全部 PASS。</strong>
+  <div class="why">
+    但它又抓到 7 项 —— 其中两项很值得记：<br><br>
+    · <b>我的并发回归测试自己是 flaky 的</b>：<code>_audit</code> 没有写锁，
+    40 线程并发 append 在 Windows 上非原子，25 次跑挂 3 次（丢行/空行）。加锁后 30/30 稳定。<br>
+    · <b>引用环守卫仍然不 <code>show()</code></b> —— 和上一轮被判「假绿」的是<b>同一种失效模式</b>。
+    已补 <code>TestG69_18NoCycleAfterShow</code>。<br><br>
+    另外 <code>_dim_color()</code> 查的键名根本不存在（调色板只有 <code>text_dim</code>），
+    所以「改用主题色」当时是<b>空操作</b> —— 又一次「看起来改了」。
+  </div>
+</div>
+
 <h2>七、小测验（必须通过）</h2>
 <p class="sub">8 题，答完点提交。<strong>需要全对</strong>。</p>
 
