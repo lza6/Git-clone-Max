@@ -231,3 +231,25 @@ run: https://github.com/lza6/Git-clone-Max/actions/runs/38960845721 （sha `a4ca
 必须按「销毁时机不可控」这类**系统性成因**处理。
 另外：**涉及远端状态的结论必须先 `git fetch` 再下**
 （「tag 断档」就是未 fetch 导致的误判，已更正）。
+
+
+---
+
+## 8. 第三轮收口（v9.4.3 · 2026-10-17）
+
+| 任务 | 状态 | 证据 |
+|------|------|------|
+| **P1 根治 CI 崩溃（引用环）** | **部分闭环**：`MainWindow` 的环已打断（`del w` 按引用计数释放，守卫 `TestG69_18NoMainWindowRefCycle`）；**其它控件仍有环**，runner 保留整轮关 GC 作安全网并标注待改 | 恢复正常 GC 后套件仍在 `test_g68_settings_ui` 段错误 |
+| **P0-2 Webhook 幂等/审计/重试** | **已闭环** | 600s 去重 / `<data>/notify.log` 审计（只记 `scheme://host`）/ 重试 1 次 / 设置页入口 |
+| **G54-4 引导清单** | **已闭环** | `gcm/ui/checklist.py` + 首启/设置页入口 + 8 条测试 |
+| **压测（并发幂等）** | **抓到并修复真 bug** | 40 并发同 payload：13 次 → **1 次**；回归 `TestConcurrentIdempotency`(2) |
+
+**发布**：Release **v9.4.3**（Latest）双产物 + 服务端 sha256 校验一致；
+健康检查 `version=9.4.3 / started_ok=true / artifacts_exist=true`。
+
+**验证**：`Ran 1110 · failures=0 errors=0 skipped=3 · 原生崩溃 0 · 覆盖 81%`；
+ruff `All checks passed`；mypy `Success`（66 文件）；CI 7/7 全绿。
+
+**仍未闭环（诚实清单）**：其它控件的引用环、`G54-1` 表单即时校验、
+`G53-1` 雷达图/`health_card` 列、`G58-1/2` 限流与镜像测速、僵尸字段 3 个、
+老 tag 版本滞后 1 个 patch（历史遗留）。
