@@ -1,0 +1,54 @@
+{
+  "task_id": "N10-ci-build-release",
+  "goal": "v9.5.0 提交 → CI 三平台 → 打包 → 健康检查 → Release",
+  "status": "done",
+  "date": "2026-10-18",
+  "commit": "c975977",
+  "ci": {
+    "run_id": 39068317259,
+    "url": "https://github.com/lza6/Git-clone-Max/actions/runs/39068317259",
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": {
+      "test (windows-latest)": "success",
+      "test (ubuntu-latest)": "success",
+      "test (macos-latest)": "success",
+      "e2e-smoke": "success",
+      "fast-smoke": "success",
+      "perf-baseline": "success",
+      "slow": "success"
+    }
+  },
+  "build": {
+    "command": "python -m PyInstaller --noconfirm Git-clone-Max.spec",
+    "exit_code": 0
+  },
+  "portable_zip": {
+    "command": "python scripts/build_portable_zip.py && python scripts/build_portable_zip.py --check",
+    "result": "[OK] 290 条目 / 78804523 字节；--check 未过期"
+  },
+  "health_check": {
+    "command": "python scripts/health_check.py --json dist/health_check.json",
+    "version": "9.5.0",
+    "archive_version": "9.5.0",
+    "started_ok": true,
+    "repos_db_created": true,
+    "artifacts_exist": true,
+    "exe_sha256": "fddcd6074842f18eb5845970ebd2458422e34505a08e13350e7b2cc793fd9588",
+    "zip_sha256": "7bef90534a15d0c06cb6c37fb334fe0ebbc739d0b3fea4f05b7d34ca4fe715b3"
+  },
+  "release": {
+    "tag": "v9.5.0",
+    "tag_object": "annotated → c975977",
+    "url": "https://github.com/lza6/Git-clone-Max/releases/tag/v9.5.0",
+    "assets": [
+      {"name": "Git-clone-Max.exe", "size": 40749063},
+      {"name": "Git-clone-Max-portable.zip", "size": 78804523}
+    ],
+    "server_sha256_verified": true
+  },
+  "limitations": [
+    "exe 只在 Windows 本机做启动健康检查，未做人工 GUI 点选冒烟",
+    "镜像可用性依赖第三方服务；Release 不改变这一事实"
+  ]
+}

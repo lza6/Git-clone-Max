@@ -416,3 +416,13 @@ Light 下对比度不足）、校验条强制 `PlainText`（用户原文含 `<>`
 `ruff` All checks passed · `mypy` Success（68 文件）· 新增
 `tests/test_g58_mirror_failover.py`(34) · 受影响回归 43 用例 OK ·
 全量快集见 `evidence/N9-final-fast-suite.json`。
+
+### 12.4 提交 / CI / 发布
+
+| 项 | 结果 |
+|----|------|
+| 提交 | `c975977`（main） |
+| CI | run 39068317259 · **7/7 job 绿** |
+| 打包 | PyInstaller 成功；便携 zip 290 条目 / 78,804,523 字节 |
+| 健康检查 | `version=9.5.0` · `started_ok=true` · `artifacts_exist=true` |
+| Release | v9.5.0 双产物 + 服务端 sha256 一致 |

@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>镜像多备援 · 变更报告 · 2026-10-18</title>
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2129;--line:#30363d;--fg:#e6edf3;
+        --dim:#8b949e;--accent:#58a6ff;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--purple:#bc8cff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:15px/1.75 -apple-system,"Segoe UI","Noto Sans CJK SC","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1040px;margin:0 auto;padding:48px 24px 110px}
+  header{border-bottom:1px solid var(--line);padding-bottom:26px;margin-bottom:36px}
+  h1{font-size:2rem;margin:0 0 8px;letter-spacing:-.02em}
+  h2{font-size:1.28rem;margin:46px 0 12px;padding-left:12px;border-left:3px solid var(--accent)}
+  .sub{color:var(--dim);font-size:.94rem}
+  .lede{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px 22px;margin:24px 0}
+  .lede strong{color:var(--accent)}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:.9rem}
+  th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);font-weight:600;color:var(--dim);font-size:.76rem;
+     text-transform:uppercase;letter-spacing:.06em}
+  tr:nth-child(even) td{background:rgba(255,255,255,.015)}
+  code{background:var(--panel2);padding:2px 6px;border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,monospace;font-size:.86em;color:var(--purple)}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    padding:15px 17px;overflow-x:auto;font-size:.84rem;line-height:1.6}
+  pre code{background:none;padding:0;color:var(--fg)}
+  .pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:.75rem;font-weight:600}
+  .p-ok{background:rgba(63,185,80,.15);color:var(--ok);border:1px solid rgba(63,185,80,.35)}
+  .p-bad{background:rgba(248,81,73,.15);color:var(--bad);border:1px solid rgba(248,81,73,.35)}
+  .p-warn{background:rgba(210,153,34,.15);color:var(--warn);border:1px solid rgba(210,153,34,.35)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:14px 0}
+  .card.ok{border-left:3px solid var(--ok)} .card.bad{border-left:3px solid var(--bad)}
+  .card.warn{border-left:3px solid var(--warn)}
+  .why{color:var(--dim);font-size:.9rem;margin-top:8px}
+  .quiz{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:24px;margin-top:24px}
+  .q{padding:16px 0;border-bottom:1px dashed var(--line)}
+  .q:last-of-type{border-bottom:none}
+  .q .stem{font-weight:600;margin-bottom:10px}
+  .opt{display:block;padding:8px 12px;margin:5px 0;border-radius:7px;cursor:pointer;
+    border:1px solid transparent}
+  .opt:hover{background:var(--panel2);border-color:var(--line)}
+  .opt input{margin-right:9px}
+  .fb{margin-top:8px;font-size:.88rem;display:none}
+  .fb.show{display:block} .fb.good{color:var(--ok)} .fb.bad{color:var(--bad)}
+  .score{position:sticky;bottom:0;margin-top:20px;padding:16px 20px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:10px;display:flex;justify-content:space-between;
+    align-items:center;gap:16px;flex-wrap:wrap}
+  button{background:var(--accent);color:#04121f;border:0;border-radius:7px;padding:10px 20px;
+    font-weight:700;font-size:.9rem;cursor:pointer}
+  button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
+  #verdict{font-weight:700}
+  footer{margin-top:54px;padding-top:20px;border-top:1px solid var(--line);color:var(--dim);font-size:.85rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>镜像多备援 · v9.5.0</h1>
+  <div class="sub">Git-clone-Max · 2026-10-18 · G58-2</div>
+</header>
+
+<div class="lede">
+  <strong>需求：</strong>网络不好的时候，默认走国内镜像；镜像没有这个仓库，就用源站重试。
+  <br><br>
+  <strong>结果：</strong>内置 4 个<b>用 git 实测过</b>的国内镜像，克隆前逐个探测、取最快可用者；
+  镜像不可用或没有该仓库时<b>自动回退源站</b>；更新失败也能在镜像/源站之间切换。
+  <b>有令牌时绝不走镜像</b>，避免凭据泄漏给第三方。
+</div>
+
+<h2>一、为什么不能用 HTTP HEAD 测镜像</h2>
+
+<p>实测结果直接推翻了这个直觉：</p>
+<table>
+  <tr><th>镜像</th><th>HEAD</th><th><code>git ls-remote</code></th><th>结论</th></tr>
+  <tr><td><code>gh.llkk.cc</code></td><td>403</td><td><span class="pill p-ok">✅</span></td><td>HEAD 不可信</td></tr>
+  <tr><td><code>ghfast.top</code></td><td>403</td><td><span class="pill p-ok">✅</span></td><td>HEAD 不可信</td></tr>
+  <tr><td><code>ghproxy.net</code></td><td>403</td><td><span class="pill p-ok">✅</span></td><td>HEAD 不可信</td></tr>
+  <tr><td><code>ghproxy.com</code></td><td>200</td><td><span class="pill p-bad">❌ 302</span></td><td>HEAD 假阳性</td></tr>
+  <tr><td><code>mirror.ghproxy.com</code></td><td>TLS EOF</td><td><span class="pill p-bad">❌</span></td><td>不可用</td></tr>
+</table>
+
+<div class="card warn">
+  <strong>唯一可信的判据是 git 自己能不能连上。</strong>
+  <div class="why">所以探测固定用 <code>git -c credential.helper= ls-remote --exit-code &lt;url&gt; HEAD</code>：
+    不弹凭据框、不读钥匙串，退出码 2（空仓库）也算可达。</div>
+</div>
+
+<h2>二、内置镜像（实测中位延迟）</h2>
+<table>
+  <tr><th>顺序</th><th>镜像</th><th>延迟</th></tr>
+  <tr><td>1</td><td><code>https://gh.llkk.cc</code></td><td>~2.4s</td></tr>
+  <tr><td>2</td><td><code>https://gh-proxy.com</code></td><td>~3.3s</td></tr>
+  <tr><td>3</td><td><code>https://ghfast.top</code></td><td>~3.6s</td></tr>
+  <tr><td>4</td><td><code>https://ghproxy.net</code></td><td>~8.0s</td></tr>
+</table>
+<p class="sub">预设是第三方服务，会失效。设置页可关闭，或点「测速并排序」按当前网络重排。</p>
+
+<h2>三、失败链（克隆）</h2>
+<pre><code>候选镜像（用户配置优先 → 内置预设）
+  └─ git ls-remote 探测（8s 超时）
+       ├─ 可用 → 用这个镜像 clone
+       │     └─ clone 仍失败 → 回退源站重试一次
+       └─ 不可用/没有该仓库 → 下一个镜像
+             └─ 全部失败 → 源站（保证不会因为镜像挂了而失败）</code></pre>
+
+<h2>四、更新也会回退</h2>
+<pre><code>git fetch origin（镜像）
+  ├─ 成功 → 保持 origin
+  └─ 失败 → 依次 set-url 到其它镜像 / 源站重试
+        ├─ 成功 → origin 留在可用地址
+        └─ 全失败 → 恢复原 origin，如实报错</code></pre>
+
+<h2>五、安全边界（硬约束）</h2>
+<table>
+  <tr><th>场景</th><th>行为</th><th>原因</th></tr>
+  <tr><td>配置了 token / host_tokens</td><td><span class="pill p-bad">绝不走镜像</span></td>
+      <td>第三方镜像能看到 <code>Authorization</code> 头</td></tr>
+  <tr><td>SSH / 本地路径</td><td><span class="pill p-bad">不拼接</span></td>
+      <td>前缀代理只对 HTTPS 有效</td></tr>
+  <tr><td>镜像全挂</td><td><span class="pill p-ok">回退源站</span></td>
+      <td>源站永远是最后候选</td></tr>
+</table>
+
+<h2>六、真实端到端（本机实测）</h2>
+<pre><code>① 镜像克隆（默认预设）      → SUCCESS · 6.3s · 使用镜像（2940ms）：gh.llkk.cc
+② 镜像不可达 → 回退源站      → SUCCESS · 6.7s
+③ 镜像克隆后增量更新          → SUCCESS · 4.8s · 已是最新
+④ 更新时镜像失效 → 自动切换   → SUCCESS · 8.7s · set-url 到 gh.llkk.cc</code></pre>
+
+<h2>七、验证</h2>
+<pre><code>ruff check gcm                    → All checks passed!
+mypy gcm                          → Success（68 文件）
+tests.test_g58_mirror_failover    → Ran 34 tests OK（含真实 git E2E）
+受影响回归（g38/g381/g68）         → Ran 43 tests OK
+全量快集                          → Ran 1177 · 0 失败 · 0 崩溃 · 覆盖 82%</code></pre>
+
+<h2>八、小测验（必须通过）</h2>
+<p class="sub">5 题，需要全对。</p>
+
+<div class="quiz" id="quiz">
+  <div class="q" data-answer="b">
+    <div class="stem">1. 为什么不能用 HTTP HEAD 判断镜像是否可用？</div>
+    <label class="opt"><input type="radio" name="q1" value="a">A. HEAD 太慢</label>
+    <label class="opt"><input type="radio" name="q1" value="b">B. 实测 HEAD 与 git 能否工作不一致：有的 403 但 git 正常，有的 200 但 git 因 302 失败</label>
+    <label class="opt"><input type="radio" name="q1" value="c">C. HEAD 不支持 HTTPS</label>
+    <div class="fb" data-good="对。唯一可信的判据是 git 自己能不能连上。" data-bad="不对。问题是 HEAD 结果与 git 行为不一致。"></div>
+  </div>
+
+  <div class="q" data-answer="c">
+    <div class="stem">2. 配了 GitHub token 时，为什么不能走镜像？</div>
+    <label class="opt"><input type="radio" name="q2" value="a">A. 镜像速度慢</label>
+    <label class="opt"><input type="radio" name="q2" value="b">B. 镜像不支持 HTTPS</label>
+    <label class="opt"><input type="radio" name="q2" value="c">C. 第三方镜像能看到 <code>Authorization</code> 头 → token 泄漏</label>
+    <div class="fb" data-good="对。所以这是一个硬门禁：有凭据就直连源站。" data-bad="不对。核心是凭据会被第三方看到。"></div>
+  </div>
+
+  <div class="q" data-answer="a">
+    <div class="stem">3. 镜像没有某个仓库时，怎样避免卡满 600 秒的 clone 超时？</div>
+    <label class="opt"><input type="radio" name="q3" value="a">A. clone 前先做短超时 <code>git ls-remote</code> 探测，失败就跳下一个候选</label>
+    <label class="opt"><input type="radio" name="q3" value="b">B. 把 clone_timeout 改成 1 秒</label>
+    <label class="opt"><input type="radio" name="q3" value="c">C. 让用户手动点重试</label>
+    <div class="fb" data-good="对。探测同时给出延迟，还能优先用上最快的镜像。" data-bad="不对。正确做法是事前探测，而不是靠超时兜底。"></div>
+  </div>
+
+  <div class="q" data-answer="b">
+    <div class="stem">4. 更新（fetch）失败后，origin 应该怎么处理？</div>
+    <label class="opt"><input type="radio" name="q4" value="a">A. 一律重置回源站</label>
+    <label class="opt"><input type="radio" name="q4" value="b">B. 依次切换镜像/源站重试；成功则保留可用地址，全失败则恢复原值</label>
+    <label class="opt"><input type="radio" name="q4" value="c">C. 删掉仓库重新克隆</label>
+    <div class="fb" data-good="对。这样镜像恢复后下一次还能继续用。<br>" data-bad="不对。要试替代地址，同时保证失败时不留副作用。"></div>
+  </div>
+
+  <div class="q" data-answer="c">
+    <div class="stem">5. 内置镜像是第三方服务，可能失效。系统的兜底是？</div>
+    <label class="opt"><input type="radio" name="q5" value="a">A. 没有兜底，只能等更新</label>
+    <label class="opt"><input type="radio" name="q5" value="b">B. 自动改用最近的其它镜像源</label>
+    <label class="opt"><input type="radio" name="q5" value="c">C. 源站永远是最后候选；设置页可关闭预设或用「测速并排序」重排</label>
+    <div class="fb" data-good="对。镜像只是加速层，不能成为单点故障。" data-bad="不对。必须保证镜像全挂时仍能克隆。"></div>
+  </div>
+
+  <div class="score">
+    <div id="verdict">未提交</div>
+    <div>
+      <button onclick="grade()">提交</button>
+      <button class="ghost" onclick="reset()">重做</button>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <p>配套：<code>gcm/app/mirrors.py</code> · <code>gcm/app/mirror_probe.py</code> ·
+     <code>tests/test_g58_mirror_failover.py</code> ·
+     <code>evidence/N8-mirror-failover.json</code> ·
+     <code>docs/验证记录-2026-10-17.md</code> §13。</p>
+  <p>本报告只陈述实际运行过的事实；预设镜像的可用性以 2026-10-18 实测为准。</p>
+</footer>
+
+</div>
+<script>
+function grade(){
+  const qs=[...document.querySelectorAll('.q')];
+  let right=0, unanswered=0;
+  qs.forEach((q)=>{
+    const pick=q.querySelector('input:checked');
+    const fb=q.querySelector('.fb');
+    fb.classList.remove('show','good','bad');
+    if(!pick){unanswered++;fb.textContent='未作答';fb.classList.add('show','bad');return;}
+    if(pick.value===q.dataset.answer){
+      right++; fb.textContent='✓ '+fb.dataset.good; fb.classList.add('show','good');
+    }else{ fb.textContent='✗ '+fb.dataset.bad; fb.classList.add('show','bad'); }
+  });
+  const v=document.getElementById('verdict'); const total=qs.length;
+  if(unanswered){ v.textContent=`还有 ${unanswered} 题未作答`; v.style.color='var(--dim)'; }
+  else if(right===total){ v.textContent=`✅ 通过 ${right}/${total} —— 你可以接手这份变更了`; v.style.color='var(--ok)'; }
+  else { v.textContent=`❌ 未通过 ${right}/${total} —— 读上面的解析后重做`; v.style.color='var(--bad)'; }
+  v.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+function reset(){
+  document.querySelectorAll('.q input').forEach(i=>i.checked=false);
+  document.querySelectorAll('.fb').forEach(f=>f.classList.remove('show','good','bad'));
+  const v=document.getElementById('verdict'); v.textContent='未提交'; v.style.color='var(--fg)';
+}
+</script>
+</body>
+</html>
