@@ -108,7 +108,23 @@ class TestThemeLogAndHighlight(unittest.TestCase):
         self.assertIsNotNone(hl)
 
     def test_maybe_validate_url(self):
+        """G69-18：校验必须覆盖**全部支持的平台**，不能只认 GitHub。
+
+        旧实现用 `is_github_url()`，会把 GitLab / Gitee / Codeberg / Bitbucket
+        的合法地址判成非法 —— 而本工具正是以「多平台直克隆」为卖点。
+        现在用与克隆链路同一个 `parse_any_repo_url`。
+        """
         from gcm.ui.theme import maybe_validate_url
         self.assertEqual(maybe_validate_url(""), "地址为空")
-        self.assertEqual(maybe_validate_url("not a url"), "不是有效的 GitHub 仓库地址")
-        self.assertIsNone(maybe_validate_url("https://github.com/a/b"))
+        self.assertIsNotNone(maybe_validate_url("not a url"))
+        # 多平台合法地址都必须通过
+        for url in ("https://github.com/a/b",
+                    "https://gitlab.com/g/r",
+                    "https://gitee.com/x/y",
+                    "https://codeberg.org/a/b",
+                    "https://bitbucket.org/a/b",
+                    "git@github.com:o/r.git",
+                    "o/r"):                      # 短格式
+            with self.subTest(url=url):
+                self.assertIsNone(maybe_validate_url(url),
+                                  f"{url} 应被判定为合法")

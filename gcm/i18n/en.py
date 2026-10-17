@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 EN = {
+    '有效 {n} / 无效 0': 'Valid {n} / invalid 0',
+    '（等 {n} 条）': ' (and {n} more)',
+    '有效 {ok} / 无效 {bad}：{items}{more}': 'Valid {ok} / invalid {bad}: {items}{more}',
     '开始使用清单': 'Getting-started checklist',
     '列出从零开始需要做的几件事，并显示完成进度': 'List the steps to get going, with progress',
     '引导清单': 'Checklist',

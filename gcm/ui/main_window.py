@@ -664,6 +664,16 @@ class MainWindow(QMainWindow):
         )
         self.repo_input.setMinimumHeight(150)
         b.addWidget(self.repo_input)
+        # G54-1 实时校验条：输入/粘贴后显示「有效 N / 无效 M」，
+        # 并指出前几条无效行。解析用与克隆链路同一个 parse_any_repo_url。
+        self.repo_valid_lbl = QLabel("")
+        self.repo_valid_lbl.setWordWrap(True)
+        b.addWidget(self.repo_valid_lbl)
+        self._validate_timer = QTimer(self)
+        self._validate_timer.setSingleShot(True)
+        self._validate_timer.setInterval(300)      # 输入防抖，避免每次按键都解析
+        self._validate_timer.timeout.connect(self._refresh_url_validation)
+        self.repo_input.textChanged.connect(self._on_input_changed)
         # G02-4 右键菜单：从最近历史回填 / 清空历史
         self.repo_input.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.repo_input.customContextMenuRequested.connect(self._repo_input_menu)
@@ -1381,6 +1391,47 @@ class MainWindow(QMainWindow):
             from PyQt6.QtWidgets import QMessageBox
             self._emit_log(_fmt_dt(), LogLevel.WARN, f"通知审计对话框打开失败：{exc}")
             QMessageBox.information(self, tr("通知审计"), body)
+
+    def _on_input_changed(self) -> None:
+        """输入变化 → 防抖后重新校验（绑定方法，避免 lambda 引用环）。"""
+        try:
+            self._validate_timer.start()
+        except Exception:
+            pass
+
+    def _refresh_url_validation(self) -> None:
+        """G54-1：刷新「有效 N / 无效 M」提示条。
+
+        只对**非空、非注释**行计数；无效行最多列 3 条，避免长列表把界面刷爆。
+        """
+        try:
+            from .theme import maybe_validate_url
+            raw_lines = [ln.strip() for ln in self.repo_input.toPlainText().splitlines()]
+            lines = [ln for ln in raw_lines if ln and not ln.startswith("#")]
+        except Exception:
+            return
+        if not lines:
+            self.repo_valid_lbl.setText("")
+            self.repo_valid_lbl.setStyleSheet("")
+            return
+        bad: list[tuple[str, str]] = []
+        for ln in lines:
+            err = maybe_validate_url(ln)
+            if err:
+                bad.append((ln, err))
+        ok = len(lines) - len(bad)
+        if not bad:
+            self.repo_valid_lbl.setText(
+                tr("有效 {n} / 无效 0").replace("{n}", str(ok)))
+            self.repo_valid_lbl.setStyleSheet("color:#3fb950;")
+            return
+        shown = "；".join(ln[:40] for ln, _e in bad[:3])
+        more = tr("（等 {n} 条）").replace("{n}", str(len(bad))) if len(bad) > 3 else ""
+        self.repo_valid_lbl.setText(
+            tr("有效 {ok} / 无效 {bad}：{items}{more}")
+            .replace("{ok}", str(ok)).replace("{bad}", str(len(bad)))
+            .replace("{items}", shown).replace("{more}", more))
+        self.repo_valid_lbl.setStyleSheet("color:#f85149;")
 
     def _on_quick_fill(self, _checked: bool = False) -> None:
         """G35-7：快捷填充按钮 → 把对应仓库地址追加进输入区。

@@ -1049,3 +1049,98 @@ class TestG69_18NoMainWindowRefCycle(unittest.TestCase):
             "MainWindow 未能由引用计数释放 —— 引用环重新出现。"
             "常见原因：信号连接用了 lambda 捕获 self；或某个 Panel/回调强引用了 owner。"
         )
+
+
+class TestG69_18NoZombieSettingsFields(unittest.TestCase):
+    """G69-18：`Settings` 不允许存在「全库无人引用」的僵尸字段。
+
+    `shallow_default` / `auto_init_empty` / `mirror_default` 三个字段曾是
+    「声明了、但读也没人读、写也没人写」的死配置 —— 用户永远碰不到，
+    却让人误以为功能存在。
+
+    判据：字段名必须出现在 `gcm/` 下**除 `db/settings.py` 之外**的某个文件里
+    （UI 写入或业务读取）。新增字段时如果只加在 dataclass 里，这条会立刻红。
+    """
+
+    ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+    def test_every_setting_is_referenced_outside_settings_module(self):
+        import dataclasses
+        import re
+
+        from gcm.db.settings import Settings
+
+        blob = "\n".join(
+            p.read_text(encoding="utf-8", errors="ignore")
+            for p in (self.ROOT / "gcm").rglob("*.py")
+            if p.name != "settings.py")
+
+        orphans = [
+            f.name for f in dataclasses.fields(Settings)
+            if not f.name.startswith("_")
+            and not re.search(rf"\b{re.escape(f.name)}\b", blob)
+        ]
+        self.assertEqual(
+            orphans, [],
+            f"这些 Settings 字段全库无人引用（僵尸字段）：{orphans}。"
+            "要么接线（UI 写入 + 业务读取），要么删掉。")
+
+
+class TestG69_18InlineUrlValidation(unittest.TestCase):
+    """G54-1：输入区实时校验条 + `maybe_validate_url` 真正被调用。
+
+    修之前 `maybe_validate_url` **只在 tests 里被引用**，而且用 `is_github_url()`
+    —— 只认 GitHub，会把 GitLab/Gitee 等合法地址判成非法。
+    """
+
+    ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+    def test_helper_supports_all_platforms(self):
+        from gcm.ui.theme import maybe_validate_url
+        for url in ("https://github.com/a/b", "https://gitlab.com/g/r",
+                    "git@gitee.com:x/y.git", "codeberg.org/a/b"):
+            with self.subTest(url=url):
+                self.assertIsNone(maybe_validate_url(url),
+                                  f"{url} 应当被判定为合法")
+        self.assertIsNotNone(maybe_validate_url("not-a-url"))
+        self.assertIsNotNone(maybe_validate_url(""))
+
+    def test_validation_bar_has_production_call_site(self):
+        src = (self.ROOT / "gcm/ui/main_window.py").read_text(encoding="utf-8")
+        self.assertIn("_refresh_url_validation", src)
+        self.assertIn("maybe_validate_url", src, "校验函数无生产调用点")
+        self.assertIn("repo_valid_lbl", src)
+
+    def test_validation_bar_counts_valid_and_invalid(self):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        import tempfile
+
+        from PyQt6.QtWidgets import QApplication
+
+        from gcm.db.repo_db import Database
+        from gcm.db.settings import SettingsStore
+        from gcm.ui.main_window import MainWindow
+
+        app = QApplication.instance() or QApplication([])
+        d = pathlib.Path(tempfile.mkdtemp(prefix="gcm_validate_"))
+        w = MainWindow(data_dir=d, db=Database(d / "t.db"), settings=SettingsStore(d / "s.json"))
+        self.addCleanup(w.close)
+        try:
+            w.repo_input.setPlainText(
+                "https://github.com/a/b\nhttps://gitlab.com/g/r\nnot-a-url\n# 注释行")
+            w._refresh_url_validation()
+            app.processEvents()
+            text = w.repo_valid_lbl.text()
+            self.assertIn("2", text)          # 2 条有效
+            self.assertIn("1", text)          # 1 条无效
+            self.assertIn("not-a-url", text)  # 指出具体哪条
+            # 全有效时不再报错色文案
+            w.repo_input.setPlainText("https://github.com/a/b")
+            w._refresh_url_validation()
+            self.assertIn("无效 0", w.repo_valid_lbl.text())
+            # 空输入不显示任何提示
+            w.repo_input.setPlainText("")
+            w._refresh_url_validation()
+            self.assertEqual(w.repo_valid_lbl.text(), "")
+        finally:
+            pass

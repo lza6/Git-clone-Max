@@ -244,14 +244,12 @@ class Settings:
     """应用级可持久化配置。"""
 
     concurrency: int = 8              # 并行线程数 1..32
-    shallow_default: bool = False     # 是否默认浅克隆
     depth: int = 1                    # 浅克隆深度
     auto_clear: bool = True           # 下载完成自动清空输入框
     proxy: str = ""                   # HTTP 代理，形如 http://127.0.0.1:7890
     fetch_timeout: int = 300          # 单次 fetch 超时秒数
     clone_timeout: int = 600          # 单次 clone 超时秒数
     retries: int = 2                  # 网络失败自动重试次数
-    auto_init_empty: bool = False     # 空仓库自动初始化 main 并推送
     minimize_to_tray: bool = True     # 最小化时收进系统托盘
     language: str = "zh"              # 保留：zh / en（i18n 备用）
     token: str = ""                   # GitHub token（私有仓库认证；落盘前加密）
@@ -277,7 +275,6 @@ class Settings:
     prefers_reduced_motion: bool = False  # G46-8 减少动态效果（关闭完成动效与 hover 过渡）
     accent_preset: str = "blue"           # G46-7 强调色预设（blue/violet/teal）
     lfs_enabled: bool = False          # G48-2 Git LFS：clone/fetch 追加 -c filter.lfs.required=false
-    mirror_default: bool = False       # G48-6 克隆模式第 4 项「镜像克隆(--mirror)」
     post_clone_hook: str = ""           # G48-5 克隆后钩子命令模板（%PATH% 替换为仓库路径）
     ssh_key_path: str = ""              # G48-3/G67-16 全局 SSH 私钥路径（经 GIT_SSH_COMMAND 注入）
     first_run_done: bool = False      # G36-1 首次运行向导已完成（跳过也置 True）

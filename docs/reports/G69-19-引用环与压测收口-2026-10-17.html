@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>G69-19 引用环与压测收口 · 变更报告 · 2026-10-17</title>
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2129;--line:#30363d;--fg:#e6edf3;
+        --dim:#8b949e;--accent:#58a6ff;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--purple:#bc8cff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:15px/1.75 -apple-system,"Segoe UI","Noto Sans CJK SC","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1080px;margin:0 auto;padding:48px 24px 120px}
+  header{border-bottom:1px solid var(--line);padding-bottom:28px;margin-bottom:40px}
+  h1{font-size:2.1rem;margin:0 0 10px;letter-spacing:-.02em}
+  h2{font-size:1.35rem;margin:52px 0 14px;padding-left:12px;border-left:3px solid var(--accent)}
+  h3{font-size:1.05rem;margin:30px 0 10px;color:var(--accent)}
+  .sub{color:var(--dim);font-size:.94rem}
+  .lede{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px 22px;margin:26px 0}
+  .lede strong{color:var(--accent)}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.9rem}
+  th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);font-weight:600;color:var(--dim);text-transform:uppercase;
+     font-size:.76rem;letter-spacing:.06em}
+  tr:nth-child(even) td{background:rgba(255,255,255,.015)}
+  code{background:var(--panel2);padding:2px 6px;border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,monospace;font-size:.86em;color:var(--purple)}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    padding:15px 17px;overflow-x:auto;font-size:.84rem;line-height:1.6}
+  pre code{background:none;padding:0;color:var(--fg)}
+  .pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:.75rem;font-weight:600}
+  .p-ok{background:rgba(63,185,80,.15);color:var(--ok);border:1px solid rgba(63,185,80,.35)}
+  .p-bad{background:rgba(248,81,73,.15);color:var(--bad);border:1px solid rgba(248,81,73,.35)}
+  .p-warn{background:rgba(210,153,34,.15);color:var(--warn);border:1px solid rgba(210,153,34,.35)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:16px 0}
+  .card.bad{border-left:3px solid var(--bad)} .card.ok{border-left:3px solid var(--ok)}
+  .card.warn{border-left:3px solid var(--warn)}
+  .why{color:var(--dim);font-size:.9rem;margin-top:8px}
+  ul{padding-left:22px} li{margin:6px 0}
+  .quiz{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:26px;margin-top:26px}
+  .q{padding:18px 0;border-bottom:1px dashed var(--line)}
+  .q:last-of-type{border-bottom:none}
+  .q .stem{font-weight:600;margin-bottom:11px}
+  .opt{display:block;padding:8px 12px;margin:5px 0;border-radius:7px;cursor:pointer;
+    border:1px solid transparent;transition:.12s}
+  .opt:hover{background:var(--panel2);border-color:var(--line)}
+  .opt input{margin-right:9px}
+  .fb{margin-top:9px;font-size:.88rem;display:none}
+  .fb.show{display:block} .fb.good{color:var(--ok)} .fb.bad{color:var(--bad)}
+  .score{position:sticky;bottom:0;margin-top:22px;padding:16px 20px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:10px;display:flex;justify-content:space-between;
+    align-items:center;gap:16px;flex-wrap:wrap}
+  button{background:var(--accent);color:#04121f;border:0;border-radius:7px;padding:10px 20px;
+    font-weight:700;font-size:.9rem;cursor:pointer}
+  button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
+  #verdict{font-weight:700}
+  footer{margin-top:60px;padding-top:22px;border-top:1px solid var(--line);color:var(--dim);font-size:.85rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>G69-19 · 引用环与压测收口</h1>
+  <div class="sub">Git-clone-Max · v9.4.1 → v9.4.3 · 2026-10-17 ·
+    主线程 + 对抗式审查线程 + 并发压测</div>
+</header>
+
+<div class="lede">
+  <strong>一句话：</strong>上一轮把 CI 从「连续 80+ 次红灯」救回全绿，但用的是
+  <strong>关掉循环 GC</strong> 这种「绕过」。本轮去拆真正的雷 ——
+  <strong>为什么窗口必须等 GC 才能释放</strong>。顺带补全了 Webhook 的幂等/审计/重试，
+  并用<strong>并发压测</strong>抓出一个「40 个并发只该发 1 次、实际发了 13 次」的竞态。
+  <br><br>
+  <strong>本轮 5 个 bug 里有 4 个是我自己引入的。</strong>这不是自嘲，是这轮最有价值的事实。
+</div>
+
+<h2>一、先讲直觉：为什么「等 GC」会导致段错误</h2>
+
+<p>Python 释放对象有两条路：</p>
+<table>
+  <tr><th>路径</th><th>触发时机</th><th>时序可控吗</th></tr>
+  <tr><td><b>引用计数</b></td><td>最后一个引用消失的那一刻</td>
+      <td><span class="pill p-ok">可控</span> 你知道它什么时候发生</td></tr>
+  <tr><td><b>循环 GC</b></td><td>解释器在<b>任意内存分配点</b>顺手做的一次扫描</td>
+      <td><span class="pill p-bad">不可控</span> 可能正好在 <code>processEvents()</code> 内部</td></tr>
+</table>
+
+<p>
+  如果 <code>MainWindow</code> 被一个<strong>引用环</strong>维持，它就只能走第二条路。
+  而 Qt 的事件分发也是在一个循环里跑 —— 于是出现了最坏的组合：
+</p>
+<pre><code>QApplication.processEvents()
+  └─ 分发计时器事件
+       └─ 此刻 Python 的循环 GC 恰好触发，销毁了 MainWindow 及其子定时器
+            └─ 回到 Qt：QTimerInfoList::activateTimers 解引用**已释放**的定时器
+                 └─ SIGSEGV</code></pre>
+
+<div class="card warn">
+  <strong>这解释了全部怪现象：</strong>
+  <div class="why">
+    崩溃点随机漂移（取决于 GC 当时在哪）· <code>PYTHONMALLOC=debug</code> 会改变结果（分配模式变了）·
+    测试越多越容易崩（分配越多，GC 越频繁）· C 栈永远停在 <code>activateTimers</code>。
+  </div>
+</div>
+
+<h2>二、环到底长什么样（实测，不是猜）</h2>
+
+<p>用 <code>gc.get_referrers</code> + 遍历所有函数对象的 <code>__closure__</code>，把环的每一段都打印出来：</p>
+
+<table>
+  <tr><th>环的一段</th><th>具体形态</th><th>为什么成环</th></tr>
+  <tr><td>Panel ↔ 窗口</td>
+      <td><code>self.owner = owner</code>（4 个 Panel）</td>
+      <td>窗口持有 Panel，Panel 又强引用窗口</td></tr>
+  <tr><td>控件 → lambda → 窗口</td>
+      <td><code>btn.clicked.connect(lambda: self.xxx())</code></td>
+      <td>控件持有连接，连接持有闭包，闭包持有窗口，窗口又持有控件</td></tr>
+  <tr><td>扫描闭包</td><td><code>AlertScanner(_scan_repos)</code> 里的闭包捕获 self</td>
+      <td>扫描器被窗口持有，闭包又持有窗口</td></tr>
+  <tr><td>剪贴板回调</td><td><code>watcher.on_url = self._on_clipboard_url</code></td>
+      <td>存的是<b>绑定方法</b>（强引用 self）</td></tr>
+  <tr><td>拖拽 handler</td><td><code>edit.dragEnterEvent = self._repo_input_drag_enter</code></td>
+      <td>同「把绑定方法挂成控件属性」</td></tr>
+</table>
+
+<div class="card ok">
+  <strong>关键洞察：PyQt 对<u>绑定方法</u>用弱引用，对 <u>lambda</u> 用强引用。</strong>
+  <div class="why">
+    所以 <code>connect(self.on_click)</code> 天然不成环，而 <code>connect(lambda: self.on_click())</code> 会。
+    这一条把「改造」变成了机械动作，不需要重构架构。
+  </div>
+</div>
+
+<h3>2.1 验证：只看一件事 —— <code>del</code> 之后有没有立刻释放</h3>
+
+<pre><code>w = MainWindow(...)
+gc.collect(); ref = weakref.ref(w)
+del w
+print(ref() is None)    # 修复前：False（还得等 GC）   修复后：True（引用计数立刻释放）</code></pre>
+
+<p>这一条比「跑一遍测试没崩」可靠得多 —— 它是**判定性**的，不靠运气。</p>
+
+<h2>三、Webhook：从「只会发一次」到可运维</h2>
+
+<table>
+  <tr><th>能力</th><th>之前</th><th>现在</th></tr>
+  <tr><td>重复通知</td><td>引擎重投/多批次收尾会把同一条通知发很多次</td>
+      <td>同 payload 600 秒内只发一次</td></tr>
+  <tr><td>排障</td><td>「为什么没收到通知？」只能猜</td>
+      <td><code>&lt;data&gt;/notify.log</code> 台账：发送/失败/被去重，含尝试次数</td></tr>
+  <tr><td>网络抖动</td><td>失败就没了</td><td>重试 1 次（短暂退避）</td></tr>
+  <tr><td>查看</td><td>无</td><td>设置页「查看通知审计」</td></tr>
+</table>
+
+<div class="card bad">
+  <strong>这里我自己埋了一个凭据泄漏，被自己的实测抓住。</strong>
+  <div class="why">
+    审计最初用 <code>redact(url)</code> 打码。但 <code>redact</code> 只按<strong>已知参数名</strong>
+    （token / api_key …）匹配，而 Webhook 的密钥常常在<strong>路径</strong>里：
+    Server酱是 <code>.../&lt;KEY&gt;.send</code>、Telegram 是 <code>/bot&lt;TOKEN&gt;/sendMessage</code>，
+    或者干脆是自定义参数 <code>?k=SECRET</code>。三种形态实测<strong>全部明文落盘</strong>。<br><br>
+    改法：审计里<strong>只记 <code>scheme://host</code></strong>，path 和 query 一律不落盘。
+    排障只需要知道「发往哪个服务」，不需要完整 URL。
+  </div>
+</div>
+
+<h2>四、压测：40 个并发，只该发 1 次</h2>
+
+<p>幂等这种东西，单线程测试永远是绿的 —— 必须压。</p>
+
+<pre><code>40 个线程 + threading.Barrier 同时起跑，同 payload 调 maybe_notify，网络 mock
+期望：真正发送 1 次
+实测（修复前）：13 次     ← 审计台账：sent=13 / dedup-skip=27</code></pre>
+
+<p><strong>根因</strong>：去重是「先查后写」—— 锁只保护了<em>查询</em>，<em>发送期间没有占位</em>。
+40 个线程几乎同时通过查重，然后各自发送。典型的 check-then-act。</p>
+
+<pre><code># 修复前
+with lock:
+    if fp in recent: return          # ← 查完就放锁
+sent = send(...)                     # ← 这期间别人也能通过查重
+with lock:
+    recent[fp] = now                 # ← 太晚了
+
+# 修复后
+with lock:
+    if fp in recent: return
+    recent[fp] = now                 # ← 查重与占位在同一次持锁内完成
+sent = send(...)
+if not sent:                         # 失败要撤销占位，否则「一次失败=整个窗口内再也不发」
+    with lock:
+        if recent.get(fp) == now: recent.pop(fp)</code></pre>
+
+<p><strong>修复后实测</strong>：40 并发 → 发送 <strong>1</strong> 次，dedup-skip 39，审计 40 行全部合法 JSON。</p>
+
+<div class="card warn">
+  <strong>写这条回归测试时第一次跑挂了，原因很值得记：</strong>
+  <div class="why">
+    测试里漏了 <code>import time</code>，<code>NameError</code> 被 <code>maybe_notify</code> 的兜底
+    <code>except</code> 吞掉，表现为「发送成功但审计记 failed」。
+    <strong>兜底 except 是必要的，但它也会吃掉测试自身的错误</strong> ——
+    所以测试必须能独立复现，不能只看被测函数的返回值。
+  </div>
+</div>
+
+<h2>五、我自己引入的 4 个 bug（本轮的实际代价）</h2>
+
+<table>
+  <tr><th>#</th><th>我做了什么</th><th>后果</th><th>怎么发现的</th></tr>
+  <tr><td>1</td><td>审计用 <code>redact(url)</code> 打码</td><td>路径型密钥明文落盘</td><td>我自己的实测脚本打印台账</td></tr>
+  <tr><td>2</td><td>审计对话框直接 <code>exec()</code></td><td>不可见窗口下<b>永久阻塞</b>（实测卡死 300s）</td><td>E2E 脚本超时</td></tr>
+  <tr><td>3</td><td>Panel owner 改弱引用没考虑 <code>None</code></td><td><code>FailurePanel(owner=None)</code> 崩</td><td>全量回归 2 个 error</td></tr>
+  <tr><td>4</td><td>修环后窗口立即释放</td><td>一个测试<b>依赖内存泄漏</b>（返回子控件却让宿主窗口死掉）被暴露</td><td>全量回归</td></tr>
+</table>
+
+<p>第 4 条最有意思：它说明「修好一个 bug 会让另一个测试变红」通常不是修错了，
+而是那个测试一直踩在泄漏上。</p>
+
+<h2>六、还剩什么（诚实清单）</h2>
+
+<table>
+  <tr><th>项</th><th>状态</th><th>说明</th></tr>
+  <tr><td>MainWindow 引用环</td><td><span class="pill p-ok">已打断</span></td>
+      <td><code>del w</code> 即释放；守卫 <code>TestG69_18NoMainWindowRefCycle</code></td></tr>
+  <tr><td><b>其它控件的环</b></td><td><span class="pill p-warn">未消除</span></td>
+      <td>恢复正常 GC 后套件仍会在 <code>test_g68_settings_ui</code> 段错误 →
+          runner <b>保留整轮关 GC 作安全网</b>，并明确标注「待逐类改造后移除」，不冒充已根治</td></tr>
+  <tr><td>G54-4 引导清单</td><td><span class="pill p-ok">已闭环</span></td>
+      <td>5 项，3 项实时推导 + 2 项显式打勾；8 条测试</td></tr>
+  <tr><td>G54-1 表单即时校验</td><td><span class="pill p-bad">未闭环</span></td>
+      <td><code>theme.maybe_validate_url</code> 定义后无调用点</td></tr>
+  <tr><td>G53-1 雷达图/health_card 列</td><td><span class="pill p-warn">部分</span></td>
+      <td>派生视图有，列与图未做</td></tr>
+  <tr><td>G58-1/G58-2 限流与镜像测速</td><td><span class="pill p-bad">未闭环</span></td>
+      <td>模块已删 / 未实现</td></tr>
+  <tr><td>僵尸字段 ×3</td><td><span class="pill p-warn">未清理</span></td>
+      <td><code>shallow_default</code>/<code>auto_init_empty</code>/<code>mirror_default</code></td></tr>
+</table>
+
+<h2>七、小测验（必须通过）</h2>
+<p class="sub">8 题，答完点提交。<strong>需要全对</strong>。</p>
+
+<div class="quiz" id="quiz">
+  <div class="q" data-answer="b">
+    <div class="stem">1. 为什么「窗口只能靠循环 GC 释放」会导致段错误，而不是简单慢一点？</div>
+    <label class="opt"><input type="radio" name="q1" value="a">A. 因为 GC 太慢，用户会感觉到卡顿</label>
+    <label class="opt"><input type="radio" name="q1" value="b">B. 因为 GC 在<b>任意分配点</b>触发，可能在 <code>processEvents()</code> 分发事件的中途销毁控件，Qt 随后解引用已释放的定时器</label>
+    <label class="opt"><input type="radio" name="q1" value="c">C. 因为 GC 会删除文件</label>
+    <div class="fb" data-good="对。危险的不是「晚」，而是「时机不可控」。引用计数释放是确定性的；循环 GC 是任意点触发的。" data-bad="不对。慢不是问题，时机不可控才是 —— 它可能在 Qt 正分发事件时销毁对象。"></div>
+  </div>
+
+  <div class="q" data-answer="a">
+    <div class="stem">2. 判断「引用环是否还在」最可靠的单一检查是什么？</div>
+    <label class="opt"><input type="radio" name="q2" value="a">A. <code>del w</code> 之后、<b>不跑</b> <code>gc.collect()</code>，看 <code>weakref</code> 是否已失效</label>
+    <label class="opt"><input type="radio" name="q2" value="b">B. 跑一遍全量测试，没崩就是没环</label>
+    <label class="opt"><input type="radio" name="q2" value="c">C. 用 <code>gc.collect()</code> 的返回值判断</label>
+    <div class="fb" data-good="对。这是判定性的：靠引用计数释放说明没有环。跑测试是概率性的（可能这次 GC 恰好没撞上）；<code>gc.collect()</code> 返回的是回收总数，不针对某个对象。" data-bad="不对。跑测试是概率性的，容易给出假绿；<code>gc.collect()</code> 的返回值也不针对特定对象。"></div>
+  </div>
+
+  <div class="q" data-answer="c">
+    <div class="stem">3. 为什么 <code>connect(self.on_click)</code> 不成环，而 <code>connect(lambda: self.on_click())</code> 会？</div>
+    <label class="opt"><input type="radio" name="q3" value="a">A. 因为 lambda 更慢</label>
+    <label class="opt"><input type="radio" name="q3" value="b">B. 因为 lambda 不能被 Qt 识别</label>
+    <label class="opt"><input type="radio" name="q3" value="c">C. PyQt 对 QObject 的<b>绑定方法</b>用弱引用保存，而对 lambda 是普通 Python 对象、强引用</label>
+    <div class="fb" data-good="对。这就是为什么「把 lambda 换成绑定方法」是安全的机械改造，不需要重构架构。" data-bad="不对。关键在于 PyQt 对绑定方法的弱引用语义，与 lambda 的性能或识别能力无关。"></div>
+  </div>
+
+  <div class="q" data-answer="b">
+    <div class="stem">4. Webhook 审计为什么不能只用 <code>redact(url)</code> 打码？</div>
+    <label class="opt"><input type="radio" name="q4" value="a">A. 因为 redact 太慢</label>
+    <label class="opt"><input type="radio" name="q4" value="b">B. 因为 <code>redact</code> 只按<b>已知参数名</b>匹配，而 Webhook 密钥常在<b>路径</b>里（Server酱 <code>/&lt;KEY&gt;.send</code>、Telegram <code>/bot&lt;TOKEN&gt;/</code>）或自定义参数</label>
+    <label class="opt"><input type="radio" name="q4" value="c">C. 因为 redact 会把 URL 变空</label>
+    <div class="fb" data-good="对。实测三种形态全部明文落盘。正确做法是只记 <code>scheme://host</code>：排障只需要知道发往哪个服务。" data-bad="不对。问题在于匹配规则只认已知参数名，路径里的密钥它认不出来。"></div>
+  </div>
+
+  <div class="q" data-answer="a">
+    <div class="stem">5. 幂等去重「先查后写」在并发下会发生什么？</div>
+    <label class="opt"><input type="radio" name="q5" value="a">A. 多个线程几乎同时通过查重、各发一次 —— 实测 40 并发发了 13 次</label>
+    <label class="opt"><input type="radio" name="q5" value="b">B. 不会发生任何事，因为有锁</label>
+    <label class="opt"><input type="radio" name="q5" value="c">C. 只会少发，不会多发</label>
+    <div class="fb" data-good="对。锁只保护了查询；发送期间没有占位，其他线程照样能通过。修法是锁内一次性「查重+占位」，失败再撤销。" data-bad="不对。锁只覆盖了查询那一段，发送不在临界区内，所以会重复。"></div>
+  </div>
+
+  <div class="q" data-answer="c">
+    <div class="stem">6. 去重时「发送失败要撤销占位」，不撤销会怎样？</div>
+    <label class="opt"><input type="radio" name="q6" value="a">A. 没有影响</label>
+    <label class="opt"><input type="radio" name="q6" value="b">B. 会多发几次</label>
+    <label class="opt"><input type="radio" name="q6" value="c">C. 一次失败 = 整个去重窗口内再也不发，通知静默丢失</label>
+    <div class="fb" data-good="对。失败若不撤销，后续同 payload 都会被当成「已发送」跳过 —— 比重复更糟，因为完全没有声音。" data-bad="不对。方向反了：不撤销会导致该窗口内彻底不再发送。"></div>
+  </div>
+
+  <div class="q" data-answer="b">
+    <div class="stem">7. 修好引用环之后，一个测试突然红了，报「QTableWidget 已被删除」。最合理的解释是？</div>
+    <label class="opt"><input type="radio" name="q7" value="a">A. 修错了，应该回滚</label>
+    <label class="opt"><input type="radio" name="q7" value="b">B. 那个测试<b>一直依赖内存泄漏</b>：它返回了窗口的子控件，却让宿主窗口自生自灭</label>
+    <label class="opt"><input type="radio" name="q7" value="c">C. Qt 有 bug</label>
+    <div class="fb" data-good="对。QWidget 的 C++ 生命周期归父对象。以前窗口被环吊着不死，测试才能用；环一断，窗口立刻释放，子控件随之销毁。修法是测试自己持有窗口。" data-bad="不对。这正是「修好一个 bug 会让踩在它上面的测试暴露」的典型情况。"></div>
+  </div>
+
+  <div class="q" data-answer="a">
+    <div class="stem">8. 本轮把「整轮关闭循环 GC」保留了，但注明「待逐类改造后移除」。这在工程上属于？</div>
+    <label class="opt"><input type="radio" name="q8" value="a">A. 有明确边界的临时处置：写明做了什么、为什么、还差什么、怎么验收移除条件</label>
+    <label class="opt"><input type="radio" name="q8" value="b">B. 伪闭环，等同于没修</label>
+    <label class="opt"><input type="radio" name="q8" value="c">C. 根治方案</label>
+    <div class="fb" data-good="对。关键是「不冒充完成」：根因已定位、MainWindow 的环已断、其余环仍是已知敞口，且写清了移除条件（其余控件环改完 + 连跑 3 次全量）。" data-bad="不对。它既不是根治也不是伪闭环 —— 它是有明确边界的临时处置，前提是把边界写清楚。"></div>
+  </div>
+
+  <div class="score">
+    <div id="verdict">未提交</div>
+    <div>
+      <button onclick="grade()">提交</button>
+      <button class="ghost" onclick="reset()">重做</button>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <p>证据链：<code>docs/验证记录-2026-10-17.md</code>（命令+输出台账）·
+     <code>workflow_status.md</code> · <code>tests/test_g69_notify_hardening.py</code>(16) ·
+     <code>tests/test_g69_checklist.py</code>(8) · <code>TestG69_18NoMainWindowRefCycle</code>。</p>
+  <p>本报告只陈述仓库内可复现的事实。「未闭环」一节列出的项，没有一项在本轮被声称完成。</p>
+</footer>
+
+</div>
+<script>
+function grade(){
+  const qs=[...document.querySelectorAll('.q')];
+  let right=0, unanswered=0;
+  qs.forEach((q)=>{
+    const pick=q.querySelector('input:checked');
+    const fb=q.querySelector('.fb');
+    fb.classList.remove('show','good','bad');
+    if(!pick){unanswered++;fb.textContent='未作答';fb.classList.add('show','bad');return;}
+    if(pick.value===q.dataset.answer){
+      right++; fb.textContent='✓ '+fb.dataset.good; fb.classList.add('show','good');
+    }else{ fb.textContent='✗ '+fb.dataset.bad; fb.classList.add('show','bad'); }
+  });
+  const v=document.getElementById('verdict'); const total=qs.length;
+  if(unanswered){ v.textContent=`还有 ${unanswered} 题未作答`; v.style.color='var(--dim)'; }
+  else if(right===total){ v.textContent=`✅ 通过 ${right}/${total} —— 你可以接手这份变更了`; v.style.color='var(--ok)'; }
+  else { v.textContent=`❌ 未通过 ${right}/${total} —— 读上面的解析后重做`; v.style.color='var(--bad)'; }
+  v.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+function reset(){
+  document.querySelectorAll('.q input').forEach(i=>i.checked=false);
+  document.querySelectorAll('.fb').forEach(f=>f.classList.remove('show','good','bad'));
+  const v=document.getElementById('verdict'); v.textContent='未提交'; v.style.color='var(--fg)';
+}
+</script>
+</body>
+</html>

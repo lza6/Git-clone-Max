@@ -475,10 +475,17 @@ def make_highlighter(document):
 
 
 def maybe_validate_url(text: str) -> Optional[str]:
-    """供 UI 校验：返回错误提示或 None。"""
-    from ..app.url_lib import is_github_url
-    if not text.strip():
+    """单行地址校验：返回错误提示或 None。
+
+    G69-18 修复：原实现用 `is_github_url()` —— **只认 GitHub**，而本工具支持
+    GitLab / Gitee / Codeberg / Bitbucket / 自建主机。用它做输入校验会把合法地址
+    判成非法。改用**与克隆链路同一个解析器** `parse_any_repo_url`，
+    校验结论与「点了开始之后会不会真的克隆」保持一致。
+    """
+    from ..app.url_lib import parse_any_repo_url
+    raw = (text or "").strip()
+    if not raw:
         return "地址为空"
-    if not is_github_url(text):
-        return "不是有效的 GitHub 仓库地址"
+    if parse_any_repo_url(raw) is None:
+        return "不是可识别的仓库地址（支持 GitHub/GitLab/Gitee/Codeberg/Bitbucket/自建主机）"
     return None
