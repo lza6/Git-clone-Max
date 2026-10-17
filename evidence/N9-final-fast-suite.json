@@ -1,0 +1,25 @@
+{
+  "task_id": "N9-final-fast-suite",
+  "goal": "v9.5.0 全量快集（镜像多备援后）",
+  "status": "done",
+  "date": "2026-10-18",
+  "command": "QT_QPA_PLATFORM=offscreen python -m coverage run --source=gcm scripts/ci_run_fast.py && python -m coverage report --include=\"gcm/*\"",
+  "exit_code": 0,
+  "tests": 1177,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 3,
+  "native_crashes": 0,
+  "coverage": 0.82,
+  "coverage_detail": "TOTAL 10446 stmts · 1665 miss · 2646 branch · 458 BrPart · 82%",
+  "seams_touched": ["S15-mirror", "S02-git-subprocess", "S06-settings-consumers", "全部（回归）"],
+  "mock_scenarios": [
+    "探测可用/超时/取消/空仓库/缓存/并发",
+    "克隆镜像失败→源站、令牌→跳过镜像",
+    "更新首次失败→切换镜像"
+  ],
+  "limitations": [
+    "覆盖率是快集口径（Windows 门禁 81%）",
+    "慢集与 perf-baseline 由 CI 承接"
+  ]
+}

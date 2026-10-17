@@ -1,0 +1,68 @@
+{
+  "task_id": "N8-mirror-failover",
+  "goal": "G58-2 镜像多备援：国内镜像默认启用 + 探测择优 + 失败回退源站",
+  "status": "done",
+  "date": "2026-10-18",
+  "commands": [
+    {"cmd": "ruff check gcm", "exit_code": 0, "output_tail": "All checks passed!"},
+    {"cmd": "mypy gcm", "exit_code": 0, "output_tail": "Success: no issues found in 68 source files"},
+    {"cmd": "unittest tests.test_g58_mirror_failover", "exit_code": 0, "output_tail": "Ran 34 tests ... OK"},
+    {"cmd": "unittest test_g38_network test_g381_ui_callbacks test_g68_settings_ui", "exit_code": 0, "output_tail": "Ran 43 tests ... OK"}
+  ],
+  "mirror_selection_evidence": {
+    "method": "git ls-remote --exit-code <mirror>/<repo> HEAD",
+    "date": "2026-10-18",
+    "reachable": [
+      {"prefix": "https://gh.llkk.cc", "median_ms": 2400},
+      {"prefix": "https://gh-proxy.com", "median_ms": 3300},
+      {"prefix": "https://ghfast.top", "median_ms": 3600},
+      {"prefix": "https://ghproxy.net", "median_ms": 8000}
+    ],
+    "rejected": [
+      {"prefix": "https://ghproxy.com", "reason": "git 302 重定向失败（HEAD 200 属假阳性）"},
+      {"prefix": "https://mirror.ghproxy.com", "reason": "TLS unexpected EOF"},
+      {"prefix": "https://ghps.cc", "reason": "HTTP 403"}
+    ]
+  },
+  "real_e2e": [
+    {"case": "镜像克隆（默认预设）", "result": "SUCCESS", "elapsed_s": 6.3,
+     "detail": "使用镜像（2940ms）：https://gh.llkk.cc；head=7fd1a60b"},
+    {"case": "镜像不可达 → 回退源站", "result": "SUCCESS", "elapsed_s": 6.7,
+     "detail": "mirror_prefix={github.com: https://127.0.0.1:1}；日志：镜像不可用 → 回退源站"},
+    {"case": "镜像克隆后增量更新", "result": "SUCCESS", "elapsed_s": 4.8,
+     "detail": "origin 保持镜像地址；已是最新"},
+    {"case": "更新时镜像失效 → 自动切换", "result": "SUCCESS", "elapsed_s": 8.7,
+     "detail": "fetch 失败 → set-url 到 gh.llkk.cc → fetch 成功"}
+  ],
+  "files_created": [
+    "gcm/app/mirrors.py",
+    "gcm/app/mirror_probe.py",
+    "tests/test_g58_mirror_failover.py"
+  ],
+  "files_changed": [
+    "gcm/git/service.py（候选决策/克隆回退/更新切换）",
+    "gcm/app/engine.py（参数透传）",
+    "gcm/app/worker.py（重建 service 时保留镜像配置）",
+    "gcm/ui/main_window.py（参数透传 + 测速信号/槽）",
+    "gcm/ui/settings_groups.py（多镜像输入 + 两个开关 + 测速按钮）",
+    "gcm/ui/settings_panel.py（解析多值 + 测速 worker + 回写）",
+    "gcm/db/settings.py（mirror_use_presets / mirror_fallback）",
+    "gcm/i18n/zh.py / en.py（15 个新文案）"
+  ],
+  "seams_touched": ["S15-mirror", "S02-git-subprocess", "S06-settings-consumers", "S07-thread-gui"],
+  "mock_scenarios": [
+    "探测：可用/超时/取消/空仓库(rc=2)/缓存命中/并发 12 线程",
+    "克隆：镜像失败→源站重试；有令牌→跳过镜像",
+    "更新：首次 fetch 失败→切换镜像成功；有令牌→不切换"
+  ],
+  "security": [
+    "有令牌/主机凭据时绝不走镜像（防 Authorization 头泄漏给第三方）",
+    "SSH/本地路径永不拼接镜像前缀",
+    "探测命令禁用 credential.helper 与交互提示"
+  ],
+  "limitations": [
+    "预设镜像是第三方服务，随时可能失效；设置页可关闭或重新测速",
+    "真实镜像 E2E 只验证了公开仓库；私有仓库按设计直接走源站",
+    "覆盖率为快集口径，见 N9"
+  ]
+}

@@ -1,7 +1,7 @@
 # Git-clone-Max
 
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
-> **当前版本：v9.4.7**（盲点扫描接线：管理页搜索/过期高亮/Star 导入/收藏黑名单/日志高亮/告警配置即时生效）
+> **当前版本：v9.5.0**（镜像多备援：内置国内镜像 + 失败自动回退源站 + 真实测速排序）
 > **v5.0：多平台直克隆** — GitLab / Gitee / Codeberg / Bitbucket / 自建主机（HTTPS/SSH/短格式/子组）同样支持。
 > 克隆目录一律 `host__作者__仓库`（GitHub 为 `作者__仓库`），本地改动永不覆盖。
 
@@ -63,7 +63,7 @@ uv run python -m gcm --portable
 | 多平台 | GitHub / GitLab / Gitee / Codeberg / Bitbucket / 自建主机，HTTPS + SSH + 短格式 + 子组 + 自定义主机白名单，直接复制地址即下载 |
 | 指定版本 | `owner/repo@v1.2.0` 语法指定分支/标签（`clone -b`），不改动仓库默认检出 |
 | 按 host 凭据 | 设置页「按平台凭据」`host=token` 逐行注入（github→Bearer / gitlab→PRIVATE-TOKEN / 未登记不发）；`host_tokens` **逐条目加密落盘**，杜绝明文 |
-| 镜像前缀 | 设置页「镜像前缀」`host=https://ghproxy.com` 逐行配置，HTTPS 克隆自动拼接镜像（SSH 不拼） |
+| 镜像前缀 | **多镜像备援**：内置 4 个实测可用的国内 GitHub 镜像（默认启用），也可在设置页按 `host=镜像1,镜像2` 自定义；克隆前用 `git ls-remote` 短超时探测，取最快的可用镜像，**全部不可用/没有该仓库时自动回退源站**；有令牌时**不走镜像**（防凭据泄漏）；SSH 不拼接 |
 | 远端预检 | 「克隆前做远端可达性预检（10s）」开关，断网 10s 内明确提示不白等超时 |
 | 浅克隆加速 | 满量 / 浅克隆（可调 depth）/ **单分支浅克隆**（`--depth N --single-branch`）；弱网自动降级 treeless → **depth1 保命模式** |
 | 强制 IPv4 | 「强制 HTTP/1.1」开关，规避部分网络下 HTTP/2 兼容问题 |

@@ -26,6 +26,7 @@ from ..db.repo_db import Database, load_progress, save_progress
 from ..git.service import GitService
 from ..models import RepoSpec, SyncAction, SyncResult, SyncStatus
 from ..util.redact import redact
+from .mirrors import normalize_mirror_prefix
 from .worker import CancelFlag, CloneWorker, TaskPayload
 
 # 周期落盘间隔（秒）：期间完成的任务先聚在内存，到时统一写一次
@@ -58,7 +59,10 @@ class SyncEngine(QObject):
                  retries: int = 2, proxy: str = "", token: str = "",
                  submodule: bool = False, rate_limit_kbps: int = 0,
                  host_tokens: Optional[dict[str, str]] = None,
-                 mirror_prefix: Optional[dict[str, str]] = None,
+                 mirror_prefix: Optional[dict[str, object]] = None,
+                 mirror_use_presets: bool = True,
+                 mirror_fallback: bool = True,
+                 mirror_probe_timeout: float = 8.0,
                  host_auth_types: Optional[dict[str, str]] = None,
                  precheck_remote: bool = False, single_branch: bool = False,
                  force_ipv4: bool = False,
@@ -89,7 +93,11 @@ class SyncEngine(QObject):
         self.proxy = (proxy or "").strip()
         self.token = (token or "").strip()
         self.host_tokens: dict[str, str] = dict(host_tokens or {})  # G38-1
-        self.mirror_prefix: dict[str, str] = dict(mirror_prefix or {})  # G38-2
+        self.mirror_prefix: dict[str, tuple[str, ...]] = normalize_mirror_prefix(
+            mirror_prefix)  # G38-2/G58-2
+        self.mirror_use_presets = bool(mirror_use_presets)   # G58-2
+        self.mirror_fallback = bool(mirror_fallback)         # G58-2
+        self.mirror_probe_timeout = max(1.0, float(mirror_probe_timeout or 8.0))
         self.host_auth_types: dict[str, str] = dict(host_auth_types or {})  # G58-5 认证头类型
         self.precheck_remote = bool(precheck_remote)  # G38-3
         self.single_branch = bool(single_branch)      # G38-4
@@ -581,6 +589,9 @@ class SyncEngine(QObject):
             ssh_key=getattr(self, "_ssh_key_global", ""),
             host_tokens=getattr(self, "host_tokens", None) or {},  # G38-1
             mirror_prefix=getattr(self, "mirror_prefix", None) or {},  # G38-2
+            mirror_use_presets=getattr(self, "mirror_use_presets", True),  # G58-2
+            mirror_fallback=getattr(self, "mirror_fallback", True),        # G58-2
+            mirror_probe_timeout=getattr(self, "mirror_probe_timeout", 8.0),  # G58-2
             host_auth_types=getattr(self, "host_auth_types", None) or {},  # G58-5
             precheck_remote=getattr(self, "precheck_remote", False),  # G38-3
             single_branch=getattr(self, "single_branch", False),  # G38-4

@@ -42,9 +42,19 @@ def _host_tokens_text(settings: Settings) -> str:
 
 
 def _mirror_text(settings: Settings) -> str:
-    """mirror_prefix（dict）→ 设置页多行文本 "host=prefix"。"""
+    """mirror_prefix（dict）→ 设置页文本 "host=prefix1, prefix2"（多备援用逗号）。"""
     mp = getattr(settings, "mirror_prefix", None) or {}
-    return "\n".join(f"{k}={v}" for k, v in mp.items() if k)
+    lines = []
+    for k, v in mp.items():
+        if not k:
+            continue
+        if isinstance(v, (list, tuple)):
+            val = ", ".join(str(x) for x in v if str(x).strip())
+        else:
+            val = str(v or "").strip()
+        if val:
+            lines.append(f"{k}={val}")
+    return "\n".join(lines)
 
 
 def _custom_hosts_text(settings: Settings) -> str:
@@ -273,12 +283,7 @@ def _network_rows_credentials(owner: MainWindow, settings: Settings, f3: QFormLa
     _ssh_lay.addWidget(owner.btn_ssh_key, 0)
     f3.addRow(tr("SSH 私钥："), _ssh_row)
 
-    # G38-2 镜像前缀（每行 "host=prefix"，仅 HTTPS 生效）
-    owner.edit_mirror = QLineEdit(_mirror_text(settings))
-    owner.edit_mirror.setPlaceholderText(tr("github.com=https://ghproxy.com（每行一个）"))
-    owner.edit_mirror.setToolTip(tr("按平台配置镜像前缀（仅 https 克隆生效；SSH 不拼）"))
-    owner.edit_mirror.editingFinished.connect(owner._save_mirror)
-    f3.addRow(tr("镜像前缀："), owner.edit_mirror)
+    _network_rows_mirror(owner, settings, f3)
 
     # G38-7 常用主机（自建 GitLab 等，短格式可直接解析）
     owner.edit_custom_hosts = QLineEdit(_custom_hosts_text(settings))
@@ -306,6 +311,41 @@ def _network_rows_credentials(owner: MainWindow, settings: Settings, f3: QFormLa
     owner.ck_force_ipv4.setToolTip(tr("部分网络环境下 HTTP/2 兼容问题可用此项规避"))
     owner.ck_force_ipv4.stateChanged.connect(owner._save_force_ipv4)
     f3.addRow(tr("HTTP 版本："), owner.ck_force_ipv4)
+
+
+def _network_rows_mirror(owner: MainWindow, settings: Settings, f3: QFormLayout) -> None:
+    """G38-2/G58-2 镜像前缀 + 多备援开关 + 测速（拆出以守住函数长度上限）。"""
+    owner.edit_mirror = QLineEdit(_mirror_text(settings))
+    owner.edit_mirror.setPlaceholderText(
+        tr("github.com=https://mirror-a, https://mirror-b（每行一个主机，多个镜像用逗号）"))
+    owner.edit_mirror.setToolTip(tr(
+        "按平台配置镜像前缀（仅 https 克隆生效；SSH 不拼）。"
+        "一个主机可写多个镜像，按顺序尝试；全部失败自动回退源站。"))
+    owner.edit_mirror.editingFinished.connect(owner._save_mirror)
+    f3.addRow(tr("镜像前缀："), owner.edit_mirror)
+
+    owner.ck_mirror_presets = QCheckBox(tr("使用内置国内镜像（GitHub）"))
+    owner.ck_mirror_presets.setChecked(bool(getattr(settings, "mirror_use_presets", True)))
+    owner.ck_mirror_presets.setToolTip(tr(
+        "内置 4 个实测可用的 GitHub 镜像（第三方服务）。"
+        "配置了令牌/主机凭据时不会走镜像，避免凭据泄漏。"))
+    owner.ck_mirror_presets.toggled.connect(owner._save_mirror_presets)
+    owner.ck_mirror_fallback = QCheckBox(tr("镜像失败自动回退源站"))
+    owner.ck_mirror_fallback.setChecked(bool(getattr(settings, "mirror_fallback", True)))
+    owner.ck_mirror_fallback.setToolTip(tr(
+        "镜像不可用/没有该仓库时改用 github.com 原地址重试（可能较慢，但不会失败）"))
+    owner.ck_mirror_fallback.toggled.connect(owner._save_mirror_fallback)
+    _mir_lay = QHBoxLayout()
+    _mir_lay.addWidget(owner.ck_mirror_presets)
+    _mir_lay.addWidget(owner.ck_mirror_fallback)
+    owner.btn_mirror_probe = QPushButton(tr("测速并排序"))
+    owner.btn_mirror_probe.setToolTip(tr(
+        "用 git ls-remote 实测每个镜像（含内置）的连通性与延迟，"
+        "把可用镜像按速度写回上面的输入框"))
+    owner.btn_mirror_probe.clicked.connect(owner._probe_mirrors)
+    _mir_lay.addWidget(owner.btn_mirror_probe)
+    _mir_lay.addStretch()
+    f3.addRow(tr("镜像备援："), _mir_lay)
 
 
 def _build_group_appearance(owner: MainWindow, settings: Settings):

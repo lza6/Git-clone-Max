@@ -9,6 +9,9 @@
 | `gcm/ui/manage_panel.py` | **搜索框 + `setRowHidden` + 收藏/黑名单右键菜单** | v9.4.7 | 过滤用源行号（未接排序代理）；刷新后自动重放过滤 |
 | `gcm/ui/settings_panel.py` | **安装日志高亮器 + `_apply_alert_config`** | v9.4.7 | 告警间隔/IM 保存后即时推送给扫描器 |
 | `gcm/app/alerts.py` | **`AlertScanner.reconfigure()`** | v9.4.7 | 循环每轮重读 `_interval`，新间隔下一轮生效 |
+| `gcm/app/mirrors.py` / `mirror_probe.py` | **新增：镜像候选归一 + `git ls-remote` 探测** | v9.5.0 | 不要用 HTTP HEAD 判断可用性；有凭据禁止走镜像 |
+| `gcm/git/service.py` | **克隆前探测择优、失败回退源站；更新失败在镜像/源站间切换** | v9.5.0 | `_mirror_url` 默认不含预设（兼容旧行为）；完整链路走 `_resolve_clone_url` |
+| `gcm/ui/settings_groups.py` | 镜像行拆为 `_network_rows_mirror`（守住 100 行上限）+ 两个开关 + 测速按钮 | v9.5.0 | `mirror_prefix` 值可为 str 或 list |
 | `gcm/app/worker.py` | **`on_line` 真正接到 service** | v9.4.7 | git 输出按仓库 index 归属，不再全记到 0 |
 | `gcm/ui/{failure,manage,progress,settings}_panel.py` | `owner` 改 **weakref 属性** | v9.4.2 | 不可再写 `self.owner = x`（只读 property） |
 | `gcm/ui/checklist.py` | 新增（引导清单） | v9.4.3 | 文案走 `tr()`；键需在 zh/en 同时存在 |

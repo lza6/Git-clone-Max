@@ -100,6 +100,12 @@ class CloneWorker(QRunnable):
                     fetch_timeout=svc.fetch_timeout, clone_timeout=svc.clone_timeout,
                     retries=svc.retries, backoff=svc._backoff, proxy=svc.proxy,
                     fetch_depth=self._fetch_depth, unshallow=self._unshallow,
+                    # G58-2：重建时必须带上镜像备援配置，否则这条降级路径会
+                    # 悄悄退回「只用源站」，用户配置的国内镜像失效。
+                    mirror_prefix=getattr(svc, "mirror_prefix", None) or {},
+                    mirror_use_presets=getattr(svc, "mirror_use_presets", True),
+                    mirror_fallback=getattr(svc, "mirror_fallback", True),
+                    mirror_probe_timeout=getattr(svc, "mirror_probe_timeout", 8.0),
                 )
                 svc.send_progress_detail = self._emit_progress_detail
             res = svc.sync(spec)

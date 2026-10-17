@@ -260,7 +260,10 @@ class Settings:
     clipboard_watch: bool = False     # G09-1 剪贴板监听（检测到仓库地址提示）
     finish_sound: bool = True         # G35-2 全部任务完成时提示音（QApplication.beep）
     host_tokens: dict = field(default_factory=dict)  # G38-1 按 host 映射凭据（如 {"gitlab.com": "glpat-xxx"}；落盘逐条目加密）
-    mirror_prefix: dict = field(default_factory=dict)  # G38-2 镜像前缀（如 {"github.com": "https://ghproxy.com"}）
+    mirror_prefix: dict = field(default_factory=dict)  # G38-2/G58-2 镜像前缀（值可为 str 或 [str,...]）
+    # G58-2：镜像多备援。预设 = 内置国内 GitHub 镜像；失败自动回退源站。
+    mirror_use_presets: bool = True   # 使用内置国内镜像（GitHub；受「有凭据不走镜像」约束）
+    mirror_fallback: bool = True      # 镜像不可用/克隆失败 → 回退源站重试
     precheck_remote: bool = False     # G38-3 远端可达性预检（clone/fetch 前 10s ls-remote）
     single_branch: bool = False       # G38-4 浅克隆时只拉目标分支（--single-branch）
     force_ipv4: bool = False          # G38-6 强制 HTTP/1.1（IPv6 兼容修复）

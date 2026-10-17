@@ -114,6 +114,8 @@ class MainWindow(QMainWindow):
     alerts_fired = pyqtSignal(list)
     # G35-10：Star 列表拉取结束（repos, error）—— 网络在 worker 线程，回填在 GUI 线程。
     starred_fetched = pyqtSignal(list, str)
+    # G58-2：镜像测速结束（results, sample_url）—— 探测在 worker 线程。
+    mirror_probe_done = pyqtSignal(list, str)
 
     def __init__(self, data_dir: str | Path, db: Database | None = None,
                  settings: SettingsStore | None = None,
@@ -141,6 +143,8 @@ class MainWindow(QMainWindow):
             token=self.settings.token,
             host_tokens=getattr(self.settings, "host_tokens", None) or {},  # G38-1
             mirror_prefix=getattr(self.settings, "mirror_prefix", None) or {},  # G38-2
+            mirror_use_presets=bool(getattr(self.settings, "mirror_use_presets", True)),  # G58-2
+            mirror_fallback=bool(getattr(self.settings, "mirror_fallback", True)),        # G58-2
             host_auth_types=getattr(self.settings, "host_auth_types", None) or {},  # G58-5
             precheck_remote=bool(getattr(self.settings, "precheck_remote", False)),  # G38-3
             single_branch=bool(getattr(self.settings, "single_branch", False)),  # G38-4
@@ -876,6 +880,7 @@ class MainWindow(QMainWindow):
         from .settings_panel import SettingsPanel
         if not hasattr(self, "settings_panel"):
             self.settings_panel = SettingsPanel(owner=self, parent=self.tab_settings)
+            self.mirror_probe_done.connect(self._on_mirror_probe_done)
         """G33-8 拆分：设置页控件构建委托给 settings_panel.py / log_buffer.py。
 
         控件名（self.spin_concurrency / self.log_view 等）仍挂载在本窗口，
@@ -1041,6 +1046,22 @@ class MainWindow(QMainWindow):
     def _save_mirror(self, *args, **kwargs):
         """G45-6 转发 settings_panel.py（行为零变化）。"""
         return self.settings_panel._save_mirror(*args, **kwargs)
+
+    def _save_mirror_presets(self, *args, **kwargs):
+        """G58-2 转发：内置国内镜像开关。"""
+        return self.settings_panel._save_mirror_presets(*args, **kwargs)
+
+    def _save_mirror_fallback(self, *args, **kwargs):
+        """G58-2 转发：镜像失败回退源站开关。"""
+        return self.settings_panel._save_mirror_fallback(*args, **kwargs)
+
+    def _probe_mirrors(self, *args, **kwargs):
+        """G58-2 转发：测速并排序（worker 线程）。"""
+        return self.settings_panel._probe_mirrors(*args, **kwargs)
+
+    def _on_mirror_probe_done(self, results, sample):
+        """G58-2：测速结束槽（GUI 线程）→ 设置面板回填。"""
+        return self.settings_panel._on_mirror_probe_done(results, sample)
 
     def _save_custom_hosts(self, *args, **kwargs):
         """G45-6 转发 settings_panel.py（行为零变化）。"""
@@ -1860,6 +1881,8 @@ class MainWindow(QMainWindow):
             rate_limit_kbps=int(getattr(self.settings, "rate_limit_kbps", 0) or 0),
             host_tokens=getattr(self.settings, "host_tokens", None) or {},  # G38-1
             mirror_prefix=getattr(self.settings, "mirror_prefix", None) or {},  # G38-2
+            mirror_use_presets=bool(getattr(self.settings, "mirror_use_presets", True)),  # G58-2
+            mirror_fallback=bool(getattr(self.settings, "mirror_fallback", True)),        # G58-2
             host_auth_types=getattr(self.settings, "host_auth_types", None) or {},  # G58-5
             precheck_remote=bool(getattr(self.settings, "precheck_remote", False)),  # G38-3
             single_branch=bool(single_branch),  # G38-4（UI 模式 2 或设置）

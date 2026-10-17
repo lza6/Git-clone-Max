@@ -383,3 +383,36 @@ Light 下对比度不足）、校验条强制 `PlainText`（用户原文含 `<>`
 > 构建时踩到已知坑：`dist/Git-clone-Max.exe` 被 **6 个健康检查残留实例**占用
 > （`PermissionError [WinError 5]`）。按 `docs/RELEASE_CHECKLIST.md` 的说明先
 > `taskkill /IM Git-clone-Max.exe /F` 再重建即可。这条已在该清单里写明，本次是复现而非新问题。
+
+
+---
+
+## 12. 镜像多备援（G58-2 · v9.5.0 · 2026-10-18）
+
+用户需求原话：*「最好多备用几个国内镜像，默认就用国内镜像，如果国内镜像没这个仓库地址就用源仓库地址重试」*。
+
+### 12.1 做了什么
+
+| 层 | 变化 |
+|----|------|
+| 纯逻辑 | 新增 `gcm/app/mirrors.py`：前缀归一（旧的单值 + 新的多值）、用户配置优先、内置 4 个实测镜像、凭据门禁 |
+| 探测 | 新增 `gcm/app/mirror_probe.py`：`git ls-remote --exit-code` 短超时 + 10 分钟缓存（**HTTP HEAD 不可信**，见验证记录 §13.1） |
+| 克隆 | 先逐个探测，取第一个可用镜像；镜像没有该仓库/克隆失败 → 回退源站重试 |
+| 更新 | fetch 失败 → 在镜像/源站之间切换，成功则把 origin 留在可用地址 |
+| 安全 | **有令牌/主机凭据时绝不用镜像**；SSH/本地路径不拼接 |
+| UI | 一个 host 可配多个镜像；「使用内置国内镜像」「镜像失败自动回退源站」开关；「测速并排序」按钮（worker 线程） |
+
+### 12.2 真实 E2E（本机）
+
+```
+镜像克隆              → SUCCESS 6.3s（gh.llkk.cc，2940ms 探测）
+镜像不可达→源站       → SUCCESS 6.7s
+镜像克隆后增量更新     → SUCCESS 4.8s（已是最新）
+更新时镜像失效→切换    → SUCCESS 8.7s（set-url 到 gh.llkk.cc）
+```
+
+### 12.3 验证
+
+`ruff` All checks passed · `mypy` Success（68 文件）· 新增
+`tests/test_g58_mirror_failover.py`(34) · 受影响回归 43 用例 OK ·
+全量快集见 `evidence/N9-final-fast-suite.json`。

@@ -29,6 +29,7 @@
 | S12 | 打包 → 发布 | `Git-clone-Max.spec` → PyInstaller | `scripts/publish_release.py` / Release | 版本常量单源；双产物；服务端 sha256 一致；健康检查真启动 | `test_g66_patch.TestPackagingVersionSync` · `scripts/health_check.py`（人工） |
 | S13 | 归档 | `git/archive.py` | 文件系统 | 失败不静默；路径不越界 | `test_g56*` / `test_archive*` |
 | S14 | i18n | `gcm/i18n/zh.py` / `en.py` | `tr()` | 新增 key 必须两边都有；缺失回退中文 | `test_g67_docs_freshness` 相关用例 |
+| S15 | 镜像备援 → git | `app/mirrors.py` · `app/mirror_probe.py` | `git/service.py` 的 clone/fetch | 仅 HTTPS + 无凭据；探测用 `git ls-remote`（**不能用 HTTP HEAD**）；源站永远最后；更新失败可在镜像/源站间切换 | `test_g58_mirror_failover`（34，含真实 git E2E） |
 
 ---
 
@@ -40,7 +41,7 @@
 |----|------|------|------|
 | ruff | `python -m ruff check gcm` | **All checks passed** | 2026-10-17 |
 | mypy | `python -m mypy gcm` | **Success**（66 文件） | 2026-10-17 |
-| 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 1143 · failures=0 · errors=0 · skipped=3 · 原生崩溃 0 · 覆盖 82%` | 2026-10-18（v9.4.7） |
+| 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 1177 · failures=0 · errors=0 · skipped=3 · 原生崩溃 0 · 覆盖 82%` | 2026-10-18（v9.5.0） |
 | 连跑稳定性 | 同一命令 ×3 | `1115 / 1115 / 1122`，0 崩溃 | 2026-10-17（已移除 GC 安全网） |
 | CI | GitHub Actions | 7/7 job 绿（windows/ubuntu/macos + e2e + fast + perf + slow） | 2026-10-17 |
 

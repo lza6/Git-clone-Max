@@ -14,6 +14,13 @@ from pathlib import Path
 from typing import Optional
 
 from ..app import applog
+from ..app.mirror_probe import probe_git_url
+from ..app.mirrors import (
+    build_mirror_urls,
+    mirror_prefixes_for,
+    normalize_mirror_prefix,
+    requires_credentials,
+)
 from ..models import RepoSpec, StreamChunk, SyncAction, SyncResult, SyncStatus
 
 LineCallback = Callable[[StreamChunk], None]
@@ -394,7 +401,10 @@ class GitService:
                  proxy: str = "", fetch_depth: int = 0, unshallow: bool = False,
                  token: str = "", submodule: bool = False, rate_limit_kbps: int = 0,
                  host_tokens: Optional[dict[str, str]] = None,
-                 mirror_prefix: Optional[dict[str, str]] = None,
+                 mirror_prefix: Optional[dict[str, object]] = None,
+                 mirror_use_presets: bool = True,
+                 mirror_fallback: bool = True,
+                 mirror_probe_timeout: float = 8.0,
                  host_auth_types: Optional[dict[str, str]] = None,
                  precheck_remote: bool = False,
                  single_branch: bool = False,
@@ -415,7 +425,11 @@ class GitService:
         self.token = (token or "").strip()
         # G38-1 按 host 映射凭据（每 host 一个 token；键为 host，值原样传递）
         self.host_tokens: dict[str, str] = dict(host_tokens or {})
-        self.mirror_prefix: dict[str, str] = dict(mirror_prefix or {})  # G38-2
+        self.mirror_prefix: dict[str, tuple[str, ...]] = normalize_mirror_prefix(
+            mirror_prefix)  # G58-2
+        self.mirror_use_presets = bool(mirror_use_presets)  # G58-2 内置国内镜像
+        self.mirror_fallback = bool(mirror_fallback)        # G58-2 失败回退源站
+        self.mirror_probe_timeout = max(1.0, float(mirror_probe_timeout or 8.0))
         self.host_auth_types: dict[str, str] = dict(host_auth_types or {})  # G58-5 认证头类型
         self.precheck_remote = bool(precheck_remote)  # G38-3 远端可达性预检（默认关）
         self.single_branch = bool(single_branch)      # G38-4 单分支浅克隆
@@ -593,20 +607,115 @@ class GitService:
             return self.token
         return ""
 
-    def _mirror_url(self, url: str) -> str:
-        """G38-2 按当前 host 拼接镜像前缀（仅 HTTPS；SSH/本地原样）。
+    def _mirror_url(self, url: str, include_presets: bool = False) -> str:
+        """G38-2/G58-2 取**第一个**镜像前缀拼 URL（保持旧语义）。
 
-        从 self.mirror_prefix[host] 取前缀；无前缀/SSH → 原样返回。
+        `include_presets=False`（默认）只看用户在设置页配置的前缀，用于兼容旧调用与
+        旧测试；完整的多备援链路见 `_resolve_clone_url()`。
         """
-        if not url or not self.mirror_prefix:
-            return url
-        if not url.lower().startswith("https://"):
+        if not url or not url.lower().startswith("https://"):
             return url
         host = (getattr(self, "_current_host", "") or "").lower().replace("www.", "").rstrip("/")
-        prefix = (self.mirror_prefix.get(host) or "").strip().rstrip("/")
-        if not prefix:
-            return url
-        return f"{prefix}/{url}"
+        prefixes = mirror_prefixes_for(host, self.mirror_prefix,
+                                      use_presets=include_presets)
+        urls = build_mirror_urls(url, prefixes)
+        return urls[0] if urls else url
+
+    # ------------------------------------------------------------ G58-2 多备援
+    def _mirror_prefixes(self) -> tuple[str, ...]:
+        host = (getattr(self, "_current_host", "") or "").lower().replace("www.", "").rstrip("/")
+        return mirror_prefixes_for(host, self.mirror_prefix,
+                                   use_presets=self.mirror_use_presets)
+
+    def _mirror_candidates(self, url: str) -> list[str]:
+        return build_mirror_urls(url, self._mirror_prefixes())
+
+    def _mirror_allowed(self, url: str) -> bool:
+        """镜像是否可用于本次克隆（HTTPS + 有候选 + 无凭据）。
+
+        **有凭据绝不走镜像是硬约束**：第三方镜像能看到请求头，token 会直接泄漏。
+        """
+        if not (url or "").lower().startswith("https://"):
+            return False
+        if not self._mirror_candidates(url):
+            return False
+        return not requires_credentials(
+            getattr(self, "_current_host", ""), self.token, self.host_tokens,
+            getattr(self, "host_auth_types", None), bool(getattr(self, "_ssh_key", "")),
+        )
+
+    def _resolve_clone_url(self, source_url: str) -> str:
+        """按优先级探测镜像，返回**实际用于克隆**的 URL（源站兜底）。
+
+        探测用短超时 `git ls-remote`（见 `mirror_probe`）。这一步同时解决两件事：
+        ① 镜像没这个仓库时立刻跳到下一个，不会卡到 clone 超时（默认 600s）；
+        ② 顺便得到延迟，优先用上一个成功的镜像。
+        """
+        if not self._mirror_allowed(source_url):
+            return source_url
+        if self.cancelled():
+            return source_url
+        candidates = self._mirror_candidates(source_url)
+        preferred = getattr(self, "_preferred_mirror", "")
+        if preferred:
+            pref_url = f"{preferred}/{source_url}"
+            if pref_url in candidates:
+                candidates = [pref_url] + [c for c in candidates if c != pref_url]
+        for cand in candidates:
+            ok, ms, err = probe_git_url(cand, self.mirror_probe_timeout,
+                                        cancelled=self.cancelled)
+            if self.cancelled():
+                return source_url
+            if ok:
+                self._preferred_mirror = cand[: -len("/" + source_url)] if cand.endswith(
+                    "/" + source_url) else cand
+                self._emit(f"使用镜像（{ms}ms）：{self._preferred_mirror}")
+                return cand
+            self._emit(f"[警告] 镜像不可用，尝试下一个：{cand}（{err}）", "warn")
+        if self.mirror_fallback:
+            self._emit("[警告] 国内镜像均不可用，回退源站（可能较慢）", "warn")
+        return source_url
+
+    def _set_origin_url(self, repo_dir, url: str) -> bool:
+        try:
+            proc = subprocess.run(
+                ["git", "-C", str(repo_dir), "remote", "set-url", "origin", url],
+                capture_output=True, text=True, timeout=15,
+                encoding="utf-8", errors="replace",
+            )
+            return proc.returncode == 0
+        except Exception:
+            return False
+
+    def _get_origin_url(self, repo_dir) -> str:
+        try:
+            proc = subprocess.run(
+                ["git", "-C", str(repo_dir), "remote", "get-url", "origin"],
+                capture_output=True, text=True, timeout=15,
+                encoding="utf-8", errors="replace",
+            )
+            return (proc.stdout or "").strip() if proc.returncode == 0 else ""
+        except Exception:
+            return ""
+
+    def _update_failover_candidates(self, source_url: str) -> list[str]:
+        """更新失败时的候选：镜像（含预设）在前，源站最后。"""
+        if not self.mirror_fallback:
+            return []
+        if not (source_url or "").lower().startswith("https://"):
+            return []
+        if requires_credentials(
+                getattr(self, "_current_host", ""), self.token, self.host_tokens,
+                getattr(self, "host_auth_types", None),
+                bool(getattr(self, "_ssh_key", ""))):
+            return []
+        out: list[str] = []
+        seen: set[str] = set()
+        for url in self._mirror_candidates(source_url) + [source_url]:
+            if url and url not in seen:
+                seen.add(url)
+                out.append(url)
+        return out
 
     def _precheck_reachable(self, url: str) -> tuple[bool, str]:
         """G38-3 远端可达性预检：git ls-remote --exit-code <url> HEAD（10s 超时）。
@@ -783,10 +892,12 @@ class GitService:
             res.duration_ms = int((res.ended - res.started) * 1000)
 
     # ------------------------------------------------------------ clone
-    def build_clone_cmd(self, spec: RepoSpec, repo_dir=None) -> list[str]:
+    def build_clone_cmd(self, spec: RepoSpec, repo_dir=None,
+                        url_override: Optional[str] = None) -> list[str]:
         """G48-2/6：拼装 clone 命令（含 LFS -c 选项与 --mirror）。
 
         独立方法便于单测直接断言命令内容，无需跑真实 git。
+        `url_override` 供 G58-2 镜像备援传入实际选中的 URL。
         """
         repo_dir = repo_dir or self._repo_dir(spec)
         cmd = ["git"] + self._lfs_flag() + ["clone", "--progress"]
@@ -803,7 +914,7 @@ class GitService:
         if self._mirror:
             # G48-6 镜像克隆（--mirror 自带 --bare）
             cmd.append("--mirror")
-        cmd += [self._mirror_url(spec.url_https), str(repo_dir)]
+        cmd += [url_override or self._mirror_url(spec.url_https), str(repo_dir)]
         if self._submodule:
             cmd.append("--recurse-submodules")
         return cmd
@@ -910,13 +1021,29 @@ class GitService:
                 self._last_clone_tail = self._last_clone_tail[-8:]
             prev_on_line(c)
 
-        cmd = self.build_clone_cmd(spec, repo_dir)
+        source_url = spec.url_https
+        clone_url = self._resolve_clone_url(source_url)
+        cmd = self.build_clone_cmd(spec, repo_dir, url_override=clone_url)
         rc, prog = run_git_ui(cmd, str(self.root), _collate,
                               cancelled=self.cancelled, env=self._env(),
                               timeout=self.clone_timeout, retries=self.retries,
                               backoff=self._backoff,
                               progress_detail=getattr(
                                   self, "send_progress_detail", None))
+        # G58-2：镜像克隆失败 → 回退源站再试一次（探测通过也可能在 clone 阶段失败）
+        if (rc != 0 and not self.cancelled() and self.mirror_fallback
+                and clone_url != source_url):
+            self._emit(f"{spec.display} 镜像克隆失败，回退源站重试 …", "warn")
+            self._safe_rmtree_partial(repo_dir)
+            self._last_clone_tail = []
+            clone_url = source_url
+            cmd = self.build_clone_cmd(spec, repo_dir, url_override=source_url)
+            rc, prog = run_git_ui(cmd, str(self.root), _collate,
+                                  cancelled=self.cancelled, env=self._env(),
+                                  timeout=self.clone_timeout, retries=self.retries,
+                                  backoff=self._backoff,
+                                  progress_detail=getattr(
+                                      self, "send_progress_detail", None))
         if self.cancelled():
             res.status = SyncStatus.CANCELLED
             res.action = SyncAction.CANCELLED
@@ -948,7 +1075,7 @@ class GitService:
                 treeless_cmd = ["git", "clone", "--progress", "--filter=blob:none"]
                 if getattr(spec, "ref", ""):
                     treeless_cmd += ["-b", spec.ref]
-                treeless_cmd += [self._mirror_url(spec.url_https), str(repo_dir)]
+                treeless_cmd += [clone_url, str(repo_dir)]
                 rc, prog = run_git_ui(treeless_cmd, str(self.root), _collate,
                                       cancelled=self.cancelled, env=self._env(),
                                       timeout=self.clone_timeout, retries=0,
@@ -963,7 +1090,7 @@ class GitService:
                                    "--depth=1", "--single-branch"]
                     if getattr(spec, "ref", ""):
                         shallow_cmd += ["-b", spec.ref]
-                    shallow_cmd += [self._mirror_url(spec.url_https), str(repo_dir)]
+                    shallow_cmd += [clone_url, str(repo_dir)]
                     rc, prog = run_git_ui(
                         shallow_cmd, str(self.root), _collate,
                         cancelled=self.cancelled, env=self._env(),
@@ -1080,6 +1207,37 @@ class GitService:
                 timeout=self.fetch_timeout, retries=self.retries, backoff=self._backoff,
                 progress_detail=getattr(self, "send_progress_detail", None),
             )
+        if self.cancelled():
+            res.status = SyncStatus.CANCELLED
+            res.action = SyncAction.CANCELLED
+            res.message = "已取消"
+            return res
+        # G58-2：普通 fetch 失败 → 依次切换镜像/源站重试（成功则把 origin 留在可用地址）
+        if rc != 0 and self.mirror_fallback:
+            original = self._get_origin_url(repo_dir)
+            candidates = self._update_failover_candidates(spec.url_https)
+            succeeded = False
+            for alt in candidates:
+                if self.cancelled():
+                    break
+                if original and alt == original:
+                    continue
+                if not self._set_origin_url(repo_dir, alt):
+                    continue
+                self._emit(f"{spec.display} fetch 失败，切换到 {alt} 重试 …", "warn")
+                rc, _ = run_git_ui(
+                    fetch_cmd,
+                    str(repo_dir), self.on_line, cancelled=self.cancelled,
+                    env=self._env(), timeout=self.fetch_timeout,
+                    retries=self.retries, backoff=self._backoff,
+                    progress_detail=getattr(self, "send_progress_detail", None),
+                )
+                if rc == 0:
+                    succeeded = True
+                    self._emit(f"{spec.display} 已切换并同步成功：{alt}")
+                    break
+            if not succeeded and original:
+                self._set_origin_url(repo_dir, original)
         if self.cancelled():
             res.status = SyncStatus.CANCELLED
             res.action = SyncAction.CANCELLED

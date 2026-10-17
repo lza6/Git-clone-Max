@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import threading
 import weakref
 from typing import TYPE_CHECKING
 
@@ -293,9 +294,97 @@ class SettingsPanel(QWidget):
         self.owner.settings_store.save(self.owner.settings)
 
     def _save_mirror(self):
-        """G38-2 保存镜像前缀映射：多行 `host=prefix` → settings.mirror_prefix。"""
-        self.owner.settings.mirror_prefix = self._parse_kv_text(self.owner.edit_mirror.text())
+        """G38-2/G58-2 保存镜像：每行 `host=prefix1,prefix2,...`。
+
+        一个 host 可写多个镜像（顺序即优先级）；同时兼容旧的单值写法。
+        """
+        self.owner.settings.mirror_prefix = self._parse_mirror_text(
+            self.owner.edit_mirror.text())
         self.owner.settings_store.save(self.owner.settings)
+
+    @staticmethod
+    def _parse_mirror_text(text: str) -> dict:
+        """解析镜像文本 → `{host: str | [str,...]}`（host 小写、去 www 与尾斜杠）。"""
+        from ..app.mirrors import normalize_prefix_list
+
+        out: dict = {}
+        for line in (text or "").splitlines():
+            line = line.strip()
+            if not line or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            host = key.strip().lower().rstrip("/")
+            if host.startswith("www."):
+                host = host[4:]
+            prefixes = normalize_prefix_list(value)
+            if host and prefixes:
+                out[host] = list(prefixes) if len(prefixes) > 1 else prefixes[0]
+        return out
+
+    def _save_mirror_presets(self, checked):
+        """G58-2：是否使用内置国内镜像。"""
+        self.owner.settings.mirror_use_presets = bool(checked)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _save_mirror_fallback(self, checked):
+        """G58-2：镜像失败是否回退源站。"""
+        self.owner.settings.mirror_fallback = bool(checked)
+        self.owner.settings_store.save(self.owner.settings)
+
+    def _probe_mirrors(self):
+        """G58-2 测速并排序：worker 线程探测，结果经信号回 GUI 线程。"""
+        owner = self.owner
+        if getattr(owner, "_mirror_probe_busy", False):
+            return
+        from ..app.mirrors import mirror_prefixes_for
+        prefixes = mirror_prefixes_for(
+            "github.com", getattr(owner.settings, "mirror_prefix", None) or {},
+            use_presets=True)
+        if not prefixes:
+            owner._emit_log(_mw._fmt_dt(), LogLevel.WARN, tr("没有可测速的镜像"))
+            return
+        sample = "https://github.com/octocat/Hello-World"
+        owner._mirror_probe_busy = True
+        owner._emit_log(_mw._fmt_dt(), LogLevel.INFO,
+                        tr("开始镜像测速（git ls-remote，8s 超时）…"))
+        sig = owner.mirror_probe_done
+
+        def _run() -> None:
+            try:
+                from ..app.mirror_probe import rank_mirrors
+                results = rank_mirrors(sample, prefixes)
+            except Exception as exc:  # noqa: BLE001 —— 线程边界，必须回传
+                results = [{"url": "", "ok": False, "ms": 0, "error": str(exc),
+                            "is_source": False}]
+            sig.emit(results, sample)
+
+        threading.Thread(target=_run, daemon=True, name="gcm-mirror-probe").start()
+
+    def _on_mirror_probe_done(self, results, sample: str) -> None:
+        """测速结束（GUI 线程）：把可用镜像按延迟写回输入框并留日志。"""
+        owner = self.owner
+        owner._mirror_probe_busy = False
+        usable = [r for r in results or [] if r.get("ok") and not r.get("is_source")
+                  and str(r.get("url") or "").endswith("/" + sample)]
+        usable.sort(key=lambda r: int(r.get("ms", 0) or 0))
+        prefixes = []
+        for r in usable:
+            url = str(r.get("url") or "")
+            prefixes.append(url[: -len("/" + sample)])
+        summary = " · ".join(
+            f"{str(r.get('url') or '')[: -len('/' + sample)] or '(源站)'} "
+            f"{r.get('ms', 0)}ms {'✓' if r.get('ok') else '✗'}"
+            for r in (results or []) if r.get("url"))
+        if summary:
+            owner._emit_log(_mw._fmt_dt(), LogLevel.INFO, tr("镜像测速：") + summary)
+        if not prefixes:
+            owner._emit_log(_mw._fmt_dt(), LogLevel.WARN,
+                            tr("没有可用镜像；已保留原配置，克隆将回退源站"))
+            return
+        owner.edit_mirror.setText("github.com=" + ", ".join(prefixes))
+        self._save_mirror()
+        owner._emit_log(_mw._fmt_dt(), LogLevel.INFO,
+                        tr("已按测速结果写入镜像（优先使用最快者）"))
 
     def _save_custom_hosts(self):
         """G38-7 保存常用主机白名单：逗号/换行分隔 → tuple（小写归一，去空）。"""
