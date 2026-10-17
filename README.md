@@ -89,6 +89,16 @@ uv run python -m gcm --portable
 | 一键更新 | 「仓库管理 → ⟳ 一键更新全部」对库中所有仓库增量同步（黑名单排除） |
 | 黑匣子日志 | 实时 git 原生输出 + 关键字高亮 + 导出 txt（结构化 app.log + error.log 兜底 + redact） |
 
+## 本仓库的 AI 协作约定
+
+本项目在 `.agent/` 下维护**记忆、规则与技能**（供人或 AI 协作者开工前读取）：
+
+- `.agent/rules.md` —— 协作铁律（验收标准、反假闭环、回滚）
+- `.agent/memory/` —— 已测试范围、已知问题、关键决策、变更索引、审计历史
+- `.agent/skills/` —— 加 API / 加功能 / 发版 / 回滚 / 验证矩阵 / 审查 / 审计 / 并发检查
+
+改动前请先读 `.agent/memory/tested-scope.md`，避免重复跑同一批验证。
+
 ## 目录结构
 
 ```

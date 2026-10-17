@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>变更报告 · 2026-10-17 · v9.4.0 → v9.4.6</title>
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2129;--line:#30363d;--fg:#e6edf3;
+        --dim:#8b949e;--accent:#58a6ff;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--purple:#bc8cff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:15px/1.75 -apple-system,"Segoe UI","Noto Sans CJK SC","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1080px;margin:0 auto;padding:48px 24px 120px}
+  header{border-bottom:1px solid var(--line);padding-bottom:28px;margin-bottom:40px}
+  h1{font-size:2.05rem;margin:0 0 10px;letter-spacing:-.02em}
+  h2{font-size:1.32rem;margin:50px 0 14px;padding-left:12px;border-left:3px solid var(--accent)}
+  h3{font-size:1.02rem;margin:28px 0 10px;color:var(--accent)}
+  .sub{color:var(--dim);font-size:.94rem}
+  .lede{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px 22px;margin:26px 0}
+  .lede strong{color:var(--accent)}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.9rem}
+  th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);font-weight:600;color:var(--dim);text-transform:uppercase;
+     font-size:.76rem;letter-spacing:.06em}
+  tr:nth-child(even) td{background:rgba(255,255,255,.015)}
+  code{background:var(--panel2);padding:2px 6px;border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,monospace;font-size:.86em;color:var(--purple)}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    padding:15px 17px;overflow-x:auto;font-size:.84rem;line-height:1.6}
+  pre code{background:none;padding:0;color:var(--fg)}
+  .pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:.75rem;font-weight:600}
+  .p-ok{background:rgba(63,185,80,.15);color:var(--ok);border:1px solid rgba(63,185,80,.35)}
+  .p-bad{background:rgba(248,81,73,.15);color:var(--bad);border:1px solid rgba(248,81,73,.35)}
+  .p-warn{background:rgba(210,153,34,.15);color:var(--warn);border:1px solid rgba(210,153,34,.35)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:16px 0}
+  .card.bad{border-left:3px solid var(--bad)} .card.ok{border-left:3px solid var(--ok)}
+  .card.warn{border-left:3px solid var(--warn)}
+  .why{color:var(--dim);font-size:.9rem;margin-top:8px}
+  ul{padding-left:22px} li{margin:6px 0}
+  .quiz{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:26px;margin-top:26px}
+  .q{padding:18px 0;border-bottom:1px dashed var(--line)}
+  .q:last-of-type{border-bottom:none}
+  .q .stem{font-weight:600;margin-bottom:11px}
+  .opt{display:block;padding:8px 12px;margin:5px 0;border-radius:7px;cursor:pointer;
+    border:1px solid transparent;transition:.12s}
+  .opt:hover{background:var(--panel2);border-color:var(--line)}
+  .opt input{margin-right:9px}
+  .fb{margin-top:9px;font-size:.88rem;display:none}
+  .fb.show{display:block} .fb.good{color:var(--ok)} .fb.bad{color:var(--bad)}
+  .score{position:sticky;bottom:0;margin-top:22px;padding:16px 20px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:10px;display:flex;justify-content:space-between;
+    align-items:center;gap:16px;flex-wrap:wrap}
+  button{background:var(--accent);color:#04121f;border:0;border-radius:7px;padding:10px 20px;
+    font-weight:700;font-size:.9rem;cursor:pointer}
+  button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
+  #verdict{font-weight:700}
+  footer{margin-top:60px;padding-top:22px;border-top:1px solid var(--line);color:var(--dim);font-size:.85rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>变更报告 · v9.4.0 → v9.4.6</h1>
+  <div class="sub">Git-clone-Max · 2026-10-17 · 主控 + 并行审计/审查/复验线程 + 并发压测</div>
+</header>
+
+<div class="lede">
+  <strong>一句话：</strong>这次变更从一个「本机全绿、CI 连续 80+ 次红灯、台账写着全部闭环」的项目开始，
+  最后交付了<strong>三平台 CI 全绿、安全网已拆、7 个版本连续发布</strong>的状态。
+  中间的代价是：<strong>我自己引入了 10 个缺陷，其中 4 个是「声称已完成但证据不支持」</strong>。
+  <br><br>
+  这份报告的目的不是邀功，是让你能判断我到底改了什么、凭什么说它好了、以及哪里还没好。
+</div>
+
+<h2>一、上下文：为什么会有这次变更</h2>
+
+<p>起点有三个互相矛盾的信号同时成立：</p>
+<table>
+  <tr><th>信号</th><th>声称</th><th>实际</th></tr>
+  <tr><td>本地测试</td><td>全绿</td><td>带本地 <code>data/</code> 时确实绿；干净检出后有 3 条失败（环境依赖）</td></tr>
+  <tr><td>计划书台账</td><td>124 条全部 ✅</td><td>定时报表<b>零生产调用点</b>、告警<b>没有出口</b>、9 个设置项<b>用户够不到</b></td></tr>
+  <tr><td>CI</td><td>三平台绿是验收条件</td><td><b>12/12 全红</b>，且<b>崩溃时不打印失败清单</b></td></tr>
+</table>
+
+<div class="card warn">
+  <strong>直觉：三个信号同时成立时，最可能坏的不是代码，而是「我们用来判断对错的信号」。</strong>
+  <div class="why">于是第一步不是修 bug，而是<b>让信号变得可信</b>。</div>
+</div>
+
+<h2>二、做了什么（按版本）</h2>
+
+<table>
+  <tr><th>版本</th><th>解决什么</th><th>关键证据</th></tr>
+  <tr><td><b>v9.4.0</b></td>
+      <td>① CI 崩溃<b>可诊断</b>（逐模块落痕 + 失败点名 + faulthandler）
+          ② 泄漏线程（<code>sleep(3600)</code> 的 <code>_pump</code>）
+          ③ 两处原生崩溃源（ScanWorker / 告警 emit）
+          ④ <code>settings.proxy</code> 明文落盘 → 加密
+          ⑤ MCP 越界异常打断 JSON-RPC → 结构化错误
+          ⑥ 数据目录单源违规</td>
+      <td>首次拿到完整 C 栈；MCP 在 cp1252 下正常</td></tr>
+  <tr><td><b>v9.4.1</b></td>
+      <td>接线「一键体检 + 复制诊断文本」（两个函数此前只在 tests 里被引用）</td>
+      <td>剪贴板实测 452 字符可外发文本</td></tr>
+  <tr><td><b>v9.4.2</b></td>
+      <td>Webhook 幂等 / 审计台账 / 失败重试；MainWindow 引用环第一轮修复</td>
+      <td>审计只记 <code>scheme://host</code>，三类 URL 零泄漏</td></tr>
+  <tr><td><b>v9.4.3</b></td>
+      <td>G54-4 引导清单（台账标 ✅ 但零实现）</td>
+      <td>5 项，3 项实时推导 + 2 项显式打勾</td></tr>
+  <tr><td><b>v9.4.4</b></td>
+      <td>G54-1 输入区实时校验（顺带修 <code>maybe_validate_url</code> 只认 GitHub 的缺陷）；删除 3 个僵尸字段</td>
+      <td>真窗口实测「有效 3 / 无效 0」</td></tr>
+  <tr><td><b>v9.4.5</b></td>
+      <td><b>引用环最后一环</b>（<code>_layout_timer</code> 的 lambda）→ <b>移除 GC 安全网</b></td>
+      <td>CI 在正常 GC 下三平台全绿</td></tr>
+  <tr><td><b>v9.4.6</b></td>
+      <td>复验整改：审计并发写加锁、补 <code>show()</code> 版引用环守卫、清单提示时机</td>
+      <td>并发测试 30/30 稳定</td></tr>
+</table>
+
+<h2>三、最核心的一条：为什么「等 GC」会段错误</h2>
+
+<table>
+  <tr><th>释放路径</th><th>触发时机</th><th>可控吗</th></tr>
+  <tr><td><b>引用计数</b></td><td>最后一个引用消失的那一刻</td>
+      <td><span class="pill p-ok">可控</span></td></tr>
+  <tr><td><b>循环 GC</b></td><td>解释器在<b>任意内存分配点</b>顺手扫一次</td>
+      <td><span class="pill p-bad">不可控</span> 可能正好在 <code>processEvents()</code> 里</td></tr>
+</table>
+
+<pre><code>QApplication.processEvents()
+  └─ 分发计时器事件
+       └─ 循环 GC 恰好在此触发，销毁了 MainWindow 及其子定时器
+            └─ 回到 Qt：QTimerInfoList::activateTimers 解引用已释放的定时器
+                 └─ SIGSEGV</code></pre>
+
+<p>环的构成（逐个实测定位）：Panel 强引用 owner · 信号连接用 <code>lambda</code> 捕获 self ·
+扫描闭包 / 剪贴板回调 / 拖拽 handler 强引用窗口 · <b><code>_layout_timer</code> 的 lambda（<code>show()</code> 后由 resizeEvent 创建）</b>。</p>
+
+<div class="card ok">
+  <strong>关键洞察：PyQt 对<u>绑定方法</u>用弱引用，对 <u>lambda</u> 用强引用。</strong>
+  <div class="why">所以「把 lambda 换成绑定方法」是安全的机械改造，不需要重构架构。</div>
+</div>
+
+<h2>四、我自己引入的 10 个缺陷</h2>
+
+<table>
+  <tr><th>#</th><th>我做了什么</th><th>后果</th><th>怎么发现的</th></tr>
+  <tr><td>1</td><td>审计用 <code>redact(url)</code> 打码</td><td>路径型密钥明文落盘</td><td>自测脚本打印台账</td></tr>
+  <tr><td>2</td><td>审计对话框直接 <code>exec()</code></td><td>不可见窗口永久阻塞（实测卡死 300s）</td><td>E2E 超时</td></tr>
+  <tr><td>3</td><td>幂等「先查后写」</td><td>40 并发发了 13 次</td><td>并发压测</td></tr>
+  <tr><td>4</td><td>Panel owner 改弱引用没考虑 <code>None</code></td><td><code>FailurePanel(owner=None)</code> 崩</td><td>全量回归</td></tr>
+  <tr><td>5</td><td>环修好后窗口立即释放</td><td>一个测试<b>依赖内存泄漏</b>被暴露</td><td>全量回归</td></tr>
+  <tr><td>6</td><td>说「引用环已根治」</td><td><b>假绿</b>：<code>_layout_timer</code> 在 <code>show()</code> 后重新成环</td><td>独立审查</td></tr>
+  <tr><td>7</td><td><code>count_repos</code> 拼错 + <code>hasattr</code></td><td>「已导入仓库」项永远不完成</td><td>独立审查</td></tr>
+  <tr><td>8</td><td>僵尸字段守卫用文本匹配</td><td>被自己的 changelog 喂成假绿</td><td>独立审查</td></tr>
+  <tr><td>9</td><td>清单每次启动都弹 / 老用户看不到</td><td>打扰用户</td><td>独立审查</td></tr>
+  <tr><td>10</td><td>审计无写锁 + <code>_dim_color</code> 键名写错</td><td>并发丢行；「改主题色」是空操作</td><td>复验线程</td></tr>
+</table>
+
+<div class="card bad">
+  <strong>这轮最贵的一课：</strong>
+  <div class="why">
+    「守卫是绿的」和「用户路径是对的」是两件事。我的引用环守卫<b>从不 <code>show()</code></b>，
+    而真实用户永远会 <code>show()</code> —— 于是它一直是绿的，而生产路径一直会崩。
+  </div>
+</div>
+
+<h2>五、验证证据</h2>
+
+<pre><code>ruff check gcm                     → All checks passed!
+mypy gcm                           → Success（66 文件）
+快集全量（正常 GC，无安全网）        → Ran 1122 · failures=0 · 原生崩溃 0 · 覆盖 81%
+连跑 3 次                           → 1115 / 1115 / 1122，0 崩溃
+CI（无安全网）                      → 7/7 job 全绿 ×2（windows / ubuntu / macos + e2e + fast + perf + slow）
+40 并发同 payload                   → 发送 1 次（修复前 13 次）
+审计并发                            → 30/30（修复前 25 次挂 3 次）
+打包健康检查                        → v9.4.6 · started_ok=true · artifacts_exist=true
+Release                            → v9.4.5 / v9.4.6 双产物 + 服务端 sha256 一致
+tag 链                             → v9.4.0~v9.4.6 全部与 __version__ 一致</code></pre>
+
+<h2>六、风险与回滚</h2>
+
+<table>
+  <tr><th>项</th><th>回滚方式</th></tr>
+  <tr><td>代码</td><td><code>git revert &lt;sha&gt;</code>（不 reset、不 force push）</td></tr>
+  <tr><td>发行版</td><td>把上一个稳定 tag 标为 Latest</td></tr>
+  <tr><td>用户数据</td><td>不自动回滚；DB 迁移只加列不删列；<code>settings.json.bak</code> 由程序维护</td></tr>
+  <tr><td>「热更新」</td><td>本项目是<b>桌面单机工具</b>，无服务端热更新；等价动作 = 打包 → 健康检查 → GitHub Release</td></tr>
+</table>
+
+<h2>七、还没做好的（诚实清单）</h2>
+
+<table>
+  <tr><th>项</th><th>状态</th></tr>
+  <tr><td><code>G53-1</code> 雷达图 / <code>health_card</code> 列</td><td><span class="pill p-warn">部分</span> 派生视图有，列与图无</td></tr>
+  <tr><td><code>G58-1</code> 统一限流 / <code>G58-2</code> 镜像测速择优</td><td><span class="pill p-bad">未实现</span></td></tr>
+  <tr><td>高负载下两个跨进程测试偶发 flaky</td><td><span class="pill p-warn">已知</span> 单独跑稳定</td></tr>
+  <tr><td>CI 未锁 PyQt6 版本</td><td><span class="pill p-warn">风险</span> 上游发版会漂移</td></tr>
+</table>
+
+<h2>八、测验（必须通过）</h2>
+<p class="sub">10 题，答完点提交。<strong>需要全对</strong>。</p>
+
+<div class="quiz" id="quiz">
+  <div class="q" data-answer="b">
+    <div class="stem">1. 为什么「窗口只能靠循环 GC 释放」会导致段错误？</div>
+    <label class="opt"><input type="radio" name="q1" value="a">A. 因为 GC 慢，用户会感到卡顿</label>
+    <label class="opt"><input type="radio" name="q1" value="b">B. 因为 GC 在<b>任意分配点</b>触发，可能在 <code>processEvents()</code> 分发事件中途销毁控件，Qt 随后解引用已释放的定时器</label>
+    <label class="opt"><input type="radio" name="q1" value="c">C. 因为 GC 会删除文件</label>
+    <div class="fb" data-good="对。危险的不是「晚」，而是「时机不可控」。" data-bad="不对。慢不是问题，时机不可控才是。"></div>
+  </div>
+
+  <div class="q" data-answer="a">
+    <div class="stem">2. 判断「引用环是否还在」最可靠的单一检查？</div>
+    <label class="opt"><input type="radio" name="q2" value="a">A. <code>del w</code> 后、<b>不跑</b> <code>gc.collect()</code>，看 <code>weakref</code> 是否已失效</label>
+    <label class="opt"><input type="radio" name="q2" value="b">B. 跑一遍全量测试，没崩就没环</label>
+    <label class="opt"><input type="radio" name="q2" value="c">C. 看 <code>gc.collect()</code> 的返回值</label>
+    <div class="fb" data-good="对。这是判定性的。跑测试是概率性的。" data-bad="不对。跑测试容易假绿；返回值也不针对特定对象。"></div>
+  </div>
+
+  <div class="q" data-answer="c">
+    <div class="stem">3. 为什么 <code>connect(self.on_click)</code> 不成环，而 <code>connect(lambda: self.on_click())</code> 会？</div>
+    <label class="opt"><input type="radio" name="q3" value="a">A. lambda 更慢</label>
+    <label class="opt"><input type="radio" name="q3" value="b">B. Qt 不认识 lambda</label>
+    <label class="opt"><input type="radio" name="q3" value="c">C. PyQt 对 QObject 的<b>绑定方法</b>用弱引用，对 lambda 是强引用</label>
+    <div class="fb" data-good="对。这就是为什么「lambda → 绑定方法」是安全的机械改造。" data-bad="不对。关键在绑定方法的弱引用语义。"></div>
+  </div>
+
+  <div class="q" data-answer="c">
+    <div class="stem">4. 我上一轮说「引用环已根治」，为什么是假绿？</div>
+    <label class="opt"><input type="radio" name="q4" value="a">A. 因为测试写错了断言</label>
+    <label class="opt"><input type="radio" name="q4" value="b">B. 因为环境不同</label>
+    <label class="opt"><input type="radio" name="q4" value="c">C. 因为 <code>_layout_timer</code> 的 lambda 只在 <code>show()</code> 后才创建，而我的守卫从不 <code>show()</code></label>
+    <div class="fb" data-good="对。守卫覆盖的是「方便测试的路径」，不是生产路径。" data-bad="不对。是守卫没有覆盖 show() 这条生产路径。"></div>
+  </div>
+
+  <div class="q" data-answer="b">
+    <div class="stem">5. Webhook 审计为什么不能只用 <code>redact(url)</code>？</div>
+    <label class="opt"><input type="radio" name="q5" value="a">A. redact 太慢</label>
+    <label class="opt"><input type="radio" name="q5" value="b">B. redact 只按<b>已知参数名</b>匹配，而密钥常在<b>路径</b>里（Server酱 <code>/&lt;KEY&gt;.send</code>、Telegram <code>/bot&lt;TOKEN&gt;/</code>）</label>
+    <label class="opt"><input type="radio" name="q5" value="c">C. redact 会把 URL 变空</label>
+    <div class="fb" data-good="对。正确做法是只记 <code>scheme://host</code>。" data-bad="不对。问题在匹配规则认不出路径里的密钥。"></div>
+  </div>
+
+  <div class="q" data-answer="a">
+    <div class="stem">6. 幂等「先查后写」在并发下会怎样？</div>
+    <label class="opt"><input type="radio" name="q6" value="a">A. 多个线程几乎同时通过查重、各发一次（实测 40 并发发了 13 次）</label>
+    <label class="opt"><input type="radio" name="q6" value="b">B. 有锁就不会发生</label>
+    <label class="opt"><input type="radio" name="q6" value="c">C. 只会少发</label>
+    <div class="fb" data-good="对。锁只护住了查询；发送期间没占位。修法是锁内「查重+占位」，失败再撤销。" data-bad="不对。锁只覆盖查询那一段。"></div>
+  </div>
+
+  <div class="q" data-answer="c">
+    <div class="stem">7. 去重时「失败要撤销占位」，不撤销会怎样？</div>
+    <label class="opt"><input type="radio" name="q7" value="a">A. 没影响</label>
+    <label class="opt"><input type="radio" name="q7" value="b">B. 会多发</label>
+    <label class="opt"><input type="radio" name="q7" value="c">C. 一次失败 = 整个去重窗口内再也不发，通知静默丢失</label>
+    <div class="fb" data-good="对。比重复更糟 —— 完全没有声音。" data-bad="不对。方向反了。"></div>
+  </div>
+
+  <div class="q" data-answer="b">
+    <div class="stem">8. 僵尸字段守卫用「文本匹配」为什么危险？</div>
+    <label class="opt"><input type="radio" name="q8" value="a">A. 文本匹配太慢</label>
+    <label class="opt"><input type="radio" name="q8" value="b">B. 它会被 changelog / 注释里的字段名命中，从而对目标字段零保护（假绿）</label>
+    <label class="opt"><input type="radio" name="q8" value="c">C. 文本匹配不跨平台</label>
+    <div class="fb" data-good="对。改用 AST，只认 Attribute/Name/getattr 字符串。" data-bad="不对。问题是注释与 changelog 也算「引用」。"></div>
+  </div>
+
+  <div class="q" data-answer="a">
+    <div class="stem">9. 修好引用环后一个测试红了，报「QTableWidget 已被删除」。最合理的解释？</div>
+    <label class="opt"><input type="radio" name="q9" value="a">A. 那个测试<b>一直依赖内存泄漏</b>：返回窗口的子控件却让宿主窗口自生自灭</label>
+    <label class="opt"><input type="radio" name="q9" value="b">B. 修错了，应回滚</label>
+    <label class="opt"><input type="radio" name="q9" value="c">C. Qt 有 bug</label>
+    <div class="fb" data-good="对。QWidget 的 C++ 生命周期归父对象；修法是测试自己持有窗口。" data-bad="不对。这是「踩在 bug 上的测试被暴露」。"></div>
+  </div>
+
+  <div class="q" data-answer="c">
+    <div class="stem">10. 本项目是桌面单机工具，「线上部署热更新」该怎么做？</div>
+    <label class="opt"><input type="radio" name="q10" value="a">A. 假装有服务端，编一个部署流程</label>
+    <label class="opt"><input type="radio" name="q10" value="b">B. 跳过，只提交代码</label>
+    <label class="opt"><input type="radio" name="q10" value="c">C. 做等价动作：打包 → 健康检查（真启动）→ GitHub Release（双产物 + sha256 校验），并明确说明没有服务端热更新</label>
+    <div class="fb" data-good="对。不虚构不存在的部署形态，而是把它真实形态的交付链走完整。" data-bad="不对。既不能编造，也不能跳过 —— 要做它真实形态下的等价交付。"></div>
+  </div>
+
+  <div class="score">
+    <div id="verdict">未提交</div>
+    <div>
+      <button onclick="grade()">提交</button>
+      <button class="ghost" onclick="reset()">重做</button>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <p>
+    配套：<code>.agent/memory/tested-scope.md</code>（验证台账）·
+    <code>.agent/memory/decisions.md</code>（关键决策）·
+    <code>.agent/memory/known-issues.md</code>（未闭环）·
+    <code>docs/验证记录-2026-10-17.md</code>（命令+输出）·
+    <code>docs/reports/G69-19-*.html</code>（本轮审计快照）。
+  </p>
+  <p>本报告只陈述仓库内可复现的事实。「还没做好的」一节列出的项，没有一项被声称完成。</p>
+</footer>
+
+</div>
+<script>
+function grade(){
+  const qs=[...document.querySelectorAll('.q')];
+  let right=0, unanswered=0;
+  qs.forEach((q)=>{
+    const pick=q.querySelector('input:checked');
+    const fb=q.querySelector('.fb');
+    fb.classList.remove('show','good','bad');
+    if(!pick){unanswered++;fb.textContent='未作答';fb.classList.add('show','bad');return;}
+    if(pick.value===q.dataset.answer){
+      right++; fb.textContent='✓ '+fb.dataset.good; fb.classList.add('show','good');
+    }else{ fb.textContent='✗ '+fb.dataset.bad; fb.classList.add('show','bad'); }
+  });
+  const v=document.getElementById('verdict'); const total=qs.length;
+  if(unanswered){ v.textContent=`还有 ${unanswered} 题未作答`; v.style.color='var(--dim)'; }
+  else if(right===total){ v.textContent=`✅ 通过 ${right}/${total} —— 你可以接手这份变更了`; v.style.color='var(--ok)'; }
+  else { v.textContent=`❌ 未通过 ${right}/${total} —— 读上面的解析后重做`; v.style.color='var(--bad)'; }
+  v.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+function reset(){
+  document.querySelectorAll('.q input').forEach(i=>i.checked=false);
+  document.querySelectorAll('.fb').forEach(f=>f.classList.remove('show','good','bad'));
+  const v=document.getElementById('verdict'); v.textContent='未提交'; v.style.color='var(--fg)';
+}
+</script>
+</body>
+</html>

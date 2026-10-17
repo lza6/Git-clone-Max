@@ -11,6 +11,17 @@
 - **入口**：`gcm/__main__.py`（GUI）· `gcm/cli.py`（`--cli [--json] [--diag] [--serve]`）· `gcm/mcp_server.py`（MCP stdio）· `gcm/http_api.py`（本地只读 HTTP）。
 - **版本单源**：`gcm/__init__.py` 的 `__version__`。**任何其他地方出现版本号字面量都是 bug**（见 §5 守卫）。
 
+**开工前必读（`.agent/`）：**
+
+| 想知道什么 | 读哪个 |
+|-----------|--------|
+| 哪些验证已经跑过（别重复跑） | `.agent/memory/tested-scope.md` |
+| 已知边界 / 未闭环（别当 bug 修） | `.agent/memory/known-issues.md` |
+| 为什么这样设计（别推翻后重犯） | `.agent/memory/decisions.md` |
+| 改这块有哪些连带影响 | `.agent/memory/change-index.md` |
+| 做事流程（加功能/加 API/发版/回滚/审查/审计） | `.agent/skills/README.md` |
+| AI 协作铁律（验收、反假闭环） | `.agent/rules.md` |
+
 **权威文档的位置（避免读一堆过期文档）**：
 
 | 想知道什么 | 读哪个（唯一事实源） |
