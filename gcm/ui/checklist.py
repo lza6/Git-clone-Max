@@ -51,7 +51,9 @@ def _dim_color() -> str:
     try:
         from . import theme as _th
         pal = _th.current_palette()
-        for key in ("dim", "muted", "fg2", "sub"):
+        # G69-18：四个调色板的实际键名是 `text_dim`。原先猜的 dim/muted/fg2/sub
+        # 全都不存在 → 永远返回 #888888，「改用主题色」等于没改。
+        for key in ("text_dim", "dim", "muted", "fg2", "sub"):
             if pal.get(key):
                 return str(pal[key])
     except Exception:

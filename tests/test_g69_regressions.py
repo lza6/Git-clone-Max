@@ -957,6 +957,46 @@ class TestG69_18LogBufferTimerIsActivityArmed(unittest.TestCase):
                       "closeEvent 必须停日志节流定时器")
 
 
+class TestG69_18NoCycleAfterShow(unittest.TestCase):
+    """G69-18 **同一个坑不能再踩第二次**：引用环守卫必须覆盖 `show()`。
+
+    上一轮的守卫只测「构造后不 show 就 del」—— 而生产路径永远会 show()。
+    一旦 show()，`resizeEvent` 会创建 `_layout_timer`；它当年的回调是
+    `lambda: self._apply_layout_for_width(...)`，环立刻接回来，
+    窗口又只能等循环 GC。守卫却一直是绿的。
+
+    本用例因此**显式 show() + processEvents** 之后再断言引用计数释放。
+    """
+
+    def test_released_after_show(self):
+        import gc as _gc
+        import weakref as _weakref
+
+        from gcm.db.repo_db import Database
+        from gcm.db.settings import SettingsStore
+        from gcm.ui.main_window import MainWindow
+
+        d = pathlib.Path(tempfile.mkdtemp(prefix="gcm_cycle_show_"))
+        w = MainWindow(data_dir=d, db=Database(d / "t.db"),
+                       settings=SettingsStore(d / "s.json"))
+        w._check_update_silent = lambda *a, **k: None
+        w._maybe_show_onboarding = lambda *a, **k: None
+        w.show()
+        _app.processEvents()
+        _app.processEvents()
+        self.assertTrue(hasattr(w, "_layout_timer"),
+                        "前提：show() 后应已创建布局防抖定时器")
+
+        ref = _weakref.ref(w)
+        del w
+        # 不调用 gc.collect()：仍存活说明 show() 路径上的环回来了
+        self.assertIsNone(
+            ref(),
+            "show() 之后窗口未能按引用计数释放 —— 说明又有信号连接/闭包捕获了 self。"
+            "重点检查 resizeEvent 路径上创建的定时器、以及 show 后才初始化的对象。"
+        )
+
+
 class TestG69_18ClipboardWeakCallback(unittest.TestCase):
     """`ClipboardWatcher` 收到**绑定方法**时用 WeakMethod，宿主销毁后静默跳过。"""
 

@@ -32,6 +32,9 @@ AUDIT_MAX_BYTES = 512 * 1024
 DEFAULT_RETRIES = 1
 
 _dedup_lock = threading.Lock()
+# G69-18：审计是**追加写**，Windows 下多线程 open('a') 并非原子 ——
+# 40 线程并发实测会丢行/写出空行。用独立写锁串行化（不去抢去重锁，避免互相拖慢）。
+_audit_lock = threading.Lock()
 _recent: dict[str, float] = {}
 
 
@@ -100,7 +103,7 @@ def _audit(data_dir: str | Path | None, record: dict[str, Any]) -> None:
         except Exception:
             pass
         line = json.dumps(record, ensure_ascii=False)
-        with path.open("a", encoding="utf-8") as f:
+        with _audit_lock, path.open("a", encoding="utf-8") as f:
             f.write(line + "\n")
     except Exception:
         pass

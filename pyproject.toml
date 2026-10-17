@@ -8,7 +8,7 @@
 name = "git-clone-max"
 # G66-2：与 gcm/__init__.py 的 __version__ 保持一致（由 tests/test_g66_patch.py
 # 的 TestPackagingVersionSync 强制校验，防止再次漂移）。
-version = "9.4.5"
+version = "9.4.6"
 description = "GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 桌面工具（PyQt6）"
 readme = "README.md"
 requires-python = ">=3.10"

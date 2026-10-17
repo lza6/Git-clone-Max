@@ -395,17 +395,19 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-    def _show_checklist(self) -> None:
-        """G54-4：打开引导清单（设置页/首启后都可进入）。"""
+    def _show_checklist(self) -> bool:
+        """G54-4：打开引导清单。返回是否**真的展示过**（供调用方决定要不要记「已提示」）。"""
         if not self._can_show_modal():
             self._emit_log(_fmt_dt(), LogLevel.INFO,
                            tr("引导清单") + "：" + str(self._checklist_status()))
-            return
+            return False
         try:
             from .checklist import ChecklistDialog
             ChecklistDialog(self._checklist_status(), self).exec()
+            return True
         except Exception as exc:  # noqa: BLE001
             self._emit_log(_fmt_dt(), LogLevel.WARN, f"引导清单打开失败：{exc}")
+            return False
 
     def _maybe_show_checklist(self) -> None:
         """**仅在首次**自动提示一次清单；之后用户可从设置页主动打开。
@@ -419,12 +421,16 @@ class MainWindow(QMainWindow):
             return
         if not self._can_show_modal():
             return
+        # 先弹，成功后再落标记 —— 否则 `_show_checklist()` 一旦抛异常，
+        # 标记已经写死，用户永远看不到清单。
+        shown = self._show_checklist()
+        if shown is False:
+            return
         try:
             self.settings.checklist_prompted = True
             self.settings_store.save(self.settings)
         except Exception:
             pass
-        self._show_checklist()
 
     def _maybe_show_onboarding(self):
         """首次运行（settings.first_run_done 未置位）→ 显示三步向导。
@@ -432,6 +438,10 @@ class MainWindow(QMainWindow):
         跳过或完成均写 first_run_done；目录/模式回填设置。仅真实窗口展示
         （offscreen/测试环境自动跳过，避免模态阻塞）。
         """
+        # G54-4：清单提示放在**提前 return 之前** —— 老用户（已走过向导）
+        # 升级后也能看一次；是否真的弹由 `checklist_prompted` 决定。
+        # 也正因为它放在最前面，不会落进向导的嵌套事件循环里。
+        self._maybe_show_checklist()
         if getattr(self.settings, "first_run_done", False):
             return
         if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
@@ -454,8 +464,6 @@ class MainWindow(QMainWindow):
                            f"首次运行向导未完成：{e}")
 
     # ------------------------------------------------------------ G36-9 跟随系统深浅色
-        # G54-4：向导结束后再提示清单（避免叠在向导的嵌套事件循环上）
-        self._maybe_show_checklist()
 
 
     def _maybe_apply_system_theme(self):
