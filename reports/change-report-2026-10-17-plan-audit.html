@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>计划文档闭环审计 · 变更报告 · 2026-10-17</title>
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2129;--line:#30363d;--fg:#e6edf3;
+        --dim:#8b949e;--accent:#58a6ff;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--purple:#bc8cff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:15px/1.75 -apple-system,"Segoe UI","Noto Sans CJK SC","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1080px;margin:0 auto;padding:48px 24px 120px}
+  header{border-bottom:1px solid var(--line);padding-bottom:28px;margin-bottom:40px}
+  h1{font-size:2rem;margin:0 0 10px;letter-spacing:-.02em}
+  h2{font-size:1.3rem;margin:50px 0 14px;padding-left:12px;border-left:3px solid var(--accent)}
+  h3{font-size:1.02rem;margin:28px 0 10px;color:var(--accent)}
+  .sub{color:var(--dim);font-size:.94rem}
+  .lede{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px 22px;margin:26px 0}
+  .lede strong{color:var(--accent)}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.9rem}
+  th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);font-weight:600;color:var(--dim);text-transform:uppercase;
+     font-size:.76rem;letter-spacing:.06em}
+  tr:nth-child(even) td{background:rgba(255,255,255,.015)}
+  code{background:var(--panel2);padding:2px 6px;border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,monospace;font-size:.86em;color:var(--purple)}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    padding:15px 17px;overflow-x:auto;font-size:.84rem;line-height:1.6}
+  pre code{background:none;padding:0;color:var(--fg)}
+  .pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:.75rem;font-weight:600}
+  .p-ok{background:rgba(63,185,80,.15);color:var(--ok);border:1px solid rgba(63,185,80,.35)}
+  .p-bad{background:rgba(248,81,73,.15);color:var(--bad);border:1px solid rgba(248,81,73,.35)}
+  .p-warn{background:rgba(210,153,34,.15);color:var(--warn);border:1px solid rgba(210,153,34,.35)}
+  .p-na{background:rgba(139,148,158,.15);color:var(--dim);border:1px solid rgba(139,148,158,.35)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:16px 0}
+  .card.bad{border-left:3px solid var(--bad)} .card.ok{border-left:3px solid var(--ok)}
+  .card.warn{border-left:3px solid var(--warn)}
+  .why{color:var(--dim);font-size:.9rem;margin-top:8px}
+  ul{padding-left:22px} li{margin:6px 0}
+  .quiz{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:26px;margin-top:26px}
+  .q{padding:18px 0;border-bottom:1px dashed var(--line)}
+  .q:last-of-type{border-bottom:none}
+  .q .stem{font-weight:600;margin-bottom:11px}
+  .opt{display:block;padding:8px 12px;margin:5px 0;border-radius:7px;cursor:pointer;
+    border:1px solid transparent;transition:.12s}
+  .opt:hover{background:var(--panel2);border-color:var(--line)}
+  .opt input{margin-right:9px}
+  .fb{margin-top:9px;font-size:.88rem;display:none}
+  .fb.show{display:block} .fb.good{color:var(--ok)} .fb.bad{color:var(--bad)}
+  .score{position:sticky;bottom:0;margin-top:22px;padding:16px 20px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:10px;display:flex;justify-content:space-between;
+    align-items:center;gap:16px;flex-wrap:wrap}
+  button{background:var(--accent);color:#04121f;border:0;border-radius:7px;padding:10px 20px;
+    font-weight:700;font-size:.9rem;cursor:pointer}
+  button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
+  #verdict{font-weight:700}
+  footer{margin-top:60px;padding-top:22px;border-top:1px solid var(--line);color:var(--dim);font-size:.85rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>计划文档闭环审计 · 变更报告</h1>
+  <div class="sub">Git-clone-Max · 2026-10-17 · v9.4.6 之后 · 主控 + 只读盲点扫描线程</div>
+</header>
+
+<div class="lede">
+  <strong>一句话：</strong>这一轮不写新功能，只做一件容易做假的事 ——
+  <strong>把「计划文档里写着 ✅」变成「代码里真的做到了」</strong>，然后才允许删除文档。
+  <br><br>
+  结果是：<strong>12 条已闭环、2 条仍未闭环、1 条判定不适用</strong>；
+  `计划书/` 目录完成归档后删除；同时补上了让这类判断可重复执行的骨架
+  （`policy.md` / `test_ledger.md` / `evidence/`）。
+</div>
+
+<h2>一、为什么这件事不能只看文档</h2>
+
+<table>
+  <tr><th>信号</th><th>它能证明什么</th><th>它不能证明什么</th></tr>
+  <tr><td>文档里的 ✅</td><td>有人曾经认为它完成了</td><td>代码里是否真有生产调用点</td></tr>
+  <tr><td>单元测试全绿</td><td>被测的函数在隔离环境里正确</td><td>用户是否够得到这个功能</td></tr>
+  <tr><td>后端模块存在</td><td>逻辑写完了</td><td>设置页有没有控件、信号有没有 connect</td></tr>
+</table>
+
+<div class="card bad">
+  <strong>本项目已经翻过一次车。</strong>
+  <div class="why">
+    `计划书/` 的 9 个文件在 v9.2.0 以「台账全部闭环并经用户确认」为由删除。
+    2026-10-16 的独立复验推翻了它：<b>定时报表整条链路零生产调用点</b>、
+    <b>阈值告警没接 `on_alerts`</b>、<b>9 个设置字段只读不写</b>。
+    「文档已删」从来不是完成证据。
+  </div>
+</div>
+
+<h2>二、判定方法（三条硬标准）</h2>
+
+<table>
+  <tr><th>标准</th><th>怎么查</th><th>反例</th></tr>
+  <tr><td>① 生产调用点</td>
+      <td><code>grep -rn "&lt;symbol&gt;" gcm/</code>，排除 tests</td>
+      <td>函数定义在 <code>theme.py</code>，全仓只有测试调用</td></tr>
+  <tr><td>② UI 三段链</td>
+      <td>控件 → 保存回调 → 消费方，三段都要通</td>
+      <td>控件存了值，但引擎从不读这个字段</td></tr>
+  <tr><td>③ 本轮真实运行</td>
+      <td>命令 + 退出码 + 输出尾部，写进 <code>evidence/</code></td>
+      <td>引用上一轮的数字当本轮结论</td></tr>
+</table>
+
+<h2>三、逐条结果</h2>
+
+<h3>3.1 已闭环（12 条）</h3>
+<table>
+  <tr><th>ID</th><th>能力</th><th>凭什么算完成</th></tr>
+  <tr><td>G52-1</td><td>失败自动重试队列</td><td>设置页控件 + 引擎重投 + 复用批次上下文（<code>TestRetryReusesBatchContext</code>）</td></tr>
+  <tr><td>G52-3</td><td>看门狗续跑</td><td>设置页开关/间隔已接线（<code>TestG69_18WiringClosure</code>）</td></tr>
+  <tr><td>G52-5</td><td>失败原因聚合面板</td><td><code>ui/failure_panel.py</code>，真实入口</td></tr>
+  <tr><td>G52-6</td><td>并发自适应记忆</td><td><code>concurrency_state.json</code> 写读闭环</td></tr>
+  <tr><td>G53-2</td><td>阈值告警引擎</td><td><code>on_alerts</code> 已接线 + 弱引用 emit</td></tr>
+  <tr><td>G53-5</td><td>定时报表</td><td>调度器有生产调用点，真实生成 CSV</td></tr>
+  <tr><td>G54-4</td><td>引导清单</td><td><code>ui/checklist.py</code>，首启提示一次，10 条测试</td></tr>
+  <tr><td>G56-2</td><td>MCP server</td><td>实测 initialize / tools/list，默认只读</td></tr>
+  <tr><td>G56-4</td><td>本地 HTTP API</td><td>只读 + 回环绑定有守卫</td></tr>
+  <tr><td>G58-3</td><td>代理凭据加密</td><td><code>_encrypt_token</code> / <code>_decrypt_or_keep</code>；完整代理 URL 由 git 原生消费</td></tr>
+  <tr><td>G58-5</td><td>自建实例识别</td><td><code>host_auth_types</code> 可用</td></tr>
+  <tr><td>G59-7</td><td>企业 IM 告警</td><td>UI 配置入口已补</td></tr>
+</table>
+
+<h3>3.2 仍未闭环（2 条，需立项）</h3>
+<table>
+  <tr><th>ID</th><th>现状</th><th>为什么这轮不做</th></tr>
+  <tr><td>G53-1 评分卡</td><td>只有派生视图；无 <code>health_card</code> 列、无雷达图</td>
+      <td>落列是 <b>DB 迁移 + 回填</b>（T3），需先确认产品是否真的需要历史列</td></tr>
+  <tr><td>G58-2 镜像测速</td><td>只有静态 <code>mirror_prefix</code></td>
+      <td>「择优」需要<b>每个 host 多候选</b>，是设置模型变更，不是加个排序</td></tr>
+</table>
+
+<h3>3.3 不适用（1 条）</h3>
+<div class="card">
+  <strong>G58-1 统一限流</strong>
+  <div class="why">
+    `rate_limit.py` 在 v9.2.0 因<b>零生产调用点</b>被删除（G67-21）。
+    git 侧限速由 <code>settings.rate_limit_kbps</code> → <code>http.lowSpeedLimit</code> 承担。
+    「统一限流」当前没有真实调用场景 —— 把它当缺陷继续追，只会造出一个没人用的模块。
+  </div>
+</div>
+
+<h2>四、文档过期修正（以代码为准）</h2>
+
+<table>
+  <tr><th>文档</th><th>过期陈述</th><th>代码里的现状</th></tr>
+  <tr><td><code>docs/product-brief.md</code></td><td>Webhook 幂等/审计未实现</td><td>v9.4.2–v9.4.6 已实现</td></tr>
+  <tr><td><code>docs/慢测定位.md</code></td><td>测试基础设施缺陷尚未闭环</td><td><code>_can_show_modal</code> + 引用环修复</td></tr>
+  <tr><td><code>CLAUDE.md</code> §6</td><td>G54-4 全库无该组件</td><td>v9.4.3 已实现</td></tr>
+  <tr><td><code>CLAUDE.md</code> §6</td><td><code>settings.proxy</code> 明文落盘</td><td>保存时已加密</td></tr>
+  <tr><td><code>CLAUDE.md</code> §6</td><td>G58-1 未实现 = 缺陷</td><td>模块已撤销，属不适用</td></tr>
+</table>
+
+<h2>五、归档与删除</h2>
+
+<pre><code>git mv 计划书/README.md docs/archive/plans/20261017/计划书-README-墓碑-20261014.md
+rmdir 计划书
+→ 目录已不存在；归档目录含 archive-manifest.md（逐条状态 + 删除前提核对 + 恢复方法）</code></pre>
+
+<div class="card ok">
+  <strong>删除的四个前提，缺一不可：</strong>
+  <div class="why">
+    ① 逐条审计完成 ② 原文档已入归档目录 ③ 已列删除清单并核对
+    ④ 文档内没有未闭环 / 需决策项。含未闭环项的一律保留。
+  </div>
+</div>
+
+<h3>没有删除的文档，以及为什么</h3>
+<table>
+  <tr><th>文档</th><th>原因</th></tr>
+  <tr><td><code>docs/RELEASE_CHECKLIST.md</code></td><td><b>活 SOP</b>：每次发版都要走，不是计划</td></tr>
+  <tr><td><code>docs/architecture.md</code> / <code>data-model.md</code> / <code>agent-contract.md</code> / ADR</td><td>唯一事实源</td></tr>
+  <tr><td><code>docs/验证记录-*.md</code> / <code>docs/reports/*</code></td><td>历史证据快照，删了无法复核</td></tr>
+  <tr><td><code>docs/perf-observability.md</code></td><td>含 2 条未实施的可选增强（非缺陷）</td></tr>
+</table>
+
+<h2>六、这一轮补上的骨架</h2>
+
+<table>
+  <tr><th>文件</th><th>解决什么问题</th></tr>
+  <tr><td><code>policy.md</code></td><td>「什么条件下允许宣称完成」：证据门禁、覆盖率门禁、T0–T3 分级、四档置信标签、停止条件</td></tr>
+  <tr><td><code>test_ledger.md</code></td><td>「这条链路哪个测试证明它通」：S01–S14 接缝注册表 + 覆盖状态（含 ⚠️ 部分覆盖）</td></tr>
+  <tr><td><code>evidence/</code></td><td>每个节点一条 JSON：命令、退出码、输出尾部、改了什么、接缝、mock 场景、限制</td></tr>
+  <tr><td><code>.agent/skills/plan-doc-audit.md</code></td><td>把这次的做法固化成可重复流程（含「伪闭环的五种形态」）</td></tr>
+</table>
+
+<h2>七、验证</h2>
+
+<pre><code>ruff check gcm                                   → All checks passed!
+mypy gcm                                         → Success（66 文件）
+unittest 文档新鲜度 + 版本单源 + 打包同步          → Ran 22 tests OK
+全量快集（coverage）                            → Ran 1122 · failures=0 · errors=0 · skipped=3 · 原生崩溃 0 · 覆盖 81%</code></pre>
+
+<div class="card warn">
+  <strong>守卫这一轮抓到了我自己两处问题（没有放水）：</strong>
+  <div class="why">
+    ① 新增的归档文档里出现 9 处历史版本号 → 按设计为 <code>docs/archive/*</code> 登记历史豁免，
+    并在 <code>CLAUDE.md</code> / <code>慢测定位</code> / <code>product-brief</code> 逐条写明放宽理由。<br>
+    ② <code>CLAUDE.md</code> 引用了已删除的 <code>rate_limit.py</code> 路径 →
+    <b>改写文档</b>，而不是削弱守卫。<br>
+    这两条都是「守卫先红、人再改」，顺序不能反。
+  </div>
+</div>
+
+<h2>八、测验（必须通过）</h2>
+<p class="sub">7 题，答完点提交。<strong>需要全对</strong>。</p>
+
+<div class="quiz" id="quiz">
+  <div class="q" data-answer="c">
+    <div class="stem">1. 判断计划文档里的一个任务是否真的完成，最可靠的第一步是？</div>
+    <label class="opt"><input type="radio" name="q1" value="a">A. 看文档里是否标了 ✅</label>
+    <label class="opt"><input type="radio" name="q1" value="b">B. 看有没有对应的单元测试</label>
+    <label class="opt"><input type="radio" name="q1" value="c">C. 在 <code>gcm/</code> 里找生产调用点，再确认 UI 三段链（控件→保存→消费）是否打通</label>
+    <div class="fb" data-good="对。测试可以直接构造后端对象，绕过 UI 断链 —— 本项目的系统性缺陷正是这样藏起来的。" data-bad="不对。✅ 只是某人的判断；单测可能绕过 UI 直接调后端。"></div>
+  </div>
+
+  <div class="q" data-answer="b">
+    <div class="stem">2. 删除一份计划文档前，必须同时满足哪一组条件？</div>
+    <label class="opt"><input type="radio" name="q2" value="a">A. 文件名里没有「未完成」三个字</label>
+    <label class="opt"><input type="radio" name="q2" value="b">B. 逐条审计完成 + 已归档 + 已列删除清单 + 文档内无未闭环/需决策项</label>
+    <label class="opt"><input type="radio" name="q2" value="c">C. 最近一次提交是绿的</label>
+    <div class="fb" data-good="对。四个前提缺一不可；含未闭环项的一律保留。" data-bad="不对。删除门槛是四条同时满足。"></div>
+  </div>
+
+  <div class="q" data-answer="a">
+    <div class="stem">3. 为什么 <code>docs/RELEASE_CHECKLIST.md</code> 不能当「计划文档」删掉？</div>
+    <label class="opt"><input type="radio" name="q3" value="a">A. 它是<b>每次发版都要走</b>的活 SOP，不是一次性计划</label>
+    <label class="opt"><input type="radio" name="q3" value="b">B. 它的文件名里有「清单」两个字，必须是中文</label>
+    <label class="opt"><input type="radio" name="q3" value="c">C. 它被 CI 引用，删了会红</label>
+    <div class="fb" data-good="对。区分「活文档」和「计划」是这一步最容易犯的错。" data-bad="不对。关键在它的用途：每次发版都要走。"></div>
+  </div>
+
+  <div class="q" data-answer="c">
+    <div class="stem">4. G58-3（代理凭据）为什么判定为已闭环，而不是「未解析所以没做完」？</div>
+    <label class="opt"><input type="radio" name="q4" value="a">A. 因为台账已经标了 ✅</label>
+    <label class="opt"><input type="radio" name="q4" value="b">B. 因为代理不重要</label>
+    <label class="opt"><input type="radio" name="q4" value="c">C. 因为凭据已加密落盘，且完整代理 URL 直接注入 <code>http_proxy</code>，git 原生支持 <code>user:pass@host</code> —— 「再拆字段」不是需求</label>
+    <div class="fb" data-good="对。完成标准是「需求被满足」，不是「按台账的字面措辞逐字实现」。" data-bad="不对。判定依据是代码行为与真实需求。" ></div>
+  </div>
+
+  <div class="q" data-answer="b">
+    <div class="stem">5. 归档目录 <code>docs/archive/*</code> 为什么允许出现与当前版本不一致的历史版本号？</div>
+    <label class="opt"><input type="radio" name="q5" value="a">A. 因为归档目录不在扫描范围内</label>
+    <label class="opt"><input type="radio" name="q5" value="b">B. 因为它是<b>历史快照</b>，记录的是归档当时的版本；改数字等于篡改历史</label>
+    <label class="opt"><input type="radio" name="q5" value="c">C. 因为版本号不重要</label>
+    <div class="fb" data-good="对。豁免必须写明理由，且只放宽到历史语境，不能顺手放宽到活文档。" data-bad="不对。归档是历史证据，不能改。"></div>
+  </div>
+
+  <div class="q" data-answer="a">
+    <div class="stem">6. 守卫抓到 <code>CLAUDE.md</code> 还在引用已删除的模块路径，正确处置是？</div>
+    <label class="opt"><input type="radio" name="q6" value="a">A. 改写文档，去掉对已删除路径的引用</label>
+    <label class="opt"><input type="radio" name="q6" value="b">B. 把该文档加入豁免名单</label>
+    <label class="opt"><input type="radio" name="q6" value="c">C. 跳过这个用例</label>
+    <div class="fb" data-good="对。守卫先红、人再改 —— 顺序反了就是在给自己发绿灯。" data-bad="不对。豁免和跳过都是削弱门禁。"></div>
+  </div>
+
+  <div class="q" data-answer="c">
+    <div class="stem">7. 这一轮为什么没有顺手把 G53-1（<code>health_card</code> 列）和 G58-2（镜像测速）做掉？</div>
+    <label class="opt"><input type="radio" name="q7" value="a">A. 因为它们太难了</label>
+    <label class="opt"><input type="radio" name="q7" value="b">B. 因为它们不重要</label>
+    <label class="opt"><input type="radio" name="q7" value="c">C. 因为前者需要 <b>DB 迁移 + 回填</b>（T3），后者需要<b>改变设置模型</b>（每 host 多候选）—— 都属产品决策，不应当在文档审计里顺手改</label>
+    <div class="fb" data-good="对。把它们保留并写清「为什么不做、需要什么才能做」，比仓促实现更诚实。" data-bad="不对。关键是需要产品决策与迁移，不是难度。"></div>
+  </div>
+
+  <div class="score">
+    <div id="verdict">未提交</div>
+    <div>
+      <button onclick="grade()">提交</button>
+      <button class="ghost" onclick="reset()">重做</button>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <p>
+    配套：<code>docs/archive/plans/20261017/archive-manifest.md</code>（逐条状态 + 删除前提）·
+    <code>policy.md</code>（交付门禁）· <code>test_ledger.md</code>（接缝注册表）·
+    <code>evidence/</code>（本轮真实命令与输出）·
+    <code>.agent/skills/plan-doc-audit.md</code>（可重复流程）。
+  </p>
+  <p>本报告只陈述仓库内可复现的事实。「仍未闭环」一节列出的项，没有一项被声称完成。</p>
+</footer>
+
+</div>
+<script>
+function grade(){
+  const qs=[...document.querySelectorAll('.q')];
+  let right=0, unanswered=0;
+  qs.forEach((q)=>{
+    const pick=q.querySelector('input:checked');
+    const fb=q.querySelector('.fb');
+    fb.classList.remove('show','good','bad');
+    if(!pick){unanswered++;fb.textContent='未作答';fb.classList.add('show','bad');return;}
+    if(pick.value===q.dataset.answer){
+      right++; fb.textContent='✓ '+fb.dataset.good; fb.classList.add('show','good');
+    }else{ fb.textContent='✗ '+fb.dataset.bad; fb.classList.add('show','bad'); }
+  });
+  const v=document.getElementById('verdict'); const total=qs.length;
+  if(unanswered){ v.textContent=`还有 ${unanswered} 题未作答`; v.style.color='var(--dim)'; }
+  else if(right===total){ v.textContent=`✅ 通过 ${right}/${total} —— 你可以接手这份变更了`; v.style.color='var(--ok)'; }
+  else { v.textContent=`❌ 未通过 ${right}/${total} —— 读上面的解析后重做`; v.style.color='var(--bad)'; }
+  v.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+function reset(){
+  document.querySelectorAll('.q input').forEach(i=>i.checked=false);
+  document.querySelectorAll('.fb').forEach(f=>f.classList.remove('show','good','bad'));
+  const v=document.getElementById('verdict'); v.textContent='未提交'; v.style.color='var(--fg)';
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+{
+  "task_id": "N1-plan-doc-audit",
+  "goal": "审计全部计划/指南/清单类文档，闭环者归档后删除，未闭环者保留并登记去处",
+  "status": "done",
+  "date": "2026-10-17",
+  "commands": [
+    {
+      "cmd": "find . -name \"*.md\" -not -path \"./.venv/*\" -not -path \"./.git/*\" -not -path \"./build/*\" -not -path \"./dist/*\" | sort",
+      "exit_code": 0,
+      "output_tail": "命中 40 份 md；计划/清单类只有 ./计划书/README.md（其余为事实源/活 SOP/历史证据/技能）"
+    },
+    {
+      "cmd": "grep -rn \"计划书\" --include=*.md --include=*.py --include=*.yml .",
+      "exit_code": 0,
+      "output_tail": "引用点 10 处：CLAUDE.md §6、docs/data-model.md、docs/验证记录-2026-10-16.md、workflow_status.md、.agent/skills/project-audit-sop.md、gcm/__init__.py changelog、tests/test_g67_docs_freshness.py:_PATH_PREFIXES"
+    },
+    {
+      "cmd": "git mv 计划书/README.md docs/archive/plans/20261017/计划书-README-墓碑-20261014.md && rmdir 计划书",
+      "exit_code": 0,
+      "output_tail": "计划书/ 目录已不存在"
+    }
+  ],
+  "files_changed": [
+    "docs/archive/plans/20261017/计划书-README-墓碑-20261014.md (git mv)",
+    "docs/archive/plans/20261017/archive-manifest.md (new)",
+    "tests/test_g67_docs_freshness.py (移除 计划书 前缀，加入 evidence 前缀)",
+    ".agent/skills/project-audit-sop.md (墓碑指向归档)",
+    ".agent/skills/plan-doc-audit.md (new)"
+  ],
+  "tests": {
+    "ran": 22,
+    "failures": 0,
+    "errors": 0,
+    "command": "unittest tests.test_g67_docs_freshness tests.test_g66_patch.TestContractVersionSingleSource tests.test_g66_patch.TestPackagingVersionSync"
+  },
+  "coverage": null,
+  "seams_touched": ["S12-docs"],
+  "mock_scenarios": [],
+  "verdicts": {
+    "已闭环": ["G52-1", "G52-3", "G52-5", "G52-6", "G53-2", "G53-5", "G54-4", "G56-2", "G56-4", "G58-3", "G58-5", "G59-7"],
+    "未闭环": ["G53-1", "G58-2"],
+    "不适用": ["G58-1"]
+  },
+  "limitations": [
+    "原《下一步改进指南》56 条中，只有可映射到代码的条目做了逐条复验；纯文档整理类条目按批次判定",
+    "G53-1 落列需 DB 迁移（T3），未在本次实施"
+  ]
+}

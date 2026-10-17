@@ -1,0 +1,32 @@
+{
+  "task_id": "N3-execution-skeleton",
+  "goal": "落地执行骨架：policy.md / test_ledger.md / evidence/ / plan-doc-audit 技能",
+  "status": "done",
+  "date": "2026-10-17",
+  "commands": [
+    {"cmd": "ruff check gcm", "exit_code": 0, "output_tail": "All checks passed!"},
+    {"cmd": "mypy gcm", "exit_code": 0, "output_tail": "Success: no issues found in 66 source files"},
+    {
+      "cmd": "unittest tests.test_g67_docs_freshness",
+      "exit_code": 0,
+      "output_tail": "Ran 11 tests ... OK（新文件里的路径引用全部通过存在性校验）"
+    }
+  ],
+  "files_created": [
+    "policy.md（交付门禁/任务分级/置信标签/版本控制/文档纪律/停止条件）",
+    "test_ledger.md（S01–S14 接缝注册表 + 本轮真实测试状态）",
+    "evidence/（逐节点 JSON 证据）",
+    ".agent/skills/plan-doc-audit.md（计划文档审计与归档流程）"
+  ],
+  "files_changed": [
+    ".agent/skills/README.md（索引新增 plan-doc-audit）",
+    "tests/test_g67_docs_freshness.py（_PATH_PREFIXES 增加 evidence）"
+  ],
+  "tests": {"ran": 11, "failures": 0, "errors": 0},
+  "coverage": null,
+  "seams_touched": ["S12-docs"],
+  "mock_scenarios": [],
+  "limitations": [
+    "policy.md 的门禁数字来自 .github/workflows/ci.yml 与 requirements-build.txt 的现状，若 CI 调整需同步"
+  ]
+}

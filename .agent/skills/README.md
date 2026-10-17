@@ -14,3 +14,4 @@
 | [code-review-checklist.md](code-review-checklist.md) | 自审或发起独立审查 |
 | [project-audit-sop.md](project-audit-sop.md) | 全项目终局审计 |
 | [high-concurrency-checklist.md](high-concurrency-checklist.md) | 并发/性能/可观测性评审 |
+| [plan-doc-audit.md](plan-doc-audit.md) | 计划/台账类文档逐条审计、归档与删除 |

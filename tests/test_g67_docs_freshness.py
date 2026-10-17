@@ -30,7 +30,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 # --------------------------------------------------------------------------- 扫描范围
 # G67-24：把仓库根与 skills/ 也纳入路径扫描 —— 只扫 docs/ 会漏掉
 # README 的「目录结构」表与 skills 技能包里的死链（本轮删 计划书/ 时全靠人肉 grep）。
-SCAN_GLOBS = ("docs/**/*.md", "README.md", "CLAUDE.md", "skills/**/*.md")
+SCAN_GLOBS = ("docs/**/*.md", "README.md", "CLAUDE.md", "skills/**/*.md",
+              "policy.md", "test_ledger.md", "evidence/**/*.md")
 
 
 def iter_scan_files() -> list[pathlib.Path]:
@@ -55,6 +56,7 @@ _HISTORICAL_GLOBS: tuple[tuple[str, str], ...] = (
     ("docs/验证记录-*.md", "按日期+版本分段的验证台账，记录历次实测（含当时覆盖率），不得篡改"),
     ("docs/audit-v*.md", "文件名即「审计时的版本」，是那次审计的快照报告"),
     ("docs/reports/*", "某轮审计/汇报的归档产物（HTML/md 快照）"),
+    ("docs/archive/*", "归档的计划文档与审计快照，记录的是**归档当时**的版本，改数字等于篡改历史"),
 )
 
 # 行内白名单：键 = 仓库相对路径（POSIX 风格），值 = {允许的历史版本: 理由}。
@@ -74,6 +76,15 @@ _ALLOWED_HISTORICAL_VERSIONS: dict[str, dict[str, str]] = {
         "9.1.2": "登记发布链断档：最新 git tag 停在此版本（考古事实）",
         "9.1.3": "登记发布链断档：未打 tag 的起始版本",
         "9.3.2": "登记发布链断档：未打 tag 的结束版本（G69-18 基线）",
+        # §6 的「更正」段落必须写清「哪一版修好的」，否则读者无法回溯。
+        "9.4.3": "§6 更正：G54-4 引导清单在该版本落地（考古事实）",
+        "9.2.0": "§6 说明：rate_limit.py 在该版本因零生产调用被删（考古事实）",
+    },
+    "docs/慢测定位.md": {
+        "9.4.0": "记录「2026-10-13 的阻塞在哪一版区间被修复」的起点版本（考古事实）",
+    },
+    "docs/product-brief.md": {
+        "9.4.2": "记录 Webhook 幂等/审计能力落地的起始版本（考古事实）",
     },
 }
 
@@ -133,7 +144,7 @@ def _is_current_claim_line(line: str) -> bool:
 # --------------------------------------------------------------------------- 路径引用规则
 # 只认「仓库内常见目录前缀 + 已知扩展名」的 token；`dist\...exe`、`data/...` 这类
 # 运行期/构建期产物路径不在范围内（干净 clone 下本就不存在）。
-_PATH_PREFIXES = ("gcm", "docs", "scripts", "skills", "tests", "packaging", "计划书")
+_PATH_PREFIXES = ("gcm", "docs", "scripts", "skills", "tests", "packaging", "evidence")
 _PATH_EXTENSIONS = (".py", ".md", ".json", ".yml", ".yaml", ".txt", ".iss", ".spec",
                     ".bat", ".ps1", ".html", ".toml", ".cfg", ".ini")
 _PATH_TOKEN = re.compile(

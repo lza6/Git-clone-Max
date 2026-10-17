@@ -19,7 +19,8 @@
 | 已知边界 / 未闭环（别当 bug 修） | `.agent/memory/known-issues.md` |
 | 为什么这样设计（别推翻后重犯） | `.agent/memory/decisions.md` |
 | 改这块有哪些连带影响 | `.agent/memory/change-index.md` |
-| 做事流程（加功能/加 API/发版/回滚/审查/审计） | `.agent/skills/README.md` |
+| 做事流程（加功能/加 API/发版/回滚/审查/审计/计划文档清理） | `.agent/skills/README.md` |
+| 计划文档审计结论与归档 | `docs/archive/plans/<日期>/archive-manifest.md` |
 | AI 协作铁律（验收、反假闭环） | `.agent/rules.md` |
 
 **权威文档的位置（避免读一堆过期文档）**：
@@ -27,6 +28,9 @@
 | 想知道什么 | 读哪个（唯一事实源） |
 |-----------|---------------------|
 | 我该改哪、改动影响什么 | `docs/architecture.md` + `docs/adr/ADR-001..004` |
+| 什么条件下允许宣称「完成」 | `policy.md`（交付门禁 / 任务分级 / 证据标签 / 停止条件） |
+| 这条链路哪个测试证明它通 / 哪个接缝没覆盖 | `test_ledger.md`（S01–S14 接缝注册表 + 测试状态） |
+| 某个节点本轮的真实命令与输出 | `evidence/<节点ID>.json` |
 | 可复用的代码范式 | `docs/code-gems.md`（单写者/原子写/redact/批聚合/流控/注入时钟/契约/纯校验） |
 | agent 接入契约（CLI/MCP/HTTP schema、退出码、打码规则） | `docs/agent-contract.md` |
 | 数据模型 / 迁移链 / 跨进程锁 | `docs/data-model.md` |
@@ -153,10 +157,22 @@ docs/        工程/产品/契约文档
   2026-10-16 的独立复验推翻了它：**定时报表整条链路零生产调用点**、**阈值告警未接
   `on_alerts`**、**9 个设置字段只读不写**（用户够不到）—— 均已在本轮接线；
   但仍有未闭环项，见下方「未闭环（需立项）」。**不要再以「台账已删」当作已完成的证据。**
+  2026-10-17 已完成**计划文档二次审计**：目录墓碑归档至
+  `docs/archive/plans/20261017/archive-manifest.md`（含逐条状态表），`计划书/` 目录已移除。
 - **未闭环（需立项，勿当成已完成）**：
-  - `G54-4 引导清单`：台账标 ✅，**实际全库无该组件**；`OnboardingDialog` 仍是三步向导。
-  - `G53-1 health_card`：台账称新增 JSON 列 + 雷达图，**实际仍是单值 `repo_health` + 纯文本**。
-  - `G58-3 代理凭据`：台账称「解析 + 加密落盘」，**实际未解析、`settings.proxy` 明文落盘**。
+  - ~~`G54-4 引导清单`：台账标 ✅，实际全库无该组件。~~
+    **2026-10-17 更正**：v9.4.3 已实现 `gcm/ui/checklist.py`（5 项，首启提示一次，
+    设置页入口），守卫 `tests/test_g69_checklist.py`。
+  - `G53-1 health_card`：台账称新增 JSON 列 + 雷达图，**实际仍是单值 `repo_health` + 派生视图**。
+    落列需 DB 迁移 + 回填，属 T3，先确认产品是否需要。
+  - ~~`G58-3 代理凭据`：台账称「解析 + 加密落盘」，实际未解析、`settings.proxy` 明文落盘。~~
+    **2026-10-17 更正**：`SettingsStore.save()` 已对 `proxy` 调 `_encrypt_token`，加载时 `_decrypt_or_keep`
+    （`gcm/db/settings.py:366,407-409`）。「解析」不是必需项 —— 代理以完整 URL 注入
+    `http_proxy/https_proxy`，git 原生支持 `http://user:pass@host:port`（`git/service.py:492-494`）。
+  - `G58-1 统一限流`：原「统一限流」模块在 v9.2.0 因**零生产调用点**被删除；
+    git 侧限速由 `settings.rate_limit_kbps` → `http.lowSpeedLimit` 承担。
+    「统一限流」当前**没有真实调用场景**，不属缺陷。
+  - `G58-2 镜像测速择优`：只有静态 `mirror_prefix`，未实现候选测速排序。
   - ~~`v9.1.3 ~ v9.3.2` 未打 git tag~~ **该条不成立，已于 2026-10-17 更正**：
     这些 tag **在远端一直存在**，是本地未 `git fetch --tags` 造成的误判。
     实测 `git ls-remote --tags origin` 后逐个校验：v9.x 全部 tag 与其提交的

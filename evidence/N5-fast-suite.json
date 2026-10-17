@@ -1,0 +1,27 @@
+{
+  "task_id": "N5-fast-suite",
+  "goal": "全量快集复验：改动只涉及文档与一个测试文件，但属于收尾，跑完整快集",
+  "status": "done",
+  "date": "2026-10-17",
+  "commands": [
+    {
+      "cmd": "rm -f .coverage && QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m coverage run --source=gcm scripts/ci_run_fast.py",
+      "exit_code": 0,
+      "output_tail": "[ci_run_fast] 合计：Ran 1122 tests · failures=0 errors=0 skipped=3\n[ci_run_fast] OK\n[ci_run_fast] 进程退出，最后进入的模块：<全部完成>"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe -m coverage report --include=\"gcm/*\"",
+      "exit_code": 0,
+      "output_tail": "TOTAL  9903  1692  2456  415  81%"
+    }
+  ],
+  "tests": {"ran": 1122, "failures": 0, "errors": 0, "skipped": 3},
+  "native_crashes": 0,
+  "coverage": 0.81,
+  "seams_touched": ["S12-docs", "S14-i18n"],
+  "mock_scenarios": [],
+  "limitations": [
+    "覆盖率是快集口径（Windows 门禁 81%），不是全量口径",
+    "未跑慢集（真实 git E2E）与 perf-baseline；改动不涉及克隆链路"
+  ]
+}

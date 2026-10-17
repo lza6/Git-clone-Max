@@ -280,3 +280,60 @@ Light 下对比度不足）、校验条强制 `PlainText`（用户原文含 `<>`
 `ClipboardWatcher` 传普通函数仍走强引用分支且正常回调；
 旧 settings.json 中的三个已删字段被 `_DEFAULTS` 正确过滤；
 600ms 定时器在窗口销毁后触发不会崩。
+
+
+---
+
+## 10. 计划文档二次审计与执行骨架（2026-10-17 · v9.4.6 之后）
+
+### 10.1 本轮契约
+
+| # | 需求 | 状态 | 证据 |
+|---|------|------|------|
+| D1 | 创建 `policy.md` | ✅ | 仓库根 |
+| D2 | 创建 `test_ledger.md`（接缝注册表 + 测试状态） | ✅ | 仓库根，S01–S14 |
+| D3 | 创建 `evidence/` 逐节点证据 | ✅ | `evidence/N1..N3` + README |
+| D4 | 计划文档逐条审计 + 归档 + 删除 | ✅ | `docs/archive/plans/20261017/archive-manifest.md` |
+| D5 | 新增 `plan-doc-audit.md` 技能 | ✅ | `.agent/skills/plan-doc-audit.md` |
+| D6 | 修正与代码不符的文档陈述 | ✅ | 见 `evidence/N2-docs-staleness-fix.json` |
+| D7 | 定向守卫 + 全量快集 | ✅ | 22 守卫 + 快集结果见下 |
+
+### 10.2 审计结论（只列可判定的条目）
+
+| 分类 | 条目 |
+|------|------|
+| 已闭环 | G52-1 · G52-3 · G52-5 · G52-6 · G53-2 · G53-5 · G54-4 · G56-2 · G56-4 · G58-3 · G58-5 · G59-7 |
+| 未闭环（需立项） | G53-1（`health_card` 列 / 雷达图，需 DB 迁移） · G58-2（镜像测速择优） |
+| 不适用（已撤销） | G58-1（统一限流模块因零生产调用被删） |
+
+**删除清单**：`计划书/README.md`（墓碑）→ 归档 → 删除；`计划书/` 空目录已移除。
+
+**未删除及原因**：`docs/RELEASE_CHECKLIST.md`（活 SOP）· `docs/architecture.md` /
+`data-model.md` / `agent-contract.md` / `code-gems.md` / ADR（事实源）·
+`docs/验证记录-*.md` / `docs/reports/*` / `docs/audit-v8.2.0-*`（历史证据）·
+`docs/perf-observability.md`（含可选增强）· `docs/product-brief.md`（产品定位）·
+`docs/慢测定位.md`（耗时事实源）。
+
+### 10.3 文档过期修正（以代码为准）
+
+| 文档 | 过期陈述 | 现状 |
+|------|---------|------|
+| `docs/product-brief.md` | Webhook 幂等/审计未实现 | v9.4.2–v9.4.6 已实现 |
+| `docs/慢测定位.md` | 测试基础设施缺陷尚未闭环 | `_can_show_modal` + 引用环修复 |
+| `CLAUDE.md` §6 | G54-4 无组件 | v9.4.3 已实现 |
+| `CLAUDE.md` §6 | `settings.proxy` 明文落盘 | 已加密（`_encrypt_token`） |
+| `CLAUDE.md` §6 | G58-1 未实现 = 缺陷 | 模块已撤销，属不适用 |
+
+### 10.4 验证
+
+```
+2026-10-17  ruff check gcm                                    → All checks passed!
+2026-10-17  mypy gcm                                          → Success（66 文件）
+2026-10-17  unittest 文档新鲜度 + 版本单源 + 打包同步           → Ran 22 tests OK
+2026-10-17  全量快集（coverage）                               → Ran 1122 · failures=0 · errors=0 · skipped=3 · 原生崩溃 0 · 覆盖 81%
+```
+
+### 10.5 仍未闭环
+
+`G53-1` · `G58-2` · 两个跨进程测试高负载偶发 · CI 未锁 PyQt6。均登记在
+`.agent/memory/known-issues.md` 与 `CLAUDE.md` §6。
