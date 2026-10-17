@@ -1,0 +1,56 @@
+{
+  "task_id": "N7-ci-build-release",
+  "goal": "提交 → CI 三平台 → 打包 → 健康检查 → Release v9.4.7",
+  "status": "done",
+  "date": "2026-10-18",
+  "commit": "de4a0d3",
+  "ci": {
+    "run_id": 39053525582,
+    "url": "https://github.com/lza6/Git-clone-Max/actions/runs/39053525582",
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": {
+      "test (windows-latest)": "success",
+      "test (ubuntu-latest)": "success",
+      "test (macos-latest)": "success",
+      "e2e-smoke": "success",
+      "fast-smoke": "success",
+      "perf-baseline": "success",
+      "slow": "success"
+    }
+  },
+  "build": {
+    "command": "python -m PyInstaller --noconfirm Git-clone-Max.spec",
+    "exit_code": 0,
+    "note": "首次构建失败：dist/Git-clone-Max.exe 被 6 个残留实例占用（PermissionError WinError 5）；按 RELEASE_CHECKLIST 结束残留进程后重建成功"
+  },
+  "portable_zip": {
+    "command": "python scripts/build_portable_zip.py && python scripts/build_portable_zip.py --check",
+    "result": "[OK] 286 条目 / 78715651 字节；--check 未过期"
+  },
+  "health_check": {
+    "command": "python scripts/health_check.py --json dist/health_check.json",
+    "version": "9.4.7",
+    "archive_version": "9.4.7",
+    "started_ok": true,
+    "repos_db_created": true,
+    "artifacts_exist": true,
+    "elapsed_ms": 20831,
+    "exe_sha256": "d499dda80722d86032c878f219dc7ea6a2cc710957d23365e37dcf195ad84ffb",
+    "zip_sha256": "f4e3c036ea409cdd411216fa9a83720d1ddf678dda313201780c31dec1882b82"
+  },
+  "release": {
+    "tag": "v9.4.7",
+    "tag_object": "annotated → de4a0d3",
+    "url": "https://github.com/lza6/Git-clone-Max/releases/tag/v9.4.7",
+    "assets": [
+      {"name": "Git-clone-Max.exe", "size": 40694760},
+      {"name": "Git-clone-Max-portable.zip", "size": 78715651}
+    ],
+    "server_sha256_verified": true
+  },
+  "limitations": [
+    "exe 只在 Windows 本机做启动健康检查（版本/启动/产物），未做人工 GUI 点选冒烟",
+    "Release 的 exe 与 zip 未在第二台机器上复验"
+  ]
+}

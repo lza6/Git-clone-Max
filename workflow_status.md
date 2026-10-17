@@ -369,3 +369,17 @@ Light 下对比度不足）、校验条强制 `PlainText`（用户原文含 `<>`
 
 版本 `9.4.7`：`__changelog__` 已登记；`pyproject.toml` / `Git-clone-Max.spec` /
 `packaging/installer.iss` / `docs/agent-contract.md` 已同步；版本单源守卫绿。
+
+### 11.4 提交 / CI / 发布
+
+| 项 | 结果 |
+|----|------|
+| 提交 | `de4a0d3`（main） |
+| CI | run 39053525582 · **7/7 job 绿**（win/ubuntu/macos + e2e + fast + perf + slow） |
+| 打包 | PyInstaller 成功；便携 zip 286 条目 / 78,715,651 字节，`--check` 未过期 |
+| 健康检查 | `version=9.4.7` · `started_ok=true` · `artifacts_exist=true` · `repos_db_created=true` |
+| Release | v9.4.7 双产物 + 服务端 sha256 一致 → `docs/验证记录-2026-10-17.md` §12.5 |
+
+> 构建时踩到已知坑：`dist/Git-clone-Max.exe` 被 **6 个健康检查残留实例**占用
+> （`PermissionError [WinError 5]`）。按 `docs/RELEASE_CHECKLIST.md` 的说明先
+> `taskkill /IM Git-clone-Max.exe /F` 再重建即可。这条已在该清单里写明，本次是复现而非新问题。
