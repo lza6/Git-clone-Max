@@ -281,6 +281,8 @@ class Settings:
     # G54-4 引导清单：只记录**推导不出来**的两项（network/help）；
     # download_dir/token/import 由现有设置与数据库实时推导，不重复存状态。
     checklist_done: dict = field(default_factory=dict)
+    # G54-4：引导清单是否已自动提示过（只在首次启动弹一次，之后走设置页入口）
+    checklist_prompted: bool = False
     auto_update_minutes: int = 0      # G37-4 自动更新间隔（分钟，0=关；非 busy 时触发一键更新）
     font_scale: float = 1.0           # G10-1 字号缩放（0.8 ~ 1.6）
     rate_limit_kbps: int = 0          # G04-4 下载限速 KiB/s（0=不限）

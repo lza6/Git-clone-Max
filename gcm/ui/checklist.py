@@ -46,6 +46,19 @@ def compute_status(settings, repos_count: int = 0) -> dict[str, bool]:
     }
 
 
+def _dim_color() -> str:
+    """取当前主题的次要文字色（避免写死 #888 在浅色主题下册对比度不足）。"""
+    try:
+        from . import theme as _th
+        pal = _th.current_palette()
+        for key in ("dim", "muted", "fg2", "sub"):
+            if pal.get(key):
+                return str(pal[key])
+    except Exception:
+        pass
+    return "#888888"
+
+
 class ChecklistDialog(QDialog):
     """首次引导清单：列出 5 项，已完成打勾，可关闭稍后再看。"""
 
@@ -56,18 +69,20 @@ class ChecklistDialog(QDialog):
         lay = QVBoxLayout(self)
 
         done = sum(1 for k, _t, _d, _a in ITEMS if status.get(k, False))
-        lay.addWidget(QLabel(
+        sum_lbl = QLabel(
             tr("按顺序做完这几件事，就能稳定地批量下载了（已完成 {done}/{total}）")
-            .replace("{done}", str(done)).replace("{total}", str(len(ITEMS)))))
+            .replace("{done}", str(done)).replace("{total}", str(len(ITEMS))))
+        sum_lbl.setWordWrap(True)
+        lay.addWidget(sum_lbl)
 
         for key, title, desc, _auto in ITEMS:
-            row = QCheckBox(title)
+            row = QCheckBox(tr(title))
             row.setChecked(bool(status.get(key, False)))
             row.setEnabled(False)          # 状态是推导/回填的，不在这里改
             lay.addWidget(row)
-            hint = QLabel("   " + desc)
+            hint = QLabel("   " + tr(desc))
             hint.setWordWrap(True)
-            hint.setStyleSheet("color: #888;")
+            hint.setStyleSheet(f"color:{_dim_color()};")
             lay.addWidget(hint)
 
         btns = QDialogButtonBox()

@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import atexit
 import faulthandler
-import gc
 import os
 import sys
 import unittest
@@ -86,10 +85,6 @@ def main() -> int:
         pass
     atexit.register(_dump_inflight)
 
-    # 安全网：整轮关闭自动循环 GC（见 _run_one 的说明，尚未根治的全部环）。
-    # 一旦其它控件/面板的环也改造完，删掉这一行并跑 3 次全量确认。
-    gc.disable()
-
     tests_dir = ROOT / "tests"
     # G69-18：让硬件敏感用例**自己**跳过（它们用 `GCM_FAST_SUITE=1` 判定），
     # 而不是整模块排除 —— 后者会连带砍掉同文件里与硬件无关的正确性用例，
@@ -136,25 +131,23 @@ _totals = {"run": 0, "fail": 0, "err": 0, "skip": 0}
 def _run_one(stem: str, loader, failed_modules: list[str]) -> None:
     """跑单个模块。
 
-    ⚠️ 原生崩溃（G69-18）的**根因已消除**，此处不再需要关闭 GC。
+    ⚠️ 原生崩溃（G69-18）—— **根因已消除，本运行器不做任何 GC 特殊处理**。
 
-    历史上这里曾 `gc.disable()` 整轮关闭循环 GC —— 那是**临时处置**，因为
-    `MainWindow` 被引用环维持：`del w` 后不被引用计数回收，只能等循环 GC，
-    而循环 GC 在**任意分配点**（含 `processEvents()` 内部）销毁控件与子定时器，
-    触发 `QTimerInfoList::activateTimers` 解引用已释放对象 → 原生崩溃。
+    历史：这里曾 `gc.disable()` 整轮关闭循环 GC，作为「窗口只能等循环 GC 回收」
+    的临时处置。根因是 `MainWindow` 被引用环维持，而循环 GC 会在**任意分配点**
+    （含 `processEvents()` 内部）销毁控件与子定时器 →
+    `QTimerInfoList::activateTimers` 解引用已释放对象 → 段错误。
 
-    **已做的根因修复**（v9.4.2，真实有效）：
-    - 4 个 Panel 的 `self.owner = owner` 改为弱引用；
-    - 控件信号连接不再用 `lambda` 捕获 self（PyQt 对绑定方法用弱引用）；
-    - `AlertScanner` 的 scan 闭包、`ClipboardWatcher.on_url`、拖拽 handler 全改弱引用。
+    环的构成（逐个实测定位后打断）：
+      Panel 强引用 owner · 信号连接用 lambda 捕获 self ·
+      扫描闭包 / 剪贴板回调 / 拖拽 handler 强引用窗口 ·
+      **`_layout_timer` 的 lambda（`show()` 后由 resizeEvent 创建）**。
 
-    验证：`MainWindow` 现在 `del w` 后**未跑 gc.collect 即已回收**（引用计数直接释放），
-    由 `TestG69_18NoMainWindowRefCycle` 永久守卫。
+    最后一条是关键：不 `show()` 时窗口本来就能释放，一旦 `show()` 环就回来了 ——
+    所以早期「已根治」的结论是假绿。改为绑定方法后，
+    **`show()` 之后 `del w` 仍按引用计数释放**（守卫 `TestG69_18NoMainWindowRefCycle`）。
 
-    **但仍有其它控件的环**（对话框/面板等，尚未逐个改造）。实测恢复正常 GC 后
-    套件仍会在 `test_g68_settings_ui` 段错误 —— 说明环不只在 MainWindow。
-    因此这里**保留整轮关闭循环 GC 作为安全网**（历史证明它能让套件稳定全绿），
-    并把它标注为「待逐类改造后移除」，而不是当成已根治。
+    验证：恢复正常 GC 后全量连跑 3 次绿（1115 用例）。
     """
 
     try:

@@ -1,5 +1,5 @@
 """Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。"""
-__version__ = "9.4.4"
+__version__ = "9.4.5"
 __app_name__ = "Git-clone-Max"
 __changelog__ = (
     "4.0.0: 统一调度引擎(SyncEngine) · progress.json 进程级锁+周期落盘 · SQLite busy_timeout · "
@@ -119,6 +119,7 @@ __changelog__ = (
     "9.1.0: G59 第三轮收官 - 评分卡 per_repo_size 接入真实 dir_size · 企业 IM 告警推送(钉钉/飞书/企微)接入主窗口 + token 加密落盘 · CI 主矩阵 fast/slow 拆分 · 文档资产(architecture/ADR/code-gems/product-brief/perf-observability)",  # noqa: E501
     "9.1.1: 补缺 - G58-5 认证头类型 UI(Bearer/PRIVATE-TOKEN/Basic 下拉 + service 头映射 + 真实 git 头注入 E2E) · G57-5 无障碍声明 · G66-1 Windows 版本资源 8.0.2→9.1.1 修复",  # noqa: E501
     "9.1.2: 文档治理收官 - G51-3 扫描证据 478KB 归档 zip · G51-4 根目录收敛(参考结果计划指南移入计划书/16 个构建日志清理) · G51-5 v8 历史段抽为独立只读归档 · G51-6 workflow_status 里程碑仪表盘 · G52-G56 章节表全量回填[已落地]",  # noqa: E501
+    "9.4.5: G69-18 审查整改（独立对抗式审查 Request Changes 全部关闭）- ①引用环真正的最后一环：_layout_timer 用 lambda 捕获 self，一旦 show() 由 resizeEvent 重新成环；此前「根因已消除」对生产路径不成立、守卫只覆盖从不 show() 的窗口（假绿）。改绑定方法后 show() 之后仍按引用计数释放；并据此移除 runner 的 gc.disable 安全网（恢复正常 GC 后全量连跑 3 次全绿）。②引导清单只在首次提示（settings.checklist_prompted），改在向导返回后触发。③修 count_repos 不存在导致「已导入仓库」项永远不完成。④僵尸字段守卫改 AST 扫描（原文本匹配被自己的 changelog 喂成假绿）。⑤parse_urls 跳过 # 注释，与校验条语义统一。⑥校验条/清单说明改用主题语义色并强制 PlainText。⑦notify 兜底记 event=error 审计、幂等指纹纳入 URL。⑧schtasks 用例改与语言无关的判据",  # noqa: E501
     "9.4.4: G54-1 输入区实时校验落地 - 粘贴/输入后显示「有效 N / 无效 M」并指出具体无效行（输入防抖 300ms、注释行不计、解析用与克隆链路同一个 parse_any_repo_url）。顺带修掉 maybe_validate_url 的**平台缺陷**：原用 is_github_url() 只认 GitHub，会把 GitLab/Gitee/Codeberg/Bitbucket 的合法地址判成非法 —— 此前它只在 tests 里被引用，所以这个错误从未暴露。另删除 3 个僵尸设置字段（shallow_default/auto_init_empty/mirror_default，全库无读无写）并新增守卫",  # noqa: E501
     "9.4.3: G54-4 引导清单落地 - 新增 gcm/ui/checklist.py：首启向导后与设置页均可打开「开始使用清单」，列出 5 项（下载目录/令牌/网络体检/导入清单/帮助）并显示完成进度。设计上**不重复存状态**：download_dir/token/import 由现有设置与数据库实时推导，只有 network/help 记在 settings.checklist_done；不可见窗口时退化为写日志（不弹模态阻塞）。新增 tests/test_g69_checklist.py(8)",  # noqa: E501
     "9.4.2: G67-6/G69-18 收口 - ①**打断 MainWindow 引用环**（4 个 Panel 的 owner 改弱引用、信号连接不再用 lambda 捕获 self、扫描闭包/剪贴板回调/拖拽 handler 全改弱引用）：实测 `del w` 后**未跑 gc.collect 即按引用计数释放**，新增守卫 TestG69_18NoMainWindowRefCycle；②**完成通知 Webhook 补全**（原实现只会发一次）：同 payload 600s 幂等去重、每次尝试写 <data>/notify.log 审计台账（**只记 scheme://host**，杜绝 Server酱/TG bot token 等路径凭据外泄）、失败重试 1 次、设置页「查看通知审计」入口（含不可见窗口的模态阻塞守卫）。新增 test_g69_notify_hardening(14)，覆盖重试/去重/审计/滚动/防泄漏/落盘失败不影响主流程",  # noqa: E501

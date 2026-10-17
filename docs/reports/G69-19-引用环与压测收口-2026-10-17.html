@@ -223,9 +223,11 @@ if not sent:                         # 失败要撤销占位，否则「一次�
   <tr><th>项</th><th>状态</th><th>说明</th></tr>
   <tr><td>MainWindow 引用环</td><td><span class="pill p-ok">已打断</span></td>
       <td><code>del w</code> 即释放；守卫 <code>TestG69_18NoMainWindowRefCycle</code></td></tr>
-  <tr><td><b>其它控件的环</b></td><td><span class="pill p-warn">未消除</span></td>
-      <td>恢复正常 GC 后套件仍会在 <code>test_g68_settings_ui</code> 段错误 →
-          runner <b>保留整轮关 GC 作安全网</b>，并明确标注「待逐类改造后移除」，不冒充已根治</td></tr>
+  <tr><td><b>其它控件的环</b></td><td><span class="pill p-ok">已消除</span></td>
+      <td>独立审查抓到<b>最后一环</b>：<code>_layout_timer</code> 的 lambda ——
+          <code>show()</code> 后由 <code>resizeEvent</code> 创建，环立刻接回来。
+          改绑定方法后，<b>恢复正常 GC 全量连跑 3 次绿</b>，runner 的
+          <code>gc.disable()</code> 安全网已移除</td></tr>
   <tr><td>G54-4 引导清单</td><td><span class="pill p-ok">已闭环</span></td>
       <td>5 项，3 项实时推导 + 2 项显式打勾；8 条测试</td></tr>
   <tr><td>G54-1 表单即时校验</td><td><span class="pill p-bad">未闭环</span></td>
@@ -237,6 +239,42 @@ if not sent:                         # 失败要撤销占位，否则「一次�
   <tr><td>僵尸字段 ×3</td><td><span class="pill p-warn">未清理</span></td>
       <td><code>shallow_default</code>/<code>auto_init_empty</code>/<code>mirror_default</code></td></tr>
 </table>
+
+
+<h2>八、独立审查推翻了我自己</h2>
+
+<div class="card bad">
+  <strong>我上一轮说「引用环已根治」—— 是假绿。</strong>
+  <div class="why">
+    窗口平时能按引用计数释放，<b>但一 <code>show()</code>，<code>resizeEvent</code> 就会创建
+    <code>_layout_timer</code>，而它的回调是 <code>lambda</code> 捕获 self</b> —— 环立刻接回来。
+    更糟的是我的守卫 <code>TestG69_18NoMainWindowRefCycle</code> <b>从不调用 show()</b>，
+    所以它永远绿。
+  </div>
+</div>
+
+<table>
+  <tr><th>#</th><th>审查发现</th><th>处置</th></tr>
+  <tr><td>1</td><td><code>_layout_timer</code> lambda 在 show() 后重新成环（守卫假绿）</td>
+      <td>改绑定方法；<b>实测 show() 后 <code>del w</code> 立即释放</b>；据此移除 GC 安全网</td></tr>
+  <tr><td>2</td><td><code>count_repos</code> 方法不存在，<code>hasattr</code> 把拼错静默降级 →
+      引导清单「已导入仓库」<b>永远不完成</b></td>
+      <td>改 <code>db.count()</code>；实测导入 1 个仓库后变 True</td></tr>
+  <tr><td>3</td><td>引导清单<b>每次启动都弹模态</b>，还会叠在向导的嵌套事件循环上</td>
+      <td>新增 <code>checklist_prompted</code>；改在<b>向导返回后</b>触发</td></tr>
+  <tr><td>4</td><td>僵尸字段守卫用文本匹配，<b>被自己的 changelog 喂成假绿</b></td>
+      <td>改 <b>AST 扫描</b>（只认代码引用）+ 反向自检</td></tr>
+</table>
+
+<div class="card warn">
+  <strong>这轮最贵的一课：</strong>
+  <div class="why">
+    「守卫是绿的」和「用户路径是对的」是两件事。
+    我的守卫只覆盖了<b>方便测试的路径</b>（不 show 的窗口），
+    而真实用户永远走 <code>show()</code> 的那条。
+    这和项目里「测试直接构造后端对象、绕过 UI 断链」是同一类错误。
+  </div>
+</div>
 
 <h2>七、小测验（必须通过）</h2>
 <p class="sub">8 题，答完点提交。<strong>需要全对</strong>。</p>

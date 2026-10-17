@@ -398,6 +398,11 @@ def parse_urls(text: str) -> tuple[list[RepoSpec], list[str]]:
     for raw in (text or "").splitlines():
         if not raw.strip():
             continue
+        # G69-18：`#` 开头视为注释（用户常从脚本/清单里连注释一起粘贴）。
+        # 输入区实时校验条也是这么处理的 —— 两处语义必须一致，否则
+        # 校验条显示「无效 0」而点开始时却弹「N 行无效」。
+        if raw.lstrip().startswith("#"):
+            continue
         spec = parse_any_repo_url(raw)
         if spec:
             valid.append(spec)

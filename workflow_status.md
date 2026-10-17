@@ -74,7 +74,7 @@
 | G53-1 多维评分卡 | 新增 `health_card` JSON 列/派生视图 | **部分闭环** | 统计中心有展示；**未新增列**，仍单值 `repo_health`；雷达图未实现 |
 | G53-2 阈值告警引擎 | 命中 → 弹通知 + 可选 Webhook | **部分闭环** | 扫描器已接；**`on_alerts` 未传** → 命中后除 IM 外用户无感 |
 | G53-5 定时报表 | 后台按间隔生成到指定目录 | **零生产调用点** | `ReportScheduler` 仅被 tests 引用；`_save_g53_sched_interval/_dir` 从未 connect |
-| G54-4 引导清单 | 向导后「引导清单」页 | **零生产调用点** | 全库无 checklist 组件；`onboarding.py` 仅 3 步向导 |
+| G54-4 引导清单 | 向导后「引导清单」页 | **已闭环（v9.4.3）** | `gcm/ui/checklist.py`；首启提示一次（`checklist_prompted`）+ 设置页入口 |
 | G56-2 MCP server | `python -m gcm.mcp_server` 只读工具 | **真实可用（实测）** | 无 `GCM_MCP_ENABLE` → rc=3；置 1 后 initialize 返回 9.3.2，tools/list 返回 4 工具 |
 | G56-4 本地 HTTP API | `--serve` 只读 | **真实可用（实测）** | `GET /api/status` → 200 `{...,"readonly":true}` |
 | G58-3 HTTP 代理认证 | 解析 + 加密落盘 | **部分闭环** | 能注入 git env；**未解析、未加密**（`settings.proxy` 明文落盘） |
@@ -161,8 +161,8 @@ QTimerInfoList::activateTimers
 ### P1（高）
 | ID | 问题 | 状态 |
 |----|------|------|
-| P1-1 | `G54-4 引导清单` 零实现（台账标 ✅） | 未修（需立项） |
-| P1-2 | `G53-1` 未新增 `health_card` 列、无雷达图 | 未修（台账过度声称） |
+| P1-1 | `G54-4 引导清单` 零实现 | **✅ 已修（v9.4.3）** |
+| P1-2 | `G53-1` 未新增 `health_card` 列、无雷达图 | **仍部分闭环**（派生视图有，列/图无） |
 | P1-3 | `G58-3` 代理凭据未解析、明文落盘 | 未修（安全项） |
 | P1-4 | ~~v9.1.3~v9.3.2 未打 tag~~ **不成立**：远端一直有；本地未 `fetch --tags` 导致误判，已逐 tag 校验一致 | ✅ 更正 |
 | P1-5 | 孤立 zombie 字段：`shallow_default`/`auto_init_empty`/`mirror_default`/`sched_report_format`/`depth` | 未修 |
@@ -250,6 +250,33 @@ run: https://github.com/lza6/Git-clone-Max/actions/runs/38960845721 （sha `a4ca
 **验证**：`Ran 1110 · failures=0 errors=0 skipped=3 · 原生崩溃 0 · 覆盖 81%`；
 ruff `All checks passed`；mypy `Success`（66 文件）；CI 7/7 全绿。
 
-**仍未闭环（诚实清单）**：其它控件的引用环、`G54-1` 表单即时校验、
-`G53-1` 雷达图/`health_card` 列、`G58-1/2` 限流与镜像测速、僵尸字段 3 个、
+**仍未闭环（诚实清单）**：其它控件的引用环（已用探针否定「跨模块残留」，但正常 GC 下仍偶发段错误，故保留安全网）、
+`G53-1` 雷达图/`health_card` 列、`G58-1/2` 限流与镜像测速、
 老 tag 版本滞后 1 个 patch（历史遗留）。
+
+
+---
+
+## 9. 第五轮（v9.4.4 审查整改 · 2026-10-17）
+
+独立对抗式审查对 v9.4.2–v9.4.4 给出 **Request Changes**，5 个阻塞项。逐条处置：
+
+| 编号 | 审查发现 | 处置 |
+|------|---------|------|
+| C1 | **`_layout_timer` 用 lambda 捕获 self** —— 一旦 `show()`，`resizeEvent` 创建该定时器，引用环重新接上；此前「根因已消除」的结论对**生产路径不成立**，守卫只覆盖从不 `show()` 的窗口（假绿） | 改绑定方法 `_on_layout_tick`。**实测：`show()` 后 `del w` 仍按引用计数释放** |
+| C2 | `count_repos` 方法**不存在**（只有 `count()`），`hasattr` 把拼错静默降级 → 引导清单「已导入仓库」项**永远不可能完成** | 改 `db.count()`；实测导入 1 个仓库后该项为 True |
+| C3 | `test_themes` 断言旧文案 → 快集确定红 | 已随 v9.4.4 同步更新（审查看到的是修复前状态）；现 `Ran 9 OK` |
+| C4 | 引导清单**每次启动都弹模态**（无「已提示」判断），且向导的嵌套事件循环会让清单叠在上面 | 新增 `settings.checklist_prompted`；改为**向导函数返回后**触发 |
+| C5 | 僵尸字段守卫用文本匹配，**被自己的 changelog 喂成假绿** | 改 **AST 扫描**（只认 Attribute/Name/getattr 字符串），注释与 changelog 不算引用；并加反向自检用例 |
+
+**Required Changes 一并处理**：`parse_urls` 跳过 `#` 注释（与校验条语义统一）、
+校验条与清单说明文字改用 `theme.current_palette()` 语义色（原写死 Deep 主题 hex，
+Light 下对比度不足）、校验条强制 `PlainText`（用户原文含 `<>` 不被当富文本）、
+清单文案走 `tr()`（中英键已补齐）、`notify` 兜底改为写 `event=error` 审计而非静默、
+幂等指纹**纳入 URL**（换服务不会被误去重）、`ManagePanel(owner=None)` 注释与实现对齐。
+
+**审查实测否定、无需再排查的怀疑**（记录下来避免重复劳动）：
+`Path("notify.log").with_suffix(".log.1")` 在 3.10/3.14 均正确；
+`ClipboardWatcher` 传普通函数仍走强引用分支且正常回调；
+旧 settings.json 中的三个已删字段被 `_DEFAULTS` 正确过滤；
+600ms 定时器在窗口销毁后触发不会崩。

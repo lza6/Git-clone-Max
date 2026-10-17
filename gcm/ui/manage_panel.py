@@ -38,6 +38,9 @@ class ManagePanel(QWidget):
         # owner 允许为 None（测试会构造无宿主的面板单独验证数据逻辑）
         self._owner_ref = (weakref.ref(owner) if owner is not None
                            else (lambda: None))
+        # G69-18：owner 可为 None（测试会单独构造面板验证数据逻辑）。
+        # 原先注释这么写、代码却没兜底 —— `self.owner._std_icon(...)` 会
+        # AttributeError。这里显式记下来，构造期就不会依赖 owner。
         self._build_ui()
 
     @property

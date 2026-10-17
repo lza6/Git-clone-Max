@@ -53,9 +53,14 @@ def build_payload(ok: int, fail: int, conflict: int = 0, cancelled: int = 0,
     }
 
 
-def _fingerprint(payload: dict[str, Any]) -> str:
-    """payload 的稳定指纹（用于幂等去重，不含时间戳）。"""
-    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+def _fingerprint(payload: dict[str, Any], url: str = "") -> str:
+    """payload + 目标 URL 的稳定指纹（用于幂等去重，不含时间戳）。
+
+    G69-18：**必须把 url 也算进去** —— 否则用户在去重窗口内把 Webhook 换成
+    另一个服务、而统计数字恰好相同，第二条会被静默跳过（换服务等于没换）。
+    """
+    raw = json.dumps({"url": str(url or ""), "payload": payload},
+                     ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -168,6 +173,10 @@ def maybe_notify(settings, ok: int, fail: int, conflict: int = 0,
 
     返回 True 表示「已完成通知职责」—— 包括**被幂等去重跳过**的情况
     （那不是错误，而是有意不重复打扰）。
+
+    幂等窗口 `DEDUP_WINDOW_SEC` 是**进程内**的（`_recent` 是模块级字典）：
+    应用重启后失效、多实例之间互不共享。这是有意取舍 —— 跨进程去重需要
+    额外锁与持久化，而重复通知的代价远小于漏发。
     """
     try:
         enabled = bool(getattr(settings, "notify_webhook_enabled", False))
@@ -176,7 +185,7 @@ def maybe_notify(settings, ok: int, fail: int, conflict: int = 0,
             return False
         token = str(getattr(settings, "notify_webhook_token", "") or "").strip()
         payload = build_payload(ok, fail, conflict, cancelled, total, failed_repos)
-        fp = _fingerprint(payload)
+        fp = _fingerprint(payload, url)
         now = time.time()
 
         # 幂等：同 payload 在窗口内只发一次。
@@ -214,7 +223,14 @@ def maybe_notify(settings, ok: int, fail: int, conflict: int = 0,
                           if now - v >= DEDUP_WINDOW_SEC]:
                     _recent.pop(k, None)
         return bool(sent)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        # 兜底不能静默：写一条**不含凭据**的审计记录（只记异常类型）。
+        # 这条规则是被自己踩出来的 —— 上一轮测试里的 NameError 就是这样被吞掉的，
+        # 表现为「发送成功但审计记 failed」。
+        _audit(data_dir, {
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "event": "error", "error": type(exc).__name__,
+        })
         return False
 
 

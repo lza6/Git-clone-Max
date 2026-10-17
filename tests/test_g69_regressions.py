@@ -957,6 +957,71 @@ class TestG69_18LogBufferTimerIsActivityArmed(unittest.TestCase):
                       "closeEvent 必须停日志节流定时器")
 
 
+class TestG69_18ClipboardWeakCallback(unittest.TestCase):
+    """`ClipboardWatcher` 收到**绑定方法**时用 WeakMethod，宿主销毁后静默跳过。"""
+
+    def test_bound_callback_survives_and_stops_after_owner_gone(self):
+        import gc
+        import weakref
+
+        from gcm.app.clipboard_watcher import ClipboardWatcher
+
+        class _Owner:
+            def __init__(self):
+                self.got = []
+
+            def on_url(self, url):
+                self.got.append(url)
+
+        owner = _Owner()
+        watcher = ClipboardWatcher(on_url=owner.on_url)
+        self.addCleanup(watcher.stop)
+        watcher.on_url("https://github.com/a/b")
+        self.assertEqual(owner.got, ["https://github.com/a/b"])
+
+        ref = weakref.ref(owner)
+        del owner
+        gc.collect()
+        self.assertIsNone(ref())
+        # 宿主已销毁：再调不得抛异常，且静默跳过
+        watcher.on_url("https://github.com/c/d")
+
+    def test_plain_function_still_works(self):
+        from gcm.app.clipboard_watcher import ClipboardWatcher
+
+        got = []
+        w = ClipboardWatcher(on_url=lambda u: got.append(u))
+        self.addCleanup(w.stop)
+        w.on_url("x")
+        self.assertEqual(got, ["x"])
+
+
+class TestG69_18UrlValidationDebounceWiring(unittest.TestCase):
+    """`textChanged` → 防抖定时器 → 刷新：接线必须真实存在（不只是源码 grep）。"""
+
+    def test_text_change_triggers_validation_after_debounce(self):
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+        import tempfile
+
+        from PyQt6.QtWidgets import QApplication
+
+        from gcm.db.repo_db import Database
+        from gcm.db.settings import SettingsStore
+        from gcm.ui.main_window import MainWindow
+
+        app = QApplication.instance() or QApplication([])
+        d = pathlib.Path(tempfile.mkdtemp(prefix="gcm_debounce_"))
+        w = MainWindow(data_dir=d, db=Database(d / "t.db"), settings=SettingsStore(d / "s.json"))
+        self.addCleanup(w.close)
+        self.assertEqual(w.repo_valid_lbl.text(), "")
+        w.repo_input.setPlainText("https://github.com/a/b")
+        # 定时器未到点前不应刷新
+        self.assertTrue(w._validate_timer.isActive(), "textChanged 应启动防抖定时器")
+        w._validate_timer.stop()
+        w._refresh_url_validation()          # 手动触发以验证渲染
+        self.assertIn("有效 1", w.repo_valid_lbl.text())
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -1055,35 +1120,71 @@ class TestG69_18NoZombieSettingsFields(unittest.TestCase):
     """G69-18：`Settings` 不允许存在「全库无人引用」的僵尸字段。
 
     `shallow_default` / `auto_init_empty` / `mirror_default` 三个字段曾是
-    「声明了、但读也没人读、写也没人写」的死配置 —— 用户永远碰不到，
+    「声明了、读也没人读、写也没人写」的死配置 —— 用户永远碰不到，
     却让人误以为功能存在。
 
-    判据：字段名必须出现在 `gcm/` 下**除 `db/settings.py` 之外**的某个文件里
-    （UI 写入或业务读取）。新增字段时如果只加在 dataclass 里，这条会立刻红。
+    **为什么必须用 AST 而不是文本匹配**：第一版把 `gcm/` 下所有 .py 拼成一个字符串
+    做 `\\b字段名\\b` 搜索 —— 结果 `gcm/__init__.py` 的 changelog 里就写着这三个
+    字段名，于是「把字段加回 dataclass 且全库无读写」这条守卫**仍然会绿**，
+    对目标字段零保护。
+
+    现在只统计**真正的代码引用**：`ast.Attribute` / `ast.Name`，以及
+    `getattr(obj, "字段名")` 这种字符串形式（本项目大量使用 getattr）。
+    注释、docstring、changelog 字符串都不算。
     """
 
     ROOT = pathlib.Path(__file__).resolve().parent.parent
 
+    @staticmethod
+    def _referenced_names(root: pathlib.Path) -> set[str]:
+        import ast
+
+        used: set[str] = set()
+        for path in root.rglob("*.py"):
+            if path.name == "settings.py":
+                continue
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Attribute):
+                    used.add(node.attr)
+                elif isinstance(node, ast.Name):
+                    used.add(node.id)
+                elif isinstance(node, ast.Call):
+                    fn = node.func
+                    if (isinstance(fn, ast.Name) and fn.id == "getattr"
+                            and len(node.args) >= 2):
+                        arg = node.args[1]
+                        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                            used.add(arg.value)
+        return used
+
     def test_every_setting_is_referenced_outside_settings_module(self):
         import dataclasses
-        import re
 
         from gcm.db.settings import Settings
 
-        blob = "\n".join(
-            p.read_text(encoding="utf-8", errors="ignore")
-            for p in (self.ROOT / "gcm").rglob("*.py")
-            if p.name != "settings.py")
-
+        used = self._referenced_names(self.ROOT / "gcm")
         orphans = [
             f.name for f in dataclasses.fields(Settings)
-            if not f.name.startswith("_")
-            and not re.search(rf"\b{re.escape(f.name)}\b", blob)
+            if not f.name.startswith("_") and f.name not in used
         ]
         self.assertEqual(
             orphans, [],
-            f"这些 Settings 字段全库无人引用（僵尸字段）：{orphans}。"
+            f"这些 Settings 字段在 gcm/ 里没有任何代码引用（僵尸字段）：{orphans}。"
             "要么接线（UI 写入 + 业务读取），要么删掉。")
+
+    def test_guard_is_not_hollow(self):
+        """反向自检：故意把一个只出现在注释里的名字当成字段，守卫必须能报出来。"""
+        used = self._referenced_names(self.ROOT / "gcm")
+        # `shallow_default` 已从代码与 changelog 之外的引用中消失；
+        # 若有人只把它写进注释，这里仍然应当「未引用」。
+        self.assertNotIn("__definitely_not_a_real_field__", used)
+        # 真正在用的字段必须在集合里（防「扫描器什么都没扫到」的空转）
+        self.assertIn("concurrency", used)
+        self.assertIn("token", used)
 
 
 class TestG69_18InlineUrlValidation(unittest.TestCase):
@@ -1131,16 +1232,16 @@ class TestG69_18InlineUrlValidation(unittest.TestCase):
             w._refresh_url_validation()
             app.processEvents()
             text = w.repo_valid_lbl.text()
-            self.assertIn("2", text)          # 2 条有效
-            self.assertIn("1", text)          # 1 条无效
+            # 精确断言计数，避免「1 和 2 互换也能过」
+            self.assertIn("有效 2 / 无效 1", text, f"实际：{text!r}")
             self.assertIn("not-a-url", text)  # 指出具体哪条
             # 全有效时不再报错色文案
             w.repo_input.setPlainText("https://github.com/a/b")
             w._refresh_url_validation()
-            self.assertIn("无效 0", w.repo_valid_lbl.text())
+            self.assertIn("有效 1 / 无效 0", w.repo_valid_lbl.text())
             # 空输入不显示任何提示
             w.repo_input.setPlainText("")
             w._refresh_url_validation()
             self.assertEqual(w.repo_valid_lbl.text(), "")
         finally:
-            pass
+            pass  # noqa: S101 - 窗口由 addCleanup 关闭

@@ -106,5 +106,73 @@ class TestMainWindowIntegration(unittest.TestCase):
         self.assertTrue(True)
 
 
+class TestChecklistPromptsOnce(unittest.TestCase):
+    """G69-18 审查修复：清单**只在首次**自动提示。
+
+    原实现没有「已提示」判断 —— 每次启动 600ms 后都弹一个模态清单挡住用户。
+    """
+
+    def setUp(self):
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+        import tempfile
+        from pathlib import Path as _P
+
+        from gcm.db.repo_db import Database
+        from gcm.db.settings import SettingsStore
+        from gcm.ui.main_window import MainWindow
+
+        self.tmp = _P(tempfile.mkdtemp(prefix="gcm_prompt_"))
+        self.store = SettingsStore(self.tmp / "s.json")
+        self.win = MainWindow(data_dir=self.tmp, db=Database(self.tmp / "t.db"),
+                              settings=self.store)
+        self.win._check_update_silent = lambda *a, **k: None
+        self.win._maybe_show_onboarding = lambda *a, **k: None
+        self.addCleanup(self.win.close)
+
+    def test_second_prompt_is_suppressed(self):
+        """模拟「可见窗口」环境，验证**只提示一次**的判定逻辑。
+
+        `_maybe_show_checklist` 在 offscreen 下会主动跳过（避免测试里弹模态），
+        所以这里显式把平台环境与 `_can_show_modal()` 都置为「可见」，
+        测的是真正的「是否已提示过」分支，而不是那个环境守卫。
+        """
+        from unittest import mock
+
+        shown = []
+        self.win._show_checklist = lambda: shown.append(1)
+        self.win._can_show_modal = lambda: True
+        with mock.patch.dict(os.environ, {"QT_QPA_PLATFORM": "windows"}):
+            self.win._maybe_show_checklist()
+            self.assertEqual(len(shown), 1, "首次应当提示")
+            self.assertTrue(self.store.load().checklist_prompted, "提示后应持久化标记")
+            # 第二次：不应再提示
+            self.win._maybe_show_checklist()
+            self.assertEqual(len(shown), 1, "清单每次启动都弹 = 打扰用户")
+
+    def test_offscreen_never_prompts(self):
+        """offscreen（CI/测试）下永不弹模态，也不写标记。"""
+        shown = []
+        self.win._show_checklist = lambda: shown.append(1)
+        self.win._maybe_show_checklist()
+        self.assertEqual(shown, [])
+        self.assertFalse(self.store.load().checklist_prompted)
+
+    def test_import_item_reflects_real_db_rows(self):
+        """G69-18 审查修复：`import` 项必须真的读数据库。
+
+        原实现调 `db.count_repos()` —— Database 没有这个方法，
+        `hasattr` 把拼错静默降级成 0，于是导入 1000 个仓库后该项仍然未完成。
+        """
+        from gcm.models import RepoSpec
+
+        self.assertFalse(self.win._checklist_status()["import"])
+        self.win.db.upsert_repo(
+            RepoSpec(owner="a", repo="b", url_https="https://github.com/a/b.git",
+                     folder_name="a__b"),
+            local_path=str(self.tmp / "a__b"), host="github.com")
+        self.assertTrue(self.win._checklist_status()["import"],
+                        "有仓库后「导入仓库清单」应为已完成")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

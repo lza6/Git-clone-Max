@@ -238,8 +238,9 @@ class MainWindow(QMainWindow):
         self._startup_ms = int((time.perf_counter() - self._startup_start) * 1000)
         # G36-1/G36-9：show() 后单次调度——首次运行向导 + 系统深浅色自适应
         QTimer.singleShot(300, self._maybe_show_onboarding)
-        # G54-4：向导之后紧接着给一次「开始使用清单」（可关闭，不阻塞）
-        QTimer.singleShot(600, self._maybe_show_checklist)
+        # G54-4：清单**不**在这里定时 —— 向导会开嵌套事件循环（dlg.exec()），
+        # 600ms 的定时器会在那个嵌套循环里触发，导致清单叠在向导上面。
+        # 改为：向导函数返回后再调用（见 _maybe_show_onboarding 末尾）。
         QTimer.singleShot(500, self._maybe_apply_system_theme)
         # G37-4 自动更新定时器（分钟级；engine 非 busy 时触发一键更新）
         self._auto_update_timer = QTimer(self)
@@ -374,7 +375,10 @@ class MainWindow(QMainWindow):
         """G54-4：推导引导清单各项完成状态（纯读，不改状态）。"""
         from .checklist import compute_status
         try:
-            n = self.db.count_repos() if hasattr(self.db, "count_repos") else 0
+            # G69-18：Database 没有 `count_repos`（只有 `count()`）。
+            # 原写法用 hasattr 把「方法名拼错」静默降级成「功能不存在」——
+            # 结果「已导入仓库」这项**永远不可能完成**，用户导入 1000 个仓库也不变。
+            n = self.db.count() if hasattr(self.db, "count") else 0
         except Exception:
             n = 0
         return compute_status(self.settings, n)
@@ -404,11 +408,22 @@ class MainWindow(QMainWindow):
             self._emit_log(_fmt_dt(), LogLevel.WARN, f"引导清单打开失败：{exc}")
 
     def _maybe_show_checklist(self) -> None:
-        """首启向导结束后提示一次清单（offscreen/测试环境跳过）。"""
+        """**仅在首次**自动提示一次清单；之后用户可从设置页主动打开。
+
+        G69-18 修复：原实现没有任何「已提示过」判断 —— 每次启动 600ms 后都会
+        弹一个模态清单挡住用户。现用 `settings.checklist_prompted` 持久化标记。
+        """
+        if getattr(self.settings, "checklist_prompted", False):
+            return
         if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
             return
         if not self._can_show_modal():
             return
+        try:
+            self.settings.checklist_prompted = True
+            self.settings_store.save(self.settings)
+        except Exception:
+            pass
         self._show_checklist()
 
     def _maybe_show_onboarding(self):
@@ -439,6 +454,10 @@ class MainWindow(QMainWindow):
                            f"首次运行向导未完成：{e}")
 
     # ------------------------------------------------------------ G36-9 跟随系统深浅色
+        # G54-4：向导结束后再提示清单（避免叠在向导的嵌套事件循环上）
+        self._maybe_show_checklist()
+
+
     def _maybe_apply_system_theme(self):
         """跟随 Windows 系统深浅色：仅在用户设置 theme=auto 时自动切换。
 
@@ -668,6 +687,8 @@ class MainWindow(QMainWindow):
         # 并指出前几条无效行。解析用与克隆链路同一个 parse_any_repo_url。
         self.repo_valid_lbl = QLabel("")
         self.repo_valid_lbl.setWordWrap(True)
+        # 内容含用户粘贴的原文，强制纯文本，避免 <...> 被当富文本渲染
+        self.repo_valid_lbl.setTextFormat(Qt.TextFormat.PlainText)
         b.addWidget(self.repo_valid_lbl)
         self._validate_timer = QTimer(self)
         self._validate_timer.setSingleShot(True)
@@ -1423,7 +1444,8 @@ class MainWindow(QMainWindow):
         if not bad:
             self.repo_valid_lbl.setText(
                 tr("有效 {n} / 无效 0").replace("{n}", str(ok)))
-            self.repo_valid_lbl.setStyleSheet("color:#3fb950;")
+            self.repo_valid_lbl.setStyleSheet(
+                f"color:{self._semantic_color('accent2')};")
             return
         shown = "；".join(ln[:40] for ln, _e in bad[:3])
         more = tr("（等 {n} 条）").replace("{n}", str(len(bad))) if len(bad) > 3 else ""
@@ -1431,7 +1453,8 @@ class MainWindow(QMainWindow):
             tr("有效 {ok} / 无效 {bad}：{items}{more}")
             .replace("{ok}", str(ok)).replace("{bad}", str(len(bad)))
             .replace("{items}", shown).replace("{more}", more))
-        self.repo_valid_lbl.setStyleSheet("color:#f85149;")
+        self.repo_valid_lbl.setStyleSheet(
+            f"color:{self._semantic_color('error')};")
 
     def _on_quick_fill(self, _checked: bool = False) -> None:
         """G35-7：快捷填充按钮 → 把对应仓库地址追加进输入区。
@@ -2109,6 +2132,23 @@ class MainWindow(QMainWindow):
         return self.manage_panel.export_selected_csv()
 
     # ------------------------------------------------------------ G57-1 窗口语义档
+    @staticmethod
+    def _semantic_color(key: str) -> str:
+        """取当前主题的语义色（accent2=成功绿 / error=错误红）。
+
+        G69-18：校验条原先写死 Deep 主题的十六进制色 —— Light 主题下
+        `#3fb950` 对白底对比度约 2.4:1（AA 要求 4.5:1），几乎看不清。
+        """
+        try:
+            from . import theme as _th
+            return str(_th.current_palette().get(key) or "#888888")
+        except Exception:
+            return "#888888"
+
+    def _on_layout_tick(self) -> None:
+        """G69-18：布局防抖定时器到点 → 按当前宽度重排（绑定方法，不成环）。"""
+        self._apply_layout_for_width(self.width())
+
     def _apply_layout_for_width(self, w: int) -> None:
         """G57-1：按窗口宽度切换布局语义（S<768 / M / D / XL）。窄窗折叠次要列。"""
         try:
@@ -2129,8 +2169,12 @@ class MainWindow(QMainWindow):
                 self._layout_timer = _QT(self)
                 self._layout_timer.setSingleShot(True)
                 self._layout_timer.setInterval(150)
-                self._layout_timer.timeout.connect(
-                    lambda: self._apply_layout_for_width(self.width()))
+                # G69-18 **关键**：这里原先是 lambda 捕获 self ——
+                # 平时不 show() 时窗口能按引用计数释放，但一旦 show()，
+                # resizeEvent 就会创建这个定时器，lambda 立刻把环重新接上，
+                # 窗口又只能等循环 GC。改用绑定方法（PyQt 对 QObject 的绑定方法
+                # 用弱引用），show() 之后也仍然按引用计数释放。
+                self._layout_timer.timeout.connect(self._on_layout_tick)
             self._layout_timer.start()
         except Exception:
             pass
