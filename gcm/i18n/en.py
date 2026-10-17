@@ -3,6 +3,20 @@
 from __future__ import annotations
 
 EN = {
+    '开始使用清单': 'Getting-started checklist',
+    '列出从零开始需要做的几件事，并显示完成进度': 'List the steps to get going, with progress',
+    '引导清单': 'Checklist',
+    '按顺序做完这几件事，就能稳定地批量下载了（已完成 {done}/{total}）': 'Finish these in order and batch downloads will just work ({done}/{total} done)',
+    '设置下载目录': 'Set the download directory',
+    '决定仓库克隆到哪里；可在设置页随时修改。': 'Where repos are cloned; changeable in Settings.',
+    '配置访问令牌（私有仓库）': 'Configure an access token (private repos)',
+    '只有克隆私有仓库才需要；令牌加密落盘。': 'Only needed for private repos; stored encrypted.',
+    '跑一次网络体检': 'Run the network health check',
+    '确认 git / 网络 / 代理 / 磁盘都能用，避免第一次批量下载才发现问题。': 'Verify git / network / proxy / disk before your first big batch.',
+    '导入仓库清单或扫描本地': 'Import a repo list or scan locally',
+    '支持粘贴地址、导入 GitHub Star 列表、扫描本机已有仓库。': 'Paste URLs, import your GitHub stars, or scan existing local repos.',
+    '看一眼帮助与排错': 'Skim the help & troubleshooting',
+    '常见错误的「原因 → 该改哪个设置」都在这里。': 'Common errors mapped to cause and the setting to change.',
     '复制诊断文本': 'Copy diagnostics',
     '查看通知审计': 'View notification audit',
     '查看最近的通知发送记录（URL 与 token 均已打码）': 'View recent notification attempts (URL and token are redacted)',

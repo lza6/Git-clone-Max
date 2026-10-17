@@ -1,5 +1,5 @@
 """Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。"""
-__version__ = "9.4.2"
+__version__ = "9.4.3"
 __app_name__ = "Git-clone-Max"
 __changelog__ = (
     "4.0.0: 统一调度引擎(SyncEngine) · progress.json 进程级锁+周期落盘 · SQLite busy_timeout · "
@@ -119,6 +119,7 @@ __changelog__ = (
     "9.1.0: G59 第三轮收官 - 评分卡 per_repo_size 接入真实 dir_size · 企业 IM 告警推送(钉钉/飞书/企微)接入主窗口 + token 加密落盘 · CI 主矩阵 fast/slow 拆分 · 文档资产(architecture/ADR/code-gems/product-brief/perf-observability)",  # noqa: E501
     "9.1.1: 补缺 - G58-5 认证头类型 UI(Bearer/PRIVATE-TOKEN/Basic 下拉 + service 头映射 + 真实 git 头注入 E2E) · G57-5 无障碍声明 · G66-1 Windows 版本资源 8.0.2→9.1.1 修复",  # noqa: E501
     "9.1.2: 文档治理收官 - G51-3 扫描证据 478KB 归档 zip · G51-4 根目录收敛(参考结果计划指南移入计划书/16 个构建日志清理) · G51-5 v8 历史段抽为独立只读归档 · G51-6 workflow_status 里程碑仪表盘 · G52-G56 章节表全量回填[已落地]",  # noqa: E501
+    "9.4.3: G54-4 引导清单落地 - 新增 gcm/ui/checklist.py：首启向导后与设置页均可打开「开始使用清单」，列出 5 项（下载目录/令牌/网络体检/导入清单/帮助）并显示完成进度。设计上**不重复存状态**：download_dir/token/import 由现有设置与数据库实时推导，只有 network/help 记在 settings.checklist_done；不可见窗口时退化为写日志（不弹模态阻塞）。新增 tests/test_g69_checklist.py(8)",  # noqa: E501
     "9.4.2: G67-6/G69-18 收口 - ①**打断 MainWindow 引用环**（4 个 Panel 的 owner 改弱引用、信号连接不再用 lambda 捕获 self、扫描闭包/剪贴板回调/拖拽 handler 全改弱引用）：实测 `del w` 后**未跑 gc.collect 即按引用计数释放**，新增守卫 TestG69_18NoMainWindowRefCycle；②**完成通知 Webhook 补全**（原实现只会发一次）：同 payload 600s 幂等去重、每次尝试写 <data>/notify.log 审计台账（**只记 scheme://host**，杜绝 Server酱/TG bot token 等路径凭据外泄）、失败重试 1 次、设置页「查看通知审计」入口（含不可见窗口的模态阻塞守卫）。新增 test_g69_notify_hardening(14)，覆盖重试/去重/审计/滚动/防泄漏/落盘失败不影响主流程",  # noqa: E501
     "9.4.1: G69-18 收口 - 接线两处「只在 tests 里被引用」的诊断能力：设置页「网络诊断」现在真跑 run_env_diagnostics(环境体检:数据目录/磁盘/git/Python-Qt) + run_diagnostics(网络)，结果进新增 gcm/ui/diag_dialog.py 对话框；该对话框带「复制诊断文本」按钮，用的正是 copy_paste_report 生成的 redact 可外发文本(diag_finished 信号由 2 参扩为 3 参)。新增守卫 TestG69_18DiagnosticsWiring(4)",  # noqa: E501
     "9.4.0: G69-18 终局闭环审计 - **CI 连续红灯根因定位并修复**：test_git_thread_exit 用例C 用 time.sleep(3600) 模拟卡死 stdout 且断言「线程仍存活」→ _pump 读线程被故意泄漏，在整套测试剩余时间里存活并触发原生崩溃（实测 access violation，进程 exit 139/0xC0000409，unittest 来不及打印失败清单）—— 这就是 CI test job 连续 80+ 次红灯无人能定位的成因；改为 Event 放行 + 收尾断言线程真能退出 + 新增「零泄漏线程」行为守卫。ci_run_fast 加固为逐模块落痕 + 失败逐条点名 + faulthandler（崩溃也能定位到模块）。独立复验推翻「计划书台账全部闭环」的删除理由：定时报表零生产调用点、AlertScanner 未接 on_alerts、retry/watchdog/IM告警等 9 个设置字段只读不写 → 全部接线并补 12 个设置控件；GitService._env 改为追加而非从 0 覆盖调用方已有的 GIT_CONFIG_*（此前静默吃掉别人的 git 配置）；告警线程→GUI 的 emit 改弱引用包装（防对已销毁 QObject emit 崩溃）；硬件敏感用例移出正确性门禁（断言未削弱）；HTTP 测试 addCleanup LIFO 顺序修正（WinError 10038 噪声消除，模块 36.6s→18.4s）；测试进程环境隔离 mixin（GIT_CONFIG_* 污染致「本机绿 CI 红」）。另修 agent 接入面两处：MCP export_report 的 out_dir 越界异常逃逸出 stdio 循环致通道中断(traceback/rc=1) → 转 JSON-RPC -32602；MCP/HTTP 自拼数据目录违反「数据目录单源」红线(安装版读到 _internal/data 或克隆输出目录的空库) → 复用 get_data_dir()。 新增永久守卫 TestG69_18WiringClosure(6) + TestG69_18VerifierFindings(5) + 零泄漏线程(1) + 环境自洽(1) + ScanWorker 收敛(3) + agent 接入面(2) + LogBuffer 定时器(3)",  # noqa: E501

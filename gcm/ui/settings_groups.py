@@ -418,6 +418,11 @@ def _build_group_about(owner: MainWindow):
     h_help.addWidget(owner.btn_open_data)
     h_help.addStretch()
     f4.addRow(tr("帮助："), h_help)
+    # G54-4：随时可重新打开「开始使用清单」
+    owner.btn_checklist = QPushButton(tr("开始使用清单"))
+    owner.btn_checklist.setToolTip(tr("列出从零开始需要做的几件事，并显示完成进度"))
+    owner.btn_checklist.clicked.connect(owner._show_checklist)
+    f4.addRow("", owner.btn_checklist)
     return g4
 
 def _build_group_webhook(owner: MainWindow, settings: Settings):

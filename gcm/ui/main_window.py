@@ -238,6 +238,8 @@ class MainWindow(QMainWindow):
         self._startup_ms = int((time.perf_counter() - self._startup_start) * 1000)
         # G36-1/G36-9：show() 后单次调度——首次运行向导 + 系统深浅色自适应
         QTimer.singleShot(300, self._maybe_show_onboarding)
+        # G54-4：向导之后紧接着给一次「开始使用清单」（可关闭，不阻塞）
+        QTimer.singleShot(600, self._maybe_show_checklist)
         QTimer.singleShot(500, self._maybe_apply_system_theme)
         # G37-4 自动更新定时器（分钟级；engine 非 busy 时触发一键更新）
         self._auto_update_timer = QTimer(self)
@@ -368,6 +370,47 @@ class MainWindow(QMainWindow):
             self._emit_log(_fmt_dt(), LogLevel.WARN, f"自动更新失败：{e}")
 
     # ------------------------------------------------------------ G36-1 首次运行向导
+    def _checklist_status(self) -> dict:
+        """G54-4：推导引导清单各项完成状态（纯读，不改状态）。"""
+        from .checklist import compute_status
+        try:
+            n = self.db.count_repos() if hasattr(self.db, "count_repos") else 0
+        except Exception:
+            n = 0
+        return compute_status(self.settings, n)
+
+    def _mark_checklist(self, key: str) -> None:
+        """把某一项标记完成并持久化（仅 network/help 两项需要显式记）。"""
+        try:
+            done = dict(getattr(self.settings, "checklist_done", None) or {})
+            if done.get(key):
+                return
+            done[key] = True
+            self.settings.checklist_done = done
+            self.settings_store.save(self.settings)
+        except Exception:
+            pass
+
+    def _show_checklist(self) -> None:
+        """G54-4：打开引导清单（设置页/首启后都可进入）。"""
+        if not self._can_show_modal():
+            self._emit_log(_fmt_dt(), LogLevel.INFO,
+                           tr("引导清单") + "：" + str(self._checklist_status()))
+            return
+        try:
+            from .checklist import ChecklistDialog
+            ChecklistDialog(self._checklist_status(), self).exec()
+        except Exception as exc:  # noqa: BLE001
+            self._emit_log(_fmt_dt(), LogLevel.WARN, f"引导清单打开失败：{exc}")
+
+    def _maybe_show_checklist(self) -> None:
+        """首启向导结束后提示一次清单（offscreen/测试环境跳过）。"""
+        if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+            return
+        if not self._can_show_modal():
+            return
+        self._show_checklist()
+
     def _maybe_show_onboarding(self):
         """首次运行（settings.first_run_done 未置位）→ 显示三步向导。
 
@@ -1272,6 +1315,8 @@ class MainWindow(QMainWindow):
         后者带「复制诊断文本」按钮（G54-5），且用的是已经 redact 过的
         `copy_text`，用户报障时可直接外发。
         """
+        # G54-4：跑过一次体检即视为该项完成（清单会实时反映）
+        self._mark_checklist("network")
         if not self._can_show_modal():
             try:
                 self._emit_log(_fmt_dt(), LogLevel.INFO, f"{title}：{body}")

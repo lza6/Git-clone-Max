@@ -418,6 +418,9 @@ class SettingsPanel(QWidget):
         try:
             from .help_dialog import HelpDialog
             HelpDialog(self.owner).exec()
+            # G54-4：看过帮助即视为引导清单该项完成
+            if hasattr(self.owner, "_mark_checklist"):
+                self.owner._mark_checklist("help")
         except Exception:
             pass
 
