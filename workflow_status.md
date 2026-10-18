@@ -543,3 +543,20 @@ Light 下对比度不足）、校验条强制 `PlainText`（用户原文含 `<>`
 | 打包 | PyInstaller 成功；zip 292 条目 / 78,906,579 字节 |
 | 健康检查 | `version=9.6.1` · `started_ok=true` · `artifacts_exist=true` |
 | Release | v9.6.1 双产物 + 服务端 sha256 一致 |
+
+
+---
+
+## 15. 技能检查记录（2026-10-18）
+
+| 检查项 | 结果 |
+|--------|------|
+| `.agent/skills/` | 10 个流程技能（加功能/加 API/发版/回滚/验证矩阵/审查/审计/并发/计划文档清理） |
+| `.agent/rules.md` + `policy.md` | 存在且已生效（证据门禁、T0–T3、四档置信标签） |
+| `test_ledger.md` / `workflow_status.md` / `evidence/` | 存在并持续更新 |
+| `AGENTS.md` / `docs/skills/` | 不存在（项目以 `CLAUDE.md` + `.agent/` 为准） |
+| Spec Kit / addyosmani agent-skills | 未安装；本轮任务使用项目内技能与 Agent 子代理即可完成，未引入新依赖 |
+| 外部深度提示词库 | `C:\Users\...\Desktop\编码规则\` 已按需参考（代码审查/全栈契约） |
+
+**路由结论**：项目内专用脚本与技能 > 项目测试工具（unittest/coverage/ruff/mypy）>
+项目 CLI/MCP > 通用工具。本轮无需联网安装任何技能。
