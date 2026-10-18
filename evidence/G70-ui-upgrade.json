@@ -141,6 +141,11 @@
         "perf-baseline": "success",
         "slow": "success"
       }
-    }
+    },
+    "post_release_commits": [
+      {"commit": "2afd763", "purpose": "docs release evidence", "ci": "39166226039 success"},
+      {"commit": "9b6b3a6", "purpose": "health_check wait 30s→60s", "ci": "39170177921 FAILED: macOS time-boundary flake in test_db_prune_backup"},
+      {"commit": "014f0fc", "purpose": "fix prune time-boundary flake", "ci": "39171656327 success"}
+    ]
   }
 }

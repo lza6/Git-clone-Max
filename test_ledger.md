@@ -47,7 +47,7 @@
 | mypy | `python -m mypy gcm` | **Success**（70 文件） | 2026-10-19 |
 | 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 1262 · failures=0 · errors=0 · skipped=3 · 原生崩溃 0 · 覆盖 83%` | 2026-10-19（v9.7.0） |
 | 连跑稳定性 | 同一命令 ×3 | `1115 / 1115 / 1122`，0 崩溃 | 2026-10-17（已移除 GC 安全网） |
-| CI | GitHub Actions | 7/7 job success（run 39165009718：win/ubuntu/macos + e2e + fast + perf + slow） | 2026-10-19 |
+| CI | GitHub Actions | 7/7 job success（v9.7.0 代码 run 39165009718）；发布后 flake 修复 run 39171656327 success | 2026-10-19 |
 
 ### 2.2 按接缝的覆盖状态
 

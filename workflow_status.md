@@ -604,6 +604,7 @@ Light 下对比度不足）、校验条强制 `PlainText`（用户原文含 `<>`
 | 提交 | `6518ad6`（main） |
 | CI | run `39165009718` · **7/7 job success** |
 | Release | `v9.7.0` 双产物 · 服务端 sha256 一致 |
+| 发布后 CI | `2afd763` success · `9b6b3a6` failure（macOS 时间边界 flake）· `014f0fc` **success** |
 
 ### 16.5 收尾状态
 
