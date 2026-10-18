@@ -116,5 +116,29 @@
       {"kind": "v9.6.1_release_exe", "result": "SAME：同环境同样不创建数据目录（非本轮回归）"}
     ]
   },
-  "release": null
+  "release": {
+    "tag": "v9.7.0",
+    "commit": "6518ad65c584b81e1a9029f9a376bc8ce5146bc2",
+    "url": "https://github.com/lza6/Git-clone-Max/releases/tag/v9.7.0",
+    "release_id": 416707182,
+    "assets": [
+      {"name": "Git-clone-Max.exe", "size": 40864518, "state": "uploaded"},
+      {"name": "Git-clone-Max-portable.zip", "size": 78992487, "state": "uploaded"}
+    ],
+    "server_sha256_verified": true,
+    "ci": {
+      "run_id": 39165009718,
+      "status": "completed",
+      "conclusion": "success",
+      "jobs": {
+        "test (windows-latest)": "success",
+        "test (ubuntu-latest)": "success",
+        "test (macos-latest)": "success",
+        "e2e-smoke": "success",
+        "fast-smoke": "success",
+        "perf-baseline": "success",
+        "slow": "success"
+      }
+    }
+  }
 }

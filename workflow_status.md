@@ -593,7 +593,14 @@ Light 下对比度不足）、校验条强制 `PlainText`（用户原文含 `<>`
 - 主按钮对比度：deep 2.53 → **7.49:1**；Nord 弱文本 2.82 → **4.80:1**。
 - 真实 git E2E：6/6 PASS。
 
-### 16.4 待回填
+### 16.4 验证 / 构建 / 发布
 
-- 最终快集：`Ran 1262 · failures=0 · errors=0 · skipped=3 · 覆盖 83%`（门禁 81）。
-- PyInstaller / portable zip / 健康检查 / Release v9.7.0：执行中。
+| 项 | 结果 |
+|----|------|
+| 快集全量 | `Ran 1262 · failures=0 · errors=0 · skipped=3 · 覆盖 83%`（门禁 81） |
+| PyInstaller | EXIT=0 · exe 40,864,518 B · sha256 `394324f6…` |
+| portable zip | 296 条目 / 78,992,487 B · `--check` 未过期 |
+| 健康检查 | 版本/产物校验通过；打包 GUI 初始化在本会话无法完成（v9.6.1 对照同现象，判定环境限制）；源码 GUI 与打包 CLI 均正常 |
+| 提交 | `6518ad6`（main） |
+| CI | run `39165009718` · **7/7 job success** |
+| Release | `v9.7.0` 双产物 · 服务端 sha256 一致 |
