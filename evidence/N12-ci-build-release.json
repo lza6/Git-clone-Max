@@ -1,0 +1,51 @@
+{
+  "task_id": "N12-ci-build-release",
+  "goal": "v9.6.0 提交 → CI → 打包 → 健康检查 → Release",
+  "status": "done",
+  "date": "2026-10-18",
+  "commit": "131e810",
+  "ci": {
+    "run_id": 39093537396,
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": {
+      "test (windows-latest)": "success",
+      "test (ubuntu-latest)": "success",
+      "test (macos-latest)": "success",
+      "e2e-smoke": "success",
+      "fast-smoke": "success",
+      "perf-baseline": "success",
+      "slow": "success"
+    },
+    "note": "本轮首次锁定 PyQt6==6.11.0 / coverage==7.16.0，三平台均通过"
+  },
+  "build": {
+    "command": "python -m PyInstaller --noconfirm Git-clone-Max.spec",
+    "exit_code": 0
+  },
+  "portable_zip": {
+    "result": "[OK] 292 条目 / 78890140 字节；--check 未过期"
+  },
+  "health_check": {
+    "version": "9.6.0",
+    "archive_version": "9.6.0",
+    "started_ok": true,
+    "repos_db_created": true,
+    "artifacts_exist": true,
+    "exe_sha256": "c40f0096f4b10fec7a39e5c5e12b2ee20887055135b606bf49f1e300be0bd1db",
+    "zip_sha256": "68f15bcdc12e3cb4ad7ce27cc4d83edcc63f987b2b6e817c7fe08851eaa038f2"
+  },
+  "release": {
+    "tag": "v9.6.0",
+    "url": "https://github.com/lza6/Git-clone-Max/releases/tag/v9.6.0",
+    "assets": [
+      {"name": "Git-clone-Max.exe", "size": 40801507},
+      {"name": "Git-clone-Max-portable.zip", "size": 78890140}
+    ],
+    "server_sha256_verified": true
+  },
+  "limitations": [
+    "exe 仅本机启动健康检查，未做人工 GUI 点选冒烟",
+    "镜像真实网络行为依赖第三方；预设可用性以 2026-10-18 实测为准"
+  ]
+}

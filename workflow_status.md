@@ -492,3 +492,13 @@ Light 下对比度不足）、校验条强制 `PlainText`（用户原文含 `<>`
 
 额外：镜像命令统一加 `-c http.extraHeader=`（实测可清除仓库级/全局认证头）；
 `_mirror_env` 清理继承的 `GIT_CONFIG_*`。
+
+### 13.6 提交 / CI / 发布
+
+| 项 | 结果 |
+|----|------|
+| 提交 | `131e810`（main） |
+| CI | run 39093537396 · 7/7 job 绿（首次锁定 PyQt6/coverage） |
+| 打包 | PyInstaller 成功；zip 292 条目 / 78,890,140 字节 |
+| 健康检查 | `version=9.6.0` · `started_ok=true` · `artifacts_exist=true` |
+| Release | v9.6.0 双产物 + 服务端 sha256 一致 |
