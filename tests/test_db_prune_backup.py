@@ -55,11 +55,12 @@ class TestPruneCapacity(unittest.TestCase):
         db = Database(tmp / "t.db")
         rid = db.upsert_repo(_spec("o", "b"), str(tmp / "o__b"))
         _add_history(db, rid, started_at=_days_ago(100))  # 超 90 天窗口
-        _add_history(db, rid, started_at=_days_ago(1))    # 窗口内
+        inside = _days_ago(1)                             # 窗口内（只算一次，避免跨秒）
+        _add_history(db, rid, started_at=inside)
         db._maybe_prune_history(force=True)
         remaining = db.history(rid, limit=1000)
         self.assertEqual(len(remaining), 1, "90 天前的旧记录应被删")
-        self.assertEqual(remaining[0]["started_at"], _days_ago(1),
+        self.assertEqual(remaining[0]["started_at"], inside,
                          "今天的记录应保留")
         db.close()
 
@@ -70,11 +71,12 @@ class TestPruneCapacity(unittest.TestCase):
         rid = db.upsert_repo(_spec("o", "c"), str(tmp / "o__c"))
         _add_history(db, rid, started_at=_days_ago(100))  # 超窗记录
         db._prune_counter = 99                            # 模拟接近触发点
-        _add_history(db, rid, started_at=_days_ago(1))    # 第 100 次 → 触发清理
+        inside = _days_ago(1)                             # 第 100 次 → 触发清理
+        _add_history(db, rid, started_at=inside)
         # 清理被执行：超窗行被删，仅剩今天的行
         remaining = db.history(rid, limit=1000)
         self.assertEqual(len(remaining), 1, "计数器触发的清理应删除 100 天前的行")
-        self.assertEqual(remaining[0]["started_at"], _days_ago(1))
+        self.assertEqual(remaining[0]["started_at"], inside)
         # 计数器应已复位
         self.assertEqual(db._prune_counter, 0)
         db.close()
