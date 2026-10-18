@@ -1,7 +1,7 @@
 # 已知问题与边界（known-issues）
 
 > 只记录**真实存在**且尚未解决的问题。修掉一个就删一条。
-> 最后更新：2026-10-18（G69-21 独立审查整改后）
+> 最后更新：2026-10-18（G69-22 第三轮审查整改后）
 
 ## 未闭环功能
 
@@ -23,6 +23,19 @@
 | 8 | `mirror_fallback` 关闭仍回退（文案不符） | 语义改为「失败自动重试（含回退源站）」并写清例外 | i18n/UI |
 | 9 | CLI 默认走第三方镜像且无开关 | 新增 `--no-mirror` | CLI help 测试 |
 | 10 | Worker 重建 Service 丢 token/凭据/LFS 等 | 全参数透传 | `TestWorkerRebuildKeepsConfig` |
+
+## G69-22 第三轮审查整改（2026-10-18，v9.6.1）
+
+| 级别 | 问题 | 修法 |
+|------|------|------|
+| HIGH | treeless/depth1 降级克隆与子模块更新漏清 `http.extraHeader`（同类残留泄漏面） | 所有镜像命令统一 `-c http.extraHeader=` + 镜像环境；origin 在子模块更新前恢复 |
+| HIGH | 环境清理误删 `GIT_CONFIG_GLOBAL/SYSTEM/NOSYSTEM`（企业代理/CA 丢失） | 只删 COUNT 与 KEY/VALUE_n |
+| MED-HIGH | 仓库 404 被当成「镜像挂了」，整批拉黑 120s | 只有网络/超时类失败才拉黑前缀 |
+| MED | 预检失败 + 镜像不可用仍等 retries×600s | 快速失败并明确提示 |
+| MED | 关窗双重 drain，最坏 20s | 移除 closeEvent 的额外 drain |
+| MED | bare 回退零测试 | 新增 3 条 |
+| LOW-MED | bare 分支无条件改写 origin | 与普通分支一致的 origin 同源守卫 |
+| — | 作用域含 userinfo、auth 探测无 single-flight、单分支拉全部分支、测速写回删自定义前缀、雷达图未 i18n | 均已修 |
 
 ## 已关闭功能
 

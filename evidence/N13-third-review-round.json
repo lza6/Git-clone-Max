@@ -1,0 +1,53 @@
+{
+  "task_id": "N13-third-review-round",
+  "goal": "第三轮独立审查（针对 v9.6.0 修复本身）整改 + 真实 E2E/压测",
+  "status": "done",
+  "date": "2026-10-18",
+  "commit": "pending-at-write-time",
+  "review": {
+    "verdict_before": "Request Changes",
+    "required": 7,
+    "suggestions": 10,
+    "fixed": [
+      "HIGH：treeless/depth1 降级克隆与子模块更新漏清 http.extraHeader → 所有镜像命令统一 -c http.extraHeader= + 镜像环境；origin 在子模块更新前恢复",
+      "HIGH：环境清理误删 GIT_CONFIG_GLOBAL/SYSTEM/NOSYSTEM → 只删 COUNT 与 KEY_n/VALUE_n",
+      "MED-HIGH：仓库 404 被当成前缀故障 → 只有网络/超时类失败才拉黑",
+      "MED：预检失败 + 镜像不可用仍等 retries×600s → 快速失败",
+      "MED：关窗双重 drain（最坏 20s）→ 移除 closeEvent 的额外 drain",
+      "MED：bare 回退零测试 → 新增 3 条",
+      "LOW-MED：bare 无条件改写 origin → 加同源守卫",
+      "建议：作用域去 userinfo、auth single-flight、单分支跳过镜像快速 fetch、测速保留自定义前缀、雷达图 i18n/空态、discard 对称断信号"
+    ]
+  },
+  "real_e2e": [
+    {
+      "case": "启动脚本链路（等价 bat 前四步 + 真实 GUI 启动）",
+      "result": "git/PyQt6 检查通过；真实 `python -m gcm --minimized` 存活 7s 后由测试终止（rc=1 为 terminate）",
+      "note": "首次被一个 2026-10-17 遗留的 python.exe（PID 8364）持有的 app.lock 挡住；结束该残留进程后，单实例哨兵自动清理并成功启动"
+    },
+    {
+      "case": "旧版本镜像 origin 升级（真实 git + 本地 HTTP 记录头）",
+      "setup": "仓库 origin=http://127.0.0.1:<port>/mirror/http://127.0.0.1:<port>/src.git；host_tokens 配置该 host",
+      "result": "sync 失败（源站 404 预期）但 origin 已规范化为源站、gcm.mirror 记录镜像前缀、镜像路径 mirror_path_contacted=False；凭据只发给源站",
+      "conclusion": "旧仓库自愈 + 镜像零接触 + 凭据不泄漏"
+    }
+  ],
+  "stress": [
+    {"case": "50 线程并发镜像探测", "result": "50/50 成功，无异常"},
+    {"case": "引擎 40 仓本地批量克隆（并发 8）", "result": "launched=40 done=40 success=40 elapsed=12.4s peak=2.5MB", "limitation": "tracemalloc 只统计 Python 分配，不含 git 子进程内存"}
+  ],
+  "commands": [
+    {"cmd": "ruff check gcm", "exit_code": 0, "output_tail": "All checks passed!"},
+    {"cmd": "mypy gcm", "exit_code": 0, "output_tail": "Success: no issues found in 69 source files"},
+    {"cmd": "unittest tests.test_g58_mirror_failover", "exit_code": 0, "output_tail": "Ran 56 tests OK"},
+    {"cmd": "unittest tests.test_g53_radar", "exit_code": 0, "output_tail": "Ran 9 tests OK"},
+    {"cmd": "unittest 宽回归 g67/engine/cli/g69", "exit_code": 0, "output_tail": "Ran 89 tests OK"},
+    {"cmd": "coverage run scripts/ci_run_fast.py", "exit_code": 0, "output_tail": "Ran 1211 · failures=0 · errors=0 · skipped=3 · TOTAL 82%"}
+  ],
+  "seams_touched": ["S02-git-subprocess", "S04-db-ui", "S06-settings", "S07-thread-gui", "S15-mirror"],
+  "limitations": [
+    "启动脚本本身是交互式 bat（GUI 会阻塞并 pause），本轮只执行其前四步依赖检查 + 等价真实启动",
+    "压测为本地 40 仓/50 线程，未做跨机器高并发",
+    "第三方镜像可用性依赖外部服务"
+  ]
+}

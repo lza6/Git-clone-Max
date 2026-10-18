@@ -16,6 +16,7 @@ from typing import Optional
 from ..app import applog
 from ..app.mirror_probe import (
     global_auth_header_configured,
+    is_transient_probe_error,
     mark_probe_health,
     preferred_prefix,
     probe_git_url,
@@ -533,8 +534,11 @@ class GitService:
         try:
             from urllib.parse import urlparse
             _parsed = urlparse(getattr(self, "_current_url", "") or "")
-            if _parsed.scheme in ("http", "https") and _parsed.netloc:
-                _scope = f"{_parsed.scheme}://{_parsed.netloc.lower()}/"
+            if _parsed.scheme in ("http", "https") and _parsed.hostname:
+                _hostport = _parsed.hostname.lower()
+                if _parsed.port:
+                    _hostport += f":{_parsed.port}"
+                _scope = f"{_parsed.scheme}://{_hostport}/"
         except Exception:
             _scope = ""
         if not _scope:
@@ -660,6 +664,12 @@ class GitService:
         tail = "/" + (source_url or "")
         return candidate[: -len(tail)] if tail != "/" and candidate.endswith(tail) else candidate
 
+    @staticmethod
+    def _mark_probe_result(prefix: str, ok: bool, err: str) -> None:
+        """成功或网络类失败才更新前缀健康；仓库 404 不影响前缀。"""
+        if ok or is_transient_probe_error(err):
+            mark_probe_health(prefix, ok)
+
     def _mirror_env(self) -> dict[str, str]:
         """镜像相关子进程的环境：只带网络设置与代理，禁用交互式凭据提示。
 
@@ -672,8 +682,13 @@ class GitService:
             env.setdefault("https_proxy", self.proxy)
         env["GIT_TERMINAL_PROMPT"] = "0"
         env["GIT_ASKPASS"] = "echo"
-        # 清掉父进程继承的 GIT_CONFIG_*（可能带认证头）；我们用显式代理变量。
-        for key in [k for k in env if k.startswith("GIT_CONFIG_")]:
+        # 清掉父进程继承的 GIT_CONFIG_KEY_n/VALUE_n（可能带认证头）。
+        # 保留 GIT_CONFIG_GLOBAL / GIT_CONFIG_SYSTEM / GIT_CONFIG_NOSYSTEM ——
+        # 它们可能承载企业代理与 CA 配置，误删会让镜像在代理环境里全挂。
+        import re as _re
+        for key in [k for k in env
+                    if k == "GIT_CONFIG_COUNT"
+                    or _re.fullmatch(r"GIT_CONFIG_(KEY|VALUE)_\d+", k)]:
             env.pop(key, None)
         env["GIT_CONFIG_COUNT"] = "0"
         return env
@@ -748,6 +763,9 @@ class GitService:
 
     def _mirror_fetch_url(self, source_url: str, repo_dir) -> str:
         """返回本次增量更新可优先使用的镜像 URL（无 hint / 不允许时为空）。"""
+        if self.single_branch:
+            # 单分支语义下固定 refspec 会把所有分支拉回来，直接走普通 fetch。
+            return ""
         hint = self._get_mirror_hint(repo_dir)
         if not hint or not self._mirror_allowed(source_url):
             return ""
@@ -795,7 +813,7 @@ class GitService:
             prefix = self._prefix_of(cand, source_url)
             ok, ms, err = probe_git_url(cand, self.mirror_probe_timeout,
                                         cancelled=self.cancelled, env=env)
-            mark_probe_health(prefix, ok)
+            self._mark_probe_result(prefix, ok, err)
             if self.cancelled():
                 return source_url
             if ok:
@@ -985,6 +1003,7 @@ class GitService:
             self._current_host = ""
             self._current_url = ""
 
+        self._precheck_failed = False
         # G38-3 远端可达性预检（可选开启）：断网/坏 host 时 10s 内明确失败，
         # 不必等满 clone/fetch 超时。仅对含远端 URL 的仓库执行。
         if self.precheck_remote and not spec.is_local and spec.url_https:
@@ -993,6 +1012,7 @@ class GitService:
                 # G69-21：源站不可达正是镜像的用武之地。此前这里直接失败，
                 # 导致「开了预检就永远用不上镜像」—— 两个功能互斥。
                 if self._mirror_allowed(spec.url_https):
+                    self._precheck_failed = True
                     self._emit("[警告] 源站预检不可达，改用国内镜像尝试 …", "warn")
                 else:
                     res.status = SyncStatus.FAILED
@@ -1190,6 +1210,12 @@ class GitService:
 
         source_url = spec.url_https
         clone_url = self._resolve_clone_url(source_url)
+        if getattr(self, "_precheck_failed", False) and clone_url == source_url:
+            res.status = SyncStatus.FAILED
+            res.action = SyncAction.FAILED
+            res.message = "源站不可达（10s 预检）且镜像不可用"
+            res.detail = "已跳过长时间 clone 超时；请检查网络/代理或稍后重试"
+            return res
         cmd = self.build_clone_cmd(spec, repo_dir, url_override=clone_url)
         if clone_url != source_url:
             # G69-21：镜像命令显式清空 http.extraHeader，防止仓库级/全局认证头外泄
@@ -1222,6 +1248,14 @@ class GitService:
             res.action = SyncAction.CANCELLED
             res.message = "已取消"
             return res
+        # G69-21：镜像克隆成功后立即把 origin 恢复为源站（必须在子模块更新之前，
+        # 否则相对子模块 URL 会按镜像 origin 解析）。
+        if rc == 0 and clone_url != source_url:
+            prefix = self._prefix_of(clone_url, source_url)
+            if self._set_origin_url(repo_dir, source_url):
+                self._remember_mirror(repo_dir, prefix)
+            else:
+                self._emit("[警告] 无法把 origin 恢复为源站，后续更新可能仍走镜像", "warn")
         if self._submodule and rc == 0:
             # G08-1 拉取子模块（clone --recurse-submodules 之外的补充 update --init）
             self._emit(f"拉取子模块 {spec.display} …")
@@ -1245,12 +1279,18 @@ class GitService:
                 self._emit(f"{spec.display} 常规克隆失败，尝试 treeless 部分克隆"
                            "（弱网降级）…", "warn")
                 self._safe_rmtree_partial(repo_dir)
-                treeless_cmd = ["git", "clone", "--progress", "--filter=blob:none"]
+                _is_mirror = clone_url != source_url
+                treeless_cmd = ["git"]
+                if _is_mirror:
+                    treeless_cmd += ["-c", "http.extraHeader="]
+                treeless_cmd += ["clone", "--progress", "--filter=blob:none"]
                 if getattr(spec, "ref", ""):
                     treeless_cmd += ["-b", spec.ref]
                 treeless_cmd += [clone_url, str(repo_dir)]
-                rc, prog = run_git_ui(treeless_cmd, str(self.root), _collate,
-                                      cancelled=self.cancelled, env=self._env(),
+                rc, prog = run_git_ui(
+                    treeless_cmd, str(self.root), _collate,
+                    cancelled=self.cancelled,
+                    env=(self._mirror_env() if _is_mirror else self._env()),
                                       timeout=self.clone_timeout, retries=0,
                                       backoff=self._backoff,
                                       progress_detail=getattr(self, "send_progress_detail", None))
@@ -1259,14 +1299,18 @@ class GitService:
                     self._emit(f"{spec.display} treeless 仍失败，尝试 depth1 单分支"
                                "保命模式（完整历史未拉取）…", "warn")
                     self._safe_rmtree_partial(repo_dir)
-                    shallow_cmd = ["git", "clone", "--progress",
-                                   "--depth=1", "--single-branch"]
+                    shallow_cmd = ["git"]
+                    if clone_url != source_url:
+                        shallow_cmd += ["-c", "http.extraHeader="]
+                    shallow_cmd += ["clone", "--progress",
+                                    "--depth=1", "--single-branch"]
                     if getattr(spec, "ref", ""):
                         shallow_cmd += ["-b", spec.ref]
                     shallow_cmd += [clone_url, str(repo_dir)]
                     rc, prog = run_git_ui(
                         shallow_cmd, str(self.root), _collate,
-                        cancelled=self.cancelled, env=self._env(),
+                        cancelled=self.cancelled,
+                        env=(self._mirror_env() if clone_url != source_url else self._env()),
                         timeout=self.clone_timeout, retries=0,
                         backoff=self._backoff,
                         progress_detail=getattr(self, "send_progress_detail", None))
@@ -1290,14 +1334,6 @@ class GitService:
             res.detail = detail or f"git clone 退出码 {rc}"
             return res
         head = self._head_sha(repo_dir)
-        # G69-21：镜像只作为「本次取数通道」。克隆成功后把 origin 立即恢复成源站，
-        # 否则用户之后配置 token 时，fetch 会把认证头发给第三方镜像。
-        if rc == 0 and clone_url != source_url:
-            prefix = self._prefix_of(clone_url, source_url)
-            if self._set_origin_url(repo_dir, source_url):
-                self._remember_mirror(repo_dir, prefix)
-            else:
-                self._emit("[警告] 无法把 origin 恢复为源站，后续更新可能仍走镜像", "warn")
         res.head_sha = head
         res.remote_sha = head
         res.status = SyncStatus.SUCCESS
@@ -1343,36 +1379,46 @@ class GitService:
             # G69-21：bare 仓库同样要有镜像回退（此前这个分支直接 return，
             # README 的「更新失败自动切换」对 --mirror 仓库不成立）。
             if mr_rc != 0 and self.mirror_fallback and not self.cancelled():
-                for alt in self._update_failover_candidates(spec.url_https):
-                    prefix = self._prefix_of(alt, spec.url_https)
-                    if alt != spec.url_https:
-                        if not probe_health(prefix):
-                            continue
-                        ok, _ms, err = probe_git_url(
-                            alt, self.mirror_probe_timeout,
-                            cancelled=self.cancelled, env=self._mirror_env())
-                        mark_probe_health(prefix, ok)
-                        if not ok:
-                            self._emit(f"[警告] 备用地址不可用，跳过：{alt}（{err}）", "warn")
-                            continue
-                    if not self._set_origin_url(repo_dir, alt):
-                        continue
-                    self._emit(f"{spec.display} 镜像 fetch 失败，切换到 {alt} 重试 …", "warn")
-                    alt_cmd = fetch_cmd
-                    if alt != spec.url_https:
-                        alt_cmd = [fetch_cmd[0], "-c", "http.extraHeader="] + fetch_cmd[1:]
-                    mr_rc, _ = run_git_ui(
-                        alt_cmd, str(repo_dir), self.on_line,
-                        cancelled=self.cancelled,
-                        env=(self._mirror_env() if alt != spec.url_https else self._env()),
-                        timeout=self.fetch_timeout, retries=0,
-                        backoff=self._backoff)
-                    if mr_rc == 0:
+                original = self._get_origin_url(repo_dir)
+                if original and not self._origin_same_repo(original, spec.url_https):
+                    # 与普通分支一致：origin 指向别的仓库时不做猜测性改写
+                    self._emit("[警告] origin 与目标仓库不一致，跳过镜像回退", "warn")
+                else:
+                    switched = False
+                    for alt in self._update_failover_candidates(spec.url_https):
+                        prefix = self._prefix_of(alt, spec.url_https)
                         if alt != spec.url_https:
-                            self._remember_mirror(repo_dir, prefix)
-                        break
-                # origin 始终恢复为源站
-                self._set_origin_url(repo_dir, spec.url_https)
+                            if not probe_health(prefix):
+                                continue
+                            ok, _ms, err = probe_git_url(
+                                alt, self.mirror_probe_timeout,
+                                cancelled=self.cancelled, env=self._mirror_env())
+                            self._mark_probe_result(prefix, ok, err)
+                            if not ok:
+                                self._emit(f"[警告] 备用地址不可用，跳过：{alt}（{err}）", "warn")
+                                continue
+                        if not self._set_origin_url(repo_dir, alt):
+                            continue
+                        self._emit(f"{spec.display} 镜像 fetch 失败，切换到 {alt} 重试 …", "warn")
+                        alt_cmd = fetch_cmd
+                        if alt != spec.url_https:
+                            alt_cmd = [fetch_cmd[0], "-c", "http.extraHeader="] + fetch_cmd[1:]
+                        mr_rc, _ = run_git_ui(
+                            alt_cmd, str(repo_dir), self.on_line,
+                            cancelled=self.cancelled,
+                            env=(self._mirror_env() if alt != spec.url_https else self._env()),
+                            timeout=self.fetch_timeout, retries=0,
+                            backoff=self._backoff)
+                        if mr_rc == 0:
+                            if alt != spec.url_https:
+                                self._remember_mirror(repo_dir, prefix)
+                            switched = True
+                            break
+                    # 只有真的切换过才把 origin 恢复为源站；否则原样保留
+                    if switched:
+                        self._set_origin_url(repo_dir, spec.url_https)
+                    elif original:
+                        self._set_origin_url(repo_dir, original)
             if mr_rc == 0:
                 res.status = SyncStatus.SUCCESS
                 res.action = SyncAction.FETCHED
@@ -1422,7 +1468,7 @@ class GitService:
                 ok, _ms, err = probe_git_url(
                     mirror_url, self.mirror_probe_timeout,
                     cancelled=self.cancelled, env=self._mirror_env())
-                mark_probe_health(prefix, ok)
+                self._mark_probe_result(prefix, ok, err)
                 if not ok:
                     self._emit(f"[警告] 镜像探测失败，回退源站：{err}", "warn")
                     mirror_url = ""
@@ -1490,7 +1536,7 @@ class GitService:
                         ok, _ms, err = probe_git_url(
                             alt, self.mirror_probe_timeout,
                             cancelled=self.cancelled, env=self._mirror_env())
-                        mark_probe_health(prefix, ok)
+                        self._mark_probe_result(prefix, ok, err)
                         if not ok:
                             self._emit(f"[警告] 备用地址不可用，跳过：{alt}（{err}）", "warn")
                             continue

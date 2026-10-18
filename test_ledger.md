@@ -41,7 +41,7 @@
 |----|------|------|------|
 | ruff | `python -m ruff check gcm` | **All checks passed** | 2026-10-17 |
 | mypy | `python -m mypy gcm` | **Success**（66 文件） | 2026-10-17 |
-| 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 1202 · failures=0 · errors=0 · skipped=3 · 原生崩溃 0 · 覆盖 82%` | 2026-10-18（v9.6.0） |
+| 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 1211 · failures=0 · errors=0 · skipped=3 · 原生崩溃 0 · 覆盖 82%` | 2026-10-18（v9.6.1） |
 | 连跑稳定性 | 同一命令 ×3 | `1115 / 1115 / 1122`，0 崩溃 | 2026-10-17（已移除 GC 安全网） |
 | CI | GitHub Actions | 7/7 job 绿（windows/ubuntu/macos + e2e + fast + perf + slow） | 2026-10-17 |
 

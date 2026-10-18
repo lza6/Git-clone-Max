@@ -876,6 +876,20 @@ class SyncEngine(QObject):
             pass
         return self._pending == 0
 
+    def _disconnect_worker_signals(self) -> None:
+        """断开 worker→engine 的全部信号（关闭/替换引擎前调用）。
+
+        已排队的 QueuedConnection 事件无法撤回，但断开后新的跨线程投递不会再
+        落到即将销毁的 QObject 上。
+        """
+        for w in list(getattr(self, "tasks", []) or []):
+            for sig_name in ("result", "finished", "line", "progress",
+                             "progress_detail"):
+                try:
+                    getattr(getattr(w, "signals", None), sig_name).disconnect()
+                except Exception:
+                    pass
+
     def discard(self) -> None:
         """**不泵事件循环**地让本引擎收敛，供「即将被替换掉」的场景使用（G69-13）。
 
@@ -897,6 +911,7 @@ class SyncEngine(QObject):
             self._retry_timer.stop()
         except Exception:
             pass
+        self._disconnect_worker_signals()
         try:
             self.pool.waitForDone(5000)   # 阻塞式收敛：不泵事件、不死锁
         except Exception:
@@ -940,13 +955,7 @@ class SyncEngine(QObject):
         # Windows `0xC0000409`（fail-fast）退出，且 stdout 全丢。
         # 先断开 worker→engine 的信号，避免退出期仍有跨线程投递到将销毁的 QObject；
         # 再阻塞等线程池排空（取消后通常毫秒级，这里给足 8s 上限）。
-        for w in list(getattr(self, "tasks", []) or []):
-            for sig_name in ("result", "finished", "line", "progress",
-                             "progress_detail"):
-                try:
-                    getattr(getattr(w, "signals", None), sig_name).disconnect()
-                except Exception:
-                    pass
+        self._disconnect_worker_signals()
         try:
             self.pool.waitForDone(8000)
         except Exception:

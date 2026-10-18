@@ -502,3 +502,34 @@ Light 下对比度不足）、校验条强制 `PlainText`（用户原文含 `<>`
 | 打包 | PyInstaller 成功；zip 292 条目 / 78,890,140 字节 |
 | 健康检查 | `version=9.6.0` · `started_ok=true` · `artifacts_exist=true` |
 | Release | v9.6.0 双产物 + 服务端 sha256 一致 |
+
+
+---
+
+## 14. 第三轮审查整改（G69-22 · v9.6.1 · 2026-10-18）
+
+第三个独立审查代理针对 v9.6.0 的修复本身做对抗式审查，结论 **Request Changes**：
+7 项 Required + 10 项建议。已全部处理。
+
+### 14.1 Required
+
+| 级别 | 问题 | 修法 |
+|------|------|------|
+| HIGH | treeless/depth1 降级克隆与子模块更新漏清 `http.extraHeader`（同类残留泄漏面） | 所有镜像命令统一 `-c http.extraHeader=` + `_mirror_env()`；origin 在子模块更新**之前**恢复源站 |
+| HIGH | 环境清理按前缀误删 `GIT_CONFIG_GLOBAL/SYSTEM/NOSYSTEM`（企业代理/CA 丢失） | 只删 `GIT_CONFIG_COUNT` 与 `KEY_n/VALUE_n` |
+| MED-HIGH | 仓库 404 被当成「镜像挂了」，前缀被拉黑 120s | 只有网络/超时类失败才更新前缀健康 |
+| MED | 预检失败 + 镜像不可用仍等 retries×600s | 快速失败并明确提示 |
+| MED | 关窗双重 drain，最坏 20s | 移除 closeEvent 的额外 drain（shutdown 统一收敛） |
+| MED | bare 回退零测试 | 新增 3 条 |
+| LOW-MED | bare 分支无条件改写 origin | 与普通分支一致的 origin 同源守卫 |
+
+### 14.2 建议中的高价值项
+
+作用域不再用 netloc（避免 `user:pass` 进入环境变量名）；全局认证头探测加 single-flight；
+单分支模式跳过镜像快速 fetch；测速只有预设可达时不删用户自定义镜像；
+雷达图文案走 `tr()`、六维全 0 不再显示成空态；`discard/shutdown` 共用信号断开。
+
+### 14.3 验证
+
+`ruff` All passed · `mypy` Success（69）· 镜像 `test_g58_mirror_failover`(56) ·
+雷达 9 · 宽回归 89 OK · **全量快集 Ran 1211 · 0 失败 · 0 崩溃 · 覆盖 82%**。

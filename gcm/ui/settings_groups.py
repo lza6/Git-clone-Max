@@ -326,11 +326,9 @@ def _network_rows_mirror(owner: MainWindow, settings: Settings, f3: QFormLayout)
 
     owner.ck_mirror_presets = QCheckBox(tr("使用内置国内镜像（GitHub）"))
     owner.ck_mirror_presets.setChecked(bool(getattr(settings, "mirror_use_presets", True)))
-    from ..app.mirrors import PRESET_SCANNED_AT
     owner.ck_mirror_presets.setToolTip(tr(
-        "内置 4 个实测可用的 GitHub 镜像（第三方服务）。"
-        "配置了令牌/主机凭据时不会走镜像，避免凭据泄漏。")
-        + "（实测日期 " + PRESET_SCANNED_AT + "）")
+        "内置 4 个实测可用的 GitHub 镜像（第三方服务，实测日期 2026-10-18）。"
+        "配置了令牌/主机凭据时不会走镜像，避免凭据泄漏。"))
     owner.ck_mirror_presets.toggled.connect(owner._save_mirror_presets)
     owner.ck_mirror_fallback = QCheckBox(tr("镜像失败自动重试（含回退源站）"))
     owner.ck_mirror_fallback.setChecked(bool(getattr(settings, "mirror_fallback", True)))

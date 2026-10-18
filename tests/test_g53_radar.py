@@ -66,6 +66,15 @@ class TestRadarPaint(unittest.TestCase):
         pm = w.grab()
         self.assertFalse(pm.isNull())
 
+    def test_all_zero_values_are_real_data_not_empty_state(self):
+        """六维全 0 是真实评分，不应显示成「暂无数据」。"""
+        from gcm.ui.radar_chart import DEFAULT_LABELS
+        w = RadarChart()
+        w.resize(300, 240)
+        w.set_values({k: 0 for k in DEFAULT_LABELS})
+        self.assertTrue(w._has_data)
+        self.assertFalse(w.grab().isNull())
+
     def test_tiny_size_does_not_crash(self):
         w = RadarChart()
         w.resize(20, 20)

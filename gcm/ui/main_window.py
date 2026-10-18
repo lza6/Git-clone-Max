@@ -2343,15 +2343,11 @@ class MainWindow(QMainWindow):
                     cancel_evt.set()
             except Exception:
                 pass
-            # G22-1：先取消并等待在跑 worker 收敛（≤8s），杜绝硬杀 git 子进程
-            # 与 progress.json 半描述态；超时则记日志后按原语义退出
-            try:
-                ok = self.engine.drain(8000)
-                if not ok:
-                    self._emit_log(_fmt_dt(), LogLevel.WARN,
-                                   "仍有任务未在 8s 内收敛，将强制退出。")
-            except Exception:
-                pass
+            # G22-1：取消并等待在跑 worker 收敛由 `engine.shutdown()` 统一负责
+            # （它内部 drain(4000) + waitForDone(8000)）。
+            # G69-22：这里不再额外 drain(8000) —— 实测两段叠加会让关窗最坏
+            # 阻塞 8+4+8=20s，且警告文案因 GUI 线程被占无法绘制。
+            pass
         self._close_requested = True
         # G59-7：停止告警后台扫描器
         try:

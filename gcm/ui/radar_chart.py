@@ -17,6 +17,8 @@ from PyQt6.QtCore import QPointF, Qt
 from PyQt6.QtGui import QBrush, QColor, QFont, QPainter, QPen, QPolygonF
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
+from ..i18n import tr
+
 # 维度显示名（与 alerts.DIM_LABELS 保持一致；此处复制是为了避免 UI 依赖 app 逻辑）
 DEFAULT_LABELS: dict[str, str] = {
     "success_rate": "成功率",
@@ -37,16 +39,19 @@ class RadarChart(QWidget):
     def __init__(self, parent: Optional[QWidget] = None,
                  labels: Optional[Mapping[str, str]] = None):
         super().__init__(parent)
-        self._labels: dict[str, str] = dict(labels or DEFAULT_LABELS)
+        self._labels: dict[str, str] = {
+            k: tr(v) for k, v in (labels or DEFAULT_LABELS).items()}
         self._values: dict[str, float] = {}
+        self._has_data = False
         self.setMinimumSize(300, 230)
         self.setSizePolicy(QSizePolicy.Policy.Expanding,
                            QSizePolicy.Policy.Expanding)
-        self.setToolTip("6 维评分（0-100）：成功率 / 陈旧度 / 冲突健康 / 仓库大小 / 标签完整 / 最近同步")
+        self.setToolTip(tr("6 维评分（0-100）：成功率 / 陈旧度 / 冲突健康 / 仓库大小 / 标签完整 / 最近同步"))
 
     # ------------------------------------------------------------ 数据
     def set_values(self, values: Optional[Mapping[str, float]]) -> None:
         """设置各维度分值（缺失按 0 处理；超界裁剪到 0-100）。"""
+        self._has_data = bool(values)
         out: dict[str, float] = {}
         for key in self._labels:
             try:
@@ -99,8 +104,8 @@ class RadarChart(QWidget):
         for a in angles:
             p.drawLine(QPointF(cx, cy), self._point(cx, cy, radius, a))
 
-        # 数据多边形
-        if any(v > 0 for v in self._values.values()):
+        # 数据多边形（没有传入数据时才显示空态；六维全 0 是真实数据）
+        if self._has_data:
             accent = QColor(str(pal.get("accent", "#58a6ff")))
             fill = QColor(accent)
             fill.setAlpha(70)
@@ -118,7 +123,7 @@ class RadarChart(QWidget):
         else:
             p.setPen(QPen(QColor(str(pal.get("text_dim", "#8b949e")))))
             p.setFont(QFont(self.font().family(), 9))
-            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "暂无评分数据")
+            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, tr("暂无评分数据"))
 
         # 维度标签
         p.setPen(QPen(QColor(str(pal.get("text", "#e6edf3")))))

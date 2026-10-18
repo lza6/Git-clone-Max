@@ -355,13 +355,6 @@ class SettingsPanel(QWidget):
         owner = self.owner
         if getattr(owner, "_mirror_probe_busy", False):
             return
-        from ..app.mirror_probe import global_auth_header_configured
-        # G69-21：测速路径也必须守住「全局认证头 → 不用镜像」，
-        # 否则 ~/.gitconfig 里的 Authorization 会被发给第三方镜像。
-        if global_auth_header_configured():
-            owner._emit_log(_mw._fmt_dt(), LogLevel.WARN,
-                            tr("检测到全局 git 认证头，已跳过镜像测速（避免凭据发给第三方）"))
-            return
         from ..app.mirrors import mirror_prefixes_for
         # G69-21：尊重「使用内置国内镜像」开关；关闭时不探测预设。
         use_presets = bool(getattr(owner.settings, "mirror_use_presets", True))
@@ -386,7 +379,13 @@ class SettingsPanel(QWidget):
 
         def _run() -> None:
             try:
-                from ..app.mirror_probe import rank_mirrors
+                # G69-22：守卫挪进 worker 线程 —— `git config --global/--system`
+                # 是子进程调用（最坏 10s），不能阻塞 GUI 线程。
+                from ..app.mirror_probe import global_auth_header_configured, rank_mirrors
+                if global_auth_header_configured():
+                    sig.emit([{"url": "", "ok": False, "ms": 0,
+                               "error": "__GLOBAL_AUTH__", "is_source": False}], sample)
+                    return
                 results = rank_mirrors(sample, prefixes, timeout=timeout,
                                        cancelled=cancel_evt.is_set, env=env)
             except Exception as exc:  # noqa: BLE001 —— 线程边界，必须回传
@@ -404,6 +403,10 @@ class SettingsPanel(QWidget):
         """测速结束（GUI 线程）：把可用镜像按延迟写回输入框并留日志。"""
         owner = self.owner
         owner._mirror_probe_busy = False
+        if any(str(r.get("error") or "") == "__GLOBAL_AUTH__" for r in (results or [])):
+            owner._emit_log(_mw._fmt_dt(), LogLevel.WARN,
+                            tr("检测到全局 git 认证头，已跳过镜像测速（避免凭据发给第三方）"))
+            return
         from ..app.mirrors import DEFAULT_GITHUB_MIRRORS
 
         usable = [r for r in results or [] if r.get("ok") and not r.get("is_source")
@@ -426,8 +429,8 @@ class SettingsPanel(QWidget):
         current = self._parse_mirror_text(owner.edit_mirror.text())
         if custom:
             current["github.com"] = custom if len(custom) > 1 else custom[0]
-        else:
-            current.pop("github.com", None)
+        # 只有预设可用时保留原有自定义配置（用户可能只是暂时不可达，
+        # 不能因为一次测速就静默删掉）。
         lines = []
         for host, value in current.items():
             val = ", ".join(value) if isinstance(value, (list, tuple)) else str(value)

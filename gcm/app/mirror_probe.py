@@ -72,6 +72,7 @@ def _probe_env(extra: Optional[dict[str, str]] = None) -> dict[str, str]:
 
 _AUTH_CACHE: dict[str, object] = {"ts": 0.0, "value": False}
 _AUTH_LOCK = threading.Lock()
+_AUTH_RUN_LOCK = threading.Lock()
 _AUTH_TTL = 600.0
 
 
@@ -84,33 +85,57 @@ def global_auth_header_configured() -> bool:
     with _AUTH_LOCK:
         if now - float(_AUTH_CACHE["ts"] or 0) < _AUTH_TTL:
             return bool(_AUTH_CACHE["value"])
-    found = False
-    for scope in ("--global", "--system"):
-        if found:
-            break
-        try:
-            proc = subprocess.run(
-                ["git", "config", scope, "--get-regexp", r"^http\..*extraheader$"],
-                capture_output=True, text=True, timeout=5,
-                encoding="utf-8", errors="replace",
-            )
-            for line in (proc.stdout or "").splitlines():
-                parts = line.split(None, 1)
-                if len(parts) == 2 and parts[1].strip():
-                    found = True
-                    break
-        except Exception:
-            continue
-    with _AUTH_LOCK:
-        _AUTH_CACHE["ts"] = now
-        _AUTH_CACHE["value"] = found
-    return found
+    # single-flight：批任务启动时多个 worker 同时 cache miss，
+    # 不能各自起 1–2 个 git 子进程（最坏 64 个）。
+    with _AUTH_RUN_LOCK:
+        now = time.time()
+        with _AUTH_LOCK:
+            if now - float(_AUTH_CACHE["ts"] or 0) < _AUTH_TTL:
+                return bool(_AUTH_CACHE["value"])
+        found = False
+        for scope in ("--global", "--system"):
+            if found:
+                break
+            try:
+                proc = subprocess.run(
+                    ["git", "config", scope, "--get-regexp", r"^http\..*extraheader$"],
+                    capture_output=True, text=True, timeout=5,
+                    encoding="utf-8", errors="replace",
+                )
+                for line in (proc.stdout or "").splitlines():
+                    parts = line.split(None, 1)
+                    if len(parts) == 2 and parts[1].strip():
+                        found = True
+                        break
+            except Exception:
+                continue
+        with _AUTH_LOCK:
+            _AUTH_CACHE["ts"] = now
+            _AUTH_CACHE["value"] = found
+        return found
 
 
 def reset_auth_cache_for_tests() -> None:
     with _AUTH_LOCK:
         _AUTH_CACHE["ts"] = 0.0
         _AUTH_CACHE["value"] = False
+
+
+_TRANSIENT_MARKERS = (
+    "超时", "timed out", "timeout", "could not resolve", "failed to connect",
+    "connection", "unreachable", "network", "tls", "ssl", "reset by peer",
+    "temporary failure", "eof",
+)
+
+
+def is_transient_probe_error(err: str) -> bool:
+    """探测失败是否属于「网络/超时」类。
+
+    只有这类失败才应把**整个前缀**标记为不可用；「仓库不存在/404」是单仓库问题，
+    不能因此把镜像从整批任务里拉黑。
+    """
+    text = (err or "").lower()
+    return any(m in text for m in _TRANSIENT_MARKERS)
 
 
 def probe_state(prefix: str):
