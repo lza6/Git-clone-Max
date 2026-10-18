@@ -20,8 +20,6 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from .theme import QSS
-
 # 同步动作 → 中文标签
 _ACTION_LABELS = {
     "cloned": "克隆",
@@ -67,9 +65,8 @@ class RepoDetailDialog(QDialog):
         owner = str(repo.get("owner", ""))
         name = str(repo.get("repo", ""))
         self.setWindowTitle(f"{owner}/{name} - 仓库详情")
-        self.resize(860, 560)
-        self.setMinimumSize(680, 420)
-        self.setStyleSheet(QSS)
+        from .layout import fit_dialog_to_screen
+        fit_dialog_to_screen(self, 860, 560, 680, 420)
 
         self.remote_checked.connect(self._finish_remote_check)
         self._build_ui()

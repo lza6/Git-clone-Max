@@ -115,3 +115,34 @@ printf '{"jsonrpc":"2.0","id":1,"method":"initialize"}\n' | \
 | `ClipboardWatcher` 传普通函数 | 走强引用分支并正常回调 | 实测 |
 | 旧 settings.json 中已删字段 | 被 `_DEFAULTS` 正确过滤 | 实测 |
 | 本机快集全绿（带 `data/`） | 不是「CI 说谎」，是环境差异 | 干净检出对照 |
+
+---
+
+## 10. G70 UI/UX 升级（2026-10-19 · v9.7.0）
+
+```bash
+# 质量闸
+./.venv/Scripts/python.exe -m ruff check gcm       # All checks passed
+./.venv/Scripts/python.exe -m mypy gcm             # Success（71 文件）
+
+# 快集全量（最终）
+rm -f .coverage
+QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m coverage run --source=gcm scripts/ci_run_fast.py
+# Ran 1262 · failures=0 · errors=0 · skipped=3 · 覆盖 83%
+
+# 本轮新增/重点
+QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_g70_ui_upgrade   # 34
+QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_g70_coverage     # 17
+QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_progress_ui tests.test_progress_search tests.test_g52_progress_table_extra
+QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_g69_regressions
+QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_g56_api_extra tests.test_g56_api_write tests.test_g56_contract
+
+# 性能基准
+QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe scripts/bench_g70_ui.py
+# 500 行：add 299ms · update 5.3ms · 子控件 0 · QSS 缓存 0.19ms
+
+# 真实 git E2E
+./.venv/Scripts/python.exe scripts/e2e_smoke.py    # E2E_SMOKE_RESULT: PASS
+```
+
+不再需要重复跑：以上覆盖 UI 主题/断点/进度 delegate/只读 DB/API 分页。

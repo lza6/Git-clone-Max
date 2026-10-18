@@ -197,7 +197,8 @@ class FailureDialog(QDialog):
     def __init__(self, owner, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setWindowTitle(tr("失败原因汇总"))
-        self.resize(560, 360)
+        from .layout import fit_dialog_to_screen
+        fit_dialog_to_screen(self, 560, 360, 420, 300)
         self.panel = FailurePanel(owner, self)
         self.panel.retry_category.connect(self.retry_category)
         lay = QVBoxLayout(self)

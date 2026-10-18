@@ -211,6 +211,13 @@ class ManageModel(QAbstractItemModel):
                        (r.head_sha if col == 4 else "")))))
         if role == Qt.ItemDataRole.ToolTipRole and col == 0:
             tip = r.url or r.local_path
+            # G70：历史库行可能残留 URL 内嵌凭据（写库剥凭据是 G69-11 才加的），
+            # 展示前再剥一次，避免 tooltip 把旧凭据带给旁人。
+            try:
+                from ..app.url_lib import strip_embedded_credentials
+                tip = strip_embedded_credentials(tip or "")[0]
+            except Exception:
+                pass
             if self.is_stale(index.row()):
                 tip = f"{tip}\n超过 {self.stale_days} 天未同步"
             return tip

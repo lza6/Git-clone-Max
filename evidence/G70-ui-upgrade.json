@@ -1,0 +1,120 @@
+{
+  "task_id": "G70-ui-upgrade",
+  "goal": "v9.7.0 UI/UX 全面升级：响应式 / 性能 / 设计系统 / 无障碍 / 本地 API",
+  "status": "in_progress",
+  "date": "2026-10-19",
+  "scope": {
+    "p0_design_system_and_defects": "done",
+    "p1_responsive": "done",
+    "p2a_performance": "done",
+    "p2b_model_view_refactor": "not_started",
+    "p2b_reason": "基准已达标（500 行更新 5.3ms、0 个子控件），按计划条件不启动",
+    "p3_tokens_settings_nav": "done",
+    "p4_accessibility": "done",
+    "p5_api_paging_readonly": "done"
+  },
+  "commands_executed": [
+    {
+      "cmd": "./.venv/Scripts/python.exe -m ruff check gcm",
+      "exit_code": 0,
+      "output_tail": "All checks passed!"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe -m mypy gcm",
+      "exit_code": 0,
+      "output_tail": "Success: no issues found in 70 source files"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_g70_ui_upgrade",
+      "exit_code": 0,
+      "output_tail": "Ran 28 tests · OK"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_g35_ui tests.test_g36_ui tests.test_g46_theme tests.test_g68_settings_ui tests.test_g69_regressions tests.test_g69_wiring_gaps tests.test_g67_closure tests.test_g53_radar tests.test_g37_stats tests.test_g47_data tests.test_g56_api_extra tests.test_g66_patch tests.test_themes tests.test_font_scale tests.test_follow_system_theme",
+      "exit_code": 0,
+      "output_tail": "Ran 298 tests · OK (skipped=1)"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe scripts/e2e_smoke.py",
+      "exit_code": 0,
+      "output_tail": "E2E_SMOKE_RESULT: PASS (6/6)"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe scripts/bench_g70_ui.py",
+      "exit_code": 0,
+      "output_tail": "progress_widgets=0 · update_ms=5.3 · qss_cached_ms=0.19 · startup_empty_db_ms=1221.66"
+    }
+  ],
+  "benchmarks": {
+    "progress_table_500_rows": {
+      "add_ms": 298.76,
+      "update_ms": 5.3,
+      "progress_widgets": 0
+    },
+    "old_cell_widgets_ms": 89.82,
+    "old_updates_ms": 1.1,
+    "qss_cache": {"first_ms": 13.201, "cached_ms": 0.187, "identical": true},
+    "startup_500_repos_ms_first": 1943.1,
+    "startup_500_repos_ms_warm_runs": [825.3, 491.5, 638.1, 626.1, 518.1],
+    "startup_500_repos_ms_warm_median": 626.1
+  },
+  "http_load": {
+    "rows": 500,
+    "sequential_5_p50_ms": 51.5,
+    "concurrent_10": {"ok": 10, "total": 10, "p50_ms": 388.2},
+    "concurrent_30": {"ok": 30, "total": 30, "p50_ms": 1692.0, "p95_ms": 1953.5},
+    "concurrent_60": {"ok": 60, "total": 60, "p50_ms": 1676.4, "p95_ms": 2514.8},
+    "before_fix_concurrent_30": {"p50_ms": 6612.5, "p95_ms": 7070.8},
+    "errors": 0
+  },
+  "test_coverage": {
+    "new_tests": 28,
+    "new_test_file": "tests/test_g70_ui_upgrade.py",
+    "seams_covered": ["S16", "S17", "S18", "S19"]
+  },
+  "limitations": [
+    "NVDA 屏幕阅读器人工走查未执行（环境不提供）",
+    "真机 150% DPI / 多显示器截图未人工复验",
+    "多进程并发未单独压测（线程并发 60/60 通过）",
+    "冷启动首帧约 1.9s（含导入），未做导入拆分"
+  ],
+  "final_fast_suite": {
+    "command": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m coverage run --source=gcm scripts/ci_run_fast.py",
+    "exit_code": 0,
+    "tests": 1262,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 3,
+    "coverage_percent": 83
+  },
+  "build": {
+    "command": "python -m PyInstaller --noconfirm Git-clone-Max.spec",
+    "exit_code": 0,
+    "exe_size": 40864518,
+    "exe_sha256": "394324f6a496ba892fe8d54a0018bfdb3732bb3615d8fb27da97e67f2c175717",
+    "portable_zip": {
+      "command": "python scripts/build_portable_zip.py",
+      "check": "[OK] 未过期",
+      "entries": 296,
+      "size": 78992487,
+      "sha256": "1b755cb2184f843b2f0b808009beb498153dabd5cce2e5f0779cd4dbc1f30232"
+    }
+  },
+  "health_check": {
+    "command": "python scripts/health_check.py --json dist/health_check.json",
+    "version": "9.7.0",
+    "archive_version": "9.7.0",
+    "version_match": true,
+    "artifacts_exist": true,
+    "started_ok_field": true,
+    "repos_db_created": false,
+    "gui_initialized": false,
+    "note": "本会话无法完成打包 GUI 冒烟：新旧版本（v9.6.1 对照 exe 下载自 Release）在同一环境都停在 bootloader、不创建数据目录；source GUI 与打包 exe 的 --cli --json 均正常，故判定为环境限制而非 v9.7.0 回归。",
+    "controls": [
+      {"kind": "source_gui", "result": "PASS：创建 .instance.lock / repos.db / clones / lists"},
+      {"kind": "packaged_cli", "result": "PASS：--cli --json 输出 version=9.7.0"},
+      {"kind": "v9.6.1_release_exe", "result": "SAME：同环境同样不创建数据目录（非本轮回归）"}
+    ]
+  },
+  "release": null
+}

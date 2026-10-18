@@ -1,7 +1,8 @@
 """Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。"""
-__version__ = "9.6.1"
+__version__ = "9.7.0"
 __app_name__ = "Git-clone-Max"
 __changelog__ = (
+    "9.7.0: G70 UI/UX 全面升级 - ①设计系统：语义 token（on_accent/border_strong/success）、4pt 间距、字号全链路派生；修正 `_luminance` 绿蓝权重写反导致的历史对比度失真；深色主按钮白字 2.53:1 → 7.49:1、Nord 弱文本 2.82→4.80、Nord 错误色 3.05→4.65；QSS 选择器拼写错误 QTabs→QTabWidget，校验器新增控件类名白名单。②响应式：窗口下限 1020×700→按屏幕工作区推导（1366×768@125% 可用），输入区与进度表加纵向分隔器，8 个对话框按屏幕 90%×85% 夹取，Compact 模式隐藏快捷填充，Ctrl+1/2/3 切页并记忆页签。③性能：进度列改用 delegate 自绘（500 行 0 个 QProgressBar 子控件），进度更新 250ms 合批 + 内存字典（500 次更新 5.4s→5ms），批量插行关排序，QSS 结果缓存（29ms→0.2ms），完成动效限 8 并发/600ms，管理页 500 仓延迟加载。④无障碍：关键控件 accessibleName、表格/页签焦点环、过滤到 0 行与服务搜索无结果的空态、自绘图表文本替代。⑤修复：进度过滤只认首段文本（lambda 捕获旧值 + 引用环）、统计对话框存储/评分文本字面量 `\\n`、对话框套静态深色 QSS 导致切主题失效。⑥本地 API：/api/repos 增加 limit/offset（默认 500/最大 5000）与 total。新增 tests/test_g70_ui_upgrade(24) + scripts/bench_g70_ui.py",  # noqa: E501
     "4.0.0: 统一调度引擎(SyncEngine) · progress.json 进程级锁+周期落盘 · SQLite busy_timeout · "
     "同一仓库自动去重 · 平台限制失败识别(Windows 非法文件名/目录占用) · 并发上限 32",
     "4.1.0: 仓库详情对话框 / GitHub Actions CI / 多平台文档 / UI 管理页测试补覆盖",

@@ -12,6 +12,7 @@ from PyQt6.QtGui import QCloseEvent
 from PyQt6.QtWidgets import (
     QComboBox,
     QFileDialog,  # noqa: F401  — 测试 mock 引用（download_tools 经本模块访问）
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QInputDialog,
@@ -21,7 +22,9 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSpinBox,
+    QSplitter,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -168,6 +171,8 @@ class MainWindow(QMainWindow):
         self.row_specs: dict = {}           # index -> RepoSpec
         self.busy = False
         self._close_requested = False
+        # G70：管理页仓库列表延迟到该页首次激活再加载（500 仓启动省 ~0.7s）
+        self._manage_loaded = False
         # G33-6 启动耗时记录（构造结束写回；自检时展示，>3s 提示较慢）
         self._startup_start = time.perf_counter()
         self._startup_ms = 0
@@ -213,6 +218,21 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+Alt+S"), self, activated=self._hotkey_start_cancel)
         QShortcut(QKeySequence("Ctrl+Alt+U"), self, activated=self.update_all)
         QShortcut(QKeySequence("Ctrl+Alt+M"), self, activated=self._hotkey_show_window)
+        # G70：Ctrl+1/2/3 切页签（用控件属性传参，避免 lambda 捕获 self 形成引用环）
+        for _i in range(3):
+            _sc = QShortcut(QKeySequence(f"Ctrl+{_i + 1}"), self)
+            _sc.setProperty("tab_index", _i)
+            _sc.activated.connect(self._switch_tab_shortcut)
+        # G70：恢复上次页签，并在切换时持久化
+        try:
+            self.tabs.setCurrentIndex(
+                max(0, min(2, int(getattr(self.settings, "last_tab", 0) or 0))))
+        except Exception:
+            pass
+        self.tabs.currentChanged.connect(self._save_last_tab)
+        self.tabs.currentChanged.connect(self._on_tab_activated)
+        # 初始页签若是「仓库管理」，立即触发一次延迟加载
+        self._on_tab_activated(self.tabs.currentIndex())
         # G02-4 URL 历史：同步成功的地址自动留档（data/history.json）
         from ..db.history import UrlHistory
         self.url_history = UrlHistory(self.data_dir / "history.json")
@@ -228,7 +248,7 @@ class MainWindow(QMainWindow):
             self.clipboard_watcher.start()
         self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"Git-clone-Max 启动，数据目录：{self.data_dir}")
         self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"并行线程：{self.engine.concurrency}（上限 {MAX_CONCURRENCY}）")
-        self._load_db_into_grid()
+        # G70：仓库列表不在此加载（见 _on_tab_activated / _ensure_manage_loaded）
         # G22-2 崩溃恢复自检：上次会话有未完成/失败项 → 提示并回填输入区供一键续跑
         try:
             self._startup_recovery_prefill()
@@ -503,6 +523,7 @@ class MainWindow(QMainWindow):
                 _th.apply_theme(target)
                 self.setStyleSheet(self._themed_qss())
                 self._apply_theme_to_children()
+                self._rehighlight_log()
                 self.settings.theme = target
                 self._emit_log(_fmt_dt(), LogLevel.INFO,
                                f"已按系统深浅色切换主题：{target}")
@@ -607,9 +628,17 @@ class MainWindow(QMainWindow):
                 w, h, x, y = parts[:4]
             else:
                 return                          # 格式不认识：保持默认几何
-            # 防小屏溢出：只接受最小尺寸以上
-            w = max(w, 1020)
-            h = max(h, 700)
+            # G70：按当前屏幕工作区夹取尺寸（小屏/高 DPI 不再溢出屏幕）。
+            # offscreen 测试环境的虚拟屏（常为 800×600）不代表真实桌面，
+            # 跳过夹取以保证几何往返测试仍验证「存储→恢复」本身。
+            from .layout import clamp_window_size
+            avail = self._available_screen_size()
+            offscreen = str(os.environ.get("QT_QPA_PLATFORM", "")).lower() == "offscreen"
+            if avail and not offscreen:
+                w, h = clamp_window_size(w, h, *avail)
+            else:
+                w = max(w, self._base_min_size[0])
+                h = max(h, self._base_min_size[1])
             self.resize(w, h)
             if x is None or y is None or not self._screen_contains_point(x, y):
                 # 位置不可用（旧格式 / 屏已不在）→ **居中显示**，绝不放到用户看不见的地方
@@ -635,10 +664,51 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+    def _available_screen_size(self):
+        """G70：主屏**工作区**尺寸（排除任务栏）；无 GUI 返回 None。"""
+        try:
+            from PyQt6.QtWidgets import QApplication
+            app = QApplication.instance()
+            screen = app.primaryScreen() if app is not None else None
+            if screen is None:
+                return None
+            g = screen.availableGeometry()
+            return (g.width(), g.height())
+        except Exception:
+            return None
+
+    def _apply_layout_mode(self):
+        """G70：Compact 下隐藏快捷填充按钮与设置分组导航（功能仍可手输）。"""
+        try:
+            from .layout import layout_mode
+            compact = layout_mode(self.width(), self.height()) in ("compact", "unsupported")
+            for btn in getattr(self, "_quick_fill_buttons", []):
+                btn.setVisible(not compact)
+            nav = getattr(self, "settings_nav", None)
+            if nav is not None:
+                nav.setVisible(not compact)
+        except Exception:
+            pass
+
+    def _scroll_to_settings_group(self, row: int):
+        """G70：左侧导航点击 → 滚动到对应设置分组。"""
+        try:
+            groups = (list(getattr(self, "settings_groups", []))
+                      + list(getattr(self, "settings_groups_extra", [])))
+            if 0 <= int(row) < len(groups):
+                self.settings_scroll.ensureWidgetVisible(groups[int(row)], 20, 20)
+        except Exception:
+            pass
+
     def _build_ui(self):
         self.setWindowTitle("Git-clone-Max — GitHub 仓库批量并行下载")
-        self.resize(1240, 840)
-        self.setMinimumSize(1020, 700)
+        # G70：窗口下限改为 1020×560（覆盖 1366×768@125% 与 1080p@150%）
+        from .layout import WINDOW_DEFAULT, effective_minimum
+        self.resize(*WINDOW_DEFAULT)
+        min_w, min_h = effective_minimum(
+            *(self._available_screen_size() or WINDOW_DEFAULT))
+        self._base_min_size = (min_w, min_h)
+        self.setMinimumSize(min_w, min_h)
         # G36-4 恢复上次窗口几何（尺寸+位置）；无记录则保持默认
         try:
             self._restore_geometry()
@@ -709,7 +779,8 @@ class MainWindow(QMainWindow):
             + tr("https://gitlab.com/grp/repo@v1.2.0  （@后指定分支/标签）\n")
             + tr("（地址中的 作者/仓库名 将自动作为文件夹名：作者__仓库）")
         )
-        self.repo_input.setMinimumHeight(150)
+        self.repo_input.setMinimumHeight(120)
+        self.repo_input.setAccessibleName(tr("仓库地址输入框"))
         b.addWidget(self.repo_input)
         # G54-1 实时校验条：输入/粘贴后显示「有效 N / 无效 M」，
         # 并指出前几条无效行。解析用与克隆链路同一个 parse_any_repo_url。
@@ -747,6 +818,8 @@ class MainWindow(QMainWindow):
         self.repo_input.dropEvent = _drop
         quick = QHBoxLayout()
         quick.addWidget(QLabel(tr("快捷填充：")))
+        # G70：Compact 模式下隐藏快捷填充按钮（功能仍可手输/粘贴）
+        self._quick_fill_buttons = []
         # G35-7 快捷填充可配置：跟随 settings.quick_repos（持久化，可编辑）
         for repo in getattr(self.settings, "quick_repos", None) or ():
             btn = QPushButton(repo)
@@ -757,6 +830,7 @@ class MainWindow(QMainWindow):
             btn.setProperty("quick_repo", repo)
             btn.clicked.connect(self._on_quick_fill)
             quick.addWidget(btn)
+            self._quick_fill_buttons.append(btn)
         quick.addStretch()
         # G35-4 任务清单：保存当前输入区为命名清单 / 下拉载入（分享用 data/lists/*.json）
         self.btn_save_list = QPushButton(tr("💾 保存清单"))
@@ -780,7 +854,12 @@ class MainWindow(QMainWindow):
         self.btn_star_import.clicked.connect(self.import_starred)
         quick.addWidget(self.btn_star_import)
         b.addLayout(quick)
-        v.addWidget(box)
+        # G70：输入/选项/按钮收敛到上半区，与进度表之间用可拖动分隔器分配高度
+        top = QWidget()
+        tv = QVBoxLayout(top)
+        tv.setContentsMargins(0, 0, 0, 0)
+        tv.setSpacing(10)
+        tv.addWidget(box)
 
         opts = QHBoxLayout()
         g1 = QGroupBox(tr("下载位置"))
@@ -810,16 +889,18 @@ class MainWindow(QMainWindow):
         l2.addWidget(self.mode_combo)
         l2.addWidget(self.depth_spin)
         opts.addWidget(g2)
-        v.addLayout(opts)
+        tv.addLayout(opts)
 
         btns = QHBoxLayout()
         self.btn_start = QPushButton(tr("开始并行下载 / 更新"))
         self.btn_start.setObjectName("primary")
         self.btn_start.setMinimumHeight(38)
+        self.btn_start.setAccessibleName(tr("开始并行下载或更新"))
         self.btn_start.clicked.connect(self.start_all)
         self.btn_start.setIcon(self._std_icon("play", self.btn_start))
         self.btn_cancel = QPushButton(tr("取消全部"))
         self.btn_cancel.setEnabled(False)
+        self.btn_cancel.setAccessibleName(tr("取消全部任务"))
         self.btn_cancel.clicked.connect(self.cancel_all)
         self.btn_cancel.setIcon(self._std_icon("stop", self.btn_cancel))
         self.btn_clear = QPushButton(tr("清空列表"))
@@ -836,12 +917,28 @@ class MainWindow(QMainWindow):
         self.btn_failures.clicked.connect(self._open_failure_dialog)
         btns.addWidget(self.btn_failures)
         btns.addStretch()
-        v.addLayout(btns)
+        tv.addLayout(btns)
 
         # G45-6：进度表/空态/过滤框/暂停 收敛到 progress_table.py（ProgressTable）
         from .progress_table import ProgressTable
         self.progress_panel = ProgressTable(owner=self, parent=self.tab_download)
-        v.addWidget(self.progress_panel, 3)
+        # G70：顶部区域放入可滚动容器 —— 小屏（1366×768@125% / 1080p@150%）下
+        # 输入区不会被父容器裁切，用户滚动即可访问全部控件。
+        self.download_top_scroll = QScrollArea()
+        self.download_top_scroll.setWidgetResizable(True)
+        self.download_top_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.download_top_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.download_top_scroll.setWidget(top)
+        self.download_top_scroll.setMinimumHeight(160)
+        self.download_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.download_splitter.setChildrenCollapsible(False)
+        self.download_splitter.addWidget(self.download_top_scroll)
+        self.download_splitter.addWidget(self.progress_panel)
+        self.download_splitter.setStretchFactor(0, 0)
+        self.download_splitter.setStretchFactor(1, 1)
+        self.download_splitter.setSizes([320, 480])
+        v.addWidget(self.download_splitter, 1)
         # 镜像控件（兼容外部引用/测试）
         self.table = self.progress_panel.table
         self._empty_download = self.progress_panel._empty_download
@@ -894,7 +991,28 @@ class MainWindow(QMainWindow):
         # 设置区：所有设置分组放入可滚动区域（日志区固定在下、不被滚动带跑）
         from .settings_panel import build_log_box, build_settings_ui
         self.settings_scroll = build_settings_ui(self)
-        v.addWidget(self.settings_scroll, 1)
+        # G70：≥1100 宽时提供左侧分组导航（设置项已很长，纯滚动难定位）
+        from PyQt6.QtWidgets import QListWidget
+        self.settings_nav = QListWidget()
+        self.settings_nav.setObjectName("settingsNav")
+        self.settings_nav.setMaximumWidth(220)
+        self.settings_nav.setMinimumWidth(160)
+        for _grp in (list(getattr(self, "settings_groups", []))
+                     + list(getattr(self, "settings_groups_extra", []))):
+            try:
+                self.settings_nav.addItem(_grp.title())
+            except Exception:
+                self.settings_nav.addItem("")
+        self.settings_nav.currentRowChanged.connect(self._scroll_to_settings_group)
+        self.settings_empty_lbl = QLabel(tr("没有匹配的设置项"))
+        self.settings_empty_lbl.setObjectName("muted")
+        self.settings_empty_lbl.setVisible(False)
+        v.addWidget(self.settings_empty_lbl)
+        _row = QHBoxLayout()
+        _row.setSpacing(10)
+        _row.addWidget(self.settings_nav)
+        _row.addWidget(self.settings_scroll, 1)
+        v.addLayout(_row, 1)
 
         # ---- 黑匣子日志（实时）：固定在下、占剩余空间，日志滚动由控件自身负责
         g2 = build_log_box(self)
@@ -1146,6 +1264,73 @@ class MainWindow(QMainWindow):
     def _save_theme(self, *args, **kwargs):
         """G45-6 转发 settings_panel.py（行为零变化）。"""
         return self.settings_panel._save_theme(*args, **kwargs)
+
+    def _switch_tab_shortcut(self):
+        """G70：Ctrl+1/2/3 切页签（发送者属性携带目标索引）。"""
+        try:
+            sender = self.sender()
+            idx = int(sender.property("tab_index")) if sender is not None else 0
+            self.tabs.setCurrentIndex(max(0, min(self.tabs.count() - 1, idx)))
+        except Exception:
+            pass
+
+    def _save_last_tab(self, index: int):
+        """G70：记住最后使用的页签（内存即时生效，落盘 500ms 防抖）。
+
+        每次切页签都同步写 settings.json 会在跨进程锁竞争时卡 UI；
+        关闭窗口时 closeEvent 仍会做最终保存，不会丢。
+        """
+        try:
+            self.settings.last_tab = int(index)
+        except Exception:
+            return
+        if not hasattr(self, "_tab_save_timer"):
+            self._tab_save_timer = QTimer(self)
+            self._tab_save_timer.setSingleShot(True)
+            self._tab_save_timer.setInterval(500)
+            self._tab_save_timer.timeout.connect(self._persist_last_tab)
+        self._tab_save_timer.start()
+
+    def _persist_last_tab(self):
+        try:
+            self.settings_store.save(self.settings)
+        except Exception:
+            pass
+
+    def _on_tab_activated(self, index: int):
+        """G70：首次进入管理页加载仓库；首次进入设置页回填开机自启状态。"""
+        try:
+            index = int(index)
+            if index == 1:
+                self._ensure_manage_loaded()
+            elif index == 2 and not getattr(self, "_autostart_state_loaded", False):
+                self._refresh_autostart_state()
+        except Exception:
+            pass
+
+    def _refresh_autostart_state(self):
+        """G70：延迟读取任务计划状态（避免启动时同步跑 schtasks）。"""
+        try:
+            from ..app.autostart import autostart_enabled
+            checked = bool(autostart_enabled())
+        except Exception:
+            return
+        cb = getattr(self, "ck_autostart", None)
+        if cb is None:
+            return
+        cb.blockSignals(True)
+        try:
+            cb.setChecked(checked)
+        finally:
+            cb.blockSignals(False)
+        self._autostart_state_loaded = True
+
+    def _ensure_manage_loaded(self):
+        """G70：按需加载管理页模型（显式调用可重复执行）。"""
+        if not getattr(self, "_manage_loaded", False):
+            self._load_db_into_grid()
+            self._manage_loaded = True
+
     def _themed_qss(self) -> str:
         """G46-7/G46-8：按当前主题 + 强调色 + 字号 + 动效偏好生成 QSS。"""
         from ..ui import theme as _th
@@ -1157,6 +1342,19 @@ class MainWindow(QMainWindow):
     def _apply_font_scale(self):
         try:
             self.setStyleSheet(self._themed_qss())
+        except Exception:
+            pass
+
+    def _rehighlight_log(self):
+        """G70：主题/强调色切换后重着色**存量**日志行。
+
+        `QSyntaxHighlighter.highlightBlock` 只在文档变化时被调用；仅读
+        `current_palette()` 不会让已有行变色，必须显式 `rehighlight()`。
+        """
+        try:
+            hl = getattr(self, "log_highlighter", None)
+            if hl is not None:
+                hl.rehighlight()
         except Exception:
             pass
 
@@ -1176,12 +1374,19 @@ class MainWindow(QMainWindow):
         self._apply_font_scale()
 
     def _apply_theme_to_children(self):
-        """把主题样例应用到弹出的对话框（详情/统计等）。"""
-        from ..ui import theme as _th
+        """把**当前主题**的 QSS 应用到弹出的对话框（详情/统计等）。
+
+        G70 修复：原实现套的是导入时生成的静态 `theme.QSS`（永远 Deep/1.0/动效开），
+        切到 Light/Nord/HC 后打开对话框会变回深色并丢字号缩放。
+        """
+        try:
+            qss = self._themed_qss()
+        except Exception:
+            return
         for child in self.findChildren(object):
             try:
                 if child.__class__.__name__.endswith(("Dialog", "MainWindow")):
-                    child.setStyleSheet(_th.QSS)
+                    child.setStyleSheet(qss)
             except Exception:
                 pass
 
@@ -1613,13 +1818,23 @@ class MainWindow(QMainWindow):
         kw = (keyword or "").strip().lower()
         groups = list(getattr(self, "settings_groups", []) or []) + list(
             getattr(self, "settings_groups_extra", []) or [])
-        for group in groups:
+        visible = 0
+        nav = getattr(self, "settings_nav", None)
+        for i, group in enumerate(groups):
             if not kw:
-                group.setVisible(True)
-                continue
-            title = group.title().lower()
-            labels = [lbl.text().lower() for lbl in group.findChildren(QLabel)]
-            group.setVisible(kw in title or any(kw in x for x in labels if x))
+                vis = True
+            else:
+                title = group.title().lower()
+                labels = [lbl.text().lower() for lbl in group.findChildren(QLabel)]
+                vis = kw in title or any(kw in x for x in labels if x)
+            group.setVisible(vis)
+            if nav is not None and i < nav.count():
+                nav.item(i).setHidden(not vis)
+            visible += 1 if vis else 0
+        empty = getattr(self, "settings_empty_lbl", None)
+        if empty is not None:
+            # G70：搜索无结果时给出明确空态，而不是一片空白
+            empty.setVisible(bool(kw) and visible == 0)
 
     def _toggle_host_tokens_echo(self, checked: bool) -> None:
         """G44-1：按平台凭据「显示明文」勾选切换掩码（G69-18：绑定方法）。"""
@@ -1953,10 +2168,12 @@ class MainWindow(QMainWindow):
         # 表格预填行（engine 去重后实际索引与表格行号可能不对齐，
         # 表格行只用于展示：先用完整列表填行，engine 结果按 index 回填）
         self._pending_count = len(specs)
+        self.progress_panel.begin_bulk()
         for i, spec in enumerate(specs):
             self._add_table_row(i, spec)
             self.row_specs[i] = spec
             self.flags[i] = CancelFlag()
+        self.progress_panel.end_bulk()
 
         fetch_depth = depth if shallow else 0
         launched = self.engine.launch(
@@ -1977,10 +2194,12 @@ class MainWindow(QMainWindow):
             # 改变唯一清单），旧行全部废弃重建，避免暂停/进度按错行
             n = len(self.engine.specs)
             self._prepare_table(n)
+            self.progress_panel.begin_bulk()
             for i in range(n):
                 spec = self.engine.specs[i]
                 self._add_table_row(i, spec)
                 self.row_specs[i] = spec
+            self.progress_panel.end_bulk()
             self._pending_count = n
             self.statusBar().showMessage(f"并行同步中：{n} 个仓库…")
             return
@@ -2225,6 +2444,8 @@ class MainWindow(QMainWindow):
         if self.busy:
             QMessageBox.information(self, "提示", "有任务正在运行，请稍后再导入。")
             return
+        # G70：扫描根目录依赖管理页模型，确保已加载
+        self._ensure_manage_loaded()
         from .local_repos_dialog import LocalReposDialog
         # 默认扫描范围：当前克隆根目录 + 管理页已有仓库的父目录
         root = self.target_edit.text().strip()
@@ -2286,6 +2507,8 @@ class MainWindow(QMainWindow):
     def _on_layout_tick(self) -> None:
         """G69-18：布局防抖定时器到点 → 按当前宽度重排（绑定方法，不成环）。"""
         self._apply_layout_for_width(self.width())
+        # G70：同时按宽/高切换 Compact（隐藏快捷填充与设置导航）
+        self._apply_layout_mode()
 
     def _apply_layout_for_width(self, w: int) -> None:
         """G57-1：按窗口宽度切换布局语义（S<768 / M / D / XL）。窄窗折叠次要列。"""

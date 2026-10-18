@@ -63,8 +63,12 @@ PALETTES = {
         "panel": "#161b22",
         "panel2": "#1c2128",
         "border": "#30363d",
+        "border_strong": "#6e7681",   # G70：表单/输入边界（对 panel2 ≥3:1）
         "accent": "#58a6ff",
         "accent2": "#3fb950",
+        # G70：主按钮文字色由 accent 亮度推导（白字在 #58a6ff 上仅 2.53:1）
+        "on_accent": "#0d1117",
+        "success": "#3fb950",
         "warning": "#d29922",
         "error": "#f85149",
         "text": "#c9d1d9",
@@ -77,8 +81,11 @@ PALETTES = {
         "panel": "#f6f8fa",
         "panel2": "#eef1f4",
         "border": "#d0d7de",
+        "border_strong": "#6e7781",
         "accent": "#0969da",
         "accent2": "#1a7f37",
+        "on_accent": "#ffffff",
+        "success": "#1a7f37",
         "warning": "#9a6700",
         "error": "#cf222e",
         "text": "#1f2328",
@@ -91,12 +98,17 @@ PALETTES = {
         "panel": "#3b4252",
         "panel2": "#434c5e",
         "border": "#4c566a",
+        "border_strong": "#9aa6ba",
         "accent": "#88c0d0",
         "accent2": "#a3be8c",
+        "on_accent": "#2e3440",
+        "success": "#a3be8c",
         "warning": "#ebcb8b",
-        "error": "#bf616a",
+        # G70：原 #bf616a 对背景仅 3.05:1（低于 AA 4.5），提亮到 4.65:1（panel2）
+        "error": "#e8b0b5",
         "text": "#d8dee9",
-        "text_dim": "#7b88a1",
+        # G70：原 #7b88a1 对 panel 仅 2.82:1，提亮到 4.80:1
+        "text_dim": "#a8b4c8",
         "console": "#232830",
         "console_fg": "#d8dee9",
     },
@@ -106,8 +118,11 @@ PALETTES = {
         "panel": "#0b0b0b",
         "panel2": "#1a1a1a",
         "border": "#ffffff",
+        "border_strong": "#ffffff",
         "accent": "#00e5ff",
         "accent2": "#7cff6b",
+        "on_accent": "#000000",
+        "success": "#7cff6b",
         "warning": "#ffe14d",
         "error": "#ff6b6b",
         "text": "#ffffff",
@@ -120,7 +135,8 @@ PALETTES = {
 # G46-1 设计 token 表：三主题共用布局 token（仅色板不同）
 TOKENS: dict[str, dict[str, object]] = {
     "radius": {"card": 8, "control": 6, "bar": 5, "tab": 8, "checkbox": 4, "chip": 10},
-    "spacing": {"xs": 4, "sm": 6, "md": 8, "lg": 12, "xl": 18},
+    # G70：统一 4pt 网格（原 4/6/8/12/18 里的 6、18 不在网格上）
+    "spacing": {"xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24, "2xl": 32},
     "border": {"default": 1, "focus": 2},
     # Qt QSS 不支持 box-shadow / transition：以 border/outline + hover 状态色表达反馈
     "shadow": {"focus": "outline"},
@@ -138,6 +154,17 @@ ACCENT_PRESETS = {
 }
 
 
+def _on_accent_for(accent: str, palette: dict) -> str:
+    """G70：按 accent 亮度选择主按钮文字色，保证 ≥4.5:1。
+
+    浅色 accent（deep #58a6ff 2.53:1 / nord #88c0d0 2.00:1 / hc #00e5ff 1.54:1）
+    用深色文字；深色 accent（light #0969da 5.19:1 / violet 5.05:1）用白字。
+    """
+    if contrast_ratio("#ffffff", accent) >= 4.5:
+        return "#ffffff"
+    return palette["bg"] if _luminance(palette["bg"]) < 0.2 else "#000000"
+
+
 def theme_with_accent(palette: dict, preset) -> dict:
     """G46-7：返回换用指定强调色后的色板副本（key 取 ACCENT_PRESETS 或直接 dict）。"""
     pal = dict(palette)
@@ -147,16 +174,19 @@ def theme_with_accent(palette: dict, preset) -> dict:
         p = ACCENT_PRESETS.get(preset)
         if p:
             pal.update(p)
+    # G70：强调色变化后 on_accent 必须重算，否则深色主题换 violet 会出现深字压深底
+    pal["on_accent"] = _on_accent_for(str(pal.get("accent") or "#58a6ff"), pal)
     return pal
 
 
 def _luminance(hex_color: str) -> float:
-    """WCAG 相对亮度。"""
+    """WCAG 相对亮度（G70：修正绿/蓝权重写反的既有缺陷）。"""
     c = QColor(hex_color)
     rgb = [v / 255.0 for v in (c.red(), c.green(), c.blue())]
     def _f(v):
         return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
-    return 0.2126 * _f(rgb[0]) + 0.0722 * _f(rgb[1]) + 0.7152 * _f(rgb[2])
+    # WCAG 2.x: 0.2126 R + 0.7152 G + 0.0722 B（此前误写成 0.0722 G + 0.7152 B）
+    return 0.2126 * _f(rgb[0]) + 0.7152 * _f(rgb[1]) + 0.0722 * _f(rgb[2])
 
 
 def contrast_ratio(c1: str, c2: str) -> float:
@@ -179,65 +209,89 @@ def _shade(hex_color: str, factor: int) -> str:
         return hex_color
 
 
+_QSS_CACHE: dict[tuple, str] = {}
+
+
 def _build_qss(palette: dict, scale: float = 1.0, motion: bool = True) -> str:
     """G46-1：由色板 + 设计 token 统一生成 QSS（三主题共用布局，仅换色板）。
 
     - 状态色：hover 用 accent，disabled 用 text_dim/border，pressed 用 panel2 变暗；
     - motion=False（reduced-motion）时去掉 hover/pressed 颜色变化块（Qt QSS 无 transition）；
-    - scale 钳制 [0.8, 1.6]（与旧测试兼容）；UI 层下限 FONT_SCALE_MIN_UI 由设置页负责。
+    - scale 钳制 [0.8, 1.6]（与旧测试兼容）；UI 层下限 FONT_SCALE_MIN_UI 由设置页负责；
+    - G70：按 (palette, scale, motion) 缓存结果 —— 拖动缩放/切换主题时避免重复拼串。
     """
     try:
         scale = float(scale)
     except Exception:
         scale = 1.0
     scale = max(0.8, min(1.6, scale))
+    cache_key = (tuple(sorted((str(k), str(v)) for k, v in palette.items())),
+                 round(scale, 3), bool(motion))
+    cached = _QSS_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     px = round(FONT_BASE_PX * scale)
+    title_px = round(20 * scale)
+    console_px = round(12 * scale)
+    small_px = round(11 * scale)
+    bar_px = max(16, round(20 * scale))
     bg = palette["bg"]
     panel = palette["panel"]
     panel2 = palette["panel2"]
     border = palette["border"]
+    border_strong = palette.get("border_strong") or border
     accent = palette["accent"]
+    on_accent = palette.get("on_accent") or _on_accent_for(accent, palette)
     err = palette["error"]
     text = palette["text"]
     dim = palette["text_dim"]
     cons = palette["console"]
     cons_fg = palette["console_fg"]
-    r_card = TOKENS["radius"]["card"]
-    r_ctl = TOKENS["radius"]["control"]
-    r_bar = TOKENS["radius"]["bar"]
-    r_tab = TOKENS["radius"]["tab"]
-    r_cb = TOKENS["radius"]["checkbox"]
-    b_def = TOKENS["border"]["default"]
-    b_fmt = TOKENS["border"]["focus"]
+    r_card = int(TOKENS["radius"]["card"])
+    r_ctl = int(TOKENS["radius"]["control"])
+    r_bar = int(TOKENS["radius"]["bar"])
+    r_tab = int(TOKENS["radius"]["tab"])
+    r_cb = int(TOKENS["radius"]["checkbox"])
+    b_def = int(TOKENS["border"]["default"])
+    b_fmt = int(TOKENS["border"]["focus"])
+    sp_xs = int(TOKENS["spacing"]["xs"])
+    sp_sm = int(TOKENS["spacing"]["sm"])
+    sp_md = int(TOKENS["spacing"]["md"])
+    sp_lg = int(TOKENS["spacing"]["lg"])
     pressed = _shade(panel2, 118)
     hover_bg = _shade(panel2, 108)
     # G55 engineering item: split oversize template lines via locals (same values).
-    alt_bg = _shade(panel, 125) if palette.get("bg") == "#0d1117" else _shade(panel, 96)
-    danger_qss = (f"QPushButton#danger {{ background: {_shade(err, 260)}; "
-                  f"border-color: {_shade(err, 160)}; color: {err}; }}")
+    # G70：不再用 "#0d1117" 魔法字符串判断主题，改按背景亮度选择交替行底色。
+    alt_bg = _shade(panel, 125) if _luminance(bg) < 0.2 else _shade(panel, 96)
+    # G70：危险按钮改描边样式 —— 原「暗红底 + 红字」在浅色主题下对比度不足。
+    danger_qss = (f"QPushButton#danger {{ background: {panel2}; "
+                  f"border: {b_def}px solid {err}; color: {err}; }}")
     if not motion:
         hover_motion = ""
+        pressed_motion = ""
+        item_hover = ""
     else:
         hover_motion = (
             f"QPushButton:hover {{ background: {hover_bg}; border-color: {accent}; }}"
         )
         pressed_motion = f"QPushButton:pressed {{ background: {pressed}; }}"
+        item_hover = f"QListWidget::item:hover {{ background: {hover_bg}; }}"
     style = f"""
 QWidget {{ background: {bg}; color: {text};
             font-size: {px}px; font-family: {FONT_STACK}; }}
 QMainWindow, QDialog {{ background: {bg}; }}
-QLabel#pageTitle {{ font-size: 20px; font-weight: 700; color: {text}; }}
+QLabel#pageTitle {{ font-size: {title_px}px; font-weight: 700; color: {text}; }}
 QLabel#accent {{ color: {accent}; font-weight: 600; }}
 QLabel#muted {{ color: {dim}; }}
 QGroupBox {{
   border: {b_def}px solid {border}; border-radius: {r_card}px;
-  margin-top: 12px; padding-top: 8px; background: {panel};
+  margin-top: {sp_md}px; padding-top: {sp_sm}px; background: {panel};
   font-weight: 600; color: {text};
 }}
-QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 0 6px; }}
+QGroupBox::title {{ subcontrol-origin: margin; left: {sp_md}px; padding: 0 {sp_xs + 2}px; }}
 QPlainTextEdit, QTextEdit, QLineEdit, QSpinBox, QComboBox {{
-  background: {panel2}; border: {b_def}px solid {border};
-  border-radius: {r_ctl}px; padding: 6px; selection-background-color: {accent};
+  background: {panel2}; border: {b_def}px solid {border_strong};
+  border-radius: {r_ctl}px; padding: {sp_sm}px; selection-background-color: {accent};
 }}
 QLineEdit:focus, QSpinBox:focus, QComboBox:focus, QPlainTextEdit:focus, QTextEdit:focus {{
   border: {b_fmt}px solid {accent};
@@ -247,58 +301,69 @@ QLineEdit:disabled, QSpinBox:disabled, QComboBox:disabled, QPlainTextEdit:disabl
 }}
 QPushButton {{
   background: {panel2}; border: {b_def}px solid {border};
-  border-radius: {r_ctl}px; padding: 6px 14px; color: {text};
+  border-radius: {r_ctl}px; padding: {sp_sm}px {sp_lg}px; color: {text};
+  min-height: 24px;
 }}
 QPushButton:focus {{ border: {b_fmt}px solid {accent}; }}
 QPushButton:disabled {{ color: {dim}; border-color: {border}; background: {panel}; }}
 {hover_motion}
-{pressed_motion if motion else ""}
+{pressed_motion}
 QPushButton#primary {{
-  background: {accent}; border: {b_def}px solid {accent}; color: #ffffff; font-weight: 700;
+  background: {accent}; border: {b_def}px solid {accent}; color: {on_accent}; font-weight: 700;
 }}
 QPushButton#primary:disabled {{ background: {_shade(accent, 200)}; color: {dim}; }}
 QPushButton#primary:hover {{ background: {_shade(accent, 108)}; }}
 {danger_qss}
-QPushButton#danger:hover {{ background: {_shade(err, 200)}; }}
-QTableWidget {{
+QPushButton#danger:hover {{ background: {_shade(panel2, 92)}; border-color: {err}; }}
+QTableWidget, QTableView {{
   background: {panel}; alternate-background-color: {alt_bg};
   gridline-color: {border}; border: {b_def}px solid {border}; border-radius: {r_ctl}px;
 }}
+QTableWidget:focus, QTableView:focus {{ outline: {b_fmt}px solid {accent}; }}
 QHeaderView::section {{
   background: {panel2}; color: {text}; border: none;
-  border-right: {b_def}px solid {border}; padding: 6px; font-weight: 700;
+  border-right: {b_def}px solid {border}; padding: {sp_sm}px; font-weight: 700;
 }}
 QTextEdit#console {{
   background: {cons}; color: {cons_fg};
-  font-family: Consolas, "Courier New", monospace; font-size: 12px;
+  font-family: Consolas, "Courier New", monospace; font-size: {console_px}px;
   border: {b_def}px solid {border}; border-radius: {r_ctl}px;
 }}
 QTextEdit#pane {{
   background: {cons}; color: {cons_fg};
-  font-family: Consolas, "Courier New", monospace; font-size: 12px;
+  font-family: Consolas, "Courier New", monospace; font-size: {console_px}px;
   border: {b_def}px solid {border}; border-radius: {r_ctl}px;
 }}
 QProgressBar {{
   border: {b_def}px solid {border}; border-radius: {r_bar}px;
   background: {panel2}; text-align: center; color: {text};
-  font-size: 11px; min-height: 16px; max-height: 16px;
+  font-size: {small_px}px; min-height: {bar_px}px; max-height: {bar_px}px;
 }}
-QProgressBar::chunk {{ background: {accent}; border-radius: 4px; }}
+QProgressBar::chunk {{ background: {accent}; border-radius: {max(2, r_bar - 1)}px; }}
 QStatusBar {{ color: {dim}; }}
-QCheckBox::indicator {{ width: 16px; height: 16px; border: {b_def}px solid {border};
+QCheckBox::indicator {{ width: 18px; height: 18px; border: {b_def}px solid {border_strong};
   border-radius: {r_cb}px; background: {panel2}; }}
 QCheckBox::indicator:checked {{ background: {accent}; border-color: {accent}; }}
-QScrollBar:vertical {{ background: {bg}; width: 12px; }}
-QScrollBar::handle:vertical {{ background: {border}; border-radius: {r_bar}px; min-height: 24px; }}
+QScrollBar:vertical {{ background: {bg}; width: 14px; }}
+QScrollBar::handle:vertical {{ background: {border}; border-radius: {r_bar}px; min-height: 28px; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
-QTabs::pane {{ border: {b_def}px solid {border}; border-radius: {r_tab}px; background: {bg}; }}
-QTabBar::tab {{ padding: 8px 18px; background: {panel}; color: {dim};
+QTabWidget::pane {{ border: {b_def}px solid {border}; border-radius: {r_tab}px; background: {bg}; }}
+QTabBar::tab {{ padding: {sp_sm}px {sp_lg}px; background: {panel}; color: {dim};
   border: {b_def}px solid {border}; border-bottom: none; }}
-QTabBar::tab:selected {{ background: {panel2}; color: {text}; border-top: 2px solid {accent}; }}
+QTabBar::tab:selected {{ background: {panel2}; color: {text}; border-top: {b_fmt}px solid {accent}; }}
 QTabBar::tab:hover {{ color: {text}; }}
+QTabBar::tab:focus {{ border-top: {b_fmt}px solid {accent}; }}
+QListWidget {{ background: {panel}; border: {b_def}px solid {border};
+  border-radius: {r_ctl}px; padding: {sp_xs}px; }}
+QListWidget::item {{ padding: {sp_xs + 2}px {sp_sm}px; border-radius: {r_cb}px; }}
+QListWidget::item:selected {{ background: {panel2}; color: {text}; }}
+{item_hover}
 """
     from . import qss_validate  # G55 engineering item: static QSS validator hook.
     qss_validate.validate_qss_or_raise(style)
+    if len(_QSS_CACHE) > 32:       # 有界缓存：主题 × 缩放组合远小于 32
+        _QSS_CACHE.clear()
+    _QSS_CACHE[cache_key] = style
     return style
 
 
@@ -442,30 +507,39 @@ class LogModel(QObject):
         return "\n".join(f"[{e.time}] [{e.level}] {e.text}" for e in self._entries)
 
 
+_HL_SPECS = (
+    (re.compile(r"^\[(成功|完成|SUCCESS|OK|CLONED|UPDATED|FETCHED).*$", re.I),
+     "success", True),
+    (re.compile(r"^\[(失败|错误|ERROR|FAILED|FAIL|CONFLICT).*$", re.I),
+     "error", True),
+    (re.compile(r"^\[(警告|WARN).*$", re.I), "warning", True),
+    (re.compile(r"https?://\S+"), "accent", False),
+    (re.compile(
+        r"^.*\b(Cloning into|remote:|Receiving objects:|"
+        r"Resolving deltas:|Counting objects:|Compressing objects:|"
+        r"Updating files:|Unpacking objects:|Fetching|From |"
+        r"Fast-forward|Already up to date|Total \d+)\b.*$", re.I),
+     "text_dim", False),
+)
+
+
 def make_highlighter(document):
-    """构造控制台关键字高亮器。"""
+    """构造控制台关键字高亮器。
+
+    G70：正则模块级编译一次；颜色按**当前主题**在每次高亮时读取，
+    切换 Light/Nord/HC 后无需重建高亮器也不会再固定成深色板。
+    """
+
     class _HL(QSyntaxHighlighter):
         def __init__(self, doc):
             super().__init__(doc)
-            self.specs = [
-                (re.compile(r"^\[(成功|完成|SUCCESS|OK|CLONED|UPDATED|FETCHED).*$", re.I),
-                 PALETTE["accent2"], True),
-                (re.compile(r"^\[(失败|错误|ERROR|FAILED|FAIL|CONFLICT).*$", re.I),
-                 PALETTE["error"], True),
-                (re.compile(r"^\[(警告|WARN).*$", re.I), PALETTE["warning"], True),
-                (re.compile(r"https?://\S+"), PALETTE["accent"], False),
-                (re.compile(
-                     r"^.*\b(Cloning into|remote:|Receiving objects:|"
-                     r"Resolving deltas:|Counting objects:|Compressing objects:|"
-                     r"Updating files:|Unpacking objects:|Fetching|From |"
-                     r"Fast-forward|Already up to date|Total \d+)\b.*$", re.I),
-                 PALETTE["text_dim"], False),
-            ]
+            self.specs = _HL_SPECS
 
         def highlightBlock(self, text):
-            for pattern, color, bold in self.specs:
+            pal = current_palette()
+            for pattern, key, bold in self.specs:
                 fmt = QTextCharFormat()
-                fmt.setForeground(QColor(color))
+                fmt.setForeground(QColor(pal.get(key) or pal["text"]))
                 if bold:
                     fmt.setFontWeight(QFont.Weight.Bold)
                 for m in pattern.finditer(text):

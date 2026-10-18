@@ -1,0 +1,54 @@
+{
+  "task_id": "G70-review",
+  "date": "2026-10-19",
+  "status": "done",
+  "reviewers": [
+    {
+      "role": "code-reviewer (read-only)",
+      "rounds": 2,
+      "round1": {
+        "verdict": "Request Changes",
+        "critical": [
+          "1020×560 下 repo_input 可见高度仅 46/120（顶部区域被父容器裁切）"
+        ],
+        "required": [
+          "切换主题后控制台存量高亮颜色不刷新",
+          "_save_theme 用 qss_for_scale（不含 accent/motion），与对话框 _themed_qss 分叉",
+          "_prepare_table 提前过滤导致新批次行永久隐藏"
+        ]
+      },
+      "round2": {
+        "verdict": "Approve",
+        "critical": [],
+        "required": [],
+        "verified": [
+          "顶部 QScrollArea 后 1020×560 输入 120/120 可见，tab minimumSizeHint=404",
+          "_rehighlight_log 已接入主题/强调色/系统主题路径",
+          "settings_panel._save_theme 已用 owner._themed_qss()",
+          "过滤推迟到 end_bulk + 补行路径重过滤",
+          "PROGRESS_ROLE 已删除；进度 0 不丢且夹取 0..100；readonly 探测 favorite 列"
+        ]
+      }
+    },
+    {
+      "role": "security-reviewer (read-only)",
+      "rounds": 1,
+      "verdict": "PASS (security) / CONDITIONAL PASS (delivery)",
+      "critical": [],
+      "required": [
+        "test_progress_ui 与新实现矛盾（已在复审前修复）"
+      ],
+      "suggestions_fixed": [
+        "limit/offset 超长数字长度上限",
+        "500 错误不回显内部路径（改服务端日志）",
+        "历史 URL tooltip 剥内嵌凭据",
+        "只读连接探测旧 schema 后回退可写迁移"
+      ]
+    }
+  ],
+  "commands": [
+    "ruff check gcm → All checks passed",
+    "mypy gcm → Success (70 files)",
+    "test_g70_ui_upgrade + test_progress_ui + test_g69_regressions + test_g70_coverage → 全部通过"
+  ]
+}

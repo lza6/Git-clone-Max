@@ -14,7 +14,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from PyQt6.QtWidgets import QApplication, QProgressBar
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QApplication
 
 _app = QApplication.instance() or QApplication([])
 
@@ -83,16 +84,19 @@ class TestProgressDetailSlot(unittest.TestCase):
     def tearDownClass(cls):
         cls._w.close()
 
-    def test_progress_detail_updates_bar_format(self):
+    def test_progress_detail_updates_cell_data(self):
+        from gcm.ui.progress_table import DETAIL_ROLE
         spec = RepoSpec("owner", "repo", "https://github.com/owner/repo.git")
         self._w._prepare_table(1)
         self._w._add_table_row(0, spec)
         # 节流批量刷新：调用槽后需手动 flush（模拟定时器到期）
         self._w._on_worker_progress_detail(0, "7.03 MiB/s 7124")
         self._w._flush_detail_batch()
-        bar = self._w.table.cellWidget(0, 1)
-        self.assertIsInstance(bar, QProgressBar)
-        self.assertIn("7.03 MiB/s", bar.format())
+        item = self._w.table.item(0, 1)
+        self.assertIsNotNone(item, "进度列应有数据项（delegate 自绘）")
+        self.assertIn("7.03 MiB/s", str(item.data(DETAIL_ROLE)))
+        self.assertIsNone(self._w.table.cellWidget(0, 1),
+                          "G70：进度列不得再创建 QProgressBar 子控件")
 
     def test_progress_detail_ignores_bad_index(self):
         # 越界 index 不应抛异常，且**不得**污染批缓冲（缓冲在 progress_panel 上）
@@ -107,13 +111,15 @@ class TestProgressDetailSlot(unittest.TestCase):
         self._w._on_worker_progress_detail(0, "2 MiB/s")
         self.assertEqual(panel._detail_batch, {0: "2 MiB/s"})
 
-    def test_progress_detail_initial_format_percent(self):
+    def test_progress_detail_initial_state(self):
         spec = RepoSpec("owner", "repo", "https://github.com/owner/repo.git")
         self._w._prepare_table(1)
         self._w._add_table_row(0, spec)
-        bar = self._w.table.cellWidget(0, 1)
-        self.assertIsInstance(bar, QProgressBar)
-        self.assertIn("%p%", bar.format())
+        item = self._w.table.item(0, 1)
+        self.assertIsNotNone(item)
+        # G70：未开始的任务不写进度字典 → delegate 按 -1 画不确定态
+        self.assertEqual(
+            self._w.progress_panel._progress_values.get(0, -1), -1)
 
 
 def _git(cwd, *args, check=True):

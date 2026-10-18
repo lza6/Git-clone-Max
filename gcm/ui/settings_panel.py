@@ -57,7 +57,8 @@ def build_log_box(owner: MainWindow) -> QGroupBox:
     owner.log_view.setObjectName("console")
     owner.log_view.setReadOnly(True)
     owner.log_view.setMaximumBlockCount(4000)
-    owner.log_view.setMinimumHeight(100)
+    owner.log_view.setMinimumHeight(80)
+    owner.log_view.setAccessibleName(tr("黑匣子日志"))
     l2.addWidget(owner.log_view, 1)
     # 关键字高亮：`theme.make_highlighter` 早已实现，但此前从未安装到日志视图
     # （README 宣称的「关键字高亮」实际不可见）。保留在 owner 上，避免包装对象被回收。
@@ -539,6 +540,7 @@ class SettingsPanel(QWidget):
         try:
             self.owner.setStyleSheet(self.owner._themed_qss())
             self.owner._apply_theme_to_children()
+            self.owner._rehighlight_log()   # G70：存量日志行按新主题重着色
         except Exception:
             pass
 
@@ -708,8 +710,10 @@ class SettingsPanel(QWidget):
         try:
             from ..ui import theme as _th
             _th.apply_theme(key)
-            self.owner.setStyleSheet(_th.qss_for_scale(getattr(self.owner.settings, "font_scale", 1.0)))
+            # G70：与对话框同源（含强调色 + reduced-motion），避免主窗/对话框样式分叉
+            self.owner.setStyleSheet(self.owner._themed_qss())
             self.owner._apply_theme_to_children()
+            self.owner._rehighlight_log()
         except Exception:
             pass
 

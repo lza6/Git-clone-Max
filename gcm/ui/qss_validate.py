@@ -48,6 +48,18 @@ ALLOWED_PROPERTIES: frozenset[str] = frozenset({
     "show-decoration-selected", "lineedit-password-character",
 })
 
+# G70：选择器类名白名单。属性白名单拦不住「QTabs」这类**类名拼写错误**
+# （未知类名在 Qt 里静默不生效，UI 看起来只是"样式没上去"）。
+ALLOWED_SELECTORS: frozenset[str] = frozenset({
+    "QWidget", "QMainWindow", "QDialog", "QLabel", "QGroupBox",
+    "QPlainTextEdit", "QTextEdit", "QLineEdit", "QSpinBox", "QComboBox",
+    "QPushButton", "QTableWidget", "QTableView", "QHeaderView",
+    "QProgressBar", "QStatusBar", "QCheckBox", "QScrollBar",
+    "QTabWidget", "QTabBar", "QListWidget", "QListView", "QAbstractItemView",
+    "QMenu", "QToolTip", "QFrame", "QSplitter", "QStackedWidget",
+})
+_SELECTOR_CLASS_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)")
+
 _COMMENT_RE = re.compile(r"/\*.*?\*/", re.S)
 _QUOTES = ("'", '"')
 
@@ -240,6 +252,20 @@ def validate_qss(style: str) -> list[str]:
                 sel = selector.strip()
                 if not sel:
                     errors.append(f"块 {block_no}：选择器为空")
+                else:
+                    # G70：逐个子选择器（逗号分隔）校验类名，拦住 QTabs 这类拼写错误
+                    for part in sel.split(","):
+                        part = part.strip()
+                        if not part:
+                            errors.append(f"块 {block_no}：空子选择器")
+                            continue
+                        m = _SELECTOR_CLASS_RE.match(part)
+                        if m is None:
+                            continue          # [attr=...] / * 等无类名选择器
+                        cls = m.group(1)
+                        if cls not in ALLOWED_SELECTORS:
+                            errors.append(
+                                f"块 {block_no}：未知控件类名 {cls!r}（选择器: {part!r}）")
                 continue
             seen_any_block = True
             decls = _split_declarations(body)

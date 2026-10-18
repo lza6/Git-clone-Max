@@ -19,8 +19,6 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from .theme import QSS
-
 # 克隆模式选项：combo 显示文本（主控可据此映射 full/shallow value）
 MODE_FULL = "满量克隆"
 MODE_SHALLOW = "浅克隆"
@@ -38,9 +36,8 @@ class OnboardingDialog(QDialog):
         self.default_dir = default_dir or ""
         self.skipped = False
         self.setWindowTitle("欢迎使用 Git-clone-Max")
-        self.resize(520, 340)
-        self.setMinimumSize(460, 300)
-        self.setStyleSheet(QSS)
+        from .layout import fit_dialog_to_screen
+        fit_dialog_to_screen(self, 520, 340, 460, 300)
         self._build_ui()
 
     # ------------------------------------------------------------ UI

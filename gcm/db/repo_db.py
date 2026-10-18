@@ -87,19 +87,36 @@ def _migrate(conn):
 class Database:
     """线程安全 SQLite 封装。"""
 
-    def __init__(self, db_path: str | Path):
+    def __init__(self, db_path: str | Path, readonly: bool = False):
         self.path = Path(db_path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
-        self._conn = sqlite3.connect(str(self.path), check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL;")
-        self._conn.execute("PRAGMA foreign_keys=ON;")
-        self._conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS};")  # 高并发写不立刻抛锁错误
-        with self._lock:
-            self._conn.executescript(_SCHEMA)
-            _migrate(self._conn)
-            self._conn.commit()
+        if readonly:
+            # G70：只读快路径（HTTP API 读端点用）——跳过建表/迁移写事务。
+            # 每次读请求都跑 executescript(_SCHEMA)+BEGIN IMMEDIATE 会让
+            # 30 并发读被串行化（实测 p50 ~7s）；mode=ro 连接无写锁，实测降到毫秒级。
+            uri = f"file:{self.path.as_posix()}?mode=ro"
+            self._conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
+            self._conn.row_factory = sqlite3.Row
+            self._conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS};")  # 高并发读不立刻抛锁错误
+            self._conn.execute("PRAGMA foreign_keys=ON;")
+            # 旧库/空库不能走只读快路径：缺表或缺少 v1 之后的列时，
+            # 调用方应回退到可写连接执行建表/迁移，而不是 500。
+            try:
+                self._conn.execute("SELECT favorite FROM repos LIMIT 1")
+            except sqlite3.OperationalError:
+                self._conn.close()
+                raise
+        else:
+            self._conn = sqlite3.connect(str(self.path), check_same_thread=False)
+            self._conn.row_factory = sqlite3.Row
+            self._conn.execute("PRAGMA journal_mode=WAL;")
+            self._conn.execute("PRAGMA foreign_keys=ON;")
+            self._conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS};")  # 高并发写不立刻抛锁错误
+            with self._lock:
+                self._conn.executescript(_SCHEMA)
+                _migrate(self._conn)
+                self._conn.commit()
         # G33-5：sync_history 容量治理计数器（每 100 次 add_sync_history 自动清理一次）
         self._prune_counter = 0
         self._history_retention_days = 90  # G53-4 历史保留天数（默认 90，可配）
@@ -377,6 +394,26 @@ class Database:
                     "SELECT * FROM repos WHERE host=? ORDER BY favorite DESC, owner, repo",
                     (host,)).fetchall()
             return [dict(r) for r in rows]
+
+    def list_repos_page(self, host: str | None = None, limit: int = 500,
+                        offset: int = 0) -> tuple[list[dict[str, Any]], int]:
+        """G70：分页查询（HTTP API 用）——SQL LIMIT/OFFSET，返回 (rows, total)。"""
+        limit = max(1, int(limit))
+        offset = max(0, int(offset))
+        with self._lock:
+            if host is None:
+                total = int(self._conn.execute(
+                    "SELECT COUNT(*) FROM repos").fetchone()[0])
+                rows = self._conn.execute(
+                    "SELECT * FROM repos ORDER BY favorite DESC, owner, repo "
+                    "LIMIT ? OFFSET ?", (limit, offset)).fetchall()
+            else:
+                total = int(self._conn.execute(
+                    "SELECT COUNT(*) FROM repos WHERE host=?", (host,)).fetchone()[0])
+                rows = self._conn.execute(
+                    "SELECT * FROM repos WHERE host=? ORDER BY favorite DESC, owner, repo "
+                    "LIMIT ? OFFSET ?", (host, limit, offset)).fetchall()
+            return ([dict(r) for r in rows], total)
 
     def history(self, repo_id: int, limit: int = 20) -> list[dict[str, Any]]:
         with self._lock:

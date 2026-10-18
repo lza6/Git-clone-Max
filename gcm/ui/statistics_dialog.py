@@ -18,14 +18,17 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from .theme import PALETTE, QSS
+from .theme import current_palette
 
-# 趋势柱配色（与主题色板联动：成功/失败/冲突）
-_TREND_COLORS = {
-    "success": (PALETTE["accent2"], PALETTE["accent2"]),
-    "failed": (PALETTE["error"], PALETTE["error"]),
-    "conflict": (PALETTE["warning"], PALETTE["warning"]),
-}
+
+def _trend_colors() -> dict[str, tuple[str, str]]:
+    """趋势柱配色（G70：按当前主题实时取色，不再固定成深色板）。"""
+    pal = current_palette()
+    return {
+        "success": (pal["success"], pal["success"]),
+        "failed": (pal["error"], pal["error"]),
+        "conflict": (pal["warning"], pal["warning"]),
+    }
 
 
 class _TrendCanvas(QWidget):
@@ -36,6 +39,9 @@ class _TrendCanvas(QWidget):
         self._data: list[dict] = []
         self.setMinimumSize(460, 120)
         self.setToolTip("最近 30 天每日同步：绿=成功 红=失败 橙=冲突")
+        # G70：自绘控件补无障碍替代文本（读屏用户拿得到同样的信息）
+        self.setAccessibleName("同步趋势图")
+        self.setAccessibleDescription("最近同步趋势柱状图：绿色为成功、红色为失败、橙色为冲突")
 
     def set_data(self, data: list[dict]) -> None:
         self._data = data or []
@@ -68,12 +74,14 @@ class _TrendCanvas(QWidget):
 
     def paintEvent(self, e):
         from PyQt6.QtGui import QBrush
+        pal = current_palette()
+        colors = _trend_colors()
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
-        painter.fillRect(self.rect(), QColor(PALETTE["panel"]))
+        painter.fillRect(self.rect(), QColor(pal["panel"]))
         if not self._data:
-            painter.setPen(QColor(PALETTE["text_dim"]))
+            painter.setPen(QColor(pal["text_dim"]))
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter,
                              "（暂无同步数据）")
             painter.end()
@@ -93,12 +101,12 @@ class _TrendCanvas(QWidget):
                 if v <= 0:
                     continue
                 bh = max(1.0, (v / max_v) * (h - 16))
-                color = _TREND_COLORS[key][0]
+                color = colors[key][0]
                 painter.fillRect(QRectF(x, y_cursor - bh, bar_w, bh),
                                  QBrush(QColor(color)))
                 y_cursor -= bh
         # 横轴边框
-        painter.setPen(QPen(QColor(PALETTE["border"]), 1))
+        painter.setPen(QPen(QColor(pal["border"]), 1))
         painter.drawLine(0, h - 4, w, h - 4)
         painter.end()
 
@@ -110,9 +118,9 @@ class StatisticsDialog(QDialog):
         super().__init__(parent)
         self.db = db
         self.setWindowTitle("统计中心")
-        self.resize(560, 460)
-        self.setMinimumSize(460, 380)
-        self.setStyleSheet(QSS)
+        from .layout import fit_dialog_to_screen
+        fit_dialog_to_screen(self, 560, 460, 460, 380)
+        # G70：不再套导入时生成的静态深色 QSS —— 沿用父窗口当前主题/字号。
         self._days = 30  # G47-4 趋势周期（7/30/90）
         self._build_ui()
         self._refresh()
@@ -267,7 +275,7 @@ class StatisticsDialog(QDialog):
                 lines = [f'总评 {summary["overall"]}/100 · ' + ' '.join(parts)]
                 for c in summary["weakest"][:3]:
                     lines.append(f'  {c["key"]} {c["overall"]}分：{c["suggestions"][0]}')
-                self.lbl_scorecard.setText("\\n".join(lines))
+                self.lbl_scorecard.setText("\n".join(lines))
                 self.radar.set_values(avg)
             else:
                 self.lbl_scorecard.setText("（暂无仓库数据）")
@@ -287,7 +295,7 @@ class StatisticsDialog(QDialog):
             files = info.get("files", {})
             fsize = " · ".join(f"{k} {v//1024}KB" for k, v in files.items() if v)
             self.lbl_storage.setText(
-                f'占用 {info["total_bytes"]//1024}KB ｜ 磁盘剩余 {info["free_gb"]}GB\\n{fsize}\\n{info["suggest"]}')
+                f'占用 {info["total_bytes"]//1024}KB ｜ 磁盘剩余 {info["free_gb"]}GB\n{fsize}\n{info["suggest"]}')
         except Exception:
             self.lbl_storage.setText("存储看板：（不可用）")
 

@@ -79,7 +79,8 @@ class HelpDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("使用说明")
-        self.resize(560, 460)
+        from .layout import fit_dialog_to_screen
+        fit_dialog_to_screen(self, 560, 460, 440, 320)
         v = QVBoxLayout(self)
         self.browser = QTextBrowser()
         self.browser.setOpenExternalLinks(False)

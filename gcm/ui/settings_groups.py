@@ -68,7 +68,7 @@ def _build_settings_shell(owner: MainWindow):
     settings_scroll = QScrollArea()
     settings_scroll.setWidgetResizable(True)
     settings_scroll.setFrameShape(QFrame.Shape.NoFrame)
-    settings_scroll.setMinimumHeight(180)
+    settings_scroll.setMinimumHeight(140)
     scroll_widget = QWidget()
     settings_scroll.setWidget(scroll_widget)
     sv = QVBoxLayout(scroll_widget)
@@ -81,6 +81,7 @@ def _build_settings_shell(owner: MainWindow):
     owner.settings_search = QLineEdit()
     owner.settings_search.setPlaceholderText(tr("搜索设置项（分组标题 / 行内标签）…"))
     owner.settings_search.setClearButtonEnabled(True)
+    owner.settings_search.setAccessibleName(tr("搜索设置项"))
     search_row.addWidget(owner.settings_search, 1)
     sv.addLayout(search_row)
 
@@ -99,12 +100,8 @@ def _build_group_startup(owner: MainWindow, settings: Settings):
     g1.setToolTip(tr("开机自启、下载完成后自动清空输入框 等启动行为"))
     l1 = QHBoxLayout(g1)
     owner.ck_autostart = QCheckBox(tr("开机自启（写入任务计划：登录时启动一次）"))
-    # G49-6：初始回填任务计划真实状态；变更时写入任务计划（联动 start_minimized）
-    try:
-        from ..app.autostart import autostart_enabled
-        owner.ck_autostart.setChecked(autostart_enabled())
-    except Exception:
-        pass
+    # G70：启动时不再同步执行 `schtasks`（实测 ~0.26s）；首次进入设置页再回填真实状态
+    owner._autostart_state_loaded = False
     owner.ck_autostart.stateChanged.connect(owner.settings_panel._toggle_autostart_task)
     l1.addWidget(owner.ck_autostart)
     owner.ck_start_min = QCheckBox(tr("启动时最小化到托盘"))

@@ -47,6 +47,9 @@ class RadarChart(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding,
                            QSizePolicy.Policy.Expanding)
         self.setToolTip(tr("6 维评分（0-100）：成功率 / 陈旧度 / 冲突健康 / 仓库大小 / 标签完整 / 最近同步"))
+        self.setAccessibleName(tr("仓库健康雷达图"))
+        self.setAccessibleDescription(
+            tr("六维评分可视化：成功率、陈旧度、冲突健康、仓库大小、标签完整、最近同步"))
 
     # ------------------------------------------------------------ 数据
     def set_values(self, values: Optional[Mapping[str, float]]) -> None:

@@ -1,7 +1,7 @@
 # Git-clone-Max
 
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
-> **当前版本：v9.6.1**（镜像安全加固：降级路径也清空认证头 + 失败分类 + 退出收敛）
+> **当前版本：v9.7.0**（UI/UX 全面升级：响应式窗口、无障碍、进度表性能、主题一致性）
 > **v5.0：多平台直克隆** — GitLab / Gitee / Codeberg / Bitbucket / 自建主机（HTTPS/SSH/短格式/子组）同样支持。
 > 克隆目录一律 `host__作者__仓库`（GitHub 为 `作者__仓库`），本地改动永不覆盖。
 
@@ -81,9 +81,11 @@ uv run python -m gcm --portable
 | 仓库管理 | 标签 / 收藏置顶 / 黑名单（一键更新排除）/ 过期高亮 / 搜索过滤 / host 分布统计 |
 | 数据洞察 | 统计中心（全局 + host + 30 天趋势 + 用量 + **6 维评分卡雷达图**）、报表筛选导出（CSV / Markdown / Excel(xlsx)）、每仓库备注、远端检查 |
 | 任务入口 | GitHub Star 列表导入、本地仓库扫描导入、剪贴板监听、历史记录回填 |
-| 多主题 | Deep / Light / Nord 三套主题即时切换 + 跟随系统深浅色（auto），重启恢复 |
+| 多主题 | Deep / Light / Nord / 高对比（HC）四套主题 + 蓝/紫/青强调色 + 跟随系统深浅色（auto），重启恢复 |
 | 首启向导 | 三步设置下载目录/并发/代理，零门槛上手 |
-| 快捷键/动效 | Ctrl+Alt+S/U/M 全局热键；完成行动效淡出（可关）；窗口尺寸记忆 |
+| 快捷键/动效 | Ctrl+Alt+S/U/M 全局热键；Ctrl+1/2/3 切页签；完成行动效淡出（可关，限 8 并发）；窗口尺寸与页签记忆 |
+| 响应式窗口 | 1024/1280/1440 三档逻辑断点；输入区与进度表可拖动分配高度；对话框按屏幕 90%×85% 自适应；100%–200% DPI |
+| 进度表性能 | 进度列 delegate 自绘（500 行不创建 500 个 QProgressBar）；250ms 合批；批量插行关排序 |
 | 可靠性 | token 加密落盘（有 DPAPI/keyring 时真加密；否则可逆混淆并在日志显式告警）、单实例锁、全局异常兜底 `error.log`、settings 备份恢复、数据库自动迁移备份 |
 | 数据库 | SQLite `repos.db`（WAL）记录元数据 + `sync_history` 全量同步快照健康治理 |
 | 一键更新 | 「仓库管理 → ⟳ 一键更新全部」对库中所有仓库增量同步（黑名单排除） |
@@ -234,19 +236,20 @@ python -m coverage run --source=gcm -m unittest discover -s tests
 - **退出保护**：任务运行中关闭会二次确认，确认后取消剩余任务并安全关闭数据库。
 - **开机自启**（可选）：设置页勾选「开机自启」会创建任务计划登录时启动。
 
-## 无障碍（G57-5）
+## 无障碍（G57-5 / G70）
 
-- **键盘路径**：全窗口 Tab/Shift+Tab 可达；全局热键 `Ctrl+Alt+S`（开始/取消）、`Ctrl+Alt+U`（一键更新）、`Ctrl+Alt+M`（显示窗口）；字号缩放 `Ctrl+=` / `Ctrl+-` / `Ctrl+0` 复位。
-- **主题与对比**：Deep/Light/Nord 三套主题 + 跟随系统深浅色；高对比焦点边框使用强调色（AAA 对比度校验通过）。
-- **触控/移动友好**：窗口语义档 S/M/D/XL 自动适配窄屏布局；主要按钮尺寸满足触控最小目标。
-- **已知限制**：图表区（统计中心趋势图）暂无屏幕阅读器替代文本；高 DPI 下部分标签自动缩放。反馈见 Issues。
+- **键盘路径**：全窗口 Tab/Shift+Tab 可达；全局热键 `Ctrl+Alt+S`（开始/取消）、`Ctrl+Alt+U`（一键更新）、`Ctrl+Alt+M`（显示窗口）；页签 `Ctrl+1/2/3`；字号缩放 `Ctrl+=` / `Ctrl+-` / `Ctrl+0` 复位。
+- **主题与对比**：Deep/Light/Nord/HC 四套主题 + 跟随系统深浅色；所有主题文本对比度 ≥4.5:1、输入边界 ≥3:1（`tests/test_g70_ui_upgrade.py` 逐主题断言）；主按钮文字按 accent 亮度自动选深/浅色。
+- **读屏与焦点**：主要输入/按钮/表格有 `accessibleName`；表格与页签有可见焦点环；自绘趋势图与雷达图提供 `accessibleDescription` 文本替代。
+- **空态与反馈**：下载/管理/设置搜索均有空态提示；过滤到 0 行时明确显示「没有匹配」。
+- **已知限制**：Windows 屏幕阅读器（NVDA）人工走查未纳入自动化门禁；高 DPI 下图标由 `QStyle` 提供，个别平台皮肤可能略有差异。
 
 ## 发布
 
 ```bash
-git tag v4.0.0
+git tag v9.7.0
 git push origin main --tags
-python scripts/publish_release.py --tag v4.0.0   # 自动上传 exe 到 GitHub Release
+python scripts/publish_release.py --tag v9.7.0   # 自动上传 exe 到 GitHub Release
 ```
 
 ## License

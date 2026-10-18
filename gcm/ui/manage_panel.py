@@ -126,6 +126,9 @@ class ManagePanel(QWidget):
         self.manage_search.textChanged.connect(self._on_manage_search)
         self.manage_table = QTableView()
         self.manage_table.setModel(self.manage_model)
+        self.manage_table.setAccessibleName("仓库管理表")
+        self.manage_table.setAccessibleDescription(
+            "每行一个已下载仓库：名称、平台、标签、健康分、大小与最近同步")
         # G47-1/5 健康 + 大小列（末两列，原 0-5 列语义不变）
         # 表头标签由 ManageModel.headerData 提供（G47-1/5 健康/大小列）
         self.manage_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -136,7 +139,7 @@ class ManagePanel(QWidget):
         self.manage_table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.manage_table.setSelectionMode(QTableView.SelectionMode.ExtendedSelection)
         self.manage_table.setAlternatingRowColors(False)
-        self.manage_table.setMinimumHeight(260)
+        self.manage_table.setMinimumHeight(180)
         self.manage_table.setContextMenuPolicy(Qt.ContextMenuPolicy.DefaultContextMenu)
         self.manage_table.installEventFilter(self)  # G46-6 键盘 Enter 打开详情
         self.manage_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -191,6 +194,10 @@ class ManagePanel(QWidget):
             pass
         # G47-5 懒加载磁盘大小
         self._start_size_loader()
+        try:
+            self.owner._manage_loaded = True   # G70：标记已加载，切页不重复拉取
+        except Exception:
+            pass
 
     # ------------------------------------------------------------ G03-1 搜索过滤
     def _on_manage_search(self, text: str) -> int:

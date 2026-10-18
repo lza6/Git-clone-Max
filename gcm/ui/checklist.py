@@ -67,7 +67,8 @@ class ChecklistDialog(QDialog):
     def __init__(self, status: dict[str, bool], parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr("开始使用清单"))
-        self.resize(560, 420)
+        from .layout import fit_dialog_to_screen
+        fit_dialog_to_screen(self, 560, 420, 460, 320)
         lay = QVBoxLayout(self)
 
         done = sum(1 for k, _t, _d, _a in ITEMS if status.get(k, False))

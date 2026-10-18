@@ -66,18 +66,21 @@
 | ADR-003 | 凭据加密落盘（DPAPI/Keyring/XOR 降级）+ redact 全出口打码 |
 | ADR-004 | 生态 agent 化：CLI --json 契约 + MCP 只读 + HTTP API 默认只读（显式 enable 才可写） |
 
-## 4. 模块规模基线（2026-10-13 用 `wc -l` 实测）
+## 4. 模块规模基线（2026-10-19 用 `wc -l` 实测）
 
 | 模块 | 行数 | 职责 |
 |------|------|------|
-| `gcm/ui/main_window.py` | 1742 | 主窗编排（G45-6 拆分后仍偏大，新 UI 逻辑落独立模块） |
-| `gcm/git/service.py` | 1170 | Git 操作全链路 |
-| `gcm/ui/settings_panel.py` | 899 | 设置 UI（含 G53 数据洞察组） |
-| `gcm/app/engine.py` | 888 | 调度/并发/进度/重试/会话 |
-| `gcm/db/repo_db.py` | 802 | SQLite 数据层 |
+| `gcm/ui/main_window.py` | 2624 | 主窗编排（已登记技术债；新 UI 逻辑落独立模块） |
+| `gcm/git/service.py` | 1740 | Git 操作全链路 |
+| `gcm/app/engine.py` | 976 | 调度/并发/进度/重试/会话 |
+| `gcm/ui/progress_table.py` | 800 | 进度表（delegate 已拆到 `progress_delegate.py`） |
+| `gcm/db/repo_db.py` | 799 | SQLite 数据层 |
+| `gcm/ui/settings_panel.py` | 720 | 设置 UI（分组构建器在 `settings_groups.py`） |
+| `gcm/ui/theme.py` | 565 | 语义 token + QSS 生成/校验 |
 
-> 上表 5 个文件**均超出项目硬上限 800 行**（见 `CLAUDE.md` §3），已登记在
-> 数据模型与迁移链的权威文档是 `docs/data-model.md`。行数会随迭代漂移 —— 引用前请现测。
+> 当前 **3 个**文件超项目硬上限 800 行（`main_window` / `service` / `engine`），
+> 已登记为显式接受的技术债（见 `CLAUDE.md` §6）。行数会随迭代漂移 —— 引用前请现测。
+> 数据模型与迁移链的权威文档是 `docs/data-model.md`。
 
 ## 5. 可观测性现状
 

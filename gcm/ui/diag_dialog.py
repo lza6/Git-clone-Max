@@ -28,7 +28,8 @@ class DiagReportDialog(QDialog):
     def __init__(self, title: str, body: str, copy_text: str = "", parent=None):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.resize(680, 460)
+        from .layout import fit_dialog_to_screen
+        fit_dialog_to_screen(self, 680, 460, 480, 340)
         self._copy_text = copy_text or body
 
         lay = QVBoxLayout(self)

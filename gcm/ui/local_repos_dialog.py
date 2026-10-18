@@ -36,8 +36,8 @@ class LocalReposDialog(QDialog):
                  max_depth: int = 2):
         super().__init__(parent)
         self.setWindowTitle("导入本地已有仓库")
-        self.resize(860, 560)
-        self.setMinimumSize(720, 420)
+        from .layout import fit_dialog_to_screen
+        fit_dialog_to_screen(self, 860, 560, 720, 420)
         self._db = db
         self._max_depth = max_depth
         self._rows: list[RepoInfo] = []

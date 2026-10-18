@@ -288,18 +288,40 @@ class TestProgressRowsMatchRepoWhileSorting(unittest.TestCase):
             _app.processEvents()
 
     def test_row_lookup_helper_used_by_all_progress_slots(self):
-        """静态守卫：三个进度槽都必须经 `_row_for` 反查，不得直接用 index 当行号。"""
+        """静态守卫：进度槽不得把 engine index 直接当行号。
+
+        G70 起进度更新走「index → 内存字典 → delegate 绘制时经列 0 的
+        UserRole+1 反查」，因此 `_on_worker_progress` / `_flush_progress_batch`
+        不再直接调用 `_row_for`；但**映射责任仍在**，且必须可验证：
+        - 直接写行/单元格的两个槽（result / detail）仍须 `_row_for`；
+        - 进度字典路径必须存在，且 delegate 必须按 UserRole+1 反查。
+        """
         src = (ROOT / "gcm/ui/progress_table.py").read_text(encoding="utf-8")
         tree = ast.parse(src)
-        bad = []
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef) and node.name in (
-                    "_on_worker_progress", "_on_worker_result", "_flush_detail_batch"):
-                body = ast.dump(node)
-                if "_row_for" not in body:
-                    bad.append(node.name)
-        self.assertEqual(bad, [], f"这些槽未按 engine index 反查真实行：{bad}")
-
+        bodies = {
+            node.name: ast.dump(node)
+            for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)
+        }
+        # G70：delegate 已拆到 progress_delegate.py，映射责任仍在其中
+        delegate_src = (ROOT / "gcm/ui/progress_delegate.py").read_text(encoding="utf-8")
+        delegate_tree = ast.parse(delegate_src)
+        delegate_bodies = {
+            node.name: ast.dump(node)
+            for node in ast.walk(delegate_tree) if isinstance(node, ast.FunctionDef)
+        }
+        for name in ("_on_worker_result", "_flush_detail_batch"):
+            self.assertIn("_row_for", bodies.get(name, ""),
+                          f"{name} 必须经 _row_for 反查真实行")
+        self.assertIn("_progress_batch", bodies.get("_on_worker_progress", ""),
+                      "_on_worker_progress 必须进合批路径（不得直接写行）")
+        self.assertIn("_progress_values", bodies.get("_flush_progress_batch", ""),
+                      "_flush_progress_batch 必须写进度字典")
+        percent_for = delegate_bodies.get("_percent_for", "")
+        self.assertIn("siblingAtColumn", percent_for,
+                      "delegate 必须从列 0 反查 engine index")
+        self.assertIn("UserRole", percent_for)
+        self.assertIn("Constant(value=1)", percent_for,
+                      "必须使用 UserRole + 1（行内 engine index）")
 
 # ============================================================ G69-2 / G69-3 / G69-4
 class TestLifecycleGuards(unittest.TestCase):

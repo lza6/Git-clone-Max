@@ -560,3 +560,40 @@ Light 下对比度不足）、校验条强制 `PlainText`（用户原文含 `<>`
 
 **路由结论**：项目内专用脚本与技能 > 项目测试工具（unittest/coverage/ruff/mypy）>
 项目 CLI/MCP > 通用工具。本轮无需联网安装任何技能。
+
+---
+
+## 16. G70 UI/UX 全面升级（2026-10-19 · v9.7.0）
+
+### 16.1 任务契约
+
+| 项 | 内容 |
+|----|------|
+| 目标 | 响应式窗口 / 性能 / 设计系统 / 无障碍 / 本地 API 五阶段闭环，不换技术栈、不做大幅重构 |
+| 验收 | ruff 0 · mypy Success · 定向回归全绿 · 快集全绿 · 真实 git E2E PASS · 500 行基准达标 · 文档/版本/证据同步 |
+| 授权 | 本地修改、测试、构建、提交推送、发布（用户本轮明确授权；禁止 force push） |
+
+### 16.2 子任务状态
+
+| ID | 子任务 | 状态 | 证据 |
+|----|--------|------|------|
+| G70-1 | 语义 token / 对比度 / QSS 拼写 / 缓存 / 字号派生 | Done | `test_g70_ui_upgrade` · `test_g46_theme` |
+| G70-2 | 窗口断点 / splitter / 对话框夹取 / 页签记忆 | Done | `layout.py` · `test_g70_ui_upgrade` |
+| G70-3 | 进度 delegate / 合批 / 动效限流 / 延迟加载 | Done | `scripts/bench_g70_ui.py` |
+| G70-4 | 无障碍名称 / 焦点环 / 空态 | Done | `test_g70_ui_upgrade` |
+| G70-5 | 本地 API 分页 / 只读连接 / 错误脱敏 | Done | `test_g70_ui_upgrade` · 并发压测 |
+| G70-6 | 版本 / README / 契约 / 验证记录 / evidence | Done | 本文件 · `docs/验证记录-2026-10-19.md` |
+| G70-7 | 独立审查（代码 + 安全） | Done | 代码审查第 2 轮 **Approve**（1 阻塞 + 3 Required 全部关闭）；安全审查 PASS（无 CRITICAL/HIGH） |
+| G70-8 | 快集 / 构建 / 发布 | 待执行 | §16.4 |
+
+### 16.3 关键实测
+
+- 500 行进度子控件：500 → **0**；500 次更新：5431ms → **5.3ms**。
+- API 30 并发 p50：6612ms → **1692ms**（SQL 分页 + 只读连接）。
+- 主按钮对比度：deep 2.53 → **7.49:1**；Nord 弱文本 2.82 → **4.80:1**。
+- 真实 git E2E：6/6 PASS。
+
+### 16.4 待回填
+
+- 最终快集：`Ran 1262 · failures=0 · errors=0 · skipped=3 · 覆盖 83%`（门禁 81）。
+- PyInstaller / portable zip / 健康检查 / Release v9.7.0：执行中。

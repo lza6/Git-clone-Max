@@ -26,7 +26,8 @@ from PyQt6.QtWidgets import (
 
 from ..models import RepoSpec, SyncResult, SyncStatus
 from . import main_window as _mw  # 兼容测试对 main_window.QMessageBox 等模块级 patch
-from .theme import PALETTE, LogLevel
+from .progress_delegate import DETAIL_ROLE, ProgressDelegate
+from .theme import LogLevel, current_palette
 
 
 class ProgressTable(QWidget):
@@ -43,6 +44,15 @@ class ProgressTable(QWidget):
         self._detail_timer.setInterval(300)
         self._detail_timer.timeout.connect(self._flush_detail_batch)
         self._progress_filter_text = ""
+        self._bulk_loading = False
+        # G70：进度值内存字典（engine index → percent），delegate 直接读取
+        self._progress_values: dict[int, int] = {}
+        # G70：进度更新合批（250ms）—— 32 并发时不再每个信号都触发一次视图更新
+        self._progress_batch: dict = {}
+        self._progress_timer = QTimer(self)
+        self._progress_timer.setSingleShot(True)
+        self._progress_timer.setInterval(250)
+        self._progress_timer.timeout.connect(self._flush_progress_batch)
         self._build_ui()
 
     @property
@@ -81,7 +91,14 @@ class ProgressTable(QWidget):
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setMinimumHeight(200)
+        self.table.setMinimumHeight(120)
+        self.table.setAccessibleName("下载进度表")
+        self.table.setAccessibleDescription(
+            "每行一个仓库：仓库名、进度、状态、本次动作、详情")
+        # G70：进度列改用 delegate 自绘（不再为每行创建 QProgressBar）
+        self._progress_delegate = ProgressDelegate(
+            self.table, values=self._progress_values)
+        self.table.setItemDelegateForColumn(1, self._progress_delegate)
         # G02-2 表头点击排序（状态列优先级：运行>等待>成功>冲突>失败>取消>跳过）
         self.table.setSortingEnabled(True)
         self.table.horizontalHeader().sortIndicatorChanged.connect(self._on_sort_changed)
@@ -90,7 +107,8 @@ class ProgressTable(QWidget):
         self.table.customContextMenuRequested.connect(self._progress_table_menu)
         v.addWidget(self.table, 3)
         # G36-5 下载中心空态引导：overlay 标签（绝对定位在表格上，有数据时隐藏）
-        self._empty_download = QLabel("⬇ 粘贴仓库地址开始下载\n（支持多行 / 拖入 txt 文件）")
+        self._empty_default_text = "⬇ 粘贴仓库地址开始下载\n（支持多行 / 拖入 txt 文件）"
+        self._empty_download = QLabel(self._empty_default_text)
         self._empty_download.setObjectName("muted")
         self._empty_download.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_download.setWordWrap(True)
@@ -104,6 +122,7 @@ class ProgressTable(QWidget):
         self.progress_filter = QLineEdit()
         self.progress_filter.setPlaceholderText("按仓库名过滤…")
         self.progress_filter.setClearButtonEnabled(True)
+        self.progress_filter.setAccessibleName("按仓库名过滤进度")
         self.progress_filter.textChanged.connect(self._schedule_progress_filter)
         row_tools.addWidget(self.progress_filter, 1)
         btn_pause_selected = QPushButton("⏸ 暂停选中")
@@ -122,22 +141,37 @@ class ProgressTable(QWidget):
         self.table.setRowCount(0)
         self.table.setRowCount(n)
         self.table.setSortingEnabled(was_sorting)
+        # G70：新批次清空进度值，避免旧值串到新行
+        self._progress_values.clear()
+        self._progress_batch.clear()
         # G46-4 批次总览重置
         self._reset_batch_overview(n)
-        # 过滤状态保持
-        self._filter_progress_rows(getattr(self, "_progress_filter_text", ""))
-        # G36-5 空态引导：无行 → 显示 overlay
-        self._update_empty_download()
+        # G70：行 item 尚未建好，不能在这里按名字过滤（全部判空 → 新行永久隐藏）。
+        # 过滤统一推迟到 end_bulk()（行已建好之后）；这里只处理 0 行空态。
+        if n == 0:
+            self._update_empty_download(visible_rows=0)
+        elif not self._progress_filter_text.strip():
+            self._update_empty_download(visible_rows=n)
 
-    def _update_empty_download(self):
-        """G36-5 下载中心空态：进度表无可见行时显示引导 overlay。"""
+    def _update_empty_download(self, visible_rows: int | None = None):
+        """G36-5 下载中心空态：无可见行时显示引导 overlay。
+
+        G70：过滤后可能「有行但全部隐藏」—— 原实现只看 rowCount()，
+        于是搜不到结果时表格一片空白却没有提示。
+        """
         try:
             ov = getattr(self, "_empty_download", None)
             if ov is None:
                 return
-            visible = self.table.rowCount() == 0
-            ov.setVisible(visible)
-            if visible:
+            if visible_rows is None:
+                visible_rows = 0 if self.table.rowCount() == 0 else 1
+            show = visible_rows == 0
+            filtering = bool(getattr(self, "_progress_filter_text", "").strip())
+            ov.setText("没有匹配的仓库\n（清空搜索框查看全部）"
+                       if (show and filtering and self.table.rowCount() > 0)
+                       else self._empty_default_text)
+            ov.setVisible(show)
+            if show:
                 ov.setGeometry(self.table.rect())
                 ov.raise_()
         except Exception:
@@ -145,31 +179,50 @@ class ProgressTable(QWidget):
 
     def _add_table_row(self, index, spec: RepoSpec):
         # 关闭排序再插入行，保证 index 与行号对齐（引擎回调按 index 定位）
-        was_sorting = self.table.isSortingEnabled()
+        bulk = bool(getattr(self, "_bulk_loading", False))
+        was_sorting = False if bulk else self.table.isSortingEnabled()
         if was_sorting:
             self.table.setSortingEnabled(False)
+        pal = current_palette()
         name_item = QTableWidgetItem(spec.folder_name)
         name_item.setToolTip(spec.url_https)
         name_item.setData(Qt.ItemDataRole.UserRole, spec.folder_name)  # 供过滤
         # G21-1：行内保存 engine index，排序/过滤后暂停仍能定位正确任务
         name_item.setData(Qt.ItemDataRole.UserRole + 1, int(index))
         self.table.setItem(index, 0, name_item)
-        prog = QProgressBar()
-        prog.setRange(0, 0)
-        prog.setFormat("%p%")
-        self.table.setCellWidget(index, 1, prog)
+        # G70：进度列只存数据，由 ProgressDelegate 绘制（0 个 QWidget/行）
+        prog_item = QTableWidgetItem("")
+        prog_item.setData(DETAIL_ROLE, "")
+        prog_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table.setItem(index, 1, prog_item)
         status_item = QTableWidgetItem("等待中")
         status_item.setData(Qt.ItemDataRole.UserRole, "pending")  # 供排序
-        status_item.setForeground(QColor(PALETTE["text_dim"]))
+        status_item.setForeground(QColor(pal["text_dim"]))
         self.table.setItem(index, 2, status_item)
         act_item = QTableWidgetItem("—")
-        act_item.setForeground(QColor(PALETTE["text_dim"]))
+        act_item.setForeground(QColor(pal["text_dim"]))
         self.table.setItem(index, 3, act_item)
         msg_item = QTableWidgetItem("—")
-        msg_item.setForeground(QColor(PALETTE["text_dim"]))
+        msg_item.setForeground(QColor(pal["text_dim"]))
         self.table.setItem(index, 4, msg_item)
         if was_sorting:
             self.table.setSortingEnabled(True)
+
+    def begin_bulk(self) -> None:
+        """G70：批量插行前关闭排序，避免每插一行都触发一次重排。"""
+        self._bulk_loading = True
+        self._bulk_sorting_was = self.table.isSortingEnabled()
+        if self._bulk_sorting_was:
+            self.table.setSortingEnabled(False)
+
+    def end_bulk(self) -> None:
+        """G70：批量插行结束，恢复排序并按当前关键字重新过滤。"""
+        self._bulk_loading = False
+        if getattr(self, "_bulk_sorting_was", False):
+            self.table.setSortingEnabled(True)
+        self._bulk_sorting_was = False
+        if self._progress_filter_text.strip():
+            self._filter_progress_rows(self._progress_filter_text)
 
     # --------------------------------------------------------- G02-1/2 搜索与排序
 
@@ -181,11 +234,18 @@ class ProgressTable(QWidget):
             self._pf_timer = QTimer(self)
             self._pf_timer.setSingleShot(True)
             self._pf_timer.setInterval(200)
-            self._pf_timer.timeout.connect(lambda: self._filter_progress_rows(text))
+            # G70 修复：原实现用 lambda 捕获**首次** text，之后所有输入都按第一段
+            # 文本过滤；且 lambda 捕获 self 形成引用环。改绑定方法读最新状态。
+            self._pf_timer.timeout.connect(self._apply_pending_progress_filter)
         self._pf_timer.start()
+
+    def _apply_pending_progress_filter(self):
+        """定时器到期：按当前输入框文本应用过滤。"""
+        self._filter_progress_rows(getattr(self, "_progress_filter_text", ""))
 
     def _filter_progress_rows(self, text=""):
         """按仓库名校验过滤进度表行；返回可见行数（供测试）。"""
+        self._progress_filter_text = text or ""
         q = (text or "").strip().lower()
         hidden = 0
         for r in range(self.table.rowCount()):
@@ -196,7 +256,10 @@ class ProgressTable(QWidget):
                 hidden += 1
             else:
                 self.table.showRow(r)
-        return self.table.rowCount() - hidden
+        visible = self.table.rowCount() - hidden
+        # G70：过滤到 0 行时也要给出空态提示
+        self._update_empty_download(visible_rows=visible)
+        return visible
 
     def _on_sort_changed(self, section, order):
         """状态列排序：用 UserRole 存的优先级；其余列默认字典序。"""
@@ -343,16 +406,35 @@ class ProgressTable(QWidget):
 
     @pyqtSlot(int, str)
     def _on_worker_progress(self, index, percent):
-        row = self._row_for(index)
-        if row is None:
+        if percent is None or percent == "":
             return
-        bar = self.table.cellWidget(row, 1)
-        if isinstance(bar, QProgressBar) and percent:
+        try:
+            value = int(percent)
+        except (TypeError, ValueError):
+            return
+        # 0 是合法进度（重跑仓库从 0 开始），不能按 falsy 丢弃
+        self._progress_batch[int(index)] = max(0, min(100, value))
+        # 单次定时器：每个信号重置 250ms 窗口，空闲时不再周期唤醒
+        self._progress_timer.start()
+
+    def _flush_progress_batch(self):
+        """G70：批量写进度（只更新内存字典 + 重绘视口，不逐行 setData）。
+
+        engine index 与行号的映射由 delegate 在绘制时经列 0 的 UserRole+1 反查，
+        因此排序/过滤后仍指向正确仓库。
+        """
+        batch, self._progress_batch = self._progress_batch, {}
+        if not batch:
+            return
+        for idx, pct in batch.items():
             try:
-                bar.setRange(0, 100)
-                bar.setValue(int(percent))
-            except Exception:
-                pass
+                self._progress_values[int(idx)] = int(pct)
+            except (TypeError, ValueError):
+                continue
+        try:
+            self.table.viewport().update()
+        except Exception:
+            pass
 
     # 高频进度详情（速率/对象数）节流：合并为 300ms 批量刷新，32 并发不刷屏主线程
 
@@ -372,12 +454,9 @@ class ProgressTable(QWidget):
             row = self._row_for(idx)          # G69-5：排序态下 index ≠ 行号
             if row is None:
                 continue
-            w = self.table.cellWidget(row, 1)
-            if isinstance(w, QProgressBar):
-                try:
-                    w.setFormat(f"%p%  {text}")
-                except Exception:
-                    pass
+            item = self.table.item(row, 1)
+            if item is not None:
+                item.setData(DETAIL_ROLE, str(text))
 
     @pyqtSlot(int, SyncResult)
     def _on_worker_result(self, index, res: SyncResult):
@@ -402,24 +481,32 @@ class ProgressTable(QWidget):
             finally:
                 if was_sorting:
                     self.table.setSortingEnabled(True)
+            # G70：补行后按当前过滤词重新可见性（否则新行可能状态错误）
+            if self._progress_filter_text.strip():
+                self._filter_progress_rows(self._progress_filter_text)
         # G69-5：**始终**按行内 engine index 反查真实行 —— 排序开启时行号 ≠ index，
         # 直接用 index 会把状态/动作/详情写到别的仓库那一行（实测 300/300 错位）。
         row = self._row_for(index)
         if row is None or not (0 <= row < self.table.rowCount()):
             return  # 补行失败 → 无可写目标，直接放弃（异常路径已留痕）
-        bar = self.table.cellWidget(row, 1)
-        if isinstance(bar, QProgressBar):
-            bar.setRange(0, 1)
-            bar.setValue(1)
+        bar = self.table.item(row, 1)
+        if bar is not None:
+            # G70：终态优先 —— 清掉可能还在批里的旧进度，避免随后被覆盖
+            try:
+                self._progress_batch.pop(int(index), None)
+                self._progress_values[int(index)] = 100
+            except (TypeError, ValueError):
+                pass
+        pal = current_palette()
         status_map = {
-            SyncStatus.SUCCESS: (PALETTE["accent2"], "成功 ✓"),
-            SyncStatus.FAILED: (PALETTE["error"], "失败 ✕"),
-            SyncStatus.CANCELLED: (PALETTE["warning"], "已取消 ⊘"),
-            SyncStatus.CONFLICT: (PALETTE["warning"], "冲突 ⚠"),
-            SyncStatus.SKIPPED: (PALETTE["text_dim"], "跳过 →"),
-            SyncStatus.RUNNING: (PALETTE["accent"], "更新中…"),
+            SyncStatus.SUCCESS: (pal["success"], "成功 ✓"),
+            SyncStatus.FAILED: (pal["error"], "失败 ✕"),
+            SyncStatus.CANCELLED: (pal["warning"], "已取消 ⊘"),
+            SyncStatus.CONFLICT: (pal["warning"], "冲突 ⚠"),
+            SyncStatus.SKIPPED: (pal["text_dim"], "跳过 →"),
+            SyncStatus.RUNNING: (pal["accent"], "更新中…"),
         }
-        color, label = status_map.get(res.status, (PALETTE["text"], str(res.status.value)))
+        color, label = status_map.get(res.status, (pal["text"], str(res.status.value)))
         # G22-4：托盘计数（成功/失败分流；冲突/失败归 bad，其余终态归 ok）
         try:
             if getattr(self.owner, "tray", None) is not None:
@@ -489,11 +576,16 @@ class ProgressTable(QWidget):
             st = self.table.item(index, 2)
             if st is None:
                 return
-            flash = PALETTE["accent2"] if status == SyncStatus.SUCCESS else PALETTE["error"]
+            # G70：动效并发上限 8（32 个任务同时完成时不再创建 32 个动画）
+            anims = getattr(self.owner, "_row_anims", None)
+            if anims is not None and len(anims) >= 8:
+                return
+            pal = current_palette()
+            flash = pal["success"] if status == SyncStatus.SUCCESS else pal["error"]
             start_color = QColor(flash)
-            base_color = QColor(PALETTE["panel"])
+            base_color = QColor(pal["panel"])
             anim = QVariantAnimation(self)
-            anim.setDuration(1200)
+            anim.setDuration(600)
             anim.setStartValue(start_color)
             anim.setEndValue(base_color)
             anim.valueChanged.connect(
@@ -706,4 +798,3 @@ class ProgressTable(QWidget):
         except Exception:
             pass
         return False
-

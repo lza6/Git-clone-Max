@@ -76,6 +76,14 @@ class _ApiHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _log_server_error(self, prefix: str, exc: Exception) -> None:
+        """G70：内部异常只写服务端日志，不回显给回环客户端（可能含路径/SQL）。"""
+        try:
+            from .app.applog import warn as _warn
+            _warn(f"[http_api] {prefix}：{exc}")
+        except Exception:
+            pass
+
     def _host_is_loopback(self) -> bool:
         """请求的 Host 头是否解析到回环（G69-8）。
 
@@ -153,9 +161,15 @@ class _ApiHandler(BaseHTTPRequestHandler):
         qs = parse_qs(parsed.query)
         try:
             from .db.repo_db import Database
-            db = Database(server.data_dir / "repos.db")
+            # G70：读端点走只读连接，跳过建表/迁移写事务（并发读不再被串行化）。
+            # 首次运行 DB 尚不存在时 mode=ro 会失败 → 回退到普通连接建库。
+            try:
+                db = Database(server.data_dir / "repos.db", readonly=True)
+            except Exception:
+                db = Database(server.data_dir / "repos.db")
         except Exception as e:  # noqa: BLE001
-            self._error(-32603, f"打开数据库失败：{e}", status=500)
+            self._log_server_error("打开数据库失败", e)
+            self._error(-32603, "打开数据库失败", status=500)
             return
         try:
             if parsed.path == "/version":
@@ -163,8 +177,32 @@ class _ApiHandler(BaseHTTPRequestHandler):
                                  "readonly": not server.allow_mutate})
             elif parsed.path == "/api/repos":
                 host = qs.get("host", [None])[0]
-                rows = [_sanitize_row(r) for r in db.list_repos(host=host)]
-                self._send_json({"repos": rows, "count": len(rows)})
+                # G70：分页（默认 500，最大 5000）—— 仓库数上千时避免一次性序列化
+                try:
+                    limit_raw = (qs.get("limit") or ["500"])[0]
+                    offset_raw = (qs.get("offset") or ["0"])[0]
+                    # G70：先限长度再 int() —— Python 3.10 没有 4300 位上限，
+                    # 超长纯数字查询会触发 O(n²) 十进制转换并持有 GIL。
+                    if len(str(limit_raw)) > 12 or len(str(offset_raw)) > 12:
+                        self._error(2, "limit/offset 过大")
+                        return
+                    limit = int(limit_raw)
+                    offset = int(offset_raw)
+                except (TypeError, ValueError):
+                    self._error(2, "limit/offset 必须是整数")
+                    return
+                if not (1 <= limit <= 5000):
+                    self._error(2, "limit 必须在 1..5000 之间")
+                    return
+                if offset < 0:
+                    self._error(2, "offset 必须 ≥0")
+                    return
+                # G70：分页下推到 SQL（避免每次取全表再切片；5000 仓时差一个数量级）
+                page, total = db.list_repos_page(host=host, limit=limit, offset=offset)
+                rows = [_sanitize_row(r) for r in page]
+                self._send_json({"repos": rows, "count": len(rows), "total": total,
+                                 "limit": limit, "offset": offset,
+                                 "truncated": total > offset + len(rows)})
             elif parsed.path == "/api/repos/search":
                 q = (qs.get("q") or [""])[0].strip().lower()
                 if not q:
@@ -221,7 +259,8 @@ class _ApiHandler(BaseHTTPRequestHandler):
             else:
                 self._error(404, f"未知路径：{parsed.path}", status=404)
         except Exception as e:  # noqa: BLE001
-            self._error(-32603, f"处理失败:{e}", status=500)
+            self._log_server_error("处理失败", e)
+            self._error(-32603, "处理失败", status=500)
         finally:
             db.close()
 

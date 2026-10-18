@@ -22,10 +22,17 @@ class TestDesignTokens(unittest.TestCase):
 
     def test_all_palettes_share_layout(self):
         from gcm.ui.theme import PALETTES
-        keys = {"bg", "panel", "panel2", "border", "accent", "accent2",
-                "warning", "error", "text", "text_dim", "console", "console_fg"}
+        required = {"bg", "panel", "panel2", "border", "border_strong", "accent",
+                    "accent2", "on_accent", "success", "warning", "error",
+                    "text", "text_dim", "console", "console_fg"}
+        key_set = None
         for name, pal in PALETTES.items():
-            self.assertEqual(set(pal.keys()), keys, f"主题 {name} 色键不一致")
+            self.assertTrue(required.issubset(set(pal)), f"主题 {name} 缺语义色键")
+            if key_set is None:
+                key_set = set(pal.keys())
+            else:
+                self.assertEqual(set(pal.keys()), key_set,
+                                 f"主题 {name} 色键与其它主题不一致")
 
 
 class TestStateQss(unittest.TestCase):

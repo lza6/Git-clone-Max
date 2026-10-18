@@ -27,3 +27,9 @@
 | `gcm/mcp_server.py` | stdout/stderr 强制 UTF-8；工具异常转 JSON-RPC 错误 | v9.4.0 | 非 UTF-8 控制台不再崩 |
 | `scripts/ci_run_fast.py` | 逐模块落痕 + 失败点名 + faulthandler；**移除 gc.disable** | v9.4.0–v9.4.5 | 改测试面/覆盖率时先读它 |
 | `.github/workflows/ci.yml` | `perf-baseline` job；覆盖率摘要步骤加 continue-on-error | v9.4.0 | 硬件敏感用例由独立 job 承接 |
+| `gcm/ui/theme.py` | **语义色 on_accent/border_strong/success；QSS 缓存；字号派生；高亮器动态取色** | v9.7.0 | 改 token 会牵动全部 QSS；对比度测试在 `test_g70_ui_upgrade` |
+| `gcm/ui/progress_table.py` | **进度 delegate 拆分到 `progress_delegate.py`；250ms 合批；内存字典；批量关排序** | v9.7.0 | 进度不逐行 `setData`；engine index 经列 0 `UserRole+1` 反查；过滤推迟到 `end_bulk` |
+| `gcm/ui/layout.py` | 新增断点/夹取/对话框适配纯函数 | v9.7.0 | 修改窗口最小值先看 `test_g70_ui_upgrade.TestWindowMinimum` |
+| `gcm/ui/main_window.py` | **顶部可滚动区、页签记忆/快捷键、设置导航、管理页延迟加载、`_rehighlight_log`** | v9.7.0 | 管理页首次激活才加载仓库；新增 UI 逻辑仍应落独立模块 |
+| `gcm/db/repo_db.py` | **`list_repos_page` + `readonly=True` 只读快路径** | v9.7.0 | 只读连接会探测 `favorite` 列，旧库回退可写迁移 |
+| `gcm/http_api.py` | `/api/repos` 分页 + 只读连接 + 通用 500 错误 | v9.7.0 | 返回 `count/total/limit/offset/truncated`；契约见 `docs/agent-contract.md` |

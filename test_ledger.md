@@ -30,6 +30,10 @@
 | S13 | 归档 | `git/archive.py` | 文件系统 | 失败不静默；路径不越界 | `test_g56*` / `test_archive*` |
 | S14 | i18n | `gcm/i18n/zh.py` / `en.py` | `tr()` | 新增 key 必须两边都有；缺失回退中文 | `test_g67_docs_freshness` 相关用例 |
 | S15 | 镜像备援 → git | `app/mirrors.py` · `app/mirror_probe.py` | `git/service.py` 的 clone/fetch | 仅 HTTPS + 无凭据（含全局 `http.*extraHeader`）；探测用 `git ls-remote`（**不能用 HTTP HEAD**）；源站永远最后；**origin 永远是源站**（镜像只记 `gcm.mirror`）；认证头 URL 作用域；更新回退先探测、`retries=0` | `test_g58_mirror_failover`（43，含真实 git E2E） |
+| S16 | 主题 token → QSS/自绘控件 | `ui/theme.py` | 全部 UI | 语义色 `on_accent`/`border_strong`/`success`；文本 ≥4.5、边界 ≥3；自绘控件取 `current_palette()` | `test_g70_ui_upgrade.TestSemanticContrast/TestQssContract` · `test_g46_theme` |
+| S17 | 进度数据 → delegate | `ui/progress_table.py` | `ProgressDelegate` | engine index 经列 0 `UserRole+1` 反查；250ms 合批；不逐行 `setData`；0 个子控件 | `test_g70_ui_upgrade.TestProgressDelegate` · `test_progress_ui` · `test_g69_regressions.TestProgressRowsMatchRepoWhileSorting` |
+| S18 | 窗口尺寸 → 布局 | `ui/layout.py` | `MainWindow` / 8 个对话框 | 逻辑像素断点；按 `availableGeometry` 夹取；Compact 折叠；对话框 90%×85% | `test_g70_ui_upgrade.TestLayoutBreakpoints` |
+| S19 | HTTP 分页 → SQLite | `http_api.py` | `db/repo_db.list_repos_page` | `limit` 1..5000、`offset≥0`；`total/truncated`；只读连接跳过建表/迁移；错误不回显路径 | `test_g70_ui_upgrade.TestRepoDbPaging/TestReadonlyDatabase/TestHttpApiPaging` · `test_g56_api*` |
 
 ---
 
@@ -39,9 +43,9 @@
 
 | 项 | 命令 | 结果 | 时间 |
 |----|------|------|------|
-| ruff | `python -m ruff check gcm` | **All checks passed** | 2026-10-17 |
-| mypy | `python -m mypy gcm` | **Success**（66 文件） | 2026-10-17 |
-| 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 1211 · failures=0 · errors=0 · skipped=3 · 原生崩溃 0 · 覆盖 82%` | 2026-10-18（v9.6.1） |
+| ruff | `python -m ruff check gcm` | **All checks passed** | 2026-10-19 |
+| mypy | `python -m mypy gcm` | **Success**（70 文件） | 2026-10-19 |
+| 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 1262 · failures=0 · errors=0 · skipped=3 · 原生崩溃 0 · 覆盖 83%` | 2026-10-19（v9.7.0） |
 | 连跑稳定性 | 同一命令 ×3 | `1115 / 1115 / 1122`，0 崩溃 | 2026-10-17（已移除 GC 安全网） |
 | CI | GitHub Actions | 7/7 job 绿（windows/ubuntu/macos + e2e + fast + perf + slow） | 2026-10-17 |
 

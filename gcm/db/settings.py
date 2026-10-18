@@ -275,6 +275,7 @@ class Settings:
         "remotion-dev/skills", "slidevjs/slidev", "openmeterio/openmeter",
     )
     geometry: str = ""                # G36-4 主窗口几何（"WxH+X+Y"，记忆上次窗口尺寸/位置）
+    last_tab: int = 0                 # G70 上次使用的页签（0 下载 / 1 管理 / 2 设置）
     animations: bool = True           # G36-6 完成动效（成功绿/失败红背景色 1.2s 消隐；低配/offscreen 自动关）
     prefers_reduced_motion: bool = False  # G46-8 减少动态效果（关闭完成动效与 hover 过渡）
     accent_preset: str = "blue"           # G46-7 强调色预设（blue/violet/teal）

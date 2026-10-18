@@ -210,15 +210,17 @@ docs/        工程/产品/契约文档
   **不得**用 `skip`/重试把它「弄绿」。
 - **CI 未锁定 PyQt6 版本**：主矩阵用 `pip install PyQt6`（取最新），
   而 `requirements-build.txt` 锁了 ruff/mypy/coverage/pyinstaller。上游发新版会让 CI 行为漂移。
-- **代码规模现状（2026-10-17 实测）**：仍为 **3 个**文件超 800 行 —— `main_window.py` **2004**、
-  `service.py` **1237**、`engine.py` **938**（`repo_db.py` **762**、`settings_groups.py` **637**、
-  `settings_panel.py` **511** 均在 800 线内）；8 个函数超 100 行（最大 `service._update` 178 行）。
-  `build_settings_ui` 曾达 432 行，已拆为 `settings_groups.py` 的 7 个构建器。
+- **代码规模现状（2026-10-19 实测）**：仍为 **3 个**文件超 800 行 —— `main_window.py` **2624**、
+  `service.py` **1740**、`engine.py` **976**（`progress_table.py` **800**、`repo_db.py` **799**、
+  `settings_panel.py` **720**、`settings_groups.py` **679**、`theme.py` **565** 均在 800 线内）；
+  8 个函数超 100 行（最大 `service._update` 178 行）。
+  `build_settings_ui` 曾达 432 行，已拆为 `settings_groups.py` 的 7 个构建器；
+  G70 又把进度 delegate 拆到 `progress_delegate.py`（65 行）。
   **这是已登记的、被显式接受的技术债，不是缺陷**：`main_window.py` 的体量在
   「拆分收益 < 回归风险」区间，一次大规模 UI 重排会危及发布稳定性。
   约束是**增量的**：新增 UI 逻辑一律落独立模块（既有 `failure_panel` / `onboarding` /
-  `progress_table` / `settings_panel` / `main_window_tasks` 先例），不得再往
-  `main_window.py` 里塞。下次动这几块时**顺手**把所在函数拆小。
+  `progress_table` / `progress_delegate` / `layout` / `settings_panel` / `main_window_tasks` 先例），
+  不得再往 `main_window.py` 里塞。下次动这几块时**顺手**把所在函数拆小。
 - **覆盖率门禁是快集口径**（Windows 81 / POSIX 80），不是全量口径；POSIX 低 1 个点源于 `msvcrt`/`schtasks`/`winreg` 分支不可执行。
 - **`gcm/ui/*.py` 有 E501 豁免**（纯中文文案长行，East-Asian 宽度计数）；`gcm/i18n/*.py` 为生成文件同样豁免。
 - **CI 只在 Linux 上跑慢集**：Windows 特有的编码/路径问题必须本机验证，别只信 CI 绿灯。
