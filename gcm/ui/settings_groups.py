@@ -326,14 +326,17 @@ def _network_rows_mirror(owner: MainWindow, settings: Settings, f3: QFormLayout)
 
     owner.ck_mirror_presets = QCheckBox(tr("使用内置国内镜像（GitHub）"))
     owner.ck_mirror_presets.setChecked(bool(getattr(settings, "mirror_use_presets", True)))
+    from ..app.mirrors import PRESET_SCANNED_AT
     owner.ck_mirror_presets.setToolTip(tr(
         "内置 4 个实测可用的 GitHub 镜像（第三方服务）。"
-        "配置了令牌/主机凭据时不会走镜像，避免凭据泄漏。"))
+        "配置了令牌/主机凭据时不会走镜像，避免凭据泄漏。")
+        + "（实测日期 " + PRESET_SCANNED_AT + "）")
     owner.ck_mirror_presets.toggled.connect(owner._save_mirror_presets)
-    owner.ck_mirror_fallback = QCheckBox(tr("镜像失败自动回退源站"))
+    owner.ck_mirror_fallback = QCheckBox(tr("镜像失败自动重试（含回退源站）"))
     owner.ck_mirror_fallback.setChecked(bool(getattr(settings, "mirror_fallback", True)))
     owner.ck_mirror_fallback.setToolTip(tr(
-        "镜像不可用/没有该仓库时改用 github.com 原地址重试（可能较慢，但不会失败）"))
+        "镜像失败时在其它镜像/源站之间重试；关闭后仍会在镜像全不可用时直连源站，"
+        "只是不再额外重试"))
     owner.ck_mirror_fallback.toggled.connect(owner._save_mirror_fallback)
     _mir_lay = QHBoxLayout()
     _mir_lay.addWidget(owner.ck_mirror_presets)
@@ -344,6 +347,15 @@ def _network_rows_mirror(owner: MainWindow, settings: Settings, f3: QFormLayout)
         "把可用镜像按速度写回上面的输入框"))
     owner.btn_mirror_probe.clicked.connect(owner._probe_mirrors)
     _mir_lay.addWidget(owner.btn_mirror_probe)
+    owner.spin_mirror_timeout = QSpinBox()
+    owner.spin_mirror_timeout.setRange(3, 60)
+    owner.spin_mirror_timeout.setSuffix(" s")
+    owner.spin_mirror_timeout.setValue(
+        int(getattr(settings, "mirror_probe_timeout", 8) or 8))
+    owner.spin_mirror_timeout.setToolTip(tr("镜像连通性探测超时；网络很慢时可调大"))
+    owner.spin_mirror_timeout.valueChanged.connect(owner._save_mirror_timeout)
+    _mir_lay.addWidget(QLabel(tr("探测超时")))
+    _mir_lay.addWidget(owner.spin_mirror_timeout)
     _mir_lay.addStretch()
     f3.addRow(tr("镜像备援："), _mir_lay)
 

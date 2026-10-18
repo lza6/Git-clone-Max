@@ -34,7 +34,9 @@ class TestHeaderMapping(unittest.TestCase):
         # 找到 http.extraHeader 的值
         vals = {env[f"GIT_CONFIG_KEY_{i}"]: env.get(f"GIT_CONFIG_VALUE_{i}")
                 for i in range(int(env["GIT_CONFIG_COUNT"]))}
-        self.assertEqual(vals["http.extraHeader"], "Authorization: Bearer tok123")
+        header = next(v for k, v in vals.items()
+                      if k.startswith("http.https://") and k.endswith("/.extraHeader"))
+        self.assertEqual(header, "Authorization: Bearer tok123")
 
     def test_private_token(self):
         svc = _svc(hat={"mygit.example.com": "private_token"})
@@ -42,7 +44,9 @@ class TestHeaderMapping(unittest.TestCase):
         env = svc._env()
         vals = {env[f"GIT_CONFIG_KEY_{i}"]: env.get(f"GIT_CONFIG_VALUE_{i}")
                 for i in range(int(env["GIT_CONFIG_COUNT"]))}
-        self.assertEqual(vals["http.extraHeader"], "PRIVATE-TOKEN: tok123")
+        header = next(v for k, v in vals.items()
+                      if k.startswith("http.https://") and k.endswith("/.extraHeader"))
+        self.assertEqual(header, "PRIVATE-TOKEN: tok123")
 
     def test_basic_base64(self):
         import base64
@@ -51,8 +55,10 @@ class TestHeaderMapping(unittest.TestCase):
         env = svc._env()
         vals = {env[f"GIT_CONFIG_KEY_{i}"]: env.get(f"GIT_CONFIG_VALUE_{i}")
                 for i in range(int(env["GIT_CONFIG_COUNT"]))}
+        header = next(v for k, v in vals.items()
+                      if k.startswith("http.https://") and k.endswith("/.extraHeader"))
         expect = "Authorization: Basic " + base64.b64encode(b"tok123").decode("ascii")
-        self.assertEqual(vals["http.extraHeader"], expect)
+        self.assertEqual(header, expect)
 
     def test_host_not_registered_no_header(self):
         svc = _svc(mapped="")  # host_tokens 无该 host

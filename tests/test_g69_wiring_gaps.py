@@ -335,6 +335,66 @@ class TestStarImportThread(_WindowCase):
             dlg.assert_not_called()
 
 
+class TestWorkerRebuildKeepsConfig(unittest.TestCase):
+    """G69-21：depth 不一致触发 GitService 重建时，不得丢掉凭据/LFS/镜像等配置。"""
+
+    def test_rebuild_carries_credentials_and_mirror(self):
+        from gcm.app.worker import CloneWorker, TaskPayload
+        from gcm.models import RepoSpec, SyncResult, SyncStatus
+
+        class _StubSvc:
+            def __init__(self):
+                self.root = "."
+                self.on_line = None
+                self.cancelled = lambda: False
+                self.fetch_timeout = 300
+                self.clone_timeout = 600
+                self.retries = 2
+                self._backoff = (1.0,)
+                self.proxy = ""
+                self.fetch_depth = 0
+                self.unshallow = False
+                self.token = "ghp_secret"
+                self.host_tokens = {"gitlab.com": "glpat"}
+                self.host_auth_types = {"*": "bearer"}
+                self._ssh_key = "id"
+                self._lfs_enabled = True
+                self._submodule = True
+                self._post_clone_hook = "echo hi"
+                self.rate_limit_kbps = 100
+                self.force_ipv4 = True
+                self.precheck_remote = True
+                self.single_branch = True
+                self._mirror = False
+                self.mirror_prefix = {"github.com": ("https://m",)}
+                self.mirror_use_presets = True
+                self.mirror_fallback = True
+                self.mirror_probe_timeout = 8.0
+
+            def sync(self, spec):
+                return SyncResult(spec=spec, status=SyncStatus.SUCCESS)
+
+        captured = {}
+
+        class _CaptureSvc(_StubSvc):
+            def __init__(self, root, **kw):
+                super().__init__()
+                captured.update(kw)
+                self.root = root
+
+        spec = RepoSpec(owner="a", repo="b", url_https="https://github.com/a/b.git",
+                        folder_name="a__b")
+        with mock.patch("gcm.app.worker.GitService", _CaptureSvc):
+            w = CloneWorker(0, TaskPayload(spec=spec), _StubSvc(), None, None,
+                            fetch_depth=3)
+            w.run()
+        self.assertEqual(captured.get("token"), "ghp_secret")
+        self.assertEqual(captured.get("host_tokens"), {"gitlab.com": "glpat"})
+        self.assertEqual(captured.get("mirror_prefix"), {"github.com": ("https://m",)})
+        self.assertTrue(captured.get("lfs_enabled"))
+        self.assertEqual(captured.get("rate_limit_kbps"), 100)
+
+
 class TestStarredImport(_WindowCase):
     def test_dedup_and_append(self):
         self.win.repo_input.setPlainText("https://github.com/a/b")
@@ -342,6 +402,13 @@ class TestStarredImport(_WindowCase):
         text = self.win.repo_input.toPlainText()
         self.assertEqual(text.count("c/d"), 1, "重复项只应写入一次")
         self.assertTrue(text.startswith("https://github.com/a/b"))
+
+    def test_dedup_normalizes_url_forms(self):
+        """输入区已有完整 URL 时，Star 返回的 `owner/repo` 不应重复追加。"""
+        self.win.repo_input.setPlainText("https://github.com/a/b")
+        self.win._on_starred_fetched(["a/b", "A/B.git"], "")
+        self.assertEqual(self.win.repo_input.toPlainText().strip(),
+                         "https://github.com/a/b")
 
     def test_error_is_logged_and_no_crash(self):
         self.win._on_starred_fetched([], "HTTP 403")

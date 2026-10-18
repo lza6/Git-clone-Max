@@ -1,13 +1,34 @@
 # 已知问题与边界（known-issues）
 
 > 只记录**真实存在**且尚未解决的问题。修掉一个就删一条。
-> 最后更新：2026-10-17（计划文档二次审计后）
+> 最后更新：2026-10-18（G69-21 独立审查整改后）
 
 ## 未闭环功能
 
-| 项 | 现状 | 影响 | 建议 |
-|----|------|------|------|
-| `G53-1` 雷达图 / `health_card` 列 | 统计中心有**派生视图**（6 维），但未落 `health_card` 列、无雷达图 | 用户能看到评分，但拿不到可查询的历史列 | 若要落列，需 DB 迁移 + 回填；先确认产品是否需要（T3） |
+（当前无。所有登记项均已关闭或判定不适用。）
+
+## G69-21 独立审查整改（2026-10-18，v9.6.0）
+
+> 对抗式审查发现 2 个阻塞项 + 8 项 Required；已全部修复并有守卫。
+
+| # | 问题 | 修法 | 证据 |
+|---|------|------|------|
+| 1 | **令牌随 origin 泄漏给镜像**（CRITICAL）：镜像克隆把 origin 固定成镜像地址，之后配 token 的 fetch 会把全局 `http.extraHeader` 发给第三方 | 认证头改 URL 作用域；镜像克隆后 origin 立即回源站；旧仓库更新时自动规范化；全局/系统 `http.*extraHeader` 存在时禁用镜像 | `test_g58_mirror_failover`（origin 恢复 / 规范化 / 全局凭据门禁） |
+| 2 | 「测速并排序」按钮必定 TypeError（`clicked(bool)` 传给无参槽） | 槽签名加 `checked=False` | `test_probe_button_accepts_checked_arg`（真实按钮点击） |
+| 3 | 测速写回覆盖其它 host、把预设固化成用户配置 | 只写用户自定义镜像、保留其它 host、尊重开关 | 2 条 UI 测试 |
+| 4 | 更新回退最坏 5×(3×300s) | 候选先短超时探测 + `retries=0` | 回退测试 |
+| 5 | `--mirror` bare 仓库无回退 | 补回退 + origin 恢复 | 代码路径 |
+| 6 | 探测不走应用内代理 | `probe_git_url(env=...)`，Service/UI 均传代理 | 探测签名 |
+| 7 | URL 内嵌凭据绕过镜像门禁 | `build_mirror_urls` 拒绝 userinfo | `test_build_urls_rejects_embedded_credentials` |
+| 8 | `mirror_fallback` 关闭仍回退（文案不符） | 语义改为「失败自动重试（含回退源站）」并写清例外 | i18n/UI |
+| 9 | CLI 默认走第三方镜像且无开关 | 新增 `--no-mirror` | CLI help 测试 |
+| 10 | Worker 重建 Service 丢 token/凭据/LFS 等 | 全参数透传 | `TestWorkerRebuildKeepsConfig` |
+
+## 已关闭功能
+
+| 项 | 结论 | 依据 |
+|----|------|------|
+| `G53-1` 雷达图 | **已闭环（v9.6.0）**：雷达图落地；`health_card` 列刻意不加（派生视图是唯一事实源，避免冗余漂移） | `gcm/ui/radar_chart.py` · `tests/test_g53_radar.py` |
 
 ## 已关闭（勿再当 todo）
 

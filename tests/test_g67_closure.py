@@ -474,6 +474,16 @@ for i in range(4):
 
 d = base / "data"; d.mkdir(); pp = d / "progress.json"
 eng = SyncEngine(base / "clones", db=None, progress_path=pp, concurrency=2)
+# 测试基础设施：把同步人为放慢，保证 shutdown 一定发生在「进行中」。
+# 本机裸仓克隆只要几毫秒，4 个任务可能在 `mid` 读取前就全部完成 ——
+# 那样 `mid` 为空，测试会以「前提不成立」随机失败（实测高负载下约 1/3）。
+# 这里用 1.2s 的注入延迟**代替**脆弱的时间假设，断言本身一字未改。
+from gcm.git.service import GitService as _GS
+_orig_sync = _GS.sync
+def _slow_sync(self, spec):
+    time.sleep(1.2)
+    return _orig_sync(self, spec)
+_GS.sync = _slow_sync
 specs = [RepoSpec(owner=f"o{i}", repo=f"r{i}", url_https=str(remotes[i])) for i in range(4)]
 eng.launch(specs)
 mid = list(load_progress(pp).get("in_progress", {}).keys())

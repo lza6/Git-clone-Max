@@ -173,6 +173,10 @@ class StatisticsDialog(QDialog):
         self.lbl_scorecard.setObjectName("muted")
         self.lbl_scorecard.setWordWrap(True)
         v.addWidget(self.lbl_scorecard)
+        # G53-1 雷达图：6 维评分的可视化（纯 Qt 绘制，见 radar_chart.py）
+        from .radar_chart import RadarChart
+        self.radar = RadarChart(self)
+        v.addWidget(self.radar, 1)
 
         # G53-3 存储看板（数据目录占用 / 磁盘剩余 / 建议）
         v.addWidget(QLabel("存储看板"))
@@ -264,10 +268,16 @@ class StatisticsDialog(QDialog):
                 for c in summary["weakest"][:3]:
                     lines.append(f'  {c["key"]} {c["overall"]}分：{c["suggestions"][0]}')
                 self.lbl_scorecard.setText("\\n".join(lines))
+                self.radar.set_values(avg)
             else:
                 self.lbl_scorecard.setText("（暂无仓库数据）")
+                self.radar.set_values({})
         except Exception:
             self.lbl_scorecard.setText("评分卡：（不可用）")
+            try:
+                self.radar.set_values({})
+            except Exception:
+                pass
 
         # G53-3 存储看板
         try:

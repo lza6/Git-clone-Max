@@ -121,6 +121,14 @@ def build_mirror_urls(source_url: str, prefixes: tuple[str, ...] | list[str]) ->
     url = (source_url or "").strip()
     if not url.lower().startswith("https://"):
         return []
+    # 安全：URL 内嵌凭据（https://user:pass@host/...）绝不拼接 ——
+    # 镜像前缀会把整段（含凭据）放进请求路径，等于把密码发给第三方。
+    try:
+        parsed = urlparse(url)
+        if parsed.username or parsed.password:
+            return []
+    except Exception:
+        return []
     out: list[str] = []
     seen: set[str] = set()
     for prefix in prefixes or ():
@@ -135,27 +143,15 @@ def build_mirror_urls(source_url: str, prefixes: tuple[str, ...] | list[str]) ->
     return out
 
 
-def host_of(url: str) -> str:
-    """取 URL 的 host（小写、去 www）；解析失败返回空串。"""
-    raw = (url or "").strip()
-    if not raw:
-        return ""
-    if "://" not in raw:
-        raw = "https://" + raw
-    try:
-        return (urlparse(raw).hostname or "").lower().replace("www.", "")
-    except Exception:
-        return ""
-
-
-def requires_credentials(host: str, token: str, host_tokens, auth_types,
-                         has_ssh_key: bool = False) -> bool:
-    """该 host 是否会携带凭据（带了就禁止走第三方镜像）。
+def requires_credentials(host: str, token: str, host_tokens) -> bool:
+    """该 host 是否会携带应用内凭据（带了就禁止走第三方镜像）。
 
     规则与 `GitService._env` 保持一致：
-    - github.com / 空 host：全局 token 或映射 token
-    - gitlab.com：同上
+    - github.com / 空 host / gitlab.com：全局 token 或映射 token
     - 其它 host：仅当 host_tokens 显式登记
+
+    注意：全局 git 配置里的 `http.extraHeader` 不在这里判断 ——
+    它由 `GitService._global_git_auth_configured()` 单独拦（需要起子进程）。
     """
     h = (host or "").strip().lower().replace("www.", "").rstrip("/")
     mapped = ""
@@ -164,9 +160,4 @@ def requires_credentials(host: str, token: str, host_tokens, auth_types,
     tok = str(token or "").strip()
     if h in ("", "github.com", "gitlab.com", "gitlab"):
         return bool(mapped or tok)
-    if mapped:
-        return True
-    if has_ssh_key:
-        # SSH key 只影响 ssh://；镜像只用于 https://，不构成泄漏面。
-        return False
-    return False
+    return bool(mapped)

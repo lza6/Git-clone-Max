@@ -1,0 +1,97 @@
+{
+  "task_id": "N11-review-fixes",
+  "goal": "独立审查 2 阻塞 + 8 Required 整改 + G53-1 雷达图 + 退出崩溃修复",
+  "status": "done",
+  "date": "2026-10-18",
+  "sources": [
+    "盲点扫描代理：12 项（M1–M12）",
+    "对抗式审查代理：2 阻塞 + 8 Required"
+  ],
+  "blocking_fixed": [
+    {
+      "id": "credential-leak",
+      "summary": "镜像克隆把 origin 固定为镜像地址，之后配置 token 的 fetch 会把全局 http.extraHeader 发给第三方镜像",
+      "fix": [
+        "认证头改 URL 作用域 http.https://<host>/.extraHeader",
+        "镜像克隆成功后立即 remote set-url origin <源站>，镜像记入 gcm.mirror",
+        "旧仓库（origin=镜像）在更新时自动规范化",
+        "全局/系统 git 配置存在 http.*extraHeader 时整体禁用镜像",
+        "URL 内嵌凭据不参与镜像"
+      ],
+      "tests": [
+        "test_clone_success_via_mirror_restores_origin",
+        "test_update_canonicalizes_legacy_mirror_origin",
+        "test_global_git_auth_disables_mirrors",
+        "test_build_urls_rejects_embedded_credentials"
+      ]
+    },
+    {
+      "id": "probe-button-typeerror",
+      "summary": "QPushButton.clicked(bool) 传给无参槽 → 测速按钮必定 TypeError",
+      "fix": "槽签名改为 checked=False；写回逻辑重写",
+      "tests": ["test_probe_button_accepts_checked_arg", "test_probe_writeback_preserves_other_hosts", "test_probe_writeback_does_not_persist_presets"]
+    }
+  ],
+  "required_fixed": [
+    "更新回退先探测 + retries=0 + origin 回源站 + unshallow 重放 + 不同源 origin 跳过",
+    "--mirror(bare) 仓库补更新回退",
+    "探测透传应用内代理（Service + UI）",
+    "mirror_fallback 语义与文案统一",
+    "CLI 新增 --no-mirror；等待改轮询 processEvents",
+    "CloneWorker 重建 Service 全参数透传",
+    "新增 mirror_probe_timeout 设置 + SpinBox；reset defaults 同步镜像控件"
+  ],
+  "extra_fixed": [
+    "engine.shutdown 断信号 + pool.waitForDone(8000)：修复退出 0xC0000409（实测原约 2/5 概率）",
+    "两个跨进程 flaky 测试改为事件/注入延迟，不再用固定 sleep 猜时序",
+    "G53-1 6 维雷达图（gcm/ui/radar_chart.py，三主题），统计中心挂载"
+  ],
+  "commands": [
+    {"cmd": "ruff check gcm", "exit_code": 0, "output_tail": "All checks passed!"},
+    {"cmd": "mypy gcm", "exit_code": 0, "output_tail": "Success: no issues found in 69 source files"},
+    {"cmd": "unittest tests.test_g58_mirror_failover", "exit_code": 0, "output_tail": "Ran 48 tests OK"},
+    {"cmd": "unittest tests.test_g53_radar", "exit_code": 0, "output_tail": "Ran 9 tests OK"},
+    {"cmd": "unittest tests.test_g69_wiring_gaps", "exit_code": 0, "output_tail": "Ran 22 tests OK"},
+    {"cmd": "unittest 宽回归 6 模块", "exit_code": 0, "output_tail": "Ran 168 tests OK (skipped=1)"},
+    {"cmd": "unittest flaky ×6", "exit_code": 0, "output_tail": "6/6 rc=0"},
+    {"cmd": "coverage run scripts/ci_run_fast.py", "exit_code": 0, "output_tail": "Ran 1202 · failures=0 · errors=0 · skipped=3 · TOTAL 82%"}
+  ],
+  "seams_touched": ["S02-git-subprocess", "S04-db-ui", "S06-settings", "S15-mirror"],
+  "security_experiment": {
+    "goal": "真实证明：URL 作用域只对源站发凭据，对镜像 host 不发；探测也不携带全局认证头",
+    "method": "本地 HTTP 服务记录请求头；用 GitService._env() / mirror_probe.default_runner 发起真实 git ls-remote",
+    "result": {
+      "positive_control_source_url": "Authorization: Bearer ghp_SECRET（匹配作用域时确实发送）",
+      "negative_control_cross_host": "None（镜像 host 收不到）",
+      "probe_with_global_extraheader": "None（探测命令加 -c http.extraHeader=，全局/仓库级头被清空）",
+      "config_key": "http.https://github.com/.extraHeader（URL 作用域）"
+    },
+    "conclusion": "作用域生效；镜像与探测均不携带凭据"
+  },
+  "verification_round": {
+    "verdict": "4 项阻塞/关键修复全部 PASS",
+    "new_findings_fixed": [
+      "HIGH：测速路径绕过全局认证头守卫 → 测速前调用 global_auth_header_configured()",
+      "HIGH：作用域丢端口（自建 :8443 token 不发）→ 用源 URL 的 netloc 构造作用域",
+      "HIGH：旧 gcm.mirror hint 越过 mirror_use_presets → hint 必须仍在当前候选集合",
+      "MEDIUM：关闭预设后旧 origin 不自愈 → 任意 `<前缀>/<源站>` 都恢复源站",
+      "MEDIUM：安全守卫断言被弱化 → 恢复精确断言（startswith http.https:// + endswith /.extraHeader）",
+      "MEDIUM：hint 预取不探测 → probe_state 未知时短超时探测，死镜像直接回源",
+      "LOW：注释/日志漂移 → docstring 与超时文案修正"
+    ],
+    "additional_hardening": [
+      "镜像命令统一加 -c http.extraHeader=：实测可清除仓库级/全局认证头",
+      "_mirror_env 清理继承的 GIT_CONFIG_*（父进程可能注入凭据）"
+    ],
+    "residual_risks": [
+      "仓库级 http.extraHeader 已通过 -c http.extraHeader= 清除；但若用户用 url.insteadOf 等高级重写，仍不在守卫范围",
+      "全局认证头探测缓存 600s：改配置后最多 10 分钟才重新启用镜像（偏保守，不泄漏）",
+      "waitForDone(8000) 是硬上限：worker 卡在不可中断子进程 >8s 时退出崩溃风险降低但未归零"
+    ]
+  },
+  "limitations": [
+    "磁盘上已存在、且从未被本版本更新过的旧仓库，仍可能保留镜像 origin；下次更新时会自动规范化（不是静默）",
+    "全局 git 配置的认证头检测是 10 分钟缓存；用户改配置后最多 10 分钟才生效",
+    "雷达图只做聚合 6 维，不做单仓历史趋势（health_card 列刻意未加）"
+  ]
+}

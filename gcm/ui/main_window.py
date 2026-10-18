@@ -145,6 +145,7 @@ class MainWindow(QMainWindow):
             mirror_prefix=getattr(self.settings, "mirror_prefix", None) or {},  # G38-2
             mirror_use_presets=bool(getattr(self.settings, "mirror_use_presets", True)),  # G58-2
             mirror_fallback=bool(getattr(self.settings, "mirror_fallback", True)),        # G58-2
+            mirror_probe_timeout=float(getattr(self.settings, "mirror_probe_timeout", 8) or 8),  # G58-2
             host_auth_types=getattr(self.settings, "host_auth_types", None) or {},  # G58-5
             precheck_remote=bool(getattr(self.settings, "precheck_remote", False)),  # G38-3
             single_branch=bool(getattr(self.settings, "single_branch", False)),  # G38-4
@@ -1055,6 +1056,10 @@ class MainWindow(QMainWindow):
         """G58-2 转发：镜像失败回退源站开关。"""
         return self.settings_panel._save_mirror_fallback(*args, **kwargs)
 
+    def _save_mirror_timeout(self, *args, **kwargs):
+        """G58-2 转发：镜像探测超时。"""
+        return self.settings_panel._save_mirror_timeout(*args, **kwargs)
+
     def _probe_mirrors(self, *args, **kwargs):
         """G58-2 转发：测速并排序（worker 线程）。"""
         return self.settings_panel._probe_mirrors(*args, **kwargs)
@@ -1558,6 +1563,19 @@ class MainWindow(QMainWindow):
 
         threading.Thread(target=_run, daemon=True, name="gcm-star-fetch").start()
 
+    @staticmethod
+    def _repo_key(text: str) -> str:
+        """把 `owner/repo`、HTTPS、SSH、带 .git 的写法归一成同一个比较键。"""
+        s = (text or "").strip().lower()
+        for prefix in ("https://github.com/", "http://github.com/",
+                       "git@github.com:", "github.com/"):
+            if s.startswith(prefix):
+                s = s[len(prefix):]
+                break
+        if s.endswith(".git"):
+            s = s[:-4]
+        return s.strip().strip("/")
+
     @pyqtSlot(list, str)
     def _on_starred_fetched(self, repos, err) -> None:
         """Star 拉取结束（GUI 线程）：去重后回填输入区。"""
@@ -1570,11 +1588,11 @@ class MainWindow(QMainWindow):
                 self._emit_log(_fmt_dt(), LogLevel.INFO, tr("该用户没有 Star 仓库"))
             return
         current = self.repo_input.toPlainText().splitlines()
-        seen = {ln.strip().lower() for ln in current if ln.strip()}
+        seen = {self._repo_key(ln) for ln in current if ln.strip()}
         added = []
         for name in names:
-            key = name.lower()
-            if key in seen:
+            key = self._repo_key(name)
+            if not key or key in seen:
                 continue
             seen.add(key)
             added.append(name)
@@ -1883,6 +1901,7 @@ class MainWindow(QMainWindow):
             mirror_prefix=getattr(self.settings, "mirror_prefix", None) or {},  # G38-2
             mirror_use_presets=bool(getattr(self.settings, "mirror_use_presets", True)),  # G58-2
             mirror_fallback=bool(getattr(self.settings, "mirror_fallback", True)),        # G58-2
+            mirror_probe_timeout=float(getattr(self.settings, "mirror_probe_timeout", 8) or 8),  # G58-2
             host_auth_types=getattr(self.settings, "host_auth_types", None) or {},  # G58-5
             precheck_remote=bool(getattr(self.settings, "precheck_remote", False)),  # G38-3
             single_branch=bool(single_branch),  # G38-4（UI 模式 2 或设置）
@@ -2317,6 +2336,13 @@ class MainWindow(QMainWindow):
                 e.ignore()
                 return
         if hasattr(self, "engine") and self.engine is not None:
+            # G69-21：先让还在跑的镜像测速线程尽快退出（它在 UI 线程之外持窗口引用）
+            try:
+                cancel_evt = getattr(self, "_mirror_probe_cancel", None)
+                if cancel_evt is not None:
+                    cancel_evt.set()
+            except Exception:
+                pass
             # G22-1：先取消并等待在跑 worker 收敛（≤8s），杜绝硬杀 git 子进程
             # 与 progress.json 半描述态；超时则记日志后按原语义退出
             try:

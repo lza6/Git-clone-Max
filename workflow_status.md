@@ -426,3 +426,69 @@ Light 下对比度不足）、校验条强制 `PlainText`（用户原文含 `<>`
 | 打包 | PyInstaller 成功；便携 zip 290 条目 / 78,804,523 字节 |
 | 健康检查 | `version=9.5.0` · `started_ok=true` · `artifacts_exist=true` |
 | Release | v9.5.0 双产物 + 服务端 sha256 一致 |
+
+
+---
+
+## 13. 独立审查整改 + G53-1 雷达图（G69-21 · v9.6.0 · 2026-10-18）
+
+### 13.1 输入
+
+两个并行只读代理：
+- **盲点扫描**：12 项「用户不可达 / 逻辑断链」（M1–M12）。
+- **对抗式代码审查**：2 个阻塞 + 8 项 Required（独立复现了凭据泄漏与按钮 TypeError）。
+
+主控逐条复核并修复；**没有直接采信代理结论**。
+
+### 13.2 阻塞项（均已修复 + 守卫）
+
+| # | 问题 | 修法 | 证据 |
+|---|------|------|------|
+| 1 | 令牌随 origin 泄漏给镜像（CRITICAL） | 认证头 URL 作用域；镜像克隆后 origin 回源站；旧仓库更新时规范化；全局/系统 `http.*extraHeader` 禁用镜像 | 镜像测试：origin 恢复 / 规范化 / 全局凭据门禁 |
+| 2 | 「测速并排序」必定 TypeError | 槽签名 `checked=False` | **真实按钮点击**测试 |
+| 3 | 测速写回覆盖其它 host / 固化预设 | 只写自定义、保留其它 host、尊重开关 | 2 条 UI 测试 |
+| 4 | 更新回退最坏 5×(3×300s) | 先短超时探测 + `retries=0` | 回退测试 |
+| 5 | `--mirror` bare 无回退 | 补回退 + origin 恢复 | 代码路径 |
+| 6 | 探测不走应用内代理 | `env` 透传（Service + UI） | 探测签名 |
+| 7 | URL 内嵌凭据绕过门禁 | `build_mirror_urls` 拒绝 userinfo | 专项测试 |
+| 8 | `mirror_fallback` 语义与文案不符 | 改为「失败自动重试（含回退源站）」 | i18n/UI |
+| 9 | CLI 默认走镜像且无开关 | `--no-mirror` | CLI help 测试 |
+| 10 | Worker 重建丢凭据/LFS/镜像 | 全参数透传 | `TestWorkerRebuildKeepsConfig` |
+
+### 13.3 额外修复（审查/验证中发现）
+
+- **`engine.shutdown()` 退出崩溃**：drain 超时后线程池仍在跑 → 解释器退出阶段
+  Windows `0xC0000409`（实测约 2/5 概率）。现在先断开 worker 信号，再
+  `pool.waitForDone(8000)`；`TestShutdownClearsInProgress` 连跑 6 次全绿。
+- **两个 flaky 测试**：`TestSingleInstanceCrossProcess` 用固定 sleep 猜「p1 已持锁」，
+  改为读 p1 的 `acquired: True`；shutdown 测试注入 1.2s 延迟保证一定处于「进行中」。
+  断言本身未改。
+- **CLI 等待机制**：宿主进程重建过 QApplication 时 `QEventLoop.exec()` 会立即返回
+  （实测 0.0s、结果为空）→ CLI 误报成功。改为轮询 `processEvents`。
+- **G53-1 雷达图**：`gcm/ui/radar_chart.py`（纯 Qt，6 维，三主题），统计中心挂载。
+  `health_card` 列刻意不加：派生视图是唯一事实源。
+
+### 13.4 验证
+
+`ruff` All checks passed · `mypy` Success（69 文件）·
+镜像 `test_g58_mirror_failover`(43) · 雷达 `test_g53_radar`(9) ·
+接线 `test_g69_wiring_gaps`(22) · 宽回归 168 用例 OK ·
+全量快集见 `evidence/N11-final-fast-suite.json`。
+
+### 13.5 复验轮（Verifier）
+
+独立只读复验：4 项关键修复 **全部 PASS**（凭据泄漏、测速按钮、更新回退、退出崩溃），
+同时提出 7 项新发现（3 HIGH），已在本轮**再次修复**：
+
+| 级别 | 发现 | 修法 |
+|------|------|------|
+| HIGH | 测速路径绕过全局认证头守卫 | 测速前调用 `global_auth_header_configured()` |
+| HIGH | 作用域丢端口（自建 `:8443` token 不发） | 用源 URL 的 `netloc` 构造作用域 |
+| HIGH | 旧 `gcm.mirror` hint 越过 `mirror_use_presets` | hint 必须仍在当前候选集合 |
+| MEDIUM | 关闭预设后旧 origin 不自愈 | 任意 `<前缀>/<源站>` 都恢复源站 |
+| MEDIUM | 安全守卫断言被弱化 | 恢复精确断言（`http.https://` + `/.extraHeader`） |
+| MEDIUM | hint 预取不探测，死镜像白等 180s | `probe_state` 未知时短超时探测 |
+| LOW | 注释/日志漂移 | docstring 与超时文案修正 |
+
+额外：镜像命令统一加 `-c http.extraHeader=`（实测可清除仓库级/全局认证头）；
+`_mirror_env` 清理继承的 `GIT_CONFIG_*`。

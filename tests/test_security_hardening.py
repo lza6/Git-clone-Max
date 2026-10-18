@@ -75,7 +75,9 @@ class TestTokenHostScoped(GitConfigEnvIsolation, unittest.TestCase):
         svc_g._current_host = "github.com"
         env_g = svc_g._env()
         self.assertIn("GIT_CONFIG_KEY_0", env_g)
-        self.assertIn("http.extraHeader", env_g["GIT_CONFIG_KEY_0"])
+        key = env_g["GIT_CONFIG_KEY_0"]
+        self.assertTrue(key.startswith("http.https://github.com/"),
+                        f"认证头必须是 URL 作用域（防镜像泄漏），实际：{key}")
         # 非 github host → 不注入 token
         svc_x = GitService(Path(tempfile.mkdtemp()), token="ghp_xyz")
         svc_x._current_host = "gitlab.com"

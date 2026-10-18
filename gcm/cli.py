@@ -136,13 +136,22 @@ def _run_json(app, engine, specs, results) -> dict:
 
 
 def run_clone(app, specs, invalid: list[str], root: Path, json_mode: bool,
-              check_existing: bool = False) -> int:
-    """共享执行体：并行克隆/同步 specs，返回退出码（0/1/2）。"""
-    from PyQt6.QtCore import QEventLoop, QTimer
+              check_existing: bool = False, no_mirror: bool = False) -> int:
+    """共享执行体：并行克隆/同步 specs，返回退出码（0/1/2）。
+
+    G69-21：等待方式由 `QEventLoop.exec()` 改为**轮询 `processEvents`**。
+    原因：宿主进程若先创建又销毁过 QApplication（测试/嵌入式调用很常见），
+    后续 `QEventLoop.exec()` 会立即返回（实测 0.0s、结果为空），CLI 误报成功。
+    轮询在当前进程里始终可用，语义等价（同样的 600s 上限）。
+    """
+    import time as _time
 
     from gcm.app.engine import SyncEngine
     root.mkdir(parents=True, exist_ok=True)
-    engine = SyncEngine(root=root, db=None, progress_path=None)
+    # G69-21：CLI 默认与 GUI 一致（内置国内镜像）；--no-mirror 可显式关闭，
+    # 供对第三方镜像有信任顾虑的脚本/agent 使用。
+    engine = SyncEngine(root=root, db=None, progress_path=None,
+                        mirror_use_presets=not no_mirror)
     results: list = []
     invalid_out: list[dict] = [_error(2, f"无法解析：{line}") for line in invalid]
     if invalid_out and json_mode:
@@ -159,8 +168,6 @@ def run_clone(app, specs, invalid: list[str], root: Path, json_mode: bool,
 
     engine.result.connect(_on_result)
     engine.line.connect(_on_line)
-    loop = QEventLoop()
-    engine.finished.connect(loop.quit)
     n = engine.launch(specs, check_existing=check_existing)
     if n == 0:
         if json_mode:
@@ -171,8 +178,11 @@ def run_clone(app, specs, invalid: list[str], root: Path, json_mode: bool,
         else:
             print("[CLI] 无可调度任务")
         return 0
-    QTimer.singleShot(600000, loop.quit)  # 10 分钟兜底，避免无限挂
-    loop.exec()
+    # 10 分钟兜底，避免无限等待；用轮询而非 QEventLoop（见 docstring）。
+    deadline = _time.time() + 600.0
+    while engine.busy and _time.time() < deadline:
+        app.processEvents()
+        _time.sleep(0.02)
     app.processEvents()
     ok = sum(1 for r in results if r.status.value == "success")
     fail = sum(1 for r in results if r.status.value == "failed")
@@ -245,6 +255,7 @@ def _print_help() -> int:
         "  --diag          网络/环境诊断（不克隆）\n"
         "  --serve H:P     启动本地只读 HTTP API（仅允许回环地址）\n"
         "  --allow-mutate  配合 --serve：放行 POST 写操作（默认只读）\n"
+        "  --no-mirror     不使用内置国内镜像（默认使用；有凭据时本就不会走镜像）\n"
         "  --help, -h      显示本帮助\n"
         "\n"
         "输入：<urls.txt> 为地址清单文件；`-` 表示 stdin（每行一个，`#` 开头忽略）。\n"
@@ -265,6 +276,7 @@ def main(argv: list[str] | None = None) -> int:
     - --diag        网络/环境诊断（不克隆）
     - --serve H:P   启动只读本地 HTTP API（--allow-mutate 放行写）
     - --allow-mutate 配合 --serve：放行 POST 写操作（默认只读）
+    - --no-mirror    不使用内置国内镜像（默认使用）
     - --help, -h    显示帮助
     """
     from gcm import __version__
@@ -293,6 +305,9 @@ def main(argv: list[str] | None = None) -> int:
     allow_mutate = "--allow-mutate" in args
     if allow_mutate:
         args.remove("--allow-mutate")
+    no_mirror = "--no-mirror" in args
+    if no_mirror:
+        args.remove("--no-mirror")
     # M7：--dir <目录> 指定克隆输出根目录（默认当前目录/clones）
     root = Path.cwd() / "clones"
     if "--dir" in args:
@@ -347,7 +362,8 @@ def main(argv: list[str] | None = None) -> int:
 
     from PyQt6.QtCore import QCoreApplication
     app = QCoreApplication.instance() or QCoreApplication([])
-    return run_clone(app, specs, invalid, root, json_mode=json_mode)
+    return run_clone(app, specs, invalid, root, json_mode=json_mode,
+                     no_mirror=no_mirror)
 
 
 if __name__ == "__main__":

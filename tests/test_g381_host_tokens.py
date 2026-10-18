@@ -37,7 +37,10 @@ class TestHostTokensInject(unittest.TestCase):
             return None
         n = int(env.get("GIT_CONFIG_COUNT", 0) or 0)
         for i in range(n):
-            if env.get(f"GIT_CONFIG_KEY_{i}") == "http.extraHeader":
+            # G69-21：认证头改为 URL 作用域（http.https://<host>/.extraHeader），
+            # 避免 origin 被换成镜像时把 token 发给第三方。
+            key = str(env.get(f"GIT_CONFIG_KEY_{i}") or "")
+            if key.startswith("http.https://") and key.endswith("/.extraHeader"):
                 return env.get(f"GIT_CONFIG_VALUE_{i}")
         return None
 

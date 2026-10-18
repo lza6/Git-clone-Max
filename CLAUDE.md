@@ -163,8 +163,11 @@ docs/        工程/产品/契约文档
   - ~~`G54-4 引导清单`：台账标 ✅，实际全库无该组件。~~
     **2026-10-17 更正**：v9.4.3 已实现 `gcm/ui/checklist.py`（5 项，首启提示一次，
     设置页入口），守卫 `tests/test_g69_checklist.py`。
-  - `G53-1 health_card`：台账称新增 JSON 列 + 雷达图，**实际仍是单值 `repo_health` + 派生视图**。
-    落列需 DB 迁移 + 回填，属 T3，先确认产品是否需要。
+  - ~~`G53-1 health_card`：台账称新增 JSON 列 + 雷达图，实际仍是单值 `repo_health` + 派生视图。~~
+    **2026-10-18 已闭环（v9.6.0）**：雷达图已落地（`gcm/ui/radar_chart.py`，统计中心挂载，
+    6 维、三主题可读，守卫 `tests/test_g53_radar.py`）。**`health_card` 列刻意不加**：
+    评分由 `sync_history` 实时派生（`alerts.scorecard_for_repo`）是唯一事实源，
+    再存一份冗余列会漂移；若将来需要「历史评分趋势」，应新建快照表而不是加列。
   - ~~`G58-3 代理凭据`：台账称「解析 + 加密落盘」，实际未解析、`settings.proxy` 明文落盘。~~
     **2026-10-17 更正**：`SettingsStore.save()` 已对 `proxy` 调 `_encrypt_token`，加载时 `_decrypt_or_keep`
     （`gcm/db/settings.py:366,407-409`）。「解析」不是必需项 —— 代理以完整 URL 注入
@@ -182,6 +185,12 @@ docs/        工程/产品/契约文档
   预设是 2026-10-18 用 `git ls-remote` 实测的第三方服务，会失效；设置页可关闭或
   用「测速并排序」按当前网络重排。**不要用 HTTP HEAD 判断镜像可用性** ——
   实测 HEAD 结果与 git 能否工作不一致（见 `gcm/app/mirror_probe.py` 顶部说明）。
+- **镜像凭据边界（G69-21，v9.6.0 加固）**：认证头必须是 **URL 作用域**
+  （`http.https://<host>/.extraHeader`），不能用全局 `http.extraHeader`
+  （全局头会随 fetch 发给 origin 实际所在的主机）。镜像克隆成功后必须立即
+  `remote set-url origin <源站>`，镜像只记在 `gcm.mirror`；旧仓库在更新时自动规范化。
+  全局/系统 git 配置里带 `http.*extraHeader` 时**整体禁用镜像**；
+  URL 内嵌凭据（`https://user:pass@host`）不参与镜像。
   - ~~`v9.1.3 ~ v9.3.2` 未打 git tag~~ **该条不成立，已于 2026-10-17 更正**：
     这些 tag **在远端一直存在**，是本地未 `git fetch --tags` 造成的误判。
     实测 `git ls-remote --tags origin` 后逐个校验：v9.x 全部 tag 与其提交的

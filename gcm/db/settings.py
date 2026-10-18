@@ -264,6 +264,7 @@ class Settings:
     # G58-2：镜像多备援。预设 = 内置国内 GitHub 镜像；失败自动回退源站。
     mirror_use_presets: bool = True   # 使用内置国内镜像（GitHub；受「有凭据不走镜像」约束）
     mirror_fallback: bool = True      # 镜像不可用/克隆失败 → 回退源站重试
+    mirror_probe_timeout: int = 8     # 镜像探测超时秒数（3..60）
     precheck_remote: bool = False     # G38-3 远端可达性预检（clone/fetch 前 10s ls-remote）
     single_branch: bool = False       # G38-4 浅克隆时只拉目标分支（--single-branch）
     force_ipv4: bool = False          # G38-6 强制 HTTP/1.1（IPv6 兼容修复）

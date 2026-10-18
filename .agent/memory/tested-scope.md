@@ -43,7 +43,8 @@ QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m coverage run --source=gc
 | Webhook 幂等/审计/重试 | `python -m unittest tests.test_g69_notify_hardening` |
 | 引导清单 | `python -m unittest tests.test_g69_checklist` |
 | **接线缺口（搜索/高亮/收藏/Star/告警配置）** | `python -m unittest tests.test_g69_wiring_gaps` |
-| **镜像多备援** | `python -m unittest tests.test_g58_mirror_failover`（34，含真实 git E2E） |
+| **镜像多备援/安全** | `python -m unittest tests.test_g58_mirror_failover`（43，含真实 git E2E） |
+| **评分卡雷达图** | `python -m unittest tests.test_g53_radar`（9） |
 | 版本单源 + 打包同步 + 文档新鲜度 | `python -m unittest tests.test_g66_patch.TestContractVersionSingleSource tests.test_g66_patch.TestPackagingVersionSync tests.test_g67_docs_freshness` |
 | MCP / HTTP / CLI 契约 | `python -m unittest tests.test_g56_mcp tests.test_g56_mcp_extra tests.test_g56_contract tests.test_g56_cli_json tests.test_g56_api_extra tests.test_g56_api_write` |
 | 凭据/环境隔离 | `python -m unittest tests.test_token tests.test_rate_limit tests.test_security_hardening` |

@@ -90,7 +90,11 @@ class TestSingleInstanceCrossProcess(unittest.TestCase):
                               stdout=subprocess.PIPE, text=True,
                               encoding="utf-8", errors="replace")
         try:
-            time.sleep(1.2)  # p1 已持锁
+            # 不用固定 sleep 猜「p1 已经持锁」—— 高负载下进程启动可能超过 1.2s，
+            # 于是 p2 先拿到锁，测试随机失败。改为**等 p1 自己打印 acquired: True**。
+            first = p1.stdout.readline() if p1.stdout else ""
+            self.assertIn("acquired: True", first,
+                          f"p1 未能持锁（输出：{first!r}）；测试前提不成立")
             r2 = subprocess.run([_sys.executable, "-c", script],
                                 capture_output=True, text=True,
                                 encoding="utf-8", errors="replace", timeout=10)

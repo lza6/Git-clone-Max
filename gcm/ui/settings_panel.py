@@ -231,6 +231,12 @@ class SettingsPanel(QWidget):
     def _save_g53_stale_days(self, value):
         self.owner.settings.g53_alerts_stale_days = int(value)
         self.owner.settings_store.save(self.owner.settings)
+        # 管理页的过期高亮阈值要在运行中即时生效（原先只在面板构造时读一次）
+        try:
+            self.owner.manage_model.stale_days = int(value)
+            self.owner.manage_panel._apply_manage_filter()
+        except Exception:
+            pass
 
     def _save_g53_disk_min(self, value):
         self.owner.settings.g53_alerts_disk_min_gb = int(value)
@@ -331,32 +337,66 @@ class SettingsPanel(QWidget):
         self.owner.settings.mirror_fallback = bool(checked)
         self.owner.settings_store.save(self.owner.settings)
 
-    def _probe_mirrors(self):
-        """G58-2 测速并排序：worker 线程探测，结果经信号回 GUI 线程。"""
+    def _save_mirror_timeout(self, value):
+        """G58-2：镜像探测超时（秒），改完即时写回运行中的引擎。"""
+        self.owner.settings.mirror_probe_timeout = int(value)
+        self.owner.settings_store.save(self.owner.settings)
+        try:
+            self.owner.engine.mirror_probe_timeout = max(1.0, float(value))
+        except Exception:
+            pass
+
+    def _probe_mirrors(self, checked: bool = False) -> None:
+        """G58-2 测速并排序：worker 线程探测，结果经信号回 GUI 线程。
+
+        `checked` 仅为兼容 `QPushButton.clicked(bool)` 的签名（G69-21：此前
+        转发器把 `False` 位置参数传进来，面板方法不接受 → 按钮一点就 TypeError）。
+        """
         owner = self.owner
         if getattr(owner, "_mirror_probe_busy", False):
             return
+        from ..app.mirror_probe import global_auth_header_configured
+        # G69-21：测速路径也必须守住「全局认证头 → 不用镜像」，
+        # 否则 ~/.gitconfig 里的 Authorization 会被发给第三方镜像。
+        if global_auth_header_configured():
+            owner._emit_log(_mw._fmt_dt(), LogLevel.WARN,
+                            tr("检测到全局 git 认证头，已跳过镜像测速（避免凭据发给第三方）"))
+            return
         from ..app.mirrors import mirror_prefixes_for
+        # G69-21：尊重「使用内置国内镜像」开关；关闭时不探测预设。
+        use_presets = bool(getattr(owner.settings, "mirror_use_presets", True))
         prefixes = mirror_prefixes_for(
             "github.com", getattr(owner.settings, "mirror_prefix", None) or {},
-            use_presets=True)
+            use_presets=use_presets)
         if not prefixes:
             owner._emit_log(_mw._fmt_dt(), LogLevel.WARN, tr("没有可测速的镜像"))
             return
         sample = "https://github.com/octocat/Hello-World"
         owner._mirror_probe_busy = True
-        owner._emit_log(_mw._fmt_dt(), LogLevel.INFO,
-                        tr("开始镜像测速（git ls-remote，8s 超时）…"))
+        cancel_evt = threading.Event()
+        owner._mirror_probe_cancel = cancel_evt
+        # G69-21：探测走应用内代理（GCM 的 proxy 不在系统环境变量里）。
+        proxy = str(getattr(owner.settings, "proxy", "") or "").strip()
+        env = {"http_proxy": proxy, "https_proxy": proxy} if proxy else None
+        timeout = float(getattr(owner.settings, "mirror_probe_timeout", 8) or 8)
+        owner._emit_log(
+            _mw._fmt_dt(), LogLevel.INFO,
+            tr("开始镜像测速（git ls-remote）…") + f" {int(timeout)}s")
         sig = owner.mirror_probe_done
 
         def _run() -> None:
             try:
                 from ..app.mirror_probe import rank_mirrors
-                results = rank_mirrors(sample, prefixes)
+                results = rank_mirrors(sample, prefixes, timeout=timeout,
+                                       cancelled=cancel_evt.is_set, env=env)
             except Exception as exc:  # noqa: BLE001 —— 线程边界，必须回传
                 results = [{"url": "", "ok": False, "ms": 0, "error": str(exc),
                             "is_source": False}]
-            sig.emit(results, sample)
+            try:
+                sig.emit(results, sample)
+            except RuntimeError:
+                # 窗口/信号对象已销毁（关闭时仍在探测）：不能让忙碌标志永久卡住。
+                owner._mirror_probe_busy = False
 
         threading.Thread(target=_run, daemon=True, name="gcm-mirror-probe").start()
 
@@ -364,13 +404,12 @@ class SettingsPanel(QWidget):
         """测速结束（GUI 线程）：把可用镜像按延迟写回输入框并留日志。"""
         owner = self.owner
         owner._mirror_probe_busy = False
+        from ..app.mirrors import DEFAULT_GITHUB_MIRRORS
+
         usable = [r for r in results or [] if r.get("ok") and not r.get("is_source")
                   and str(r.get("url") or "").endswith("/" + sample)]
         usable.sort(key=lambda r: int(r.get("ms", 0) or 0))
-        prefixes = []
-        for r in usable:
-            url = str(r.get("url") or "")
-            prefixes.append(url[: -len("/" + sample)])
+        prefixes = [str(r.get("url") or "")[: -len("/" + sample)] for r in usable]
         summary = " · ".join(
             f"{str(r.get('url') or '')[: -len('/' + sample)] or '(源站)'} "
             f"{r.get('ms', 0)}ms {'✓' if r.get('ok') else '✗'}"
@@ -381,10 +420,28 @@ class SettingsPanel(QWidget):
             owner._emit_log(_mw._fmt_dt(), LogLevel.WARN,
                             tr("没有可用镜像；已保留原配置，克隆将回退源站"))
             return
-        owner.edit_mirror.setText("github.com=" + ", ".join(prefixes))
+        # G69-21：只把**用户自定义**镜像写回；内置预设不落成用户配置，
+        # 且保留其它 host / 通配符行（原实现 setText 会整个覆盖掉）。
+        custom = [p for p in prefixes if p not in DEFAULT_GITHUB_MIRRORS]
+        current = self._parse_mirror_text(owner.edit_mirror.text())
+        if custom:
+            current["github.com"] = custom if len(custom) > 1 else custom[0]
+        else:
+            current.pop("github.com", None)
+        lines = []
+        for host, value in current.items():
+            val = ", ".join(value) if isinstance(value, (list, tuple)) else str(value)
+            if val.strip():
+                lines.append(f"{host}={val}")
+        owner.edit_mirror.setText("\n".join(lines))
         self._save_mirror()
-        owner._emit_log(_mw._fmt_dt(), LogLevel.INFO,
-                        tr("已按测速结果写入镜像（优先使用最快者）"))
+        if custom:
+            owner._emit_log(_mw._fmt_dt(), LogLevel.INFO,
+                            tr("已按测速结果写入镜像（优先使用最快者）"))
+        else:
+            owner._emit_log(
+                _mw._fmt_dt(), LogLevel.INFO,
+                tr("仅内置镜像可用；未写入自定义配置（开关开启时仍会自动使用）"))
 
     def _save_custom_hosts(self):
         """G38-7 保存常用主机白名单：逗号/换行分隔 → tuple（小写归一，去空）。"""
@@ -517,6 +574,12 @@ class SettingsPanel(QWidget):
             self.owner.ck_reduced_motion.setChecked(bool(fresh.prefers_reduced_motion))
             self.owner.accent_combo.setCurrentIndex(
                 self.owner.accent_combo.findData(fresh.accent_preset) or 0)
+            # G69-21：新增的镜像控件也要同步，否则界面还显示旧值、settings 已是默认值。
+            from .settings_groups import _mirror_text
+            self.owner.ck_mirror_presets.setChecked(bool(fresh.mirror_use_presets))
+            self.owner.ck_mirror_fallback.setChecked(bool(fresh.mirror_fallback))
+            self.owner.edit_mirror.setText(_mirror_text(fresh))
+            self.owner.spin_mirror_timeout.setValue(int(fresh.mirror_probe_timeout))
             self.owner.setStyleSheet(self.owner._themed_qss())
         except Exception:
             pass

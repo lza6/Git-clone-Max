@@ -100,8 +100,21 @@ class CloneWorker(QRunnable):
                     fetch_timeout=svc.fetch_timeout, clone_timeout=svc.clone_timeout,
                     retries=svc.retries, backoff=svc._backoff, proxy=svc.proxy,
                     fetch_depth=self._fetch_depth, unshallow=self._unshallow,
-                    # G58-2：重建时必须带上镜像备援配置，否则这条降级路径会
-                    # 悄悄退回「只用源站」，用户配置的国内镜像失效。
+                    # G69-21：重建时必须带上**全部**非深度参数，否则这条降级路径
+                    # 会静默丢掉 token/凭据/LFS/子模块/钩子/限速等配置。
+                    token=getattr(svc, "token", ""),
+                    host_tokens=getattr(svc, "host_tokens", None) or {},
+                    host_auth_types=getattr(svc, "host_auth_types", None) or {},
+                    ssh_key=getattr(svc, "_ssh_key", "") or "",
+                    lfs_enabled=getattr(svc, "_lfs_enabled", False),
+                    submodule=getattr(svc, "_submodule", False),
+                    post_clone_hook=getattr(svc, "_post_clone_hook", "") or "",
+                    rate_limit_kbps=getattr(svc, "rate_limit_kbps", 0) or 0,
+                    force_ipv4=getattr(svc, "force_ipv4", False),
+                    precheck_remote=getattr(svc, "precheck_remote", False),
+                    single_branch=getattr(svc, "single_branch", False),
+                    mirror=getattr(svc, "_mirror", False),
+                    # G58-2：镜像备援配置
                     mirror_prefix=getattr(svc, "mirror_prefix", None) or {},
                     mirror_use_presets=getattr(svc, "mirror_use_presets", True),
                     mirror_fallback=getattr(svc, "mirror_fallback", True),

@@ -73,26 +73,36 @@ class TestNormalize(unittest.TestCase):
                                       ("https://m", "https://m/")),
             ["https://m/https://github.com/a/b"], "重复前缀应去重")
 
+    def test_build_urls_rejects_embedded_credentials(self):
+        """G69-21：https://user:pass@host 绝不能拼进镜像前缀（密码会进请求路径）。"""
+        self.assertEqual(
+            mirrors.build_mirror_urls("https://u:p@github.com/a/b.git", ("https://m",)),
+            [])
+
     def test_requires_credentials(self):
         self.assertTrue(mirrors.requires_credentials(
-            "github.com", "tok", {}, {}))
+            "github.com", "tok", {}))
         self.assertTrue(mirrors.requires_credentials(
-            "gitlab.com", "", {"gitlab.com": "glpat"}, {}))
+            "gitlab.com", "", {"gitlab.com": "glpat"}))
         self.assertTrue(mirrors.requires_credentials(
-            "corp.example", "", {"corp.example": "x"}, {}))
+            "corp.example", "", {"corp.example": "x"}))
         self.assertFalse(mirrors.requires_credentials(
-            "corp.example", "", {}, {}))
+            "corp.example", "", {}))
         self.assertFalse(mirrors.requires_credentials(
-            "github.com", "", {}, {}, has_ssh_key=True))
+            "github.com", "", {}))
 
 
 class TestServiceMirrorGating(unittest.TestCase):
+    def setUp(self):
+        mirror_probe.reset_cache_for_tests()
+
     def _svc(self, **kw):
         from gcm.git.service import GitService
         d = Path(tempfile.mkdtemp(prefix="gcm_mirror_"))
         svc = GitService(d, **kw)
         svc._current_host = "github.com"
         svc._emit = lambda *a, **k: None
+        svc._global_git_auth_configured = lambda: False
         return svc
 
     def test_mirror_allowed_without_credentials(self):
@@ -113,7 +123,7 @@ class TestServiceMirrorGating(unittest.TestCase):
                         mirror_use_presets=False)
         calls = []
 
-        def fake_probe(url, timeout, cancelled=None):
+        def fake_probe(url, timeout, cancelled=None, env=None):
             calls.append(url)
             return (url.startswith("https://live"), 100, "" if url.startswith("https://live") else "timeout")
 
@@ -136,7 +146,7 @@ class TestServiceMirrorGating(unittest.TestCase):
         svc._preferred_mirror = "https://b"
         order = []
 
-        def fake_probe(url, timeout, cancelled=None):
+        def fake_probe(url, timeout, cancelled=None, env=None):
             order.append(url)
             return True, 10, ""
 
@@ -147,6 +157,9 @@ class TestServiceMirrorGating(unittest.TestCase):
 
 
 class TestCloneFailover(unittest.TestCase):
+    def setUp(self):
+        mirror_probe.reset_cache_for_tests()
+
     def test_clone_retries_source_after_mirror_failure(self):
         from gcm.git.service import GitService
         d = Path(tempfile.mkdtemp(prefix="gcm_clone_fo_"))
@@ -166,12 +179,38 @@ class TestCloneFailover(unittest.TestCase):
         with mock.patch("gcm.git.service.probe_git_url", return_value=(True, 20, "")), \
                 mock.patch("gcm.git.service.run_git_ui", side_effect=fake_run), \
                 mock.patch.object(svc, "_head_sha", return_value="abc1234"), \
-                mock.patch.object(svc, "_safe_rmtree_partial", return_value=None):
+                mock.patch.object(svc, "_safe_rmtree_partial", return_value=None), \
+                mock.patch.object(svc, "_set_origin_url", return_value=True) as set_origin, \
+                mock.patch.object(svc, "_remember_mirror", return_value=None):
             got = svc._clone(spec, res)
         self.assertEqual(got.status, SyncStatus.SUCCESS)
         self.assertEqual(calls, ["https://m/https://github.com/a/b.git",
                                  "https://github.com/a/b.git"],
                          "镜像失败后必须用源站重试一次")
+        # 本用例是「镜像失败→回退源站成功」，origin 本来就是源站，不应再改
+        set_origin.assert_not_called()
+
+    def test_clone_success_via_mirror_restores_origin(self):
+        """镜像克隆成功时，origin 必须立即恢复源站并把镜像记到 gcm.mirror。"""
+        from gcm.git.service import GitService
+        d = Path(tempfile.mkdtemp(prefix="gcm_clone_ok_"))
+        svc = GitService(d, mirror_prefix={"github.com": ["https://m"]},
+                         mirror_use_presets=False)
+        svc._current_host = "github.com"
+        svc._emit = lambda *a, **k: None
+        svc._global_git_auth_configured = lambda: False
+        spec = _spec()
+        with mock.patch("gcm.git.service.probe_git_url", return_value=(True, 10, "")), \
+                mock.patch("gcm.git.service.run_git_ui", return_value=(0, None)), \
+                mock.patch.object(svc, "_head_sha", return_value="abc"), \
+                mock.patch.object(svc, "_safe_rmtree_partial", return_value=None), \
+                mock.patch.object(svc, "_set_origin_url", return_value=True) as set_origin, \
+                mock.patch.object(svc, "_remember_mirror", return_value=None) as remember:
+            svc._clone(spec, SyncResult(spec=spec, status=SyncStatus.RUNNING))
+        set_origin.assert_called_once()
+        self.assertEqual(set_origin.call_args[0][1], spec.url_https)
+        remember.assert_called_once()
+        self.assertEqual(remember.call_args[0][1], "https://m")
 
     def test_clone_uses_source_when_credentials_present(self):
         from gcm.git.service import GitService
@@ -180,6 +219,7 @@ class TestCloneFailover(unittest.TestCase):
                          mirror_use_presets=False, token="ghp_x")
         svc._current_host = "github.com"
         svc._emit = lambda *a, **k: None
+        svc._global_git_auth_configured = lambda: False
         spec = _spec()
         res = SyncResult(spec=spec, status=SyncStatus.RUNNING)
         calls = []
@@ -204,6 +244,9 @@ class TestCloneFailover(unittest.TestCase):
 
 
 class TestUpdateFailover(unittest.TestCase):
+    def setUp(self):
+        mirror_probe.reset_cache_for_tests()
+
     def test_fetch_switches_to_mirror_after_failure(self):
         from gcm.git.service import GitService
         d = Path(tempfile.mkdtemp(prefix="gcm_upd_"))
@@ -213,6 +256,7 @@ class TestUpdateFailover(unittest.TestCase):
                          mirror_use_presets=False, mirror_fallback=True)
         svc._current_host = "github.com"
         svc._emit = lambda *a, **k: None
+        svc._global_git_auth_configured = lambda: False
         spec = _spec()
         res = SyncResult(spec=spec, status=SyncStatus.RUNNING)
         fetch_calls = []
@@ -235,11 +279,51 @@ class TestUpdateFailover(unittest.TestCase):
                                   return_value="https://github.com/a/b.git"), \
                 mock.patch.object(svc, "_set_origin_url",
                                   side_effect=lambda rd, u: set_urls.append(u) or True), \
+                mock.patch.object(svc, "_remember_mirror", return_value=None), \
+                mock.patch("gcm.git.service.probe_git_url", return_value=(True, 10, "")), \
                 mock.patch("gcm.git.service.run_git_ui", side_effect=fake_run):
             got = svc._update(spec, res)
         self.assertEqual(len(fetch_calls), 2, "首次失败后应重试一次")
-        self.assertEqual(set_urls, ["https://m/https://github.com/a/b.git"])
+        # 先切到镜像尝试；成功后 origin 必须恢复为源站
+        self.assertEqual(set_urls, ["https://m/https://github.com/a/b.git",
+                                    "https://github.com/a/b.git"])
         self.assertEqual(got.status, SyncStatus.SUCCESS)
+
+    def test_failover_skipped_when_origin_is_another_repo(self):
+        """origin 与目标仓库不一致（导入/手工改过）时不得盲切候选。"""
+        from gcm.git.service import GitService
+        d = Path(tempfile.mkdtemp(prefix="gcm_upd_mis_"))
+        repo = d / "a__b"
+        (repo / ".git").mkdir(parents=True)
+        svc = GitService(d, mirror_prefix={"github.com": ["https://m"]},
+                         mirror_use_presets=False, mirror_fallback=True)
+        svc._current_host = "github.com"
+        svc._emit = lambda *a, **k: None
+        svc._global_git_auth_configured = lambda: False
+        spec = _spec()
+        fetch_calls, set_urls = [], []
+
+        def fake_run(cmd, cwd, on_line, **kw):
+            if "fetch" in cmd:
+                fetch_calls.append(cmd)
+                return 1, None
+            return 0, None
+
+        with mock.patch.object(svc, "_repo_dir", return_value=repo), \
+                mock.patch.object(svc, "_head_sha", return_value="abc"), \
+                mock.patch.object(svc, "_local_branch", return_value="main"), \
+                mock.patch.object(svc, "_count_new_commits", return_value=0), \
+                mock.patch.object(svc, "_remote_head", return_value="abc"), \
+                mock.patch("gcm.git.service._detect_conflict", return_value=(False, "")), \
+                mock.patch.object(svc, "_get_origin_url",
+                                  return_value="https://github.com/other/repo.git"), \
+                mock.patch.object(svc, "_set_origin_url",
+                                  side_effect=lambda rd, u: set_urls.append(u) or True), \
+                mock.patch("gcm.git.service.run_git_ui", side_effect=fake_run):
+            got = svc._update(spec, SyncResult(spec=spec, status=SyncStatus.RUNNING))
+        self.assertEqual(len(fetch_calls), 1, "不同源 origin 不应触发镜像回退")
+        self.assertEqual(set_urls, [])
+        self.assertEqual(got.status, SyncStatus.FAILED)
 
     def test_failover_candidates_include_source_last(self):
         from gcm.git.service import GitService
@@ -254,12 +338,118 @@ class TestUpdateFailover(unittest.TestCase):
             "https://github.com/x/y.git",
         ])
 
+    def test_auth_scope_keeps_port(self):
+        """G69-21 复验：自建主机带端口时，URL 作用域必须保留 :8443，否则 token 静默不发。"""
+        from gcm.git.service import GitService
+        svc = GitService(Path(tempfile.mkdtemp(prefix="gcm_port_")),
+                         token="tok", host_tokens={"git.example.com": "mapped"})
+        svc._current_host = "git.example.com"
+        svc._current_url = "https://git.example.com:8443/a/b.git"
+        env = svc._env()
+        keys = [env.get(f"GIT_CONFIG_KEY_{i}")
+                for i in range(int(env.get("GIT_CONFIG_COUNT", 0) or 0))]
+        self.assertTrue(any(k and k.startswith("http.https://git.example.com:8443/")
+                            and k.endswith("/.extraHeader") for k in keys),
+                        f"作用域丢了端口：{keys}")
+
+    def test_mirror_hint_ignored_when_presets_disabled(self):
+        """G69-21 复验：关掉内置镜像后，旧的 gcm.mirror hint 不得继续使用。"""
+        from gcm.git.service import GitService
+        d = Path(tempfile.mkdtemp(prefix="gcm_hint_"))
+        repo = d / "a__b"
+        (repo / ".git").mkdir(parents=True)
+        svc = GitService(d, mirror_prefix={"github.com": ["https://custom"]},
+                         mirror_use_presets=False)
+        svc._current_host = "github.com"
+        svc._global_git_auth_configured = lambda: False
+        with mock.patch.object(svc, "_get_mirror_hint",
+                               return_value="https://gh.llkk.cc"):
+            self.assertEqual(
+                svc._mirror_fetch_url("https://github.com/a/b.git", repo), "",
+                "hint 不在当前候选中时必须忽略")
+
+    def test_canonicalize_legacy_origin_even_if_preset_disabled(self):
+        """G69-21 复验：关闭预设后，历史 origin=预设镜像也必须自愈回源站。"""
+        from gcm.git.service import GitService
+        d = Path(tempfile.mkdtemp(prefix="gcm_canon2_"))
+        repo = d / "a__b"
+        (repo / ".git").mkdir(parents=True)
+        svc = GitService(d, mirror_use_presets=False)
+        svc._current_host = "github.com"
+        svc._emit = lambda *a, **k: None
+        src = "https://github.com/a/b.git"
+        set_urls, hints = [], []
+        with mock.patch.object(svc, "_get_origin_url",
+                               return_value="https://gh.llkk.cc/" + src), \
+                mock.patch.object(svc, "_set_origin_url",
+                                  side_effect=lambda rd, u: set_urls.append(u) or True), \
+                mock.patch.object(svc, "_remember_mirror",
+                                  side_effect=lambda rd, p: hints.append(p)):
+            svc._canonicalize_mirror_origin(repo, src)
+        self.assertEqual(set_urls, [src])
+        self.assertEqual(hints, ["https://gh.llkk.cc"])
+
     def test_no_failover_with_token(self):
         from gcm.git.service import GitService
         svc = GitService(Path(tempfile.mkdtemp(prefix="gcm_cand2_")),
                          mirror_prefix={"github.com": ["https://a"]}, token="t")
         svc._current_host = "github.com"
         self.assertEqual(svc._update_failover_candidates("https://github.com/x/y.git"), [])
+
+    def test_global_git_auth_disables_mirrors(self):
+        """全局 git 配置里带 Authorization 头时，镜像必须整体禁用。"""
+        from gcm.git.service import GitService
+        svc = GitService(Path(tempfile.mkdtemp(prefix="gcm_gau_")),
+                         mirror_prefix={"github.com": ["https://a"]})
+        svc._current_host = "github.com"
+        svc._global_git_auth_configured = lambda: True
+        self.assertFalse(svc._mirror_allowed("https://github.com/x/y.git"))
+
+    def test_update_canonicalizes_legacy_mirror_origin(self):
+        """旧版本把 origin 留成镜像地址时必须自愈回源站，并记住镜像。"""
+        from gcm.git.service import GitService
+        d = Path(tempfile.mkdtemp(prefix="gcm_canon_"))
+        repo = d / "a__b"
+        (repo / ".git").mkdir(parents=True)
+        svc = GitService(d, mirror_prefix={"github.com": ["https://m"]},
+                         mirror_use_presets=False)
+        svc._current_host = "github.com"
+        svc._emit = lambda *a, **k: None
+        svc._global_git_auth_configured = lambda: False
+        spec = _spec()
+        src = spec.url_https
+        mirror = "https://m/" + src
+        set_urls, hints = [], []
+        with mock.patch.object(svc, "_repo_dir", return_value=repo), \
+                mock.patch.object(svc, "_head_sha", return_value="abc"), \
+                mock.patch.object(svc, "_get_origin_url", return_value=mirror), \
+                mock.patch.object(svc, "_set_origin_url",
+                                  side_effect=lambda rd, u: set_urls.append(u) or True), \
+                mock.patch.object(svc, "_remember_mirror",
+                                  side_effect=lambda rd, p: hints.append(p)), \
+                mock.patch.object(svc, "_local_branch", return_value="main"), \
+                mock.patch.object(svc, "_count_new_commits", return_value=0), \
+                mock.patch.object(svc, "_remote_head", return_value="abc"), \
+                mock.patch("gcm.git.service._detect_conflict", return_value=(False, "")), \
+                mock.patch("gcm.git.service.run_git_ui", return_value=(0, None)):
+            svc._update(spec, SyncResult(spec=spec, status=SyncStatus.RUNNING))
+        self.assertIn(src, set_urls, "origin 必须被改回源站")
+        self.assertEqual(hints, ["https://m"], "镜像应记录到 gcm.mirror")
+
+    def test_precheck_failure_falls_through_to_mirror(self):
+        """源站预检不可达时不能直接失败 —— 正是镜像的使用场景。"""
+        from gcm.git.service import GitService
+        d = Path(tempfile.mkdtemp(prefix="gcm_pre_"))
+        svc = GitService(d, mirror_prefix={"github.com": ["https://m"]},
+                         mirror_use_presets=False, precheck_remote=True)
+        svc._current_host = "github.com"
+        svc._emit = lambda *a, **k: None
+        spec = _spec()
+        with mock.patch.object(svc, "_precheck_reachable", return_value=(False, "down")), \
+                mock.patch.object(svc, "_clone",
+                                  side_effect=lambda s, r: r) as clone:
+            svc.sync(spec)
+        clone.assert_called_once()
 
 
 class TestProbe(unittest.TestCase):
@@ -392,6 +582,48 @@ class TestMirrorUi(unittest.TestCase):
               "error": "timeout", "is_source": False}], sample)
         self.assertEqual(self.win.edit_mirror.text(), "github.com=https://keep")
 
+    def test_probe_skipped_when_global_auth_configured(self):
+        """G69-21 复验：全局 git 认证头存在时，测速也必须跳过（否则凭据发给镜像）。"""
+        with mock.patch("gcm.app.mirror_probe.global_auth_header_configured",
+                        return_value=True):
+            self.win._probe_mirrors(False)
+        texts = [e.text for e in self.win.log.snapshot()]
+        self.assertTrue(any("已跳过镜像测速" in t for t in texts), texts[-5:])
+        self.assertFalse(getattr(self.win, "_mirror_probe_busy", False))
+
+    def test_probe_button_accepts_checked_arg(self):
+        """G69-21：QPushButton.clicked 会传 checked=False，槽必须接得住。"""
+        self.win.settings.mirror_use_presets = False
+        self.win.settings.mirror_prefix = {}
+        self.win.btn_mirror_probe.click()      # 修复前：TypeError，按钮完全不可用
+        texts = [e.text for e in self.win.log.snapshot()]
+        self.assertTrue(any("没有可测速的镜像" in t for t in texts))
+
+    def test_probe_writeback_preserves_other_hosts(self):
+        sample = "https://github.com/octocat/Hello-World"
+        self.win.edit_mirror.setText("gitlab.com=https://gl.example")
+        self.win._on_mirror_probe_done([
+            {"url": f"https://fast/{sample}", "ok": True, "ms": 100,
+             "error": "", "is_source": False},
+        ], sample)
+        text = self.win.edit_mirror.text()
+        self.assertIn("gitlab.com=https://gl.example", text,
+                      "测速写回不得抹掉其它 host 配置")
+        self.assertIn("github.com=https://fast", text)
+
+    def test_probe_writeback_does_not_persist_presets(self):
+        from gcm.app.mirrors import DEFAULT_GITHUB_MIRRORS
+        sample = "https://github.com/octocat/Hello-World"
+        self.win.edit_mirror.setText("")
+        self.win.settings.mirror_prefix = {}
+        self.win._on_mirror_probe_done([
+            {"url": f"{p}/{sample}", "ok": True, "ms": 100,
+             "error": "", "is_source": False}
+            for p in DEFAULT_GITHUB_MIRRORS
+        ], sample)
+        self.assertEqual(self.store.load().mirror_prefix, {},
+                         "内置预设不应被固化成用户配置（否则关开关也关不掉）")
+
     def test_toggles_persist(self):
         self.win.settings_panel._save_mirror_presets(False)
         self.win.settings_panel._save_mirror_fallback(False)
@@ -478,6 +710,18 @@ class TestProbeConcurrency(unittest.TestCase):
             t.join(10)
         self.assertEqual(len(results), 12)
         self.assertTrue(all(r[0] for r in results))
+
+
+class TestCliMirrorFlag(unittest.TestCase):
+    def test_help_mentions_no_mirror(self):
+        import contextlib
+        import io
+        from gcm import cli
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = cli.main(["--cli", "--help"])
+        self.assertEqual(rc, 0)
+        self.assertIn("--no-mirror", buf.getvalue())
 
 
 if __name__ == "__main__":

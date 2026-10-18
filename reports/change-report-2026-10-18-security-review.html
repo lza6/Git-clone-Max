@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>独立审查整改 · 变更报告 · 2026-10-18</title>
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2129;--line:#30363d;--fg:#e6edf3;
+        --dim:#8b949e;--accent:#58a6ff;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--purple:#bc8cff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:15px/1.75 -apple-system,"Segoe UI","Noto Sans CJK SC","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1060px;margin:0 auto;padding:48px 24px 110px}
+  header{border-bottom:1px solid var(--line);padding-bottom:26px;margin-bottom:36px}
+  h1{font-size:2rem;margin:0 0 8px;letter-spacing:-.02em}
+  h2{font-size:1.28rem;margin:46px 0 12px;padding-left:12px;border-left:3px solid var(--accent)}
+  .sub{color:var(--dim);font-size:.94rem}
+  .lede{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px 22px;margin:24px 0}
+  .lede strong{color:var(--accent)}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:.9rem}
+  th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);font-weight:600;color:var(--dim);font-size:.76rem;
+     text-transform:uppercase;letter-spacing:.06em}
+  tr:nth-child(even) td{background:rgba(255,255,255,.015)}
+  code{background:var(--panel2);padding:2px 6px;border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,monospace;font-size:.86em;color:var(--purple)}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    padding:15px 17px;overflow-x:auto;font-size:.84rem;line-height:1.6}
+  pre code{background:none;padding:0;color:var(--fg)}
+  .pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:.75rem;font-weight:600}
+  .p-ok{background:rgba(63,185,80,.15);color:var(--ok);border:1px solid rgba(63,185,80,.35)}
+  .p-bad{background:rgba(248,81,73,.15);color:var(--bad);border:1px solid rgba(248,81,73,.35)}
+  .p-warn{background:rgba(210,153,34,.15);color:var(--warn);border:1px solid rgba(210,153,34,.35)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:14px 0}
+  .card.ok{border-left:3px solid var(--ok)} .card.bad{border-left:3px solid var(--bad)}
+  .card.warn{border-left:3px solid var(--warn)}
+  .why{color:var(--dim);font-size:.9rem;margin-top:8px}
+  .quiz{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:24px;margin-top:24px}
+  .q{padding:16px 0;border-bottom:1px dashed var(--line)}
+  .q:last-of-type{border-bottom:none}
+  .q .stem{font-weight:600;margin-bottom:10px}
+  .opt{display:block;padding:8px 12px;margin:5px 0;border-radius:7px;cursor:pointer;
+    border:1px solid transparent}
+  .opt:hover{background:var(--panel2);border-color:var(--line)}
+  .opt input{margin-right:9px}
+  .fb{margin-top:8px;font-size:.88rem;display:none}
+  .fb.show{display:block} .fb.good{color:var(--ok)} .fb.bad{color:var(--bad)}
+  .score{position:sticky;bottom:0;margin-top:20px;padding:16px 20px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:10px;display:flex;justify-content:space-between;
+    align-items:center;gap:16px;flex-wrap:wrap}
+  button{background:var(--accent);color:#04121f;border:0;border-radius:7px;padding:10px 20px;
+    font-weight:700;font-size:.9rem;cursor:pointer}
+  button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
+  #verdict{font-weight:700}
+  footer{margin-top:54px;padding-top:20px;border-top:1px solid var(--line);color:var(--dim);font-size:.85rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>独立审查整改 · v9.6.0</h1>
+  <div class="sub">Git-clone-Max · 2026-10-18 · G69-21 · 对抗式审查 + 复验轮</div>
+</header>
+
+<div class="lede">
+  <strong>一句话：</strong>上一轮的镜像功能被独立审查抓到 <strong>2 个阻塞问题</strong>，
+  其中一个是<strong>令牌会被发给第三方镜像</strong>。这一轮把它们修掉，并让复验代理逐条复核。
+  <br><br>
+  审查的价值不在于证明我做对了，而在于<strong>在用户之前发现我做错的地方</strong>。
+</div>
+
+<h2>一、两个阻塞问题</h2>
+
+<table>
+  <tr><th>#</th><th>问题</th><th>后果</th></tr>
+  <tr><td>1</td><td>镜像克隆把 <code>origin</code> 固定成镜像地址；之后用户配 token，fetch 的全局 <code>http.extraHeader</code> 会被发给镜像</td>
+      <td><span class="pill p-bad">凭据泄漏</span> GitHub PAT 发给第三方</td></tr>
+  <tr><td>2</td><td><code>QPushButton.clicked</code> 会传 <code>checked=False</code>，而槽不接受参数</td>
+      <td><span class="pill p-bad">按钮必崩</span> 「测速并排序」完全不可用</td></tr>
+</table>
+
+<div class="card bad">
+  <strong>为什么自测没发现第 2 个：</strong>
+  <div class="why">
+    我的 UI 测试都是<strong>直接调面板方法</strong>，绕过了按钮的 signal → 这正是本项目反复警告的
+    「测试绕过 UI 链路」。修复后补了一条<strong>真实点击</strong>的测试。
+  </div>
+</div>
+
+<h2>二、凭据修复：不是改注释，是改作用域</h2>
+
+<pre><code># 修复前（全局头：所有 HTTP 请求都带）
+http.extraHeader = Authorization: Bearer &lt;token&gt;
+
+# 修复后（URL 作用域：只对匹配源站的请求生效）
+http.https://github.com/.extraHeader = Authorization: Bearer &lt;token&gt;</code></pre>
+
+<p>再配合三条硬约束：</p>
+<table>
+  <tr><th>约束</th><th>作用</th></tr>
+  <tr><td>镜像克隆成功后 <code>remote set-url origin &lt;源站&gt;</code></td><td>origin 永远是源站；镜像只记在 <code>gcm.mirror</code></td></tr>
+  <tr><td>旧仓库更新时自动规范化 origin</td><td>历史遗留的镜像 origin 会被自愈</td></tr>
+  <tr><td>全局/系统 <code>http.*extraHeader</code> 存在 → 禁用镜像</td><td>用户自己的 git 凭据也不会被发出去</td></tr>
+</table>
+
+<div class="card ok">
+  <strong>真实实验（不是推断）：</strong>
+  <div class="why">
+    本地 HTTP 服务记录请求头：<br>
+    · 源站 URL 匹配作用域 → <code>Authorization: Bearer ghp_SECRET</code>（确实发送）<br>
+    · 跨 host 镜像 URL → <code>None</code>（收不到）<br>
+    · 探测路径（全局 gitconfig 带 extraHeader）→ <code>None</code>
+  </div>
+</div>
+
+<h2>三、复验轮又抓到 3 个 HIGH</h2>
+
+<table>
+  <tr><th>发现</th><th>修法</th></tr>
+  <tr><td>测速路径绕过「全局认证头 → 禁用镜像」守卫</td><td>测速前调用同一守卫</td></tr>
+  <tr><td>作用域用 host 丢了端口，自建 <code>:8443</code> 的 token 静默不发</td><td>用源 URL 的 <code>netloc</code> 构造作用域</td></tr>
+  <tr><td>旧的 <code>gcm.mirror</code> hint 越过「关闭内置镜像」开关</td><td>hint 必须仍在当前候选集合</td></tr>
+</table>
+
+<p>另修：关闭预设后旧 origin 不自愈、安全断言被弱化（<code>endswith(".extraHeader")</code> 连旧实现都能通过）、
+hint 预取不探测会白等 180s。镜像命令统一加 <code>-c http.extraHeader=</code>，实测能清除仓库级/全局认证头。</p>
+
+<h2>四、顺手修掉的真问题</h2>
+
+<table>
+  <tr><th>问题</th><th>根因</th><th>证据</th></tr>
+  <tr><td>关闭应用时偶发 <code>0xC0000409</code></td><td>drain 超时后线程池仍在跑，解释器析构阶段崩溃</td><td>子进程实测原约 2/5 概率；修复后连跑 6 次全绿</td></tr>
+  <tr><td>CLI 在嵌入式/测试上下文误报成功</td><td>宿主重建过 QApplication 时 <code>QEventLoop.exec()</code> 立即返回（0.0s、结果为空）</td><td>改为轮询 <code>processEvents</code></td></tr>
+  <tr><td>两个跨进程测试偶发</td><td>用固定 sleep 猜时序</td><td>改用事件/注入延迟，断言未改</td></tr>
+  <tr><td>G53-1 雷达图缺失</td><td>只有文字评分卡</td><td>新增纯 Qt 6 维雷达图，三主题可读</td></tr>
+</table>
+
+<h2>五、验证</h2>
+
+<pre><code>ruff check gcm                     → All checks passed!
+mypy gcm                           → Success（69 文件）
+tests.test_g58_mirror_failover     → Ran 48 tests OK
+tests.test_g53_radar               → Ran 9 tests OK
+宽回归（g67/g68/g66/cli/g69/engine）→ Ran 168 tests OK（skipped=1）
+flaky 压测 ×6                      → 6/6 OK
+全量快集                           → Ran 1202 · 0 失败 · 0 崩溃 · 覆盖 82%
+复验轮                             → 4 项关键修复全 PASS；7 项新发现已再修</code></pre>
+
+<h2>六、小测验（必须通过）</h2>
+<p class="sub">6 题，需要全对。</p>
+
+<div class="quiz" id="quiz">
+  <div class="q" data-answer="c">
+    <div class="stem">1. 为什么全局 <code>http.extraHeader</code> 会把 token 发给镜像？</div>
+    <label class="opt"><input type="radio" name="q1" value="a">A. 因为镜像会改写请求</label>
+    <label class="opt"><input type="radio" name="q1" value="b">B. 因为 git 不校验 host</label>
+    <label class="opt"><input type="radio" name="q1" value="c">C. 全局头对该次 git 命令的<b>所有</b> HTTP 请求生效，origin 指向镜像时就会发过去</label>
+    <div class="fb" data-good="对。所以要么让 origin 永远是源站，要么用 URL 作用域——我们两件都做了。" data-bad="不对。关键在全局头的作用范围。"></div>
+  </div>
+
+  <div class="q" data-answer="b">
+    <div class="stem">2. 镜像克隆成功后为什么要立刻把 origin 改回源站？</div>
+    <label class="opt"><input type="radio" name="q2" value="a">A. 因为镜像不支持 fetch</label>
+    <label class="opt"><input type="radio" name="q2" value="b">B. 让仓库的规范来源始终是源站；镜像只是本次取数通道，凭据/导入/外部 git 都不会指向第三方</label>
+    <label class="opt"><input type="radio" name="q2" value="c">C. 因为镜像地址会过期</label>
+    <div class="fb" data-good="对。镜像记录在 gcm.mirror，更新时优先用、失败再回源。" data-bad="不对。核心是「origin 必须是可信的规范来源」。"></div>
+  </div>
+
+  <div class="q" data-answer="a">
+    <div class="stem">3. 为什么「测速并排序」按钮点了就崩，而测试全绿？</div>
+    <label class="opt"><input type="radio" name="q3" value="a">A. 测试直接调面板方法，绕过了按钮 signal（clicked 会传 checked=False）</label>
+    <label class="opt"><input type="radio" name="q3" value="b">B. PyQt 在 Windows 上有 bug</label>
+    <label class="opt"><input type="radio" name="q3" value="c">C. 线程没有启动</label>
+    <div class="fb" data-good="对。这正是「测试绕过 UI 链路」的典型；修复后补了真实点击测试。" data-bad="不对。问题在测试没有覆盖真实 signal 路径。"></div>
+  </div>
+
+  <div class="q" data-answer="c">
+    <div class="stem">4. 自建 GitLab 用 <code>https://git.example.com:8443</code>，作用域该写成？</div>
+    <label class="opt"><input type="radio" name="q4" value="a">A. <code>http.https://git.example.com/.extraHeader</code></label>
+    <label class="opt"><input type="radio" name="q4" value="b">B. <code>http.example.com.extraHeader</code></label>
+    <label class="opt"><input type="radio" name="q4" value="c">C. <code>http.https://git.example.com:8443/.extraHeader</code></label>
+    <div class="fb" data-good="对。URL 匹配包含端口；丢了端口会导致 token 静默不发。" data-bad="不对。端口必须出现在作用域里。"></div>
+  </div>
+
+  <div class="q" data-answer="b">
+    <div class="stem">5. 复验代理把安全断言从 <code>endswith(".extraHeader")</code> 改回精确断言，为什么？</div>
+    <label class="opt"><input type="radio" name="q5" value="a">A. 精确断言行更长</label>
+    <label class="opt"><input type="radio" name="q5" value="b">B. 旧的全局 <code>http.extraHeader</code> 也满足 endswith，不安全的实现能通过</label>
+    <label class="opt"><input type="radio" name="q5" value="c">C. 没有原因</label>
+    <div class="fb" data-good="对。守卫必须能区分安全与不安全实现，否则就是假绿。" data-bad="不对。问题在断言无法识别退回全局头。"></div>
+  </div>
+
+  <div class="q" data-answer="a">
+    <div class="stem">6. 关闭应用时 <code>0xC0000409</code> 的根因与修法是？</div>
+    <label class="opt"><input type="radio" name="q6" value="a">A. drain 超时后线程池仍在跑，解释器析构阶段崩溃；先断开 worker 信号，再 <code>waitForDone(8000)</code></label>
+    <label class="opt"><input type="radio" name="q6" value="b">B. Python 的 GC bug；关掉 GC</label>
+    <label class="opt"><input type="radio" name="q6" value="c">C. 磁盘写入失败；加 try/except</label>
+    <div class="fb" data-good="对。根因是「退出时还有线程在向将销毁的对象投递信号」。" data-bad="不对。要先把线程池等干净。"></div>
+  </div>
+
+  <div class="score">
+    <div id="verdict">未提交</div>
+    <div>
+      <button onclick="grade()">提交</button>
+      <button class="ghost" onclick="reset()">重做</button>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <p>配套：<code>evidence/N11-review-fixes.json</code> ·
+     <code>docs/验证记录-2026-10-17.md</code> §14 ·
+     <code>tests/test_g58_mirror_failover.py</code>(48) ·
+     <code>tests/test_g53_radar.py</code>(9)。</p>
+  <p>本报告只陈述实际运行过的事实；复验轮的 7 项新发现也列在文档里，没有隐藏。</p>
+</footer>
+
+</div>
+<script>
+function grade(){
+  const qs=[...document.querySelectorAll('.q')];
+  let right=0, unanswered=0;
+  qs.forEach((q)=>{
+    const pick=q.querySelector('input:checked');
+    const fb=q.querySelector('.fb');
+    fb.classList.remove('show','good','bad');
+    if(!pick){unanswered++;fb.textContent='未作答';fb.classList.add('show','bad');return;}
+    if(pick.value===q.dataset.answer){
+      right++; fb.textContent='✓ '+fb.dataset.good; fb.classList.add('show','good');
+    }else{ fb.textContent='✗ '+fb.dataset.bad; fb.classList.add('show','bad'); }
+  });
+  const v=document.getElementById('verdict'); const total=qs.length;
+  if(unanswered){ v.textContent=`还有 ${unanswered} 题未作答`; v.style.color='var(--dim)'; }
+  else if(right===total){ v.textContent=`✅ 通过 ${right}/${total} —— 你可以接手这份变更了`; v.style.color='var(--ok)'; }
+  else { v.textContent=`❌ 未通过 ${right}/${total} —— 读上面的解析后重做`; v.style.color='var(--bad)'; }
+  v.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+function reset(){
+  document.querySelectorAll('.q input').forEach(i=>i.checked=false);
+  document.querySelectorAll('.fb').forEach(f=>f.classList.remove('show','good','bad'));
+  const v=document.getElementById('verdict'); v.textContent='未提交'; v.style.color='var(--fg)';
+}
+</script>
+</body>
+</html>

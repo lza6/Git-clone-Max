@@ -11,7 +11,11 @@
 | `gcm/app/alerts.py` | **`AlertScanner.reconfigure()`** | v9.4.7 | 循环每轮重读 `_interval`，新间隔下一轮生效 |
 | `gcm/app/mirrors.py` / `mirror_probe.py` | **新增：镜像候选归一 + `git ls-remote` 探测** | v9.5.0 | 不要用 HTTP HEAD 判断可用性；有凭据禁止走镜像 |
 | `gcm/git/service.py` | **克隆前探测择优、失败回退源站；更新失败在镜像/源站间切换** | v9.5.0 | `_mirror_url` 默认不含预设（兼容旧行为）；完整链路走 `_resolve_clone_url` |
-| `gcm/ui/settings_groups.py` | 镜像行拆为 `_network_rows_mirror`（守住 100 行上限）+ 两个开关 + 测速按钮 | v9.5.0 | `mirror_prefix` 值可为 str 或 list |
+| `gcm/ui/settings_groups.py` | 镜像行拆为 `_network_rows_mirror` + 两个开关 + 测速按钮 + 探测超时 | v9.5.0/v9.6.0 | `mirror_prefix` 值可为 str 或 list |
+| `gcm/git/service.py` | **认证头 URL 作用域；镜像 origin 规范化；回退探测/retries=0/unshallow 重放** | v9.6.0 | 全局 `http.*extraHeader` 会禁用镜像 |
+| `gcm/ui/radar_chart.py` | 新增 6 维雷达图（纯 Qt） | v9.6.0 | 颜色走 `current_palette()` |
+| `gcm/app/engine.py` | **shutdown 断信号 + waitForDone(8000)** | v9.6.0 | 关闭时最多多等 8s，避免退出崩溃 |
+| `gcm/cli.py` | 等待改轮询 processEvents；新增 `--no-mirror` | v9.6.0 | 不再依赖 QEventLoop.exec |
 | `gcm/app/worker.py` | **`on_line` 真正接到 service** | v9.4.7 | git 输出按仓库 index 归属，不再全记到 0 |
 | `gcm/ui/{failure,manage,progress,settings}_panel.py` | `owner` 改 **weakref 属性** | v9.4.2 | 不可再写 `self.owner = x`（只读 property） |
 | `gcm/ui/checklist.py` | 新增（引导清单） | v9.4.3 | 文案走 `tr()`；键需在 zh/en 同时存在 |

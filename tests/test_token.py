@@ -65,7 +65,10 @@ class TestEnvToken(unittest.TestCase):
         env = svc._env()
         self.assertIsNotNone(env)
         self.assertEqual(env["GIT_CONFIG_COUNT"], "1")
-        self.assertEqual(env["GIT_CONFIG_KEY_0"], "http.extraHeader")
+        key = env["GIT_CONFIG_KEY_0"]
+        self.assertTrue(key.startswith("http.https://github.com/"),
+                        f"认证头必须是 URL 作用域（防镜像泄漏），实际：{key}")
+        self.assertTrue(key.endswith("/.extraHeader"), f"实际：{key}")
         self.assertEqual(env["GIT_CONFIG_VALUE_0"], f"Authorization: Bearer {_FAKE_TOKEN}")
         self.assertNotIn("http_proxy", env)
         self.assertNotIn("https_proxy", env)

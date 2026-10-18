@@ -18,7 +18,7 @@
 | S01 | 原始输入 → URL 解析 | `ui/main_window` 输入区、文件导入 | `app/url_lib.parse_urls` | 跳过 `#` 注释；支持 6 平台 + SSH + 短格式；错误逐条回显 | `test_themes.TestThemeLogAndHighlight.test_maybe_validate_url` · `test_url_lib*` |
 | S02 | 引擎 → git 子进程 | `app/engine` | `git/service.GitService` | `encoding="utf-8", errors="replace"`；`GIT_CONFIG_*` **追加**不覆盖；代理/令牌注入 | `test_g66_patch.TestSubprocessTextDecoding` · `TestG69_18NoGitConfigEnvPollution` |
 | S03 | worker 结果 → SQLite | `app/engine._on_result`（单线程写） | `db/repo_db` | `BEGIN IMMEDIATE` + `busy_timeout=30000`；参数化查询 | `test_g67_closure` · `test_db*` |
-| S04 | DB → UI 模型 | `db/repo_db` | `ui/progress_table` · `ui/manage_model` | 行数/列语义一致；越界补行；**过滤条件必须被视图消费**；过期行有颜色角色 | `test_progress_ui` · `test_g67_closure`（重投复用批次上下文）· `test_g69_wiring_gaps`（过滤/高亮/收藏黑名单） |
+| S04 | DB → UI 模型 | `db/repo_db` | `ui/progress_table` · `ui/manage_model` | 行数/列语义一致；越界补行；**过滤条件必须被视图消费**；过期行有颜色角色 | `test_progress_ui` · `test_g67_closure`（重投复用批次上下文）· `test_g69_wiring_gaps`（过滤/高亮/收藏黑名单）· `test_g53_radar`（雷达图+统计中心挂载） |
 | S05 | 设置控件 → 落盘 | `ui/settings_panel` | `db/settings.SettingsStore` | 每个控件都有保存回调；敏感字段加密（token/host_tokens/ssh_key/**proxy**）；跨进程锁；pid/tid 唯一 tmp 名 | `test_g68_settings_ui` · `test_g67_closure.TestCrossProcessLock` · `TestG69_18WiringClosure` |
 | S06 | 设置字段 → 消费方 | `db/settings.Settings` | 引擎/扫描器/调度器 | **只写不读 = 用户改了没用**；只读不写 = 用户够不到；告警间隔/IM 改完必须即时生效 | `TestG69_18WiringClosure` · `TestG69_18NoZombieSettingsFields`（AST）· `test_g69_wiring_gaps.TestAlertScannerReconfigure` |
 | S07 | 后台线程 → GUI | `AlertScanner`/`ReportScheduler`/扫描线程/Star 拉取 | `ui/main_window` 槽 | 只能 `emit`，槽回主线程；对已销毁 QObject emit 必须被弱引用包装挡住 | `TestG69_18ScanWorkerStopsBeforeEmit` · `TestG69_18LogBufferTimerIsActivityArmed` · `test_g69_wiring_gaps.TestStarredImport` |
@@ -29,7 +29,7 @@
 | S12 | 打包 → 发布 | `Git-clone-Max.spec` → PyInstaller | `scripts/publish_release.py` / Release | 版本常量单源；双产物；服务端 sha256 一致；健康检查真启动 | `test_g66_patch.TestPackagingVersionSync` · `scripts/health_check.py`（人工） |
 | S13 | 归档 | `git/archive.py` | 文件系统 | 失败不静默；路径不越界 | `test_g56*` / `test_archive*` |
 | S14 | i18n | `gcm/i18n/zh.py` / `en.py` | `tr()` | 新增 key 必须两边都有；缺失回退中文 | `test_g67_docs_freshness` 相关用例 |
-| S15 | 镜像备援 → git | `app/mirrors.py` · `app/mirror_probe.py` | `git/service.py` 的 clone/fetch | 仅 HTTPS + 无凭据；探测用 `git ls-remote`（**不能用 HTTP HEAD**）；源站永远最后；更新失败可在镜像/源站间切换 | `test_g58_mirror_failover`（34，含真实 git E2E） |
+| S15 | 镜像备援 → git | `app/mirrors.py` · `app/mirror_probe.py` | `git/service.py` 的 clone/fetch | 仅 HTTPS + 无凭据（含全局 `http.*extraHeader`）；探测用 `git ls-remote`（**不能用 HTTP HEAD**）；源站永远最后；**origin 永远是源站**（镜像只记 `gcm.mirror`）；认证头 URL 作用域；更新回退先探测、`retries=0` | `test_g58_mirror_failover`（43，含真实 git E2E） |
 
 ---
 
@@ -41,7 +41,7 @@
 |----|------|------|------|
 | ruff | `python -m ruff check gcm` | **All checks passed** | 2026-10-17 |
 | mypy | `python -m mypy gcm` | **Success**（66 文件） | 2026-10-17 |
-| 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 1177 · failures=0 · errors=0 · skipped=3 · 原生崩溃 0 · 覆盖 82%` | 2026-10-18（v9.5.0） |
+| 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 1202 · failures=0 · errors=0 · skipped=3 · 原生崩溃 0 · 覆盖 82%` | 2026-10-18（v9.6.0） |
 | 连跑稳定性 | 同一命令 ×3 | `1115 / 1115 / 1122`，0 崩溃 | 2026-10-17（已移除 GC 安全网） |
 | CI | GitHub Actions | 7/7 job 绿（windows/ubuntu/macos + e2e + fast + perf + slow） | 2026-10-17 |
 

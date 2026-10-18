@@ -39,7 +39,9 @@ class TestRateLimit(GitConfigEnvIsolation, unittest.TestCase):
         svc._current_host = "github.com"
         env = svc._env()
         self.assertEqual(env["GIT_CONFIG_COUNT"], "3")
-        self.assertIn("http.extraHeader", env["GIT_CONFIG_KEY_0"])
+        key = env["GIT_CONFIG_KEY_0"]
+        self.assertTrue(key.startswith("http.https://github.com/"),
+                        f"认证头必须是 URL 作用域（防镜像泄漏），实际：{key}")
         self.assertIn("http.lowSpeedLimit", env["GIT_CONFIG_KEY_1"])
 
 
