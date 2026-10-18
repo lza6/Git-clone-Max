@@ -3,7 +3,7 @@
   "goal": "第三轮独立审查（针对 v9.6.0 修复本身）整改 + 真实 E2E/压测",
   "status": "done",
   "date": "2026-10-18",
-  "commit": "pending-at-write-time",
+  "commit": "c8ee65f",
   "review": {
     "verdict_before": "Request Changes",
     "required": 7,

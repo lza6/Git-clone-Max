@@ -533,3 +533,13 @@ Light 下对比度不足）、校验条强制 `PlainText`（用户原文含 `<>`
 
 `ruff` All passed · `mypy` Success（69）· 镜像 `test_g58_mirror_failover`(56) ·
 雷达 9 · 宽回归 89 OK · **全量快集 Ran 1211 · 0 失败 · 0 崩溃 · 覆盖 82%**。
+
+### 14.4 提交 / CI / 发布
+
+| 项 | 结果 |
+|----|------|
+| 提交 | `c8ee65f`（main） |
+| CI | run 39119023991 · 7/7 job 绿 |
+| 打包 | PyInstaller 成功；zip 292 条目 / 78,906,579 字节 |
+| 健康检查 | `version=9.6.1` · `started_ok=true` · `artifacts_exist=true` |
+| Release | v9.6.1 双产物 + 服务端 sha256 一致 |
