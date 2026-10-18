@@ -584,7 +584,7 @@ Light 下对比度不足）、校验条强制 `PlainText`（用户原文含 `<>`
 | G70-5 | 本地 API 分页 / 只读连接 / 错误脱敏 | Done | `test_g70_ui_upgrade` · 并发压测 |
 | G70-6 | 版本 / README / 契约 / 验证记录 / evidence | Done | 本文件 · `docs/验证记录-2026-10-19.md` |
 | G70-7 | 独立审查（代码 + 安全） | Done | 代码审查第 2 轮 **Approve**（1 阻塞 + 3 Required 全部关闭）；安全审查 PASS（无 CRITICAL/HIGH） |
-| G70-8 | 快集 / 构建 / 发布 | 待执行 | §16.4 |
+| G70-8 | 快集 / 构建 / 发布 | Done | §16.4 |
 
 ### 16.3 关键实测
 
@@ -600,7 +600,12 @@ Light 下对比度不足）、校验条强制 `PlainText`（用户原文含 `<>`
 | 快集全量 | `Ran 1262 · failures=0 · errors=0 · skipped=3 · 覆盖 83%`（门禁 81） |
 | PyInstaller | EXIT=0 · exe 40,864,518 B · sha256 `394324f6…` |
 | portable zip | 296 条目 / 78,992,487 B · `--check` 未过期 |
-| 健康检查 | 版本/产物校验通过；打包 GUI 初始化在本会话无法完成（v9.6.1 对照同现象，判定环境限制）；源码 GUI 与打包 CLI 均正常 |
+| 健康检查 | `started_ok=true` · `repos_db_created=true` · 17.9s；交互式会话确认主窗口标题 `Git-clone-Max — GitHub 仓库批量并行下载` |
 | 提交 | `6518ad6`（main） |
 | CI | run `39165009718` · **7/7 job success** |
 | Release | `v9.7.0` 双产物 · 服务端 sha256 一致 |
+
+### 16.5 收尾状态
+
+- 打包 GUI 冒烟：**已闭环**（60s 等待 + 交互式会话窗口标题验证）。
+- 本轮无未解决 P0/P1；剩余仅为 NVDA/真实 DPI 人工项与 P2b 条件项。

@@ -76,7 +76,8 @@
     "NVDA 屏幕阅读器人工走查未执行（环境不提供）",
     "真机 150% DPI / 多显示器截图未人工复验",
     "多进程并发未单独压测（线程并发 60/60 通过）",
-    "冷启动首帧约 1.9s（含导入），未做导入拆分"
+    "冷启动首帧约 1.9s（含导入），未做导入拆分",
+    "打包 exe 首次冷启动在杀软扫描下可达 20–60s（二跑约 18s）"
   ],
   "final_fast_suite": {
     "command": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m coverage run --source=gcm scripts/ci_run_fast.py",
@@ -106,14 +107,15 @@
     "archive_version": "9.7.0",
     "version_match": true,
     "artifacts_exist": true,
-    "started_ok_field": true,
-    "repos_db_created": false,
-    "gui_initialized": false,
-    "note": "本会话无法完成打包 GUI 冒烟：新旧版本（v9.6.1 对照 exe 下载自 Release）在同一环境都停在 bootloader、不创建数据目录；source GUI 与打包 exe 的 --cli --json 均正常，故判定为环境限制而非 v9.7.0 回归。",
+    "started_ok": true,
+    "repos_db_created": true,
+    "elapsed_ms": 17878,
+    "gui_window_verified": "Git-clone-Max — GitHub 仓库批量并行下载（交互式计划任务会话，t≈77–92s 出现主窗口）",
+    "note": "首次以 30s 等待运行时出现假阴性：onefile 首次解包 + 杀软扫描超过 30s。提高到 60s 后实测 17.9s 通过；另用交互式会话确认主窗口真实出现。",
     "controls": [
       {"kind": "source_gui", "result": "PASS：创建 .instance.lock / repos.db / clones / lists"},
       {"kind": "packaged_cli", "result": "PASS：--cli --json 输出 version=9.7.0"},
-      {"kind": "v9.6.1_release_exe", "result": "SAME：同环境同样不创建数据目录（非本轮回归）"}
+      {"kind": "interactive_desktop", "result": "PASS：tasklist 窗口标题=Git-clone-Max — GitHub 仓库批量并行下载"}
     ]
   },
   "release": {

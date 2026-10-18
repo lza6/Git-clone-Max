@@ -13,7 +13,7 @@
    - 失败语义：提取失败(archive_version=None) 或与源码不一致 → 断言 FAIL，
      JSON 台账如实记录 archive_version 与差异；不改产物、不改源码。
 4. started_ok      : QT_QPA_PLATFORM=offscreen + GCM_DATA_DIR=<临时目录>，
-     Popen 启动 exe，等待约 8s，进程仍存活（未闪退）。
+     Popen 启动 exe，最多等待 60s（首次解包/杀软扫描可能较慢），进程仍存活（未闪退）。
 5. repos_db_created: 冒烟期间临时数据目录生成 repos.db 或 settings.json。
    冒烟结束：proc.terminate()（5s 内未退出则 kill()）并 wait 回收，删除临时目录，
    不残留进程/文件。
@@ -50,7 +50,7 @@ ONEDIR_INIT = DIST / "Git-clone-Max-portable" / "_internal" / "gcm" / "__init__.
 ARCHIVE_INIT_KEY = "gcm/__init__.py"
 INIT_MARKER = re.compile(rb'__version__\s*=\s*["\']([^"\']+)["\']')
 CHUNK = 1024 * 1024  # 分块读 1MiB
-SMOKE_WAIT_S = 30.0
+SMOKE_WAIT_S = 60.0
 
 
 def _sha256_chunked(path: Path) -> str:
