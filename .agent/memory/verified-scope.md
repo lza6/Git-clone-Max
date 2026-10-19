@@ -22,3 +22,13 @@
 | 真实 Webhook 投递 | 需用户自己的 Server酱/TG 地址 | 全 mock；行为（幂等/审计/重试/防泄漏）已真实测 |
 | macOS/Linux 桌面 GUI 人眼点检 | 只有 Windows 实机 | CI 离屏跑通 + exe 真启动健康检查 |
 | 生产"热更新" | 本项目是**桌面单机工具**，无服务端 | 等价动作：打包 → 健康检查 → GitHub Release |
+
+## G71（2026-10-19）
+- EventBus 发布/订阅/回放/过滤/打码/慢订阅者丢弃：`tests.test_g71_event_stream.TestEventBus`。
+- SSE 帧/心跳/类型过滤/断连清理/不占 DB：`TestSseEndpoint`。
+- 错误分类与重试判定、重试面板禁用态：`TestErrorModel/TestRetryQueueVisibility/TestRetryPanelRows`。
+- 原子写并发/无 tmp 残留：`TestAtomicWrites`。
+- 诊断包内容与 userprofile 打码：`TestDiagBundle`。
+- GUI 本地 API 启停与 `/version`：`TestGuiHostsLocalApi`。
+- 真实 git E2E：`scripts/e2e_smoke.py` → `E2E_SMOKE_RESULT: PASS`。
+- 快集全量：1316 tests / 0 failures / 0 errors / skipped 3 / 覆盖 81%。

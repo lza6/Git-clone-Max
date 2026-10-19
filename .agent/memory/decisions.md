@@ -46,3 +46,24 @@ AST 只统计 `Attribute` / `Name` / `getattr(obj, "名字")`，注释与字符�
 `.agent/` 只放**记忆、规则、技能索引**；架构/契约/数据模型等权威内容仍在
 `docs/architecture.md` / `docs/agent-contract.md` / `docs/data-model.md`。
 `.agent/` 里只写指针，避免同一事实存在两份而漂移。
+
+## G71（v9.8.0）队列可观测性 / 事件流 / 诊断包
+
+- **D7 事件总线采用进程内单例 + 有界环形缓冲**，不引入消息队列/文件日志作为主通道：
+  桌面单机工具没有常驻服务端；跨重启审计继续用 `app.log` / `progress.json`。
+  事件发布永不阻塞/抛出，慢订阅者丢最旧并计数（`stats.dropped`）。
+- **D8 SSE 由 GUI 进程托管**（设置页「本地 API / 事件流」，默认关、仅回环）：
+  独立 `--serve` 是另一个进程，EventBus 不互通；若强行让 `--serve` 读 GUI 事件，
+  需要文件桥/DB 表，复杂度和一致性风险高于收益。文档必须写明这一边界。
+- **D9 错误是否可自动重试只由 `app/errors.classify_error` 判定**：
+  429/5xx/网络 → true；401/403/404/磁盘满/平台限制 → false。
+  UI 分类、重试队列、SSE `task_error` 共用，禁止再写第二份关键字表。
+- **D10 所有 JSON 持久化统一 `util/atomic_io.write_text_atomic`**：
+  唯一 tmp（pid+tid）+ flush/fsync + 目录 fsync + 替换退避；失败上抛。
+  旧模块的固定 `*.json.tmp` 写法视为缺陷，不得新增。
+- **D11 诊断包只含已打码文本**（报告/事件/日志尾部），明确排除
+  `settings.json`、数据库、仓库内容；zip 用唯一临时文件 + `os.replace`。
+- **D12 长函数拆分按「纯映射/纯构建」优先**：
+  `_update` 拆出 fetch/merge/bare 三段；`_launch` 引擎参数映射拆到
+  `engine_factory`；下载页控件搭建拆到 `download_layout`。
+  不拆高度耦合的控制流，避免为了行数制造回归面。

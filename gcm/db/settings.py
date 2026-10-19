@@ -314,6 +314,10 @@ class Settings:
     alert_im_channel: str = ""               # G59-7 企业 IM 告警渠道（dingtalk/feishu/wecom；空=关）
     alert_im_url: str = ""                   # G59-7 企业 IM webhook URL（空=关）
     alert_im_token: str = ""                 # G59-7 企业 IM webhook Token（可选；落盘前加密）
+    # G71-9：GUI 内置本地只读 API（含 SSE 事件流）。默认关；仅回环绑定。
+    # 独立 `--serve` 进程看不到 GUI 引擎的事件，因此事件流需要由 GUI 自己托管。
+    local_api_enabled: bool = False
+    local_api_port: int = 8765
 
 
 _DEFAULTS: dict = asdict(Settings())

@@ -10,20 +10,15 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QCloseEvent
 from PyQt6.QtWidgets import (
-    QComboBox,
     QFileDialog,  # noqa: F401  — 测试 mock 引用（download_tools 经本模块访问）
     QFrame,
-    QGroupBox,
     QHBoxLayout,
     QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
     QMessageBox,
-    QPlainTextEdit,
-    QPushButton,
     QScrollArea,
-    QSpinBox,
     QSplitter,
     QTabWidget,
     QVBoxLayout,
@@ -191,6 +186,10 @@ class MainWindow(QMainWindow):
         self._build_ui()
         # 首次日志写入前先挂 LogBuffer（此时 log_view/log_count 已存在）
         self._ensure_log_buffer()
+        # G71-9：GUI 内置本地只读 API（含 SSE 事件流）的句柄
+        self._local_api_server = None
+        self._local_api_thread = None
+        self._local_api_port = None
 
         # G67-2：工作线程 → GUI 线程的信号桥（详见类文档的线程安全约定）。
         # 必须在 _build_ui() 之后连接：槽函数要用到 statusBar 与已建好的控件。
@@ -260,6 +259,8 @@ class MainWindow(QMainWindow):
         self.tray = TrayController(parent=self)
         if self.settings.minimize_to_tray:
             self.tray.install()
+        # G71-9：设置开启时在 GUI 进程内启动本地只读 API（SSE 才能看到真实引擎事件）
+        QTimer.singleShot(900, self._apply_local_api_settings)
 
         # 启动后静默检查更新：不阻塞、不弹窗，有新版本仅写日志 + 托盘提示
         QTimer.singleShot(2500, self._check_update_silent)  # G21-3 启动后静默检查更新
@@ -495,8 +496,11 @@ class MainWindow(QMainWindow):
             if getattr(dlg, "selected_dir", ""):
                 self.target_edit.setText(dlg.selected_dir)
                 self.settings.download_dir = dlg.selected_dir
-            mode = getattr(dlg, "selected_mode", "") or ""
-            if mode.startswith("浅"):
+            # G71-5：优先读语义值（full/shallow）；旧版本/外部构造的对象退回文案判断。
+            mode = (getattr(dlg, "selected_mode_value", "")
+                    or getattr(dlg, "selected_mode", "") or "")
+            if mode == "shallow" or str(mode).startswith("浅") or \
+                    str(mode).lower().startswith("shallow"):
                 self.mode_combo.setCurrentIndex(1)
             self.settings_store.save(self.settings)
         except Exception as e:
@@ -768,156 +772,10 @@ class MainWindow(QMainWindow):
         v = QVBoxLayout(self.tab_download)
         v.setSpacing(10)
 
-        box = QGroupBox(tr("仓库地址（每行一个）"))
-        b = QVBoxLayout(box)
-        self.repo_input = QPlainTextEdit()
-        self.repo_input.setPlaceholderText(
-            tr("每行一个仓库地址，例如：\n")
-            + "https://github.com/vercel-labs/skills\n"
-            + "git@github.com:microsoft/azure-skills.git\n"
-            + "vercel-labs/agent-skills\n"
-            + tr("https://gitlab.com/grp/repo@v1.2.0  （@后指定分支/标签）\n")
-            + tr("（地址中的 作者/仓库名 将自动作为文件夹名：作者__仓库）")
-        )
-        self.repo_input.setMinimumHeight(120)
-        self.repo_input.setAccessibleName(tr("仓库地址输入框"))
-        b.addWidget(self.repo_input)
-        # G54-1 实时校验条：输入/粘贴后显示「有效 N / 无效 M」，
-        # 并指出前几条无效行。解析用与克隆链路同一个 parse_any_repo_url。
-        self.repo_valid_lbl = QLabel("")
-        self.repo_valid_lbl.setWordWrap(True)
-        # 内容含用户粘贴的原文，强制纯文本，避免 <...> 被当富文本渲染
-        self.repo_valid_lbl.setTextFormat(Qt.TextFormat.PlainText)
-        b.addWidget(self.repo_valid_lbl)
-        self._validate_timer = QTimer(self)
-        self._validate_timer.setSingleShot(True)
-        self._validate_timer.setInterval(300)      # 输入防抖，避免每次按键都解析
-        self._validate_timer.timeout.connect(self._refresh_url_validation)
-        self.repo_input.textChanged.connect(self._on_input_changed)
-        # G02-4 右键菜单：从最近历史回填 / 清空历史
-        self.repo_input.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.repo_input.customContextMenuRequested.connect(self._repo_input_menu)
-        # G35-3 拖拽导入：.txt/.csv → 读入每行地址；目录 → 本地扫描检测
-        self.repo_input.setAcceptDrops(True)
-        # G69-18：**不能**把绑定方法直接挂成控件属性 —— 控件持有绑定方法、
-        # 绑定方法持有窗口、窗口又持有控件 → 引用环。改为弱引用包装，
-        # 窗口销毁后 handler 自动失效（Qt 不会再调它，因为控件也随之销毁）。
-        _self_ref = weakref.ref(self)
-
-        def _drag_enter(e):
-            me = _self_ref()
-            if me is not None:
-                me._repo_input_drag_enter(e)
-
-        def _drop(e):
-            me = _self_ref()
-            if me is not None:
-                me._repo_input_drop(e)
-
-        self.repo_input.dragEnterEvent = _drag_enter
-        self.repo_input.dropEvent = _drop
-        quick = QHBoxLayout()
-        quick.addWidget(QLabel(tr("快捷填充：")))
-        # G70：Compact 模式下隐藏快捷填充按钮（功能仍可手输/粘贴）
-        self._quick_fill_buttons = []
-        # G35-7 快捷填充可配置：跟随 settings.quick_repos（持久化，可编辑）
-        for repo in getattr(self.settings, "quick_repos", None) or ():
-            btn = QPushButton(repo)
-            # G69-18：**不要**用 lambda 捕获 self —— 控件持有连接、连接持有闭包、
-            # 闭包持有 MainWindow，而 MainWindow 又持有控件 → 引用环 → 只能靠循环 GC
-            # 回收 → 回收时机不可控（可能在 Qt 分发事件中途）→ 原生崩溃。
-            # PyQt 对**绑定方法**用弱引用（不建环），参数经控件属性传递。
-            btn.setProperty("quick_repo", repo)
-            btn.clicked.connect(self._on_quick_fill)
-            quick.addWidget(btn)
-            self._quick_fill_buttons.append(btn)
-        quick.addStretch()
-        # G35-4 任务清单：保存当前输入区为命名清单 / 下拉载入（分享用 data/lists/*.json）
-        self.btn_save_list = QPushButton(tr("💾 保存清单"))
-        self.btn_save_list.setToolTip(tr("把当前输入区的地址保存为命名任务清单（data/lists/*.json）"))
-        self.btn_save_list.clicked.connect(self._save_task_list)
-        self.combo_load_list = QComboBox()
-        self.combo_load_list.setToolTip(tr("选择已保存的清单一键载入"))
-        self.combo_load_list.setMinimumWidth(180)
-        self.btn_load_list = QPushButton(tr("载入"))
-        self.btn_load_list.setToolTip(tr("把所选清单的地址填入输入区"))
-        self.btn_load_list.clicked.connect(self._load_task_list)
-        quick.addWidget(self.btn_save_list)
-        quick.addWidget(self.combo_load_list)
-        quick.addWidget(self.btn_load_list)
-        # G35-10 GitHub Star 列表导入：`gh_api.fetch_starred` 早已实现（含分页与
-        # 错误语义），但此前**没有任何 UI 入口** —— 帮助文档与 README 却宣称
-        # 「设置页可一键导入」。这里补真实入口，网络请求走 worker 线程。
-        self.btn_star_import = QPushButton(tr("⭐ 导入 Star"))
-        self.btn_star_import.setToolTip(
-            tr("按 GitHub 用户名拉取 Star 列表并填入输入区（需要时在设置页填写令牌）"))
-        self.btn_star_import.clicked.connect(self.import_starred)
-        quick.addWidget(self.btn_star_import)
-        b.addLayout(quick)
-        # G70：输入/选项/按钮收敛到上半区，与进度表之间用可拖动分隔器分配高度
-        top = QWidget()
-        tv = QVBoxLayout(top)
-        tv.setContentsMargins(0, 0, 0, 0)
-        tv.setSpacing(10)
-        tv.addWidget(box)
-
-        opts = QHBoxLayout()
-        g1 = QGroupBox(tr("下载位置"))
-        l1 = QHBoxLayout(g1)
-        # 恢复上次选择（settings.download_dir），否则默认 data/clones
-        default_dir = str(self.settings.download_dir or (self.data_dir / "clones"))
-        self.target_edit = QLineEdit(default_dir)
-        btn_browse = QPushButton(tr("浏览…"))
-        btn_browse.clicked.connect(self.choose_target)
-        l1.addWidget(self.target_edit, 1)
-        l1.addWidget(btn_browse)
-        opts.addWidget(g1, 1)
-
-        g2 = QGroupBox(tr("克隆模式"))
-        l2 = QHBoxLayout(g2)
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItems([tr("满量克隆（完整历史）"), tr("浅克隆（最新代码）"),
-                                  tr("单分支浅克隆（--single-branch）"),
-                                  tr("镜像克隆（--mirror）")])
-        self.depth_spin = QSpinBox()
-        self.depth_spin.setRange(1, 10000)
-        self.depth_spin.setValue(1)
-        self.depth_spin.setSuffix(" 层")
-        self.depth_spin.setEnabled(False)
-        # G69-18：绑定方法替代 lambda（避免引用环，见 _on_quick_fill 处说明）
-        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
-        l2.addWidget(self.mode_combo)
-        l2.addWidget(self.depth_spin)
-        opts.addWidget(g2)
-        tv.addLayout(opts)
-
-        btns = QHBoxLayout()
-        self.btn_start = QPushButton(tr("开始并行下载 / 更新"))
-        self.btn_start.setObjectName("primary")
-        self.btn_start.setMinimumHeight(38)
-        self.btn_start.setAccessibleName(tr("开始并行下载或更新"))
-        self.btn_start.clicked.connect(self.start_all)
-        self.btn_start.setIcon(self._std_icon("play", self.btn_start))
-        self.btn_cancel = QPushButton(tr("取消全部"))
-        self.btn_cancel.setEnabled(False)
-        self.btn_cancel.setAccessibleName(tr("取消全部任务"))
-        self.btn_cancel.clicked.connect(self.cancel_all)
-        self.btn_cancel.setIcon(self._std_icon("stop", self.btn_cancel))
-        self.btn_clear = QPushButton(tr("清空列表"))
-        self.btn_clear.clicked.connect(self.repo_input.clear)
-        self.btn_open = QPushButton(tr("打开克隆目录"))
-        self.btn_open.clicked.connect(self.open_target)
-        self.btn_open.setIcon(self._std_icon("open_dir", self.btn_open))
-        btns.addWidget(self.btn_start, 2)
-        btns.addWidget(self.btn_cancel)
-        btns.addWidget(self.btn_clear)
-        btns.addWidget(self.btn_open)
-        # G52-5：失败原因聚合面板入口
-        self.btn_failures = QPushButton(tr("失败汇总"))
-        self.btn_failures.clicked.connect(self._open_failure_dialog)
-        btns.addWidget(self.btn_failures)
-        btns.addStretch()
-        tv.addLayout(btns)
+        # G71-7：顶部区域控件搭建已抽到 download_layout.build_download_top
+        # （长函数治理；所有控件仍挂在本窗口，外部引用不变）
+        from .download_layout import build_download_top
+        top = build_download_top(self)
 
         # G45-6：进度表/空态/过滤框/暂停 收敛到 progress_table.py（ProgressTable）
         from .progress_table import ProgressTable
@@ -1618,7 +1476,14 @@ class MainWindow(QMainWindow):
             return
         try:
             from .diag_dialog import DiagReportDialog
-            DiagReportDialog(title, body, copy_text, self).exec()
+            # G71-6：带上数据目录与事件总线，报告对话框可直接导出诊断包
+            try:
+                from ..app.event_bus import get_event_bus
+                _bus = get_event_bus()
+            except Exception:
+                _bus = None
+            DiagReportDialog(title, body, copy_text, self,
+                             data_dir=self.data_dir, event_bus=_bus).exec()
         except Exception as exc:  # noqa: BLE001
             # 对话框起不来不能把诊断结果一起吞掉 —— 退化为纯文本
             from PyQt6.QtWidgets import QMessageBox
@@ -1669,7 +1534,8 @@ class MainWindow(QMainWindow):
             return
         try:
             from .diag_dialog import DiagReportDialog
-            DiagReportDialog(tr("通知审计（最近 200 条）"), body, body, self).exec()
+            DiagReportDialog(tr("通知审计（最近 200 条）"), body, body, self,
+                             data_dir=self.data_dir).exec()
         except Exception as exc:  # noqa: BLE001
             from PyQt6.QtWidgets import QMessageBox
             self._emit_log(_fmt_dt(), LogLevel.WARN, f"通知审计对话框打开失败：{exc}")
@@ -2100,46 +1966,17 @@ class MainWindow(QMainWindow):
                 old_engine.discard()
             except Exception:
                 pass
-        self.engine = SyncEngine(
-            target_root,
-            db=self.db,
-            progress_path=self.progress_path,
-            concurrency=int(self.settings.concurrency),
-            fetch_timeout=self.settings.fetch_timeout,
-            clone_timeout=self.settings.clone_timeout,
-            retries=self.settings.retries,
-            proxy=self.settings.proxy,
-            token=self.settings.token,
-            submodule=bool(getattr(self.settings, "submodule", False)),
-            rate_limit_kbps=int(getattr(self.settings, "rate_limit_kbps", 0) or 0),
-            host_tokens=getattr(self.settings, "host_tokens", None) or {},  # G38-1
-            mirror_prefix=getattr(self.settings, "mirror_prefix", None) or {},  # G38-2
-            mirror_use_presets=bool(getattr(self.settings, "mirror_use_presets", True)),  # G58-2
-            mirror_fallback=bool(getattr(self.settings, "mirror_fallback", True)),        # G58-2
-            mirror_probe_timeout=float(getattr(self.settings, "mirror_probe_timeout", 8) or 8),  # G58-2
-            host_auth_types=getattr(self.settings, "host_auth_types", None) or {},  # G58-5
-            precheck_remote=bool(getattr(self.settings, "precheck_remote", False)),  # G38-3
-            single_branch=bool(single_branch),  # G38-4（UI 模式 2 或设置）
-            force_ipv4=bool(getattr(self.settings, "force_ipv4", False)),  # G38-6
-            lfs_enabled=bool(getattr(self.settings, "lfs_enabled", False)),  # G48-2
-            post_clone_hook=str(getattr(self.settings, "post_clone_hook", "")),  # G48-5
-            ssh_key=str(getattr(self.settings, "ssh_key_path", "")),  # G48-3/G67-16 接线
-            mirror=bool(mirror),  # G48-6
-            # G52-1 失败自动重试队列（设置开启且网络类错误才入队）
-            retry_queue_path=self.data_dir / "retry_queue.json",
-            retry_enabled=bool(getattr(self.settings, "retry_enabled", False)),
-            retry_max=int(getattr(self.settings, "retry_max", 2) or 2),
-            retry_backoff_base_sec=int(getattr(self.settings, "retry_backoff_base_sec", 30) or 30),
-            # G52-2 跨会话续跑清单
-            session_store=self.session_store,
-            # G52-3 看门狗参数（MainWindow 持有 Watchdog 实例）
-            watchdog_enabled=bool(getattr(self.settings, "watchdog_enabled", False)),
-            watchdog_interval_min=int(getattr(self.settings, "watchdog_interval_min", 5) or 5),
-            # G52-4 进度文件治理
-            progress_gc=self._progress_gc_mod(),
-            # G52-6 并发自适应记忆
-            concurrency_state_path=self.data_dir / "concurrency_state.json",
-        )
+        # G71-1：引擎事件发布到进程级总线（SSE / 诊断包共享同一条流）
+        try:
+            from ..app.event_bus import get_event_bus
+            _event_bus = get_event_bus()
+        except Exception:
+            _event_bus = None
+        # G71-7：引擎参数映射已抽取到 engine_factory（长函数治理，行为零变化）
+        from .engine_factory import build_sync_engine
+        self.engine = build_sync_engine(
+            self, target_root, single_branch=bool(single_branch),
+            mirror=bool(mirror), event_bus=_event_bus)
         self.watchdog.set_engine(self.engine)
         self.engine.line.connect(self._on_engine_line)
         self.engine.adapt_changed.connect(self._on_adapt_changed)  # G48-1
@@ -2294,6 +2131,109 @@ class MainWindow(QMainWindow):
             return None
 
     # ------------------------------------------------------------ G52-5 失败汇总
+    # ------------------------------------------------------------ G71-9 本地 API
+    def _apply_local_api_settings(self) -> None:
+        """按设置启停 GUI 内置本地 API（只读 + SSE）。
+
+        **为什么在 GUI 进程内**：EventBus 是进程内单例；独立 `--serve` 进程
+        看不到 GUI 引擎发布的事件。只有同进程托管，`/api/events` 才是真流。
+
+        G71-11（审查 R4）：
+        - **先起新服、成功后再停旧服** —— 新端口被占用时旧服务继续可用，
+          不会出现「改端口后 API 直接消失」；
+        - 端口未变化时不重启（避免每次设置保存都空转）；
+        - 旧服务的 `shutdown()`/`join()` 放到后台线程，不阻塞 GUI（每次约 0.5s）。
+        """
+        if getattr(self, "_close_requested", False):
+            self._stop_local_api(wait=True)
+            return
+        if not bool(getattr(self.settings, "local_api_enabled", False)):
+            self._stop_local_api(wait=True)
+            return
+        # 0 = 内核分配（仅测试/临时实例用；设置页 spin 下限 1024）
+        try:
+            port = int(getattr(self.settings, "local_api_port", 8765))
+        except (TypeError, ValueError):
+            port = 8765
+        if port < 0:
+            port = 8765
+        old = getattr(self, "_local_api_server", None)
+        old_th = getattr(self, "_local_api_thread", None)
+        if old is not None and getattr(self, "_local_api_port", None) == port:
+            return                       # 端口未变，保持现状
+        try:
+            from ..app.event_bus import get_event_bus
+            from ..http_api import create_server
+            httpd = create_server(
+                f"127.0.0.1:{port}", root=self.data_dir, data_dir=self.data_dir,
+                allow_mutate=False, event_bus=get_event_bus())
+        except Exception as e:  # noqa: BLE001 —— 端口占用/权限不足不能拖垮 GUI
+            self._emit_log(_fmt_dt(), LogLevel.WARN,
+                           f"本地 API 启动失败（127.0.0.1:{port}）：{e}")
+            return                       # 旧服务（若有）保持运行
+        th = threading.Thread(target=httpd.serve_forever, daemon=True,
+                              name="gcm-local-api")
+        th.start()
+        self._local_api_server = httpd
+        self._local_api_thread = th
+        self._local_api_port = port
+        if old is not None:
+            self._shutdown_local_api_async(old, old_th)
+        self._emit_log(_fmt_dt(), LogLevel.SYSTEM,
+                       f"本地只读 API 已启动：http://127.0.0.1:{port}"
+                       "（GET /api/events 为 SSE 事件流）")
+
+    @staticmethod
+    def _shutdown_local_api_async(httpd, th) -> None:
+        """后台停止一个 API 实例（不阻塞 GUI 线程）。"""
+        def _run() -> None:
+            try:
+                httpd.shutdown()
+            except Exception:
+                pass
+            try:
+                httpd.server_close()
+            except Exception:
+                pass
+            if th is not None:
+                try:
+                    th.join(2.0)
+                except Exception:
+                    pass
+
+        threading.Thread(target=_run, daemon=True,
+                         name="gcm-local-api-stop").start()
+
+    def _stop_local_api(self, wait: bool = False) -> None:
+        """停止 GUI 内置本地 API（幂等）。
+
+        `wait=True` 时同步等 serve_forever 退出（关窗/用户主动关闭用；
+        最坏约 0.5s）。端口切换走 `wait=False`，由后台线程收敛。
+        """
+        httpd = getattr(self, "_local_api_server", None)
+        th = getattr(self, "_local_api_thread", None)
+        self._local_api_server = None
+        self._local_api_thread = None
+        self._local_api_port = None
+        if httpd is None:
+            return
+        if wait:
+            try:
+                httpd.shutdown()
+            except Exception:
+                pass
+            try:
+                httpd.server_close()
+            except Exception:
+                pass
+            if th is not None:
+                try:
+                    th.join(2.0)
+                except Exception:
+                    pass
+        else:
+            self._shutdown_local_api_async(httpd, th)
+
     def _open_failure_dialog(self):
         """打开「失败原因聚合」对话框（按错误类别聚合 + 可重试该类别）。"""
         try:
@@ -2303,6 +2243,85 @@ class MainWindow(QMainWindow):
             dlg.exec()
         except Exception as e:
             self._emit_log(_fmt_dt(), LogLevel.WARN, f"失败汇总打开失败：{e}")
+
+    def _open_retry_dialog(self):
+        """G71-4：打开「失败重试队列」对话框（可查看/立即重试/移除）。"""
+        if not self._can_show_modal():
+            try:
+                eng = getattr(self, "engine", None)
+                q = getattr(eng, "retry_queue", None) if eng is not None else None
+                n = q.count() if q is not None else 0
+                self._emit_log(_fmt_dt(), LogLevel.INFO,
+                               tr("重试队列：{n} 条").format(n=n))
+            except Exception:
+                pass
+            return
+        try:
+            from .retry_panel import RetryQueueDialog
+            RetryQueueDialog(owner=self, parent=self).exec()
+        except Exception as e:
+            self._emit_log(_fmt_dt(), LogLevel.WARN, f"重试队列打开失败：{e}")
+
+    def _diag_status_report(self) -> str:
+        """构造诊断包的文本报告（纯读；不触发网络/子进程）。"""
+        from .. import __version__
+        lines = [
+            f"Git-clone-Max {__version__}",
+            f"生成时间：{_fmt_dt()}",
+            f"数据目录：{self.data_dir}",
+            f"下载目录：{getattr(self.settings, 'download_dir', '') or '(未设置)'}",
+            f"引擎：busy={bool(getattr(self, 'busy', False))} "
+            f"concurrency={getattr(getattr(self, 'engine', None), 'concurrency', '-')}",
+        ]
+        try:
+            st = self.db.stats_overview()
+            lines.append(f"数据库：{st}")
+        except Exception as e:  # noqa: BLE001
+            lines.append(f"数据库统计失败：{e}")
+        try:
+            eng = getattr(self, "engine", None)
+            q = getattr(eng, "retry_queue", None) if eng is not None else None
+            if q is not None:
+                lines.append(f"重试队列：{q.stats()}")
+            else:
+                lines.append("重试队列：未启用")
+        except Exception as e:  # noqa: BLE001
+            lines.append(f"重试队列统计失败：{e}")
+        try:
+            from ..app.event_bus import get_event_bus
+            lines.append(f"事件总线：{get_event_bus().stats()}")
+        except Exception as e:  # noqa: BLE001
+            lines.append(f"事件总线统计失败：{e}")
+        return "\n".join(lines)
+
+    def _export_diag_bundle(self):
+        """G71-6：导出诊断 zip（用户选路径；失败给可读提示）。"""
+        if not self._can_show_modal():
+            self._emit_log(_fmt_dt(), LogLevel.INFO, self._diag_status_report())
+            return
+        try:
+            from ..app.diag_bundle import build_diag_bundle, default_bundle_name
+            default = str(Path.home() / "Desktop" / default_bundle_name())
+            path, _ = QFileDialog.getSaveFileName(
+                self, tr("导出诊断包"), default, tr("Zip 压缩包 (*.zip)"))
+            if not path:
+                return
+            if not str(path).lower().endswith(".zip"):
+                path = str(path) + ".zip"
+            from ..app.event_bus import get_event_bus
+            out = build_diag_bundle(
+                path, data_dir=self.data_dir,
+                report_text=self._diag_status_report(),
+                event_bus=get_event_bus(),
+                extra_manifest={"tab": self.tabs.currentIndex() if hasattr(self, "tabs") else 0})
+            self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"诊断包已导出：{out}")
+            QMessageBox.information(self, tr("诊断包已导出"), str(out))
+        except Exception as e:  # noqa: BLE001
+            self._emit_log(_fmt_dt(), LogLevel.WARN, f"诊断包导出失败：{e}")
+            try:
+                QMessageBox.warning(self, tr("导出失败"), str(e))
+            except Exception:
+                pass
 
     def _on_failure_category_retry(self, category):
         """按失败类别重试：从 progress.json failed 记录中筛出该类并重新调度。"""
@@ -2572,6 +2591,11 @@ class MainWindow(QMainWindow):
             # 阻塞 8+4+8=20s，且警告文案因 GUI 线程被占无法绘制。
             pass
         self._close_requested = True
+        # G71-9：先停本地 API（释放端口 + 唤醒 SSE 长连接线程）
+        try:
+            self._stop_local_api(wait=True)
+        except Exception:
+            pass
         # G59-7：停止告警后台扫描器
         try:
             if getattr(self, "alert_scanner", None) is not None:

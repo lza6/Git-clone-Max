@@ -136,6 +136,12 @@ def _classify_failure(tail: str) -> tuple:
     if "unable to checkout" in t or "unable to create file" in t:
         return ("检出工作区失败（平台/文件系统限制）",
                 "可能因长路径、文件系统限制或仓库内含非法文件名导致 checkout 失败。")
+    # G71-3：网络类失败给出可解释文案（并让重试队列能识别为可重试）。
+    # `_is_networkish_error` 定义在本函数之后，但调用发生在运行时，可正常解析。
+    if _is_networkish_error(tail or ""):
+        return ("网络连接失败（可自动重试）",
+                "远端不可达、连接被重置或超时；可稍后重试，或在设置页开启"
+                "「失败自动重试」。")
     return ("克隆失败", "git 操作失败，详见日志。")
 
 
@@ -1371,63 +1377,7 @@ class GitService:
         self._emit(f"检查 {spec.display} 远端更新 …")
         fetch_cmd = ["git"] + self._lfs_flag() + ["fetch", "--progress", "--prune", "origin"]
         if self._mirror:
-            # G48-6 镜像仓库（bare）：仅更新远端 refs，无工作树不 merge
-            mr_rc, _ = run_git_ui(
-                fetch_cmd, str(repo_dir), self.on_line, cancelled=self.cancelled,
-                env=self._env(), timeout=self.fetch_timeout, retries=self.retries,
-                backoff=self._backoff)
-            # G69-21：bare 仓库同样要有镜像回退（此前这个分支直接 return，
-            # README 的「更新失败自动切换」对 --mirror 仓库不成立）。
-            if mr_rc != 0 and self.mirror_fallback and not self.cancelled():
-                original = self._get_origin_url(repo_dir)
-                if original and not self._origin_same_repo(original, spec.url_https):
-                    # 与普通分支一致：origin 指向别的仓库时不做猜测性改写
-                    self._emit("[警告] origin 与目标仓库不一致，跳过镜像回退", "warn")
-                else:
-                    switched = False
-                    for alt in self._update_failover_candidates(spec.url_https):
-                        prefix = self._prefix_of(alt, spec.url_https)
-                        if alt != spec.url_https:
-                            if not probe_health(prefix):
-                                continue
-                            ok, _ms, err = probe_git_url(
-                                alt, self.mirror_probe_timeout,
-                                cancelled=self.cancelled, env=self._mirror_env())
-                            self._mark_probe_result(prefix, ok, err)
-                            if not ok:
-                                self._emit(f"[警告] 备用地址不可用，跳过：{alt}（{err}）", "warn")
-                                continue
-                        if not self._set_origin_url(repo_dir, alt):
-                            continue
-                        self._emit(f"{spec.display} 镜像 fetch 失败，切换到 {alt} 重试 …", "warn")
-                        alt_cmd = fetch_cmd
-                        if alt != spec.url_https:
-                            alt_cmd = [fetch_cmd[0], "-c", "http.extraHeader="] + fetch_cmd[1:]
-                        mr_rc, _ = run_git_ui(
-                            alt_cmd, str(repo_dir), self.on_line,
-                            cancelled=self.cancelled,
-                            env=(self._mirror_env() if alt != spec.url_https else self._env()),
-                            timeout=self.fetch_timeout, retries=0,
-                            backoff=self._backoff)
-                        if mr_rc == 0:
-                            if alt != spec.url_https:
-                                self._remember_mirror(repo_dir, prefix)
-                            switched = True
-                            break
-                    # 只有真的切换过才把 origin 恢复为源站；否则原样保留
-                    if switched:
-                        self._set_origin_url(repo_dir, spec.url_https)
-                    elif original:
-                        self._set_origin_url(repo_dir, original)
-            if mr_rc == 0:
-                res.status = SyncStatus.SUCCESS
-                res.action = SyncAction.FETCHED
-                res.message = "镜像已同步远端 refs"
-            else:
-                res.status = SyncStatus.FAILED
-                res.action = SyncAction.FAILED
-                res.message = "镜像 remote fetch 失败"
-            return res
+            return self._update_bare_mirror(spec, repo_dir, fetch_cmd, res)
         used_unshallow = False
         if self.unshallow and self._is_shallow_repo(repo_dir):
             fetch_cmd = ["git", "fetch", "--progress", "--prune", "--unshallow", "origin"]
@@ -1453,13 +1403,146 @@ class GitService:
             fetch_cmd = ["git"] + self._lfs_flag() + [
                 "fetch", "--progress", "--prune", "origin"]
             self._emit(f"{spec.display} 为浅克隆仓库：按浅边界增量 fetch（不带 --depth）")
-        # G58-2/G69-21：有「上次可用镜像」时，用显式 URL + refspec fetch，
-        # 不改动 origin；成功就跳过对源站的直连。origin 始终是源站。
+        # G58-2/G69-21：fetch + 镜像回退（G71-7 抽成独立方法，行为零变化）
+        if not self._fetch_remote(spec, repo_dir, fetch_cmd, used_unshallow, res):
+            return res
+
+        # 2) 计算可以快进的提交数
+        branch = self._local_branch(repo_dir)
+        # F6：detached HEAD（如指定 tag 检出）→ 不参与 ff/rebase，仅 fetch 保持新鲜
+        if not branch:
+            res.status = SyncStatus.SUCCESS
+            res.action = SyncAction.FETCHED
+            res.message = "已按标签/提交固定检出（detached HEAD），仅 fetch 检查"
+            res.head_sha = self._head_sha(repo_dir)
+            res.remote_sha = self._remote_head(repo_dir)
+            res.commits = 0
+            return res
+        remote_ref = "origin/" + branch
+        commits_new = self._count_new_commits(repo_dir, remote_ref)
+
+        # 3) 冲突检测（含 rebase 中止兜底：先中止可能残留的 rebase 状态）
+        try:
+            subprocess.run(["git", "-C", str(repo_dir), "rebase", "--abort"],
+                           capture_output=True, timeout=15)
+        except Exception:
+            pass  # 无 rebase 进行中 → 非 0 忽略
+        conflict, reason = _detect_conflict(str(repo_dir))
+        if conflict:
+            self._emit(f"[冲突] {spec.display}：{reason}。保留本地改动，跳过合并。", "warn")
+            res.status = SyncStatus.CONFLICT
+            res.action = SyncAction.CONFLICT
+            res.message = "本地改动冲突，已跳过合并"
+            res.detail = reason
+            res.remote_sha = self._remote_head(repo_dir)
+            res.commits = commits_new
+            return res
+
+        # 3.1) rebase 场景：本地领先远端（分叉但 clean）→ 有未提交改动会中断
+        # 由 merge --ff-only 失败路径统一处理（rebase/回滚），此处不再重复检测。
+
+        # 4) merge --ff-only（或 rebase）—— G71-7 抽成独立方法
+        early = self._merge_remote(spec, repo_dir, commits_new, res)
+        if early is not None:
+            return early
+
+        after = self._head_sha(repo_dir)
+        res.head_sha = after
+        res.remote_sha = self._remote_head(repo_dir)
+        res.commits = max(0, commits_new)
+        res.status = SyncStatus.SUCCESS
+        if commits_new > 0:
+            res.action = SyncAction.UPDATED
+            res.message = f"更新完成（+{commits_new} 提交）"
+        elif commits_new == 0:
+            res.action = SyncAction.FETCHED
+            res.message = "已是最新"
+        else:
+            # G67-11：无法判定时不能宣称「已是最新」——用 FETCHED + 明确措辞。
+            advanced = after != before
+            res.action = SyncAction.UPDATED if advanced else SyncAction.FETCHED
+            res.message = ("已同步（提交数无法判定，HEAD 已推进）" if advanced
+                           else "已获取远端（提交数无法判定，请复核远端分支）")
+        return res
+
+    def _update_bare_mirror(self, spec: RepoSpec, repo_dir: Path,
+                            fetch_cmd: list[str], res: SyncResult) -> SyncResult:
+        """G48-6 镜像仓库（bare）更新：仅 fetch refs，无工作树不 merge。
+
+        G69-21：bare 仓库同样要有镜像回退（此前这个分支直接 return，
+        README 的「更新失败自动切换」对 --mirror 仓库不成立）。
+        """
+        mr_rc, _ = run_git_ui(
+            fetch_cmd, str(repo_dir), self.on_line, cancelled=self.cancelled,
+            env=self._env(), timeout=self.fetch_timeout, retries=self.retries,
+            backoff=self._backoff)
+        if mr_rc != 0 and self.mirror_fallback and not self.cancelled():
+            original = self._get_origin_url(repo_dir)
+            if original and not self._origin_same_repo(original, spec.url_https):
+                # 与普通分支一致：origin 指向别的仓库时不做猜测性改写
+                self._emit("[警告] origin 与目标仓库不一致，跳过镜像回退", "warn")
+            else:
+                switched = False
+                for alt in self._update_failover_candidates(spec.url_https):
+                    prefix = self._prefix_of(alt, spec.url_https)
+                    if alt != spec.url_https:
+                        if not probe_health(prefix):
+                            continue
+                        ok, _ms, err = probe_git_url(
+                            alt, self.mirror_probe_timeout,
+                            cancelled=self.cancelled, env=self._mirror_env())
+                        self._mark_probe_result(prefix, ok, err)
+                        if not ok:
+                            self._emit(f"[警告] 备用地址不可用，跳过：{alt}（{err}）", "warn")
+                            continue
+                    if not self._set_origin_url(repo_dir, alt):
+                        continue
+                    self._emit(f"{spec.display} 镜像 fetch 失败，切换到 {alt} 重试 …", "warn")
+                    alt_cmd = fetch_cmd
+                    if alt != spec.url_https:
+                        alt_cmd = [fetch_cmd[0], "-c", "http.extraHeader="] + fetch_cmd[1:]
+                    mr_rc, _ = run_git_ui(
+                        alt_cmd, str(repo_dir), self.on_line,
+                        cancelled=self.cancelled,
+                        env=(self._mirror_env() if alt != spec.url_https else self._env()),
+                        timeout=self.fetch_timeout, retries=0,
+                        backoff=self._backoff)
+                    if mr_rc == 0:
+                        if alt != spec.url_https:
+                            self._remember_mirror(repo_dir, prefix)
+                        switched = True
+                        break
+                # 只有真的切换过才把 origin 恢复为源站；否则原样保留
+                if switched:
+                    self._set_origin_url(repo_dir, spec.url_https)
+                elif original:
+                    self._set_origin_url(repo_dir, original)
+        if mr_rc == 0:
+            res.status = SyncStatus.SUCCESS
+            res.action = SyncAction.FETCHED
+            res.message = "镜像已同步远端 refs"
+        else:
+            res.status = SyncStatus.FAILED
+            res.action = SyncAction.FAILED
+            res.message = "镜像 remote fetch 失败"
+        return res
+
+    def _fetch_remote(self, spec: RepoSpec, repo_dir: Path,
+                      fetch_cmd: list[str], used_unshallow: bool,
+                      res: SyncResult) -> bool:
+        """执行 fetch（镜像优先 + 源站回退）；返回 False 表示 res 已是终态。
+
+        G58-2/G69-21 收尾要求（逐条保留）：
+        - 有「上次可用镜像」时用显式 URL + refspec fetch，不改动 origin；
+        - hint 命中也要先看健康状态；未知则短超时探测，避免挂掉的镜像白等 180s；
+        - 普通 fetch 失败 → 依次切换镜像/源站重试；
+        - 候选尝试 retries=0；成功后把 origin 恢复为**源站**，镜像只记在 gcm.mirror；
+        - unshallow 意图在回退成功后重新执行；
+        - 恢复失败/无原 origin 时明确告警，绝不留下失败镜像。
+        """
         rc = 1
         mirror_url = self._mirror_fetch_url(spec.url_https, repo_dir)
         if mirror_url:
-            # G69-21：hint 命中也要先看健康状态；未知则做一次短超时探测，
-            # 避免镜像已挂时每个仓库先白等 180s 再回源。
             prefix = self._prefix_of(mirror_url, spec.url_https)
             state = probe_state(prefix)
             if state is False:
@@ -1508,14 +1591,7 @@ class GitService:
             res.status = SyncStatus.CANCELLED
             res.action = SyncAction.CANCELLED
             res.message = "已取消"
-            return res
-        # G58-2：普通 fetch 失败 → 依次切换镜像/源站重试。
-        # G69-21 收尾要求：
-        # - 先用短超时探测，避免对挂掉的候选等满 fetch_timeout；
-        # - 候选尝试 retries=0（镜像不该重试 3 次×300s）；
-        # - 成功后把 origin 恢复为**源站**，镜像只记在 gcm.mirror；
-        # - unshallow 意图在回退成功后重新执行；
-        # - 恢复失败/无原 origin 时明确告警，绝不留下失败镜像。
+            return False
         if rc != 0 and self.mirror_fallback:
             original = self._get_origin_url(repo_dir)
             if original and not self._origin_same_repo(original, spec.url_https):
@@ -1587,49 +1663,19 @@ class GitService:
             res.status = SyncStatus.CANCELLED
             res.action = SyncAction.CANCELLED
             res.message = "已取消"
-            return res
+            return False
         if rc != 0:
             res.status = SyncStatus.FAILED
             res.action = SyncAction.FAILED
             res.message = "fetch 失败"
             res.detail = f"git fetch 退出码 {rc}"
-            return res
+            return False
+        return True
 
-        # 2) 计算可以快进的提交数
-        branch = self._local_branch(repo_dir)
-        # F6：detached HEAD（如指定 tag 检出）→ 不参与 ff/rebase，仅 fetch 保持新鲜
-        if not branch:
-            res.status = SyncStatus.SUCCESS
-            res.action = SyncAction.FETCHED
-            res.message = "已按标签/提交固定检出（detached HEAD），仅 fetch 检查"
-            res.head_sha = self._head_sha(repo_dir)
-            res.remote_sha = self._remote_head(repo_dir)
-            res.commits = 0
-            return res
-        remote_ref = "origin/" + branch
-        commits_new = self._count_new_commits(repo_dir, remote_ref)
-
-        # 3) 冲突检测（含 rebase 中止兜底：先中止可能残留的 rebase 状态）
-        try:
-            subprocess.run(["git", "-C", str(repo_dir), "rebase", "--abort"],
-                           capture_output=True, timeout=15)
-        except Exception:
-            pass  # 无 rebase 进行中 → 非 0 忽略
-        conflict, reason = _detect_conflict(str(repo_dir))
-        if conflict:
-            self._emit(f"[冲突] {spec.display}：{reason}。保留本地改动，跳过合并。", "warn")
-            res.status = SyncStatus.CONFLICT
-            res.action = SyncAction.CONFLICT
-            res.message = "本地改动冲突，已跳过合并"
-            res.detail = reason
-            res.remote_sha = self._remote_head(repo_dir)
-            res.commits = commits_new
-            return res
-
-        # 3.1) rebase 场景：本地领先远端（分叉但 clean）→ 有未提交改动会中断
-        # 由 merge --ff-only 失败路径统一处理（rebase/回滚），此处不再重复检测。
-
-        # 4) merge --ff-only（或 rebase）
+    def _merge_remote(self, spec: RepoSpec, repo_dir: Path, commits_new: int,
+                      res: SyncResult) -> Optional[SyncResult]:
+        """按 commits_new 执行 ff-merge / rebase；冲突时返回終態 res，否则 None。"""
+        remote_ref = "origin/" + self._local_branch(repo_dir)
         if commits_new < 0:
             # G67-11：无法判定落后数（远端 ref 不可解析等）→ **不得宣称「已是最新」**。
             # 仍尝试一次 ff 合并（若确实落后则推进；若真是最新则无副作用），
@@ -1671,25 +1717,7 @@ class GitService:
                     return res
         else:
             self._emit(f"{spec.display} 已是最新。")
-
-        after = self._head_sha(repo_dir)
-        res.head_sha = after
-        res.remote_sha = self._remote_head(repo_dir)
-        res.commits = max(0, commits_new)
-        res.status = SyncStatus.SUCCESS
-        if commits_new > 0:
-            res.action = SyncAction.UPDATED
-            res.message = f"更新完成（+{commits_new} 提交）"
-        elif commits_new == 0:
-            res.action = SyncAction.FETCHED
-            res.message = "已是最新"
-        else:
-            # G67-11：无法判定时不能宣称「已是最新」——用 FETCHED + 明确措辞。
-            advanced = after != before
-            res.action = SyncAction.UPDATED if advanced else SyncAction.FETCHED
-            res.message = ("已同步（提交数无法判定，HEAD 已推进）" if advanced
-                           else "已获取远端（提交数无法判定，请复核远端分支）")
-        return res
+        return None
 
     # ------------------------------------------------------------ helpers
     def _head_sha(self, repo_dir: Path) -> str:

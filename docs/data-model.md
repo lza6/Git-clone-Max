@@ -101,7 +101,7 @@ SQLite，文件 `data/repos.db`，WAL 模式。
 | `history.json` | URL 历史（去重、上限 200） | — |
 | `lists/` | 任务清单持久化 | — |
 | `session_runtime.json` | 跨会话续跑清单 + 看门狗心跳 | — |
-| `retry_queue.json` | 失败重试队列（持久化 + 退避） | 引擎按批次读写 |
+| `retry_queue.json` | 失败重试队列（持久化 + 退避 + 三段式错误） | 引擎按批次读写；见 §3.1 |
 | `.instance.lock` | 单实例锁 | 崩溃残留清理 |
 | `error.log` / `app.log` | 结构化日志 | `RotatingFileHandler` 5MB×3；出站 `redact` |
 
@@ -118,3 +118,37 @@ SQLite，文件 `data/repos.db`，WAL 模式。
 守卫：`tests/test_g67_closure.py::TestCrossProcessLock`
 （**两个真子进程 + 启动屏障**；含无锁对照组，断言无锁时丢更新、加锁后两次都保留 ——
 没有对照组就可能是「永远通过」的空壳）。
+
+### 3.1 原子写与 retry_queue 结构（G71）
+
+所有 JSON 持久化统一走 `gcm/util/atomic_io.py`：
+
+1. **唯一 tmp 名**（`<name>.<pid>.<tid>.tmp`）—— 固定 tmp 名在多线程/多实例下会互相截断；
+2. **写后 `flush` + `fsync`**，替换后再 `fsync` 目录（POSIX）—— 掉电不出现「目录项替换了、内容没落盘」；
+3. **替换退避**（12 次线性退避）—— Windows 上杀软/索引器短暂持有句柄时 `os.replace` 会 `WinError 5`；
+4. 失败**上抛**，由调用方决定用户可见提示或显式记录，不静默吞。
+
+`retry_queue.json` 结构：
+
+```json
+{
+  "entries": {
+    "owner/repo": {
+      "key": "owner/repo", "status": "queued", "state": "queued",
+      "attempts": 1, "url_https": "https://...", "display": "owner/repo",
+      "folder_name": "owner__repo", "local_path": "", "ref": "", "is_local": false,
+      "message": "fatal: ...", "detail": "",
+      "category": "network", "code": "network", "title": "网络连接失败或超时",
+      "cause": "...", "action": "...", "retryable": true,
+      "next_retry_at": 1760000000.0, "next_retry_at_iso": "2026-10-19 12:00:00",
+      "last_attempt_at": "2026-10-19 11:59:30", "queued_at": "2026-10-19 11:59:30"
+    }
+  },
+  "dropped": [{"key": "...", "attempts": 3, "reason": "...", "time": "..."}],
+  "updated_at": "2026-10-19 12:00:00"
+}
+```
+
+- `retryable` 由 `app/errors.classify_error` 决定；只有 true 才入 entries。
+- `state`：`queued` / `due`（用户点「立即重试」后置 0）/ `dropped`（超限，移入 dropped）。
+- `path=None` 时是**纯内存队列**（测试/临时用），结构相同但不出现在磁盘。

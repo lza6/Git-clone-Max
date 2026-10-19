@@ -8,13 +8,13 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 from ..models import RepoSpec
+from ..util.atomic_io import write_text_atomic
 from ..util.filelock import cross_process_lock
 
 # 空进度文件的标准骨架（补齐新键，旧文件无痛升级）
@@ -53,12 +53,16 @@ def load_progress(path: Path) -> dict[str, Any]:
 
 
 def save_progress(path: Path, data: dict[str, Any]) -> None:
-    """原子写 progress.json（tmp + os.replace），全程持锁。"""
-    tmp = path.with_suffix(".json.tmp")
+    """原子写 progress.json（唯一 tmp + fsync + replace），全程持锁。
+
+    G71-2：原实现用固定 `progress.json.tmp` 且不 `fsync` —— 两个实例并发写
+    会互相截断 tmp（与 `settings.json` 修过的是同一个 bug），掉电时还可能
+    出现「目录项已替换、内容未落盘」。统一走 `write_text_atomic`，`lock=False`
+    是因为外层 `progress_guard` 已经持有跨进程锁（同路径重复加锁没有必要）。
+    """
+    text = json.dumps(data, ensure_ascii=False, indent=2)
     with progress_guard(path):
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, path)  # 原子写
+        write_text_atomic(path, text, lock=False, label="progress.json")
 
 
 def mark_finished(path: Path, spec: RepoSpec, result: dict[str, Any]) -> None:
@@ -69,7 +73,6 @@ def mark_finished(path: Path, spec: RepoSpec, result: dict[str, Any]) -> None:
     现改为在**同一个临界区**内完成读-改-写。
     """
     key = f"{spec.owner}/{spec.repo}"
-    tmp = path.with_suffix(".json.tmp")
     with progress_guard(path):
         data: dict[str, Any]
         if path.exists():
@@ -85,6 +88,6 @@ def mark_finished(path: Path, spec: RepoSpec, result: dict[str, Any]) -> None:
         data.setdefault("failed", [])
         data["finished"] = [x for x in data["finished"] if x.get("key") != key]
         data["finished"].append({"key": key, **result})
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, path)
+        write_text_atomic(
+            path, json.dumps(data, ensure_ascii=False, indent=2),
+            lock=False, label="progress.json")

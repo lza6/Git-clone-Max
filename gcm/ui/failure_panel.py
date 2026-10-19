@@ -22,67 +22,56 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..git.service import _is_networkish_error
+from ..app.errors import (
+    CAT_AUTH,
+    CAT_CANCELLED,
+    CAT_LOCAL,
+    CAT_NETWORK,
+    CAT_NOT_FOUND,
+    CAT_OTHER,
+    CAT_PLATFORM,
+    ErrorInfo,
+    category_label,
+    classify_error,
+)
 from ..i18n import tr
 
-# 错误类别常量
-CAT_NETWORK = "network"
-CAT_AUTH = "auth"
-CAT_PLATFORM = "platform"
-CAT_LOCAL = "local"
-CAT_OTHER = "other"
-
-_CATEGORY_LABELS = {
-    CAT_NETWORK: "网络",
-    CAT_AUTH: "认证",
-    CAT_PLATFORM: "平台限制",
-    CAT_LOCAL: "本地",
-    CAT_OTHER: "其他",
-}
+# 错误类别常量：G71-3 起统一由 app/errors.py 定义，这里原样再导出，
+# 保持既有调用方（main_window / 测试）无需改动。
+__all__ = [
+    "CAT_NETWORK", "CAT_AUTH", "CAT_PLATFORM", "CAT_LOCAL", "CAT_OTHER",
+    "CAT_NOT_FOUND", "CAT_CANCELLED", "categorize_failure",
+    "failure_category_label", "failure_category_suggestion", "failure_info",
+    "aggregate_failures", "FailurePanel", "FailureDialog",
+]
 
 _CATEGORY_SUGGESTIONS = {
     CAT_NETWORK: "检查网络/代理后重试，或开启「失败重试」自动重投",
     CAT_AUTH: "检查并更新 Token / 按平台凭据，再重试该类别",
     CAT_PLATFORM: "仓库含 Windows 限制内容，建议换 WSL/Linux 或跳过",
     CAT_LOCAL: "检查磁盘空间 / 目录占用 / 文件权限后重试",
+    CAT_NOT_FOUND: "核对仓库地址；仓库可能已删除/改名/转为私有，重试无效",
+    CAT_CANCELLED: "任务被取消；需要时重新开始即可",
     CAT_OTHER: "查看日志详情后手动处理",
 }
 
-_AUTH_KEYWORDS = (
-    "authentication failed", "invalid username or password",
-    "could not read username", "access denied", "permission denied",
-    "not authorized", "401", "403",
-)
-_PLATFORM_KEYWORDS = (
-    "invalid path", "file exists", "already exists",
-    "unable to checkout", "unable to create file",
-)
-_LOCAL_KEYWORDS = (
-    "no space left on device", "cannot create directory",
-    "cannot mkdir", "read-only file system", "disk full",
-    "file too large", "cannot create work tree",
-)
-
 
 def categorize_failure(message: str, detail: str = "") -> str:
-    """把失败文本映射到错误类别 key（网络/认证/平台限制/本地/其他）。
+    """把失败文本映射到错误类别 key。
 
-    优先级：平台限制 > 认证 > 本地 > 网络（_is_networkish_error 判网络）。
+    G71-3：分类逻辑已收敛到 `app/errors.classify_error`（唯一判据），
+    本函数只做兼容转发 —— 避免「重试队列认为可重试、UI 却显示另一类」。
     """
-    text = f"{message or ''}\n{detail or ''}".lower()
-    if any(k in text for k in _PLATFORM_KEYWORDS):
-        return CAT_PLATFORM
-    if any(k in text for k in _AUTH_KEYWORDS):
-        return CAT_AUTH
-    if any(k in text for k in _LOCAL_KEYWORDS):
-        return CAT_LOCAL
-    if _is_networkish_error(text):
-        return CAT_NETWORK
-    return CAT_OTHER
+    return classify_error(message, detail).category
+
+
+def failure_info(message: str, detail: str = "") -> ErrorInfo:
+    """取三段式结构化错误（UI/诊断包共用）。"""
+    return classify_error(message, detail)
 
 
 def failure_category_label(category: str) -> str:
-    return _CATEGORY_LABELS.get(category, "其他")
+    return category_label(category)
 
 
 def failure_category_suggestion(category: str) -> str:
@@ -90,7 +79,8 @@ def failure_category_suggestion(category: str) -> str:
 
 
 def aggregate_failures(failed_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """按类别聚合失败记录：返回 [{category, label, count, suggestion, keys, messages}]。
+    """按类别聚合失败记录：返回 [{category,label,count,suggestion,keys,messages,
+    title,cause,action,retryable}]。
 
     failed_rows：progress.json 的 failed 列表（[{key,message,time},...]）。
     结果按次数降序；空输入 → 空列表。
@@ -99,12 +89,18 @@ def aggregate_failures(failed_rows: list[dict[str, Any]]) -> list[dict[str, Any]
     for row in failed_rows or []:
         if not isinstance(row, dict) or not row.get("key"):
             continue
-        cat = categorize_failure(str(row.get("message") or ""), "")
+        info = classify_error(str(row.get("message") or ""),
+                              str(row.get("detail") or ""))
+        cat = info.category
         g = groups.setdefault(cat, {
             "category": cat,
-            "label": failure_category_label(cat),
+            "label": category_label(cat),
             "count": 0,
-            "suggestion": failure_category_suggestion(cat),
+            "suggestion": info.action or failure_category_suggestion(cat),
+            "title": info.title,
+            "cause": info.cause,
+            "action": info.action,
+            "retryable": info.retryable,
             "keys": [],
             "messages": [],
         })
@@ -148,7 +144,7 @@ class FailurePanel(QWidget):
         v.addWidget(self.empty_lbl)
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(
-            [tr("错误类别"), tr("失败次数"), tr("建议动作"), tr("操作")])
+            [tr("错误类别"), tr("失败次数"), tr("原因与处理"), tr("操作")])
         self.table.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.ResizeMode.Stretch)
         self.table.verticalHeader().setVisible(False)
@@ -166,9 +162,17 @@ class FailurePanel(QWidget):
         self.table.setRowCount(0)
         self.table.setRowCount(len(rows))
         for i, g in enumerate(rows):
-            self.table.setItem(i, 0, QTableWidgetItem(g["label"]))
+            self.table.setItem(i, 0, QTableWidgetItem(tr(g["label"])))
             self.table.setItem(i, 1, QTableWidgetItem(str(g["count"])))
-            it_s = QTableWidgetItem(g["suggestion"])
+            # G71-3：三段式（发生了什么 / 为什么 / 怎么办）；不可自动重试时明示
+            lines = [
+                tr(str(g.get("title") or g["label"])),
+                tr("为什么：") + tr(str(g.get("cause") or "")),
+                tr("怎么办：") + tr(str(g.get("action") or g.get("suggestion") or "")),
+            ]
+            if not g.get("retryable", False):
+                lines.append(tr("（这类错误不会自动重试）"))
+            it_s = QTableWidgetItem("\n".join(x for x in lines if x.strip()))
             it_s.setToolTip("\n".join(g["messages"][:5]))
             self.table.setItem(i, 2, it_s)
             btn = QPushButton(tr("重试该类别"))

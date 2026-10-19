@@ -610,3 +610,104 @@ Light 下对比度不足）、校验条强制 `PlainText`（用户原文含 `<>`
 
 - 打包 GUI 冒烟：**已闭环**（60s 等待 + 交互式会话窗口标题验证）。
 - 本轮无未解决 P0/P1；剩余仅为 NVDA/真实 DPI 人工项与 P2b 条件项。
+
+---
+
+## 17. G71 队列可观测性 / 事件流 / 诊断包（2026-10-19 · v9.8.0）
+
+### 17.1 任务契约
+
+| 项 | 内容 |
+|----|------|
+| 目标 | 对标参考项目 SurgeDM/Surge：队列/重试可见、SSE 事件流、原子存储；并完成 B1 文档治理、B2 首启/错误可解释性、B7 长函数拆分、桌面诊断/黑匣子日志 |
+| 范围 | `gcm/app/{event_bus,errors,batch_state,retry_queue,diag_bundle,engine}.py`、`gcm/http_api.py`、`gcm/util/atomic_io.py`、`gcm/db/{progress_file,history,lists}.py`、`gcm/ui/{retry_panel,diag_dialog,onboarding,help_dialog,failure_panel,download_layout,engine_factory,main_window}.py`、i18n、文档、测试 |
+| 明确不做 | 不移植 Go/KMP 技术栈；不引入图数据库；不做远程遥测；不发布/推送 |
+
+### 17.2 节点状态
+
+| ID | 节点 | 状态 | 证据 |
+|----|------|------|------|
+| G71-1 | EventBus + 引擎全链路发布 | Done | `test_g71_event_stream.TestEventBus/TestEnginePublishesEvents` |
+| G71-2 | 统一原子写 | Done | `TestAtomicWrites` + `test_g67_closure` |
+| G71-3 | 三段式错误模型（唯一可重试判据） | Done | `TestErrorModel` + `TestRetryQueueVisibility` |
+| G71-4 | 重试队列面板 | Done | `TestRetryPanelRows` + UI 回归 85 |
+| G71-5 | 首启/帮助 i18n + 模式语义值 | Done | `TestOnboardingSemanticMode` + `test_onboarding` |
+| G71-6 | 诊断包 | Done | `TestDiagBundle` |
+| G71-7 | 长函数拆分（`_update` 337→105、`_launch` 153→124、`_build_download_tab` 191→35） | Done | ruff/mypy + 引擎/UI 回归 |
+| G71-8 | 批次状态机 | Done | `TestBatchState` |
+| G71-9 | GUI 进程内托管本地 API（SSE 真实事件） | Done | `TestLocalApiSettings` + `test_g68_settings_ui` |
+| G71-10 | 事件流查看器（黑匣子轨迹） | Done | `TestEventPanel` |
+| — | SSE 端点 + snapshot | Done | `TestSseEndpoint` |
+| B1 | 文档事实治理 | Done | `CLAUDE.md`/`README`/`architecture`/`agent-contract`/`data-model`/`code-gems`/`test_ledger` |
+| B2 | 首启/错误可解释性 | Done | 三段式 + 帮助页 i18n |
+| B7 | 主窗/服务长函数 | 部分（见 17.4） | 3 处已拆；剩余 14 个 >100 行函数 |
+| G71-11 | 独立审查 5 Required + 7 Suggestion 修复 | Done | 见 `docs/验证记录-2026-10-19-G71事件流.md` §6 |
+
+### 17.3 验证（真实输出摘要）
+
+| 命令 | 结果 |
+|------|------|
+| `ruff check gcm` | All checks passed（78 文件） |
+| `mypy gcm` | Success（78 文件） |
+| `unittest tests.test_g71_event_stream` | Ran 54 · OK |
+| 重试/失败/首启/HTTP/锁/进度 | Ran 82 · OK（113s） |
+| 新增 + 引擎/E2E/帮助/文档守卫 | Ran 71 · OK（295s） |
+| G70 UI/进度/首启/托盘/下载工具/主窗 | Ran 85 · OK（36s） |
+| 快集全量 | **Ran 1316 · failures=0 · errors=0 · skipped=3 · 覆盖 81%**（Windows 门禁 81） |
+| 真实 git E2E | `scripts/e2e_smoke.py` → `E2E_SMOKE_RESULT: PASS` |
+| 打包 exe 克隆/更新 | `action=cloned + FILE_OK`；`action=updated + content=v2` |
+| PyInstaller | EXIT=0；exe 41,173,858 B；zip 79,482,799 B（314 条目） |
+| 健康检查 | `started_ok=true` · `repos_db_created=true` · version_match=9.8.0 · 28.999s |
+| 发布 dry-run | `校验通过，未做任何修改`（Release v9.8.0 不存在，将新建） |
+
+未运行：快集全量、PyInstaller、真实浏览器 EventSource、真机按钮点击（原因见
+`docs/验证记录-2026-10-19-G71事件流.md` §4）。
+
+### 17.4 剩余风险
+
+- `git/service.py::_fetch_remote` 仍有 144 行（算法整体性强，继续拆会增加回归面）；
+  `MainWindow.__init__` 227 行、`_build_download_tab` 已降到约 35 行。
+- SSE 无鉴权（与既有 HTTP API 同一边界）：只绑回环 + Host/Origin 校验；事件已打码，
+  但**不应**经无鉴权反代暴露公网。
+- 事件总线为进程内内存态，退出即丢；跨重启审计依赖 `app.log`/`progress.json`。
+- 未做真实 GUI 点击与打包验证；本轮未改打包结构，但 exe 需人工重建才包含新代码。
+- 独立审查（python-reviewer）无 Critical、5 Required 全部关闭；剩余建议见
+  `docs/验证记录-2026-10-19-G71事件流.md` §6。
+
+---
+
+## 18. 计划文档闭环审计（2026-10-19 G71 终局）
+
+### 18.1 扫描范围与结果
+
+| 文档 | 类型 | 状态 | 处理 |
+|------|------|------|------|
+| `workflow_status.md` | 活跃执行台账 | 含 G70 历史 + G71 当前；G71 节点已登记 | **保留**（持续维护） |
+| `docs/验证记录-2026-10-19-G71事件流.md` | 本轮验证台账 | 已验证命令与边界齐全 | **保留**（历史证据） |
+| `docs/archive/plans/20261017/archive-manifest.md` | 归档 manifest | 历史归档，已标注不再执行 | **保留**（审计快照） |
+| `docs/archive/plans/20261017/计划书-README-墓碑-20261014.md` | 归档墓碑 | 历史归档 | **保留** |
+| `policy.md` | 交付门禁 | 活跃规范 | **保留** |
+| `test_ledger.md` | 接缝注册表 | 已更新 S20–S26 | **保留** |
+| `参考的结果计划指南.md` | Phase A 参考计划 | **会话开始时为未跟踪文件；会话中途从工作区消失（非本会话删除）** | **未删除、未覆盖**；其 B4/B5/B6 仍未闭环，需用户确认是否恢复/继续 |
+
+### 18.2 参考计划任务台账（按会话开始时读取到的内容）
+
+| 批次 | 目标 | 当前状态 | 证据 |
+|------|------|----------|------|
+| B1 | 文档事实治理 + 守卫扩展 | **已闭环** | 本轮更新 CLAUDE/README/architecture/agent-contract/data-model/code-gems/RELEASE_CHECKLIST；`test_g67_docs_freshness` 22 项 OK |
+| B2 | 首启/错误可解释性收敛 | **已闭环** | `errors.py` 三段式 + onboarding/help i18n + failure_panel 改造；G71 测试覆盖 |
+| B3 | 队列/恢复语义强化 | **基本闭环** | `batch_state.py`、`retry_queue.py`、`progress_file.py` 原子写、重试面板、SSE 事件；未改 `progress_table` 的恢复 UI |
+| B4 | 仓库知识索引 MVP | **未闭环** | 参考计划中的 `repo_index.py`/DB 迁移/新面板尚未实施 |
+| B5 | Agent 契约 v2 | **部分闭环** | SSE/snapshot/事件 schema 已补；MCP annotations/outputSchema 未补 |
+| B6 | 真实 GUI E2E + 发布自动化 | **部分闭环** | 本地 API/SSE E2E、截图外的离线 UI 测试；真实浏览器/真机点击仍在发布清单人工项 |
+| B7 | 主窗/服务长函数拆分 | **部分闭环** | `_update` 337→105、`_launch` 153→124、`_build_download_tab` 191→35；其余 14 个 >100 行函数保留 |
+
+### 18.3 归档/删除清单
+
+**本轮无删除**：没有“全部闭环且用户已确认”的计划文档；`workflow_status.md` 与验证记录均需保留；
+参考计划文件在工作区中已不存在，无法归档，已在上表登记。符合“未验证不删除、含未闭环任务不删除”的红线。
+
+### 18.4 回滚方式
+
+- 本轮文档改动均可用 `git checkout -- <path>` 回退（若已提交则 `git revert <sha>`）。
+- 归档目录未变更；无不可逆删除。

@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+import uuid
 from collections import OrderedDict
 from collections.abc import Iterable
 from pathlib import Path
@@ -26,6 +27,9 @@ from ..db.repo_db import Database, load_progress, save_progress
 from ..git.service import GitService
 from ..models import RepoSpec, SyncAction, SyncResult, SyncStatus
 from ..util.redact import redact
+from .batch_state import BatchState
+from .errors import classify_error
+from .event_bus import EventBus, EventType
 from .mirrors import normalize_mirror_prefix
 from .worker import CancelFlag, CloneWorker, TaskPayload
 
@@ -78,7 +82,8 @@ class SyncEngine(QObject):
                  watchdog_enabled: bool = False,
                  watchdog_interval_min: int = 5,
                  progress_gc: Optional[Any] = None,
-                 concurrency_state_path: Optional[str | Path] = None):
+                 concurrency_state_path: Optional[str | Path] = None,
+                 event_bus: Optional[EventBus] = None):
         super().__init__()
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -86,6 +91,12 @@ class SyncEngine(QObject):
         self.progress_path = progress_path
         self.pool = QThreadPool(self)
         self.set_concurrency(concurrency)
+        # G71-1：进程内事件总线（None = 不发布事件，保持旧测试/旧调用零变化）
+        self._event_bus = event_bus
+        self._batch_id = ""
+        self._batch_counts: dict[str, int] = {}
+        # G71-8：批次状态机（转换校验 + 计数唯一来源）
+        self._batch_state = BatchState()
 
         self.fetch_timeout = fetch_timeout
         self.clone_timeout = clone_timeout
@@ -188,6 +199,24 @@ class SyncEngine(QObject):
         self._arm_flush.connect(self._arm_line_flush)
 
     # ------------------------------------------------------------ 并发
+    @property
+    def retry_queue(self):
+        """重试队列（供 UI「重试队列」面板读取；未启用时为 None）。"""
+        return self._retry_queue
+
+    def _publish(self, event_type: str, **data: Any) -> None:
+        """发布事件（G71-1）。**永不抛**：事件总线故障不得影响同步主流程。"""
+        bus = self._event_bus
+        if bus is None:
+            return
+        try:
+            payload = dict(data)
+            if self._batch_id:
+                payload.setdefault("batch_id", self._batch_id)
+            bus.publish(event_type, payload)
+        except Exception:
+            pass
+
     def set_concurrency(self, n: int) -> int:
         """设置线程池并发上限，返回实际生效值（1..32）。"""
         n = int(n)
@@ -223,10 +252,10 @@ class SyncEngine(QObject):
                 "failed": self._batch_net_fail,
                 "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             }
-            tmp = self._concurrency_state_path.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-            import os
-            os.replace(tmp, self._concurrency_state_path)
+            # G71-2：统一原子写（唯一 tmp + fsync + 替换退避）。
+            from ..util.atomic_io import write_json_atomic
+            write_json_atomic(self._concurrency_state_path, data,
+                              label="concurrency_state.json")
         except Exception:
             pass
 
@@ -239,13 +268,39 @@ class SyncEngine(QObject):
 
     # ------------------------------------------------------------ G52-1 重试
     def _record_retry_failure(self, res) -> None:
-        """失败结果（网络类）入自动重试队列；成功由 _clear_retry_success 清理。"""
+        """失败结果（可重试类）入自动重试队列；成功由 _clear_retry_success 清理。"""
         if self._retry_queue is None:
             return
         try:
-            queued = self._retry_queue.record_failure(res.spec, res.message or "", res.detail or "")
-            if queued:
-                self._emit_line(0, f"已加入失败重试队列（网络类）：{res.spec.folder_name}", "warn")
+            key = f"{res.spec.owner}/{res.spec.repo}"
+            outcome = self._retry_queue.record_failure_ex(
+                res.spec, res.message or "", res.detail or "")
+            if outcome.get("queued"):
+                self._emit_line(
+                    0,
+                    f"已加入失败重试队列（{outcome.get('category')}，"
+                    f"第 {outcome.get('attempts')} 次）：{res.spec.folder_name}",
+                    "warn")
+                self._publish(
+                    EventType.RETRY_QUEUED, key=key,
+                    folder_name=res.spec.folder_name,
+                    display=res.spec.display,
+                    attempts=int(outcome.get("attempts") or 0),
+                    next_retry_at=float(outcome.get("next_retry_at") or 0),
+                    category=outcome.get("category"),
+                    code=outcome.get("code"),
+                    title=outcome.get("title"),
+                )
+            elif outcome.get("reason") in ("exhausted", "non_retryable"):
+                self._publish(
+                    EventType.RETRY_DROPPED, key=key,
+                    folder_name=res.spec.folder_name,
+                    attempts=int(outcome.get("attempts") or 0),
+                    category=outcome.get("category"),
+                    code=outcome.get("code"),
+                    title=outcome.get("title"),
+                    reason=outcome.get("reason"),
+                )
         except Exception:
             pass
 
@@ -257,6 +312,37 @@ class SyncEngine(QObject):
             self._retry_queue.mark_success(f"{res.spec.owner}/{res.spec.repo}")
         except Exception:
             pass
+
+    def run_due_retries(self) -> None:
+        """公开入口：立即检查一次到期重试（UI「重试队列」面板用）。
+
+        与 15s 轮询走同一条 `_retry_tick`，保留 busy/取消保护。
+        """
+        self._retry_tick()
+
+    def configure_retry_queue(self, path: Optional[str | Path], enabled: bool,
+                              max_retries: int = 2,
+                              backoff_base_sec: int = 30) -> None:
+        """G71-11（审查 R5）：运行中切换「失败自动重试」开关。
+
+        引擎创建时若开关是关的，`_retry_queue` 为 None；用户中途打开后必须
+        **就地创建队列并启动轮询**，否则面板会显示成功但永远不会重投。
+        """
+        if not enabled:
+            if self._retry_queue is not None:
+                self._retry_queue.set_enabled(False)
+            return
+        if self._retry_queue is None and path:
+            from .retry_queue import RetryQueue
+            self._retry_queue = RetryQueue(
+                path, enabled=True, max_retries=int(max_retries),
+                backoff_base_sec=int(backoff_base_sec))
+            try:
+                self._retry_timer.start()
+            except Exception:
+                pass
+        elif self._retry_queue is not None:
+            self._retry_queue.set_enabled(True)
 
     def _retry_tick(self) -> None:
         """引擎空闲时按退避到期自动重投（幂等：busy/取消/无到期 → 跳过）。"""
@@ -277,6 +363,9 @@ class SyncEngine(QObject):
             except Exception:
                 continue
         if specs:
+            self._publish(EventType.RETRY_STARTED,
+                          count=len(specs),
+                          keys=[f"{s.owner}/{s.repo}" for s in specs])
             # G67-3 修复：重投必须复用**上一批的上下文**，否则：
             #   ① 不带 host_by_key → 非 GitHub 仓库落库成 host="github.com"，
             #      污染 UNIQUE(owner,repo,host)（同一仓库被当成两个）；
@@ -450,6 +539,17 @@ class SyncEngine(QObject):
             self.progress.emit(idx, pct)
         for idx, text in detail.items():
             self.progress_detail.emit(idx, text)
+        # G71-1：同一心跳把进度发布到事件总线（SSE 订阅者直接消费，无需轮询 DB）
+        for idx in set(prog) | set(detail):
+            spec = self.specs.get(idx)
+            self._publish(
+                EventType.TASK_PROGRESS,
+                index=int(idx),
+                key=(f"{spec.owner}/{spec.repo}" if spec is not None else ""),
+                folder_name=(spec.folder_name if spec is not None else ""),
+                percent=prog.get(idx),
+                detail=detail.get(idx),
+            )
 
     def flush_progress(self):
         """把内存进度态原子落盘（周期调用；engine 单线程写文件）。"""
@@ -701,6 +801,36 @@ class SyncEngine(QObject):
         # G52-6：重置批次计数（近批失败率窗口）
         self._batch_total = len(unique_specs)
         self._batch_net_fail = 0
+        # G71-1：新批次 ID + 事件计数（SSE/诊断包按批次聚合）
+        self._batch_id = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
+        self._batch_counts = {
+            s.value: 0 for s in SyncStatus
+        }
+        # G71-8：状态机登记全部任务（queued），后续 started/result 只做转换。
+        # G71-11（审查 R2）：key 必须用 **folder_name**（含 @tag），不能用
+        # owner/repo —— 同一仓库的 @v1 与 @v2 同批存在时会互相覆盖计数，
+        # 导致 terminal < total、invalid_transitions 增加。
+        self._batch_state = BatchState(total=len(unique_specs))
+        for spec in unique_specs:
+            self._batch_state.register(spec.folder_name)
+        self._batch_counts = dict(self._batch_state.counts)
+        self._publish(
+            EventType.BATCH_STARTED,
+            total=len(unique_specs),
+            root=str(self.root),
+            fetch_depth=int(fetch_depth or 0),
+            unshallow=bool(unshallow),
+            mirror=bool(mirror),
+            concurrency=int(self.concurrency),
+        )
+        for i, spec in enumerate(unique_specs):
+            self._publish(
+                EventType.TASK_QUEUED,
+                index=i, key=f"{spec.owner}/{spec.repo}",
+                folder_name=spec.folder_name, display=spec.display,
+                url=spec.url_https, host=self._host_by_key.get(
+                    f"{spec.owner}/{spec.repo}", "github.com"),
+            )
         # G52-2：launch 时会话清单整体替换为 pending（供续跑/看门狗）
         self._session_record_pending(unique_specs)
         # G22-2：登记本轮待完成清单并立即落盘（进程被杀后可据此恢复）
@@ -729,6 +859,13 @@ class SyncEngine(QObject):
         """构造并启动单个 worker（launch 首批与 _replenish 补投共用）。"""
         key = f"{spec.owner}/{spec.repo}"
         host = self._host_by_key.get(key) or "github.com"
+        # G71-8：queued → running（状态机对重复/迟到转换是幂等的）
+        # G71-11：与登记 key 一致，使用 folder_name（含 @tag）
+        self._batch_state.transition(spec.folder_name, "running")
+        self._publish(EventType.TASK_STARTED,
+                      index=index, key=key,
+                      folder_name=spec.folder_name, display=spec.display,
+                      url=spec.url_https, host=host)
         payload = TaskPayload(spec=spec, flag=flag, host=host)
         # G02-3: 每个 worker 独占一个 service（带自身 flag 的取消回调），
         # 支持单任务暂停，其余 worker 互不影响
@@ -781,6 +918,51 @@ class SyncEngine(QObject):
             self._clear_retry_success(res)
         # G52-2：会话清单状态更新（成功/取消/跳过/冲突 → 移除；失败保留）
         self._session_update_result(res)
+        # G71-1：结构化结果事件（agent/SSE 用；错误另发 task_error 携带三段式信息）
+        try:
+            _key = f"{res.spec.owner}/{res.spec.repo}"
+            # G71-11（审查 R2）：状态机用 folder_name（含 @tag），事件 key 仍用 owner/repo
+            self._batch_state.mark(res.spec.folder_name, res.status.value)
+            # 兼容字段：旧调用方/测试仍读 `_batch_counts`
+            self._batch_counts = dict(self._batch_state.counts)
+        except Exception:
+            pass
+        self._publish(
+            EventType.TASK_RESULT,
+            index=int(index),
+            key=f"{res.spec.owner}/{res.spec.repo}",
+            folder_name=res.spec.folder_name,
+            display=res.spec.display,
+            status=res.status.value,
+            action=res.action.value,
+            message=res.message or "",
+            detail=res.detail or "",
+            commits=int(res.commits or 0),
+            duration_ms=int(getattr(res, "duration_ms", 0) or max(
+                0.0, (res.ended or 0.0) - (res.started or 0.0)) * 1000),
+            path=res.path or "",
+            head_sha=res.head_sha or "",
+            remote_sha=res.remote_sha or "",
+        )
+        if res.status == SyncStatus.FAILED:
+            try:
+                info = classify_error(res.message or "", res.detail or "")
+                self._publish(
+                    EventType.TASK_ERROR,
+                    index=int(index),
+                    key=f"{res.spec.owner}/{res.spec.repo}",
+                    folder_name=res.spec.folder_name,
+                    category=info.category,
+                    code=info.code,
+                    title=info.title,
+                    cause=info.cause,
+                    action=info.action,
+                    retryable=info.retryable,
+                    http_status=info.http_status,
+                    raw=info.raw,
+                )
+            except Exception:
+                pass
         # G52-6：批次失败计数（网络类失败计入近批失败率）
         if res.status == SyncStatus.FAILED:
             try:
@@ -827,6 +1009,16 @@ class SyncEngine(QObject):
                 except Exception:
                     pass
                 self._persist_concurrency_state()
+            # G71-1：批次终态事件（含各状态计数与是否取消），供 SSE/诊断包收尾
+            self._publish(
+                EventType.BATCH_FINISHED,
+                total=int(self._batch_total),
+                cancelled=bool(self._cancelled),
+                counts=dict(self._batch_counts),
+                state=self._batch_state.summary(),
+                net_fail=int(self._batch_net_fail),
+            )
+            self._batch_id = ""
             self.finished.emit()
             self._stop_buffers()
             self._release_tasks()  # 全部结束后集中释放 worker 引用防 OOM

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Git-clone-Max G71 变更报告（2026-10-19）</title>
+<style>
+  :root { --ink:#1d232b; --muted:#5b6673; --line:#d8dee6; --accent:#2b6cb0; --ok:#2f855a; --warn:#b7791f; }
+  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; color:var(--ink); max-width: 980px; margin: 40px auto; padding: 0 24px; line-height: 1.7; }
+  h1 { font-size: 28px; margin-bottom: 4px; }
+  h2 { margin-top: 36px; border-bottom: 2px solid var(--line); padding-bottom: 6px; }
+  .meta { color: var(--muted); font-size: 14px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #f4f7fa; }
+  code { background: #f1f3f5; padding: 1px 5px; border-radius: 4px; font-family: Consolas, monospace; }
+  .ok { color: var(--ok); font-weight: 600; }
+  .warn { color: var(--warn); font-weight: 600; }
+  .box { background:#f8fafc; border-left: 4px solid var(--accent); padding: 12px 16px; margin: 16px 0; }
+  pre { background:#1d232b; color:#e6edf3; padding:12px; overflow:auto; border-radius:6px; }
+  details { margin: 8px 0; }
+</style>
+</head>
+<body>
+<h1>Git-clone-Max G71 变更报告</h1>
+<div class="meta">日期：2026-10-19 · 版本：v9.8.0 · 范围：队列可观测性 / SSE 事件流 / 三段式错误 / 诊断包 / 长函数拆分</div>
+
+<h2>1. 为什么做这次变更</h2>
+<p>对标参考项目 <code>SurgeDM/Surge</code>（MIT）与 <code>amir1376/ab-download-manager</code>（Apache-2.0）暴露的四类差距：</p>
+<ul>
+  <li>任务从排队到终态只活在 UI 信号里，agent 与诊断拿不到结构化执行轨迹；</li>
+  <li>失败重试是黑盒，用户看不到次数、下次时间、原因，也无法立即重试/放弃；</li>
+  <li>错误只有一句 git 原文，缺少「发生了什么 / 为什么 / 怎么办」与可重试判定；</li>
+  <li>持久化 tmp 写法不统一，诊断材料靠截图/多段文本。</li>
+</ul>
+
+<h2>2. 关键决策</h2>
+<table>
+<tr><th>决策</th><th>理由</th></tr>
+<tr><td>进程内 EventBus + 有界缓冲</td><td>单机桌面工具无常驻服务端；发布永不阻塞/抛出，慢订阅者丢最旧并计数。</td></tr>
+<tr><td>SSE 由 GUI 进程托管（设置页，默认关、仅回环）</td><td>独立 <code>--serve</code> 与 GUI 是两个进程，EventBus 不互通；同进程托管才能看到真实引擎事件。</td></tr>
+<tr><td>错误是否可重试只由 <code>app/errors.classify_error</code> 判定</td><td>避免「重试队列认为可重试、UI 显示另一类」的双份关键字表。</td></tr>
+<tr><td>所有 JSON 持久化走 <code>write_text_atomic</code></td><td>唯一 tmp + fsync + 目录 fsync + 替换退避；并发不互相截断。</td></tr>
+<tr><td>长函数按「纯映射/纯构建」拆分</td><td><code>_update</code> 337→105、<code>_launch</code> 153→124、下载页构建 191→35，行为零变化。</td></tr>
+</table>
+
+<h2>3. 实际变更</h2>
+<table>
+<tr><th>模块</th><th>变化</th></tr>
+<tr><td><code>gcm/app/event_bus.py</code></td><td>新增事件总线：环形缓冲、回放、类型过滤、出站 redact、慢订阅者丢弃计数；进度事件单独缓冲。</td></tr>
+<tr><td><code>gcm/http_api.py</code></td><td>新增 <code>GET /api/events</code>（SSE）与 <code>/api/events/snapshot</code>；事件端点不打开 DB；<code>select+MSG_PEEK</code> 立即发现断连。</td></tr>
+<tr><td><code>gcm/app/errors.py</code></td><td>三段式错误模型 + retryable（429/5xx/网络 true；401/403/404/磁盘满/平台限制 false）。</td></tr>
+<tr><td><code>gcm/app/retry_queue.py</code></td><td><code>record_failure_ex</code>/<code>retry_now</code>/<code>remove</code>/<code>snapshot</code>/<code>stats</code>；修复纯内存丢失与永久失败无限重投。</td></tr>
+<tr><td><code>gcm/app/batch_state.py</code></td><td>批次状态机：终态不可回退、幂等计数、非法转换可观测；key 用 folder_name（含 @tag）。</td></tr>
+<tr><td><code>gcm/app/diag_bundle.py</code></td><td>诊断 zip：报告 + 事件 + 日志尾部；全部 <code>redact(userprofile=True)</code>；manifest 递归打码。</td></tr>
+<tr><td><code>gcm/util/atomic_io.py</code></td><td><code>write_text_atomic</code>：唯一 tmp + fsync + 目录 fsync + 退避 + 失败清理；可配置 retries。</td></tr>
+<tr><td><code>gcm/ui/retry_panel.py</code></td><td>重试队列面板：次数/下次/类别/原因/建议；立即重试、移除、全部、清空；禁用态不假成功。</td></tr>
+<tr><td><code>gcm/ui/event_panel.py</code></td><td>事件流查看器（黑匣子轨迹）：类型过滤、自动刷新、复制 JSON。</td></tr>
+<tr><td><code>gcm/ui/engine_factory.py</code> / <code>download_layout.py</code></td><td>从 <code>_launch</code> / <code>_build_download_tab</code> 抽出的纯映射与控件构建。</td></tr>
+<tr><td><code>gcm/db/settings.py</code> + 设置页</td><td><code>local_api_enabled</code>/<code>local_api_port</code>；GUI 进程内托管本地只读 API。</td></tr>
+<tr><td>i18n</td><td>首启向导、帮助页、重试/事件面板、本地 API 文案全部走 <code>tr()</code>，zh/en 同步。</td></tr>
+</table>
+
+<h2>4. 数据流</h2>
+<pre>URL → engine.launch → BatchState(queued)
+  → worker → GitService.sync
+  → engine._on_result → DB + progress + EventBus.publish(task_result/task_error)
+  → EventBus ─┬→ UI 进度表/日志
+              ├→ SSE  /api/events（GUI 进程内托管）
+              ├→ 事件流查看器（snapshot）
+              └→ 诊断包 events.jsonl</pre>
+
+<h2>5. 验证证据</h2>
+<table>
+<tr><th>命令</th><th>结果</th></tr>
+<tr><td><code>python -m ruff check gcm</code></td><td class="ok">All checks passed（79 文件）</td></tr>
+<tr><td><code>python -m mypy gcm</code></td><td class="ok">Success（79 文件）</td></tr>
+<tr><td><code>unittest tests.test_g71_event_stream</code></td><td class="ok">Ran 54 · OK</td></tr>
+<tr><td>审查修复相关回归（重试/失败/设置/回归/接线/覆盖/限速）</td><td class="ok">Ran 142 · OK</td></tr>
+<tr><td><code>coverage run --source=gcm scripts/ci_run_fast.py</code></td><td class="ok">Ran 1316 · failures=0 · errors=0 · skipped=3 · 覆盖 81%</td></tr>
+</table>
+<p class="warn">未运行：PyInstaller 打包、真实浏览器 EventSource、真机按钮点击。详见 <code>docs/验证记录-2026-10-19-G71事件流.md</code> §4。</p>
+
+<h2>6. 独立审查</h2>
+<p>独立 <code>python-reviewer</code> 结论：无 Critical，5 个 Required（R1 无限重投、R2 @tag 计数覆盖、R3 诊断包泄露本机路径、R4 GUI 启停阻塞、R5 禁用态假成功）已全部修复并补测试；7 个 Suggestion 已处理。三项重构逐行比对语义等价。</p>
+
+<h2>7. 风险与回滚</h2>
+<ul>
+  <li>EventBus 非持久；跨重启审计依赖 app.log/progress.json。</li>
+  <li>SSE 无鉴权，只绑回环 + Host/Origin 校验；事件已打码，不得经无鉴权反代暴露公网。</li>
+  <li>独立 <code>--serve</code> 看不到 GUI 事件，需用设置页托管。</li>
+  <li>回滚：所有改动均为本地源码/文档；<code>git checkout -- .</code> 可整体回滚（版本号与 changelog 同步回退）。</li>
+</ul>
+
+<h2>8. 小测验</h2>
+<details><summary>1. 为什么独立 <code>--serve</code> 收不到 GUI 的 SSE 事件？</summary><p>EventBus 是进程内单例；两个进程内存不互通。需在设置页开启「本地 API / 事件流」由 GUI 进程托管。</p></details>
+<details><summary>2. 哪些错误可自动重试？</summary><p>网络/超时/429/5xx。401/403/404、磁盘满、平台限制不可自动重试。</p></details>
+<details><summary>3. 同一仓库 @v1 与 @v2 同批，状态机用什么 key？</summary><p><code>folder_name</code>（含 @tag），不是 <code>owner/repo</code>。</p></details>
+<details><summary>4. 诊断包为什么不包含 settings.json？</summary><p>settings 含加密凭据；诊断包只放已打码文本（报告/事件/日志尾部）。</p></details>
+<details><summary>5. 原子写为什么需要唯一 tmp 名？</summary><p>固定 tmp 名在并发写时会互相截断，导致保存丢失/非法 JSON。</p></details>
+
+<p class="meta">报告生成于 2026-10-19 · 所有数字来自本轮真实运行；未运行项已明确标注。</p>
+</body>
+</html>

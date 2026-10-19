@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import QDialog, QTextBrowser, QVBoxLayout
 
+from ..i18n import tr
+
 # 说明正文（每条独立段落，便于单测断言关键字）
 HELP_SECTIONS = [
     ("仓库地址语法", [
@@ -61,15 +63,19 @@ TROUBLESHOOT_SECTIONS = [
 
 
 def help_html() -> str:
-    """生成只读富文本（QTextBrowser 可直接 setHtml）。"""
-    parts = ["<h2>Git-clone-Max 使用说明</h2>"]
+    """生成只读富文本（QTextBrowser 可直接 setHtml）。
+
+    G71-5：标题与条目在**渲染时**过 `tr()`（不在模块导入时翻译），
+    这样运行时切换语言后重新打开帮助页也能生效。
+    """
+    parts = [f"<h2>{tr('Git-clone-Max 使用说明')}</h2>"]
     for title, lines in HELP_SECTIONS:
-        parts.append(f"<h3>{title}</h3>")
-        parts.append("<ul>" + "".join(f"<li>{line}</li>" for line in lines) + "</ul>")
-    parts.append("<h2>排错地图</h2>")
+        parts.append(f"<h3>{tr(title)}</h3>")
+        parts.append("<ul>" + "".join(f"<li>{tr(line)}</li>" for line in lines) + "</ul>")
+    parts.append(f"<h2>{tr('排错地图')}</h2>")
     for title, lines in TROUBLESHOOT_SECTIONS:
-        parts.append(f"<h3>{title}</h3>")
-        parts.append("<ul>" + "".join(f"<li>{line}</li>" for line in lines) + "</ul>")
+        parts.append(f"<h3>{tr(title)}</h3>")
+        parts.append("<ul>" + "".join(f"<li>{tr(line)}</li>" for line in lines) + "</ul>")
     return "".join(parts)
 
 
@@ -78,7 +84,7 @@ class HelpDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("使用说明")
+        self.setWindowTitle(tr("使用说明"))
         from .layout import fit_dialog_to_screen
         fit_dialog_to_screen(self, 560, 460, 440, 320)
         v = QVBoxLayout(self)

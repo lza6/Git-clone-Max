@@ -6,9 +6,10 @@
 from __future__ import annotations
 
 import json
-import os
 import threading
 from pathlib import Path
+
+from ..util.atomic_io import write_text_atomic
 
 MAX_HISTORY = 200
 
@@ -34,13 +35,12 @@ class UrlHistory:
 
     def _save(self) -> None:
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self.path.with_suffix(".json.tmp")
-            tmp.write_text(
+            # G71-2：统一原子写（唯一 tmp + fsync + 替换退避），不再自拼固定 tmp。
+            write_text_atomic(
+                self.path,
                 json.dumps(self._items, ensure_ascii=False, indent=2),
-                encoding="utf-8",
+                label="history.json", retries=2,
             )
-            os.replace(tmp, self.path)
         except Exception:
             pass
 

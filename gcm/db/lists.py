@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -63,9 +62,12 @@ class TaskLists:
             "updated_at": now,
         }
         path = self._file_path(clean)
-        tmp = self.dir / f"{clean}.json.tmp"
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.replace(tmp, path)
+        # G71-2：统一原子写（唯一 tmp + fsync + 替换退避）。
+        from ..util.atomic_io import write_text_atomic
+        write_text_atomic(
+            path, json.dumps(data, ensure_ascii=False, indent=2),
+            label="任务清单", retries=2,
+        )
         return path
 
     def list_names(self) -> list[str]:

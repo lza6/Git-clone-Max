@@ -5,7 +5,7 @@
 > 这边是**跑了证明什么**（接缝 ↔ 用例 ↔ 最后结果）。
 > 只记录本轮真实运行过的结果；引用历史结果必须标日期。
 
-**最后更新**：2026-10-17 · 版本见 `gcm/__init__.py:__version__`（本文件不写死版本号）
+**最后更新**：2026-10-19（G71）· 版本见 `gcm/__init__.py:__version__`（本文件不写死版本号）
 
 ---
 
@@ -34,6 +34,13 @@
 | S17 | 进度数据 → delegate | `ui/progress_table.py` | `ProgressDelegate` | engine index 经列 0 `UserRole+1` 反查；250ms 合批；不逐行 `setData`；0 个子控件 | `test_g70_ui_upgrade.TestProgressDelegate` · `test_progress_ui` · `test_g69_regressions.TestProgressRowsMatchRepoWhileSorting` |
 | S18 | 窗口尺寸 → 布局 | `ui/layout.py` | `MainWindow` / 8 个对话框 | 逻辑像素断点；按 `availableGeometry` 夹取；Compact 折叠；对话框 90%×85% | `test_g70_ui_upgrade.TestLayoutBreakpoints` |
 | S19 | HTTP 分页 → SQLite | `http_api.py` | `db/repo_db.list_repos_page` | `limit` 1..5000、`offset≥0`；`total/truncated`；只读连接跳过建表/迁移；错误不回显路径 | `test_g70_ui_upgrade.TestRepoDbPaging/TestReadonlyDatabase/TestHttpApiPaging` · `test_g56_api*` |
+| S20 | 引擎 → EventBus → SSE | `app/engine.py` | `app/event_bus.py` · `http_api._stream_events` | 发布不阻塞/不抛；有界缓冲 + 回放 + 类型过滤；出站打码；慢订阅者丢最旧并计数；SSE 心跳/断开清理 | `test_g71_event_stream.TestEventBus/TestSseEndpoint/TestEnginePublishesEvents` |
+| S21 | 错误分类 → 重试/UI | `app/errors.classify_error` | `app/retry_queue.py` · `ui/failure_panel.py` · `ui/retry_panel.py` | 唯一判据：429/5xx 可重试；401/403/404/磁盘满/平台限制不可；三段式文案 | `test_g71_event_stream.TestErrorModel/TestRetryQueueVisibility` · `test_g52_failure_panel` |
+| S22 | 原子写 → 所有 JSON 持久化 | `util/atomic_io.write_text_atomic` | progress/history/lists/concurrency_state | 唯一 tmp + flush/fsync + 目录 fsync + 替换退避；并发不丢更新、无 tmp 残留 | `test_g71_event_stream.TestAtomicWrites` · `test_g67_closure.TestCrossProcessLock` |
+| S23 | 诊断包 | `app/diag_bundle.py` | 主窗口/诊断对话框 | 只含已打码文本；manifest 版本/时间/文件清单；zip 原子落盘 | `test_g71_event_stream.TestDiagBundle` |
+| S24 | 批次状态机 | `app/batch_state.py` | `app/engine.py` | queued→running→终态；终态不可回退；幂等计数；非法转换计数可观测 | `test_g71_event_stream.TestBatchState/TestEnginePublishesEvents` |
+| S25 | 设置 → GUI 内置本地 API 生命周期 | `db/settings.local_api_*` · `ui/settings_panel` | `ui/main_window._apply_local_api_settings` | 改开关/端口立即启停；只绑回环；关窗释放端口；失败只日志不拖垮 GUI | `test_g71_event_stream.TestLocalApiSettings` · `test_g68_settings_ui` |
+| S26 | EventBus 快照 → 事件流 UI | `app/event_bus.snapshot` | `ui/event_panel` | 默认隐藏进度事件；类型过滤纯函数；刷新/复制 JSON；写入与消费都接线 | `test_g71_event_stream.TestEventPanel` |
 
 ---
 
@@ -45,9 +52,12 @@
 |----|------|------|------|
 | ruff | `python -m ruff check gcm` | **All checks passed** | 2026-10-19 |
 | mypy | `python -m mypy gcm` | **Success**（70 文件） | 2026-10-19 |
-| 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 1262 · failures=0 · errors=0 · skipped=3 · 原生崩溃 0 · 覆盖 83%` | 2026-10-19（v9.7.0） |
+| 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 1316 · failures=0 · errors=0 · skipped=3 · 原生崩溃 0 · 覆盖 81%` | 2026-10-19（G71 后，Windows 门禁 81） |
+| G71 定向 | `unittest tests.test_g71_event_stream` | `Ran 54 · OK`（事件总线/SSE/错误模型/原子写/诊断包/状态机/引擎发布） | 2026-10-19 |
+| G71 引擎回归 | `unittest tests.test_engine tests.test_g43_engine` 等 | `Ran 71 · OK`（含真实 git 本地仓 E2E） | 2026-10-19 |
+| G71 UI 回归 | `unittest tests.test_g70_ui_upgrade tests.test_progress_ui tests.test_onboarding tests.test_g46_tray_help tests.test_download_tools tests.test_g52_mainwindow_methods` | `Ran 85 · OK` | 2026-10-19 |
 | 连跑稳定性 | 同一命令 ×3 | `1115 / 1115 / 1122`，0 崩溃 | 2026-10-17（已移除 GC 安全网） |
-| CI | GitHub Actions | 7/7 job success（v9.7.0 代码 run 39165009718）；发布后 flake 修复 run 39171656327 success | 2026-10-19 |
+| CI | GitHub Actions | 7/7 job success（run 39165009718）；发布后 flake 修复 run 39171656327 success | 2026-10-19 |
 
 ### 2.2 按接缝的覆盖状态
 

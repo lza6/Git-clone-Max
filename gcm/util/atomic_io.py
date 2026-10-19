@@ -43,9 +43,85 @@ def _unique_tmp(path: Path) -> Path:
     return path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
 
 
+def _fsync_dir(path: Path) -> None:
+    """把目录项也刷到磁盘（POSIX）。
+
+    只 `fsync` 文件不够：`os.replace` 是**目录项**变更，掉电后可能出现
+    「新内容已落盘但目录仍指向旧 inode」或「rename 丢失」。Windows 不支持
+    以目录句柄 `fsync`，跳过即可（NTFS 的元数据日志另有保障）。
+    """
+    if os.name == "nt":
+        return
+    try:
+        fd = os.open(str(path), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+
+def write_text_atomic(path: str | Path, text: str, *,
+                      lock: bool = True, label: str = "文件",
+                      encoding: str = "utf-8",
+                      retries: int | None = None) -> None:
+    """把文本**原子**写到 `path`：唯一 tmp → flush+fsync → replace（带退避）。
+
+    与 `write_json_atomic` 共用同一套替换/退避/清理逻辑；`lock=False` 供
+    已经持有跨进程锁的调用方使用（避免同路径重复加锁）。
+
+    `retries`：替换退避次数（默认 12，约 3.9s 预算）。**UI 热路径**
+    （history/任务清单）可传更小值，避免杀软短暂占用时拖住界面。
+    """
+    target = Path(path)
+    tmp = _unique_tmp(target)
+    attempts = _REPLACE_RETRIES if retries is None else max(1, int(retries))
+
+    def _do_write() -> None:
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with open(tmp, "w", encoding=encoding, newline="\n") as f:
+                f.write(text)
+                f.flush()
+                try:
+                    os.fsync(f.fileno())   # 内容先落盘，再替换目录项
+                except OSError:
+                    pass                    # 某些文件系统不支持 fsync；不阻断写入
+            last: Exception | None = None
+            for attempt in range(attempts):
+                try:
+                    os.replace(tmp, target)
+                    _fsync_dir(target.parent)
+                    return
+                except PermissionError as e:
+                    last = e
+                    time.sleep(_REPLACE_BACKOFF_SEC * (attempt + 1))
+            raise last if last is not None else OSError("原子替换失败")
+        except Exception:
+            # G71-11（审查 S3）：写入阶段（磁盘满/编码错）或 replace 抛非
+            # PermissionError 时也必须清理唯一 tmp，避免垃圾文件累积。
+            try:
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+            raise
+
+    if lock:
+        with cross_process_lock(target, label=label):
+            _do_write()
+    else:
+        _do_write()
+
+
 def write_json_atomic(path: str | Path, payload: Any, *,
                       lock: bool = True, label: str = "文件",
-                      indent: int = 2) -> None:
+                      indent: int = 2, retries: int | None = None) -> None:
     """把 `payload` 序列化为 JSON 并**原子**写到 `path`。
 
     - `lock=True`（默认）：全程持 `cross_process_lock`，读-改-写临界区由调用方负责，
@@ -53,31 +129,6 @@ def write_json_atomic(path: str | Path, payload: Any, *,
     - 失败**上抛**（不静默吞）：调用方要么给用户可见的错误，要么显式记录。
       本项目历史上正是「吞掉异常」让这类数据丢失长期不可见。
     """
-    target = Path(path)
-    tmp = _unique_tmp(target)
-
-    def _do_write() -> None:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=indent),
-                       encoding="utf-8")
-        last: Exception | None = None
-        for attempt in range(_REPLACE_RETRIES):
-            try:
-                os.replace(tmp, target)
-                return
-            except PermissionError as e:
-                last = e
-                time.sleep(_REPLACE_BACKOFF_SEC * (attempt + 1))
-        # 退避用尽：清理 tmp，避免留下垃圾，然后如实上抛
-        try:
-            tmp.unlink(missing_ok=True)
-        except Exception:
-            pass
-        if last is not None:
-            raise last
-
-    if lock:
-        with cross_process_lock(target, label=label):
-            _do_write()
-    else:
-        _do_write()
+    text = json.dumps(payload, ensure_ascii=False, indent=indent)
+    write_text_atomic(path, text, lock=lock, label=label, encoding="utf-8",
+                      retries=retries)

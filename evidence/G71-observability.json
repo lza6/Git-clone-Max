@@ -1,0 +1,200 @@
+{
+  "task_id": "G71-observability",
+  "status": "passed",
+  "timestamp": "2026-10-19T18:05:00+08:00",
+  "commands_executed": [
+    {
+      "cmd": ".venv/Scripts/python.exe -m ruff check gcm",
+      "exit_code": 0,
+      "raw_output_tail": "All checks passed!",
+      "output_file": null
+    },
+    {
+      "cmd": ".venv/Scripts/python.exe -m mypy gcm",
+      "exit_code": 0,
+      "raw_output_tail": "Success: no issues found in 79 source files",
+      "output_file": null
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen .venv/Scripts/python.exe -m unittest tests.test_g71_event_stream -v",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 54 tests in 12.962s\n\nOK",
+      "output_file": null
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen .venv/Scripts/python.exe -m unittest tests.test_g52_retry_queue_extra tests.test_g52_failure_panel tests.test_g68_settings_ui tests.test_g69_regressions tests.test_g69_wiring_gaps tests.test_g70_coverage tests.test_rate_limit -v",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 142 tests in 110.328s\n\nOK",
+      "output_file": null
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen .venv/Scripts/python.exe -m coverage run --source=gcm scripts/ci_run_fast.py",
+      "exit_code": 0,
+      "raw_output_tail": "[ci_run_fast] 合计：Ran 1316 tests · failures=0 errors=0 skipped=3\n[ci_run_fast] OK\n[ci_run_fast] 进程退出，最后进入的模块：<全部完成>",
+      "output_file": null
+    },
+    {
+      "cmd": ".venv/Scripts/python.exe -m coverage report --include=\"gcm/*\"",
+      "exit_code": 0,
+      "raw_output_tail": "TOTAL                          12785   2114   3234   576    81%",
+      "output_file": null
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen .venv/Scripts/python.exe scripts/e2e_smoke.py",
+      "exit_code": 0,
+      "raw_output_tail": "[PASS] clone 内容正确\n[PASS] fetch+ff 更新正确\n[PASS] 未提交的改动不覆盖（ff 拒绝+内容保留） - rc=1\n[PASS] 冲突双方内容都保留 - rc=1\n[PASS] merge --abort 恢复本地提交\n[PASS] HEAD 前进\nE2E_SMOKE_RESULT: PASS",
+      "output_file": null
+    },
+    {
+      "cmd": "printf '' | dist/Git-clone-Max.exe --cli --json -",
+      "exit_code": 2,
+      "raw_output_tail": "{\"version\": \"9.8.0\", \"ok\": false, \"counts\": {\"success\": 0, \"failed\": 0, \"other\": 0, \"total\": 0}, \"results\": [], \"invalid\": []}\nrc=2",
+      "output_file": null
+    },
+    {
+      "cmd": "dist/Git-clone-Max.exe --cli --json --dir <tmp>/out -  # 本地裸仓首次克隆",
+      "exit_code": 0,
+      "raw_output_tail": "\"status\": \"success\", \"action\": \"cloned\", \"message\": \"克隆完成\"\nFILE_OK: hello",
+      "output_file": null
+    },
+    {
+      "cmd": "dist/Git-clone-Max.exe --cli --json --dir <tmp>/out -  # 第二次运行（远端 +1 提交）",
+      "exit_code": 0,
+      "raw_output_tail": "\"status\": \"success\", \"action\": \"updated\", \"message\": \"更新完成（+1 提交）\"\ncontent=v2",
+      "output_file": null
+    },
+    {
+      "cmd": ".venv/Scripts/python.exe -m PyInstaller --noconfirm Git-clone-Max.spec",
+      "exit_code": 0,
+      "raw_output_tail": "INFO: Build complete! The results are available in: ...\\dist",
+      "output_file": "dist/"
+    },
+    {
+      "cmd": ".venv/Scripts/python.exe scripts/build_portable_zip.py",
+      "exit_code": 0,
+      "raw_output_tail": "[OK] 已生成 ...Git-clone-Max-portable.zip（314 条目，79482799 字节）",
+      "output_file": "dist/Git-clone-Max-portable.zip"
+    },
+    {
+      "cmd": ".venv/Scripts/python.exe scripts/health_check.py --json evidence/G71-health-check.json",
+      "exit_code": 0,
+      "raw_output_tail": "[OK] artifacts_exist: exe=True zip=True\n[OK] version_match: src='9.8.0' artifact='9.8.0' (onedir-fallback)\n[OK] started_ok: alive after 60s; repos.db=True settings.json=False\n[OK] repos_db_created: repos.db/settings.json 存在",
+      "output_file": "evidence/G71-health-check.json"
+    },
+    {
+      "cmd": ".venv/Scripts/python.exe -m gcm --cli --serve 127.0.0.1:8877 (subprocess) + GET /version,/api/events/snapshot,/api/status",
+      "exit_code": 0,
+      "raw_output_tail": "/version -> 200 {version: 9.8.0, readonly: true}\n/api/events/snapshot -> 200 {events: [], stats: {...}}\n/api/status -> 200 {readonly: true}",
+      "output_file": null
+    }
+  ],
+  "files_changed": [
+    "gcm/app/event_bus.py",
+    "gcm/app/errors.py",
+    "gcm/app/batch_state.py",
+    "gcm/app/diag_bundle.py",
+    "gcm/app/retry_queue.py",
+    "gcm/app/engine.py",
+    "gcm/http_api.py",
+    "gcm/util/atomic_io.py",
+    "gcm/db/progress_file.py",
+    "gcm/db/history.py",
+    "gcm/db/lists.py",
+    "gcm/db/settings.py",
+    "gcm/git/service.py",
+    "gcm/ui/retry_panel.py",
+    "gcm/ui/event_panel.py",
+    "gcm/ui/diag_dialog.py",
+    "gcm/ui/engine_factory.py",
+    "gcm/ui/download_layout.py",
+    "gcm/ui/main_window.py",
+    "gcm/ui/failure_panel.py",
+    "gcm/ui/settings_panel.py",
+    "gcm/ui/settings_groups.py",
+    "gcm/ui/onboarding.py",
+    "gcm/ui/help_dialog.py",
+    "gcm/i18n/en.py",
+    "gcm/i18n/zh.py",
+    "tests/test_g71_event_stream.py",
+    "docs/agent-contract.md",
+    "docs/architecture.md",
+    "docs/data-model.md",
+    "docs/code-gems.md",
+    "docs/RELEASE_CHECKLIST.md",
+    "docs/验证记录-2026-10-19-G71事件流.md",
+    "reports/change-report-2026-10-19-g71.html",
+    "CLAUDE.md",
+    "README.md",
+    "test_ledger.md",
+    "workflow_status.md",
+    "gcm/__init__.py",
+    "pyproject.toml",
+    "packaging/installer.iss",
+    "Git-clone-Max.spec"
+  ],
+  "tests": [
+    {
+      "name": "G71 event/SSE/error/atomic/diag/state/panel",
+      "type": "unit+integration",
+      "status": "passed",
+      "evidence": "Ran 54 · OK"
+    },
+    {
+      "name": "retry/failure/settings/regression/wiring/coverage/rate-limit",
+      "type": "regression",
+      "status": "passed",
+      "evidence": "Ran 142 · OK"
+    },
+    {
+      "name": "fast suite",
+      "type": "unit+integration",
+      "status": "passed",
+      "evidence": "Ran 1316 · failures=0 · errors=0 · skipped=3"
+    },
+    {
+      "name": "real git E2E smoke",
+      "type": "e2e",
+      "status": "passed",
+      "evidence": "scripts/e2e_smoke.py → E2E_SMOKE_RESULT: PASS"
+    },
+    {
+      "name": "packaged exe clone+update E2E",
+      "type": "e2e",
+      "status": "passed",
+      "evidence": "action=cloned + FILE_OK; action=updated + content=v2"
+    },
+    {
+      "name": "health check (real exe start)",
+      "type": "smoke",
+      "status": "passed",
+      "evidence": "started_ok=true; repos_db=True; version_match"
+    },
+    {
+      "name": "docs/version guards",
+      "type": "unit",
+      "status": "passed",
+      "evidence": "Ran 22 · OK"
+    }
+  ],
+  "coverage_summary": {
+    "lines": 83.5,
+    "branches": null,
+    "functions": null,
+    "statements": 81.0,
+    "note": "coverage.py TOTAL Cover=81%（Windows 门禁 81）；分支口径未单独导出"
+  },
+  "seams_touched": ["S20", "S21", "S22", "S23", "S24", "S25", "S26"],
+  "mock_scenarios_covered": [],
+  "browser_validation": {
+    "performed": false,
+    "paths": [],
+    "screenshots": [],
+    "reason": "无浏览器自动化工具；SSE 用原生 socket/http.client 按协议逐帧验证，GUI 用离屏 Qt 测试与真实 exe 启动健康检查"
+  },
+  "limitations": [
+    "未做真实浏览器 EventSource 连接（环境无浏览器工具）",
+    "未做真机鼠标点击/拖拽（offscreen 无法模拟真实输入）",
+    "SSE 在独立 --serve 进程看不到 GUI 引擎事件（进程内总线边界），已文档化",
+    "未做远程真实平台（GitHub/GitLab）网络克隆；使用本地裸仓 E2E"
+  ]
+}

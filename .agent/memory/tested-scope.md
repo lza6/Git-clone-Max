@@ -146,3 +146,27 @@ QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe scripts/bench_g70_ui.py
 ```
 
 不再需要重复跑：以上覆盖 UI 主题/断点/进度 delegate/只读 DB/API 分页。
+
+## 11. G71 队列可观测性 / 事件流 / 诊断包（2026-10-19 · v9.8.0）
+
+命令与结果（详见 `docs/验证记录-2026-10-19-G71事件流.md`）：
+
+- `python -m ruff check gcm` → All checks passed（78 文件）
+- `python -m mypy gcm` → Success（78 文件）
+- `unittest tests.test_g71_event_stream` → **37 OK**
+- 重试/失败面板/首启/HTTP/跨进程锁/进度 → **82 OK**（113s）
+- 新增测试 + 引擎/E2E/帮助/文档守卫 → **71 OK**（295s）
+- G70 UI/进度/首启/托盘/下载工具/主窗方法 → **85 OK**（36s）
+- 快集全量 `coverage run --source=gcm scripts/ci_run_fast.py` → **Ran 1316 · failures=0 · errors=0 · skipped=3 · 覆盖 81%**（Windows 门禁 81）
+
+未跑：快集全量、打包 exe、真实浏览器 EventSource、真机按钮点击。
+原因与补偿见验证记录 §4。改以下模块时**至少**跑对应定向：
+
+| 改动 | 必跑 |
+|------|------|
+| `app/event_bus.py` / `http_api.py` / `app/engine.py` 事件 | `tests.test_g71_event_stream` |
+| `app/errors.py` / `app/retry_queue.py` / `ui/failure_panel.py` | `tests.test_g71_event_stream` + `tests.test_g52_failure_panel` + `tests.test_g52_retry_queue_extra` |
+| `util/atomic_io.py` / `db/progress_file.py` | `tests.test_g71_event_stream.TestAtomicWrites` + `tests.test_g67_closure` |
+| `git/service.py::_update` 拆分块 | `tests.test_g58_mirror_failover` + `tests.test_engine` |
+| `ui/download_layout.py` / `ui/engine_factory.py` | `tests.test_g70_ui_upgrade` + `tests.test_download_tools` + `tests.test_g52_mainwindow_methods` |
+| i18n 键 | `tests.test_g67_docs_freshness`（zh/en 同步） |

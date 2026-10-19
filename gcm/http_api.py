@@ -6,6 +6,8 @@
 - GET  /api/repos/search     关键字搜索（q 必填）
 - GET  /api/status           全局统计概览
 - GET  /api/report           报表（format=csv|markdown|json，内存生成，不写盘）
+- GET  /api/events           **SSE 事件流**（G71-1：批次/任务/重试/错误，长连接）
+- GET  /api/events/snapshot  最近事件快照（JSON，供不便维持长连接的 agent）
 - POST /api/clone            批量克隆（默认 403；仅 --allow-mutate 时执行，审计落盘）
 
 安全边界：
@@ -13,12 +15,14 @@
 - 默认只读：无任何写端点；POST 需显式 --allow-mutate；
 - 输出全部 redact 打码，不泄露 token/host_tokens/ssh_key；
 - 每次请求记审计日志（仅 allow_mutate 时落盘到 <root>/.gcm-api-audit.jsonl）。
+- SSE 事件在入总线前已打码；本服务无鉴权，仍只允许回环客户端。
 """
 from __future__ import annotations
 
 import json
 import subprocess
 import sys
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -150,6 +154,119 @@ class _ApiHandler(BaseHTTPRequestHandler):
         except Exception:  # noqa: BLE001
             pass
 
+    # ------------------------------------------------------------ G71-1 SSE
+    @staticmethod
+    def _bounded_int(qs: dict[str, list[str]], key: str, default: int,
+                     lo: int, hi: int) -> int:
+        """解析有界整数查询参数；越界/非整数抛 ValueError（由调用方转 400）。"""
+        raw = (qs.get(key) or [str(default)])[0]
+        if len(str(raw)) > 12:      # 防超长数字触发 O(n²) 十进制转换
+            raise ValueError(f"{key} 过大")
+        val = int(raw)
+        if not (lo <= val <= hi):
+            raise ValueError(f"{key} 必须在 {lo}..{hi} 之间")
+        return val
+
+    @staticmethod
+    def _parse_types(qs: dict[str, list[str]]) -> list[str] | None:
+        raw = (qs.get("types") or [""])[0].strip()
+        if not raw:
+            return None
+        # 去重且保持顺序；未知类型不报错 —— 订阅未来新增类型时向后兼容。
+        seen: list[str] = []
+        for part in raw.split(","):
+            t = part.strip()
+            if t and t not in seen:
+                seen.append(t)
+        return seen or None
+
+    def _events_snapshot(self, qs: dict[str, list[str]]) -> None:
+        """最近事件快照（JSON）：不适合维持 SSE 长连接的 agent 用。"""
+        from .app.event_bus import get_event_bus
+        try:
+            limit = self._bounded_int(qs, "limit", 100, 1, 500)
+        except (TypeError, ValueError) as e:
+            self._error(2, str(e))
+            return
+        server: GcmApiServer = self.server  # type: ignore[assignment]
+        bus = getattr(server, "event_bus", None) or get_event_bus()
+        events = bus.snapshot(limit=limit, types=self._parse_types(qs))
+        self._send_json({
+            "events": [e.to_dict() for e in events],
+            "count": len(events),
+            "stats": bus.stats(),
+        })
+
+    def _client_gone(self) -> bool:
+        """非阻塞探测客户端是否已断开（G71-11，审查 S5）。
+
+        只靠 `wfile.write` 抛 BrokenPipe 有个盲区：客户端断开后若服务端一直
+        没有事件/心跳，写操作不会发生，订阅会挂到下一次心跳才清理。
+        用 `select + MSG_PEEK` 立即判断 EOF，不消费任何数据。
+        """
+        try:
+            import select
+            import socket
+            readable, _, _ = select.select([self.connection], [], [], 0)
+            if not readable:
+                return False
+            return not self.connection.recv(1, socket.MSG_PEEK)
+        except (OSError, ValueError):
+            return True
+        except Exception:
+            return False
+
+    def _stream_events(self, qs: dict[str, list[str]]) -> None:
+        """SSE 长连接：心跳 + 客户端断开自动清理订阅。
+
+        为什么用 HTTP/1.0 + `Connection: close`：`BaseHTTPRequestHandler` 不会
+        自动分块编码（no chunked support），而 SSE 没有 Content-Length。HTTP/1.0
+        的「读到连接关闭为止」语义与 EventSource / curl -N 都兼容，且实现最简单。
+        """
+        from .app.event_bus import get_event_bus
+        try:
+            replay = self._bounded_int(qs, "replay", 0, 0, 500)
+            heartbeat = self._bounded_int(qs, "heartbeat", 15, 1, 60)
+        except (TypeError, ValueError) as e:
+            self._error(2, str(e))
+            return
+        types = self._parse_types(qs)
+
+        server: GcmApiServer = self.server  # type: ignore[assignment]
+        stop = getattr(server, "_stop_event", None)
+        bus = getattr(server, "event_bus", None) or get_event_bus()
+        sub = bus.subscribe(replay=replay, types=types, label="sse")
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache, no-transform")
+            self.send_header("Connection", "close")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+            self.close_connection = True
+            # EventSource 重连间隔（毫秒）+ 一条注释帧证明连接已建立
+            self.wfile.write(b"retry: 3000\n\n: connected\n\n")
+            self.wfile.flush()
+            last_write = time.monotonic()
+            while (stop is None or not stop.is_set()) and not sub.closed:
+                events = sub.wait(timeout=min(1.0, float(heartbeat)))
+                if events:
+                    for ev in events:
+                        self.wfile.write(ev.sse_frame())
+                    self.wfile.flush()
+                    last_write = time.monotonic()
+                elif time.monotonic() - last_write >= heartbeat:
+                    self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
+                    last_write = time.monotonic()
+                if self._client_gone():
+                    break
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError,
+                TimeoutError, ValueError, OSError):
+            pass                      # 客户端正常断开（关页面 / curl 退出）
+        finally:
+            sub.close()
+
     # ------------------------------------------------------------ GET
     def do_GET(self) -> None:
         server: GcmApiServer = self.server  # type: ignore[assignment]
@@ -159,6 +276,18 @@ class _ApiHandler(BaseHTTPRequestHandler):
         from urllib.parse import parse_qs, urlparse
         parsed = urlparse(self.path)
         qs = parse_qs(parsed.query)
+        # G71-1：SSE / 版本查询**不依赖数据库** —— 必须在打开 DB 之前处理，
+        # 否则一条长连接会白占一个 SQLite 连接（SSE 可能持续数小时）。
+        if parsed.path == "/version":
+            self._send_json({"version": _version(),
+                             "readonly": not server.allow_mutate})
+            return
+        if parsed.path == "/api/events":
+            self._stream_events(qs)
+            return
+        if parsed.path == "/api/events/snapshot":
+            self._events_snapshot(qs)
+            return
         try:
             from .db.repo_db import Database
             # G70：读端点走只读连接，跳过建表/迁移写事务（并发读不再被串行化）。
@@ -172,10 +301,7 @@ class _ApiHandler(BaseHTTPRequestHandler):
             self._error(-32603, "打开数据库失败", status=500)
             return
         try:
-            if parsed.path == "/version":
-                self._send_json({"version": _version(),
-                                 "readonly": not server.allow_mutate})
-            elif parsed.path == "/api/repos":
+            if parsed.path == "/api/repos":
                 host = qs.get("host", [None])[0]
                 # G70：分页（默认 500，最大 5000）—— 仓库数上千时避免一次性序列化
                 try:
@@ -314,13 +440,25 @@ class GcmApiServer(ThreadingHTTPServer):
     root: Path = Path.cwd()
     data_dir: Path = Path.cwd()
     allow_mutate: bool = False
+    event_bus: Any = None             # G71-1：可注入（测试隔离）；None = 进程级单例
     request_queue_size = 128          # 默认 5 太小：并发调用会被内核直接拒绝
     daemon_threads = True             # 线程随进程退出，避免 shutdown 时挂住
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        # 必须在 `super().__init__` 之前创建：绑定失败时 socketserver 会在
+        # 构造过程中回调 `server_close()`，那时本属性必须已存在。
+        self._stop_event = threading.Event()
+        super().__init__(*args, **kwargs)
+
+    def server_close(self) -> None:
+        self._stop_event.set()
+        super().server_close()
 
 
 def create_server(bind: str = "127.0.0.1:8765", root: Path | str = Path.cwd(),
                   data_dir: Path | str | None = None,
-                  allow_mutate: bool = False) -> GcmApiServer:
+                  allow_mutate: bool = False,
+                  event_bus: Any = None) -> GcmApiServer:
     """创建本地 HTTP 服务器（默认只读）；测试可直接关闭释放端口。
 
     G66-6 安全加固：本服务**无鉴权**（设计如此：仅面向本机 agent 集成）。
@@ -349,6 +487,7 @@ def create_server(bind: str = "127.0.0.1:8765", root: Path | str = Path.cwd(),
     httpd.root = Path(root)
     httpd.data_dir = Path(data_dir) if data_dir else Path(root)
     httpd.allow_mutate = bool(allow_mutate)
+    httpd.event_bus = event_bus        # None → SSE 使用进程级单例
     return httpd
 
 

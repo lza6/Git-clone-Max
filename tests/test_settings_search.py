@@ -36,7 +36,8 @@ class TestSettingsSearch(unittest.TestCase):
         self.w.show()
         # settings_groups 索引：0=启动与后台运行 g1 / 1=并行与网络 g3 /
         # 2=外观 g5 / 3=关于与更新 g4 / 4=完成通知 Webhook g6（G49-7）
-        self.g1, self.g3, self.g5, self.g4, self.g6 = self.w.settings_groups
+        # 5=本地 API / 事件流（G71-9）
+        self.g1, self.g3, self.g5, self.g4, self.g6, self.g_local = self.w.settings_groups
 
     def tearDown(self):
         try:

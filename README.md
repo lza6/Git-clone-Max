@@ -1,7 +1,7 @@
 # Git-clone-Max
 
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
-> **当前版本：v9.7.0**（UI/UX 全面升级：响应式窗口、无障碍、进度表性能、主题一致性）
+> **当前版本：v9.8.0**（队列可观测性 + SSE 事件流 + 三段式错误 + 诊断包）
 > **v5.0：多平台直克隆** — GitLab / Gitee / Codeberg / Bitbucket / 自建主机（HTTPS/SSH/短格式/子组）同样支持。
 > 克隆目录一律 `host__作者__仓库`（GitHub 为 `作者__仓库`），本地改动永不覆盖。
 
@@ -74,6 +74,10 @@ uv run python -m gcm --portable
 | 增量更新 | 已存在 → `git fetch --prune` → `merge --ff-only`；无法快进退化为 rebase |
 | 冲突保护 | 本地有改动且与远端分叉 → **标记冲突、保留本地、绝不覆盖** |
 | 失败恢复 | 单个仓库失败不中断整体；网络类失败自动降级；平台限制错误明确提示不无效重试 |
+| 三段式错误 | 每个失败给出「发生了什么 / 为什么 / 怎么办」；429/5xx 自动重试，401/403/404/磁盘满/平台限制不无效重试 |
+| 重试队列可见 | 下载中心「重试队列」：失败次数、下次重试时间、错误类别、原因与建议；支持立即重试 / 移除 / 全部重试 / 清空 |
+| 事件流（SSE） | 设置页可开启「本地只读 API（含 SSE）」由 **GUI 进程内**托管（默认关，仅回环）；`GET /api/events` 实时推送批次/任务/进度/结果/错误/重试事件，`/api/events/snapshot` 供轮询型 agent。设置页「🧾 事件流」可直接查看结构化执行轨迹（类型过滤/自动刷新/复制 JSON） |
+| 诊断包 | 一键导出 zip：状态报告 + 最近事件（黑匣子）+ app.log/notify.log 尾部，全部已打码 |
 | 单任务控制 | 进度表搜索过滤 / 表头排序 / 单仓库暂停 / 右键重试、复制详情、打开目录 |
 | 任务清单 | 输入区右键保存/加载任务清单（`data/lists`）；批量打标签 + 导出所选 CSV |
 | 子模块 | 设置开关拉取 `--recurse-submodules`，工作区完整 |
@@ -99,7 +103,7 @@ uv run python -m gcm --portable
 - `.agent/memory/` —— 已测试范围、已知问题、关键决策、变更索引、审计历史
 - `.agent/skills/` —— 加 API / 加功能 / 发版 / 回滚 / 验证矩阵 / 审查 / 审计 / 并发检查 / 计划文档清理
 - `policy.md` —— 交付门禁：什么条件下允许宣称「完成」
-- `test_ledger.md` —— 接缝注册表（S01–S14）与每条链路由哪个测试证明
+- `test_ledger.md` —— 接缝注册表（S01–S26）与每条链路由哪个测试证明
 - `evidence/` —— 每个任务节点的真实命令与输出证据
 
 改动前请先读 `.agent/memory/tested-scope.md`，避免重复跑同一批验证；
@@ -116,10 +120,14 @@ Git-clone-Max/
 │   ├── models.py            数据模型
 │   ├── cli.py               CLI：--cli [--json] [--diag] [--serve H:P] [--allow-mutate]
 │   ├── mcp_server.py        MCP stdio server（只读；GCM_MCP_ENABLE=1 显式启用）
-│   ├── http_api.py          本地 HTTP API（只读；强制回环绑定）
+│   ├── http_api.py          本地 HTTP API（只读；强制回环绑定；含 SSE 事件流）
 │   ├── reports.py           报表导出（CSV / Markdown / xlsx）
 │   ├── app/
-│   │   ├── engine.py        统一调度引擎（并发/去重/进度/取消）
+│   │   ├── engine.py        统一调度引擎（并发/去重/进度/取消/事件发布）
+│   │   ├── event_bus.py     进程内事件总线（回放/过滤/打码；SSE 数据源）
+│   │   ├── errors.py        三段式错误分类（可重试 vs 永久失败）
+│   │   ├── batch_state.py   批次状态机（转换校验 + 幂等计数）
+│   │   ├── diag_bundle.py   诊断 zip（报告 + 事件 + 日志尾部）
 │   │   ├── url_lib.py       通用 Git URL 解析（多平台）/ 跨 host 命名
 │   │   ├── diag.py          网络/环境诊断
 │   │   ├── alerts.py        阈值告警扫描 + 定时报表
@@ -128,12 +136,11 @@ Git-clone-Max/
 │   ├── db/                  SQLite（repo_db / settings / lists / history / runtime_sessions）
 │   ├── git/service.py       git 操作（clone/fetch/merge/rebase/冲突/平台限制识别）
 │   ├── i18n/                轻量 i18n（zh/en）
-│   └── ui/                  主题 + 三 Tab 主窗口 + 设置/统计/详情/本地扫描对话框
+│   └── ui/                  主题 + 三 Tab 主窗口 + 设置/统计/详情/重试队列/诊断/本地扫描
 ├── skills/                  agent 技能包（gcm-clone/archive/report/diag/resume，各含 SKILL.md）
 ├── scripts/                 启动器（bat/ps1）+ E2E 冒烟 / 健康检查 / 发布 / 基准 / CI 快集
-├── docs/                    架构 / ADR / agent 契约 / SOP / 性能可观测性 / Release 清单
 ├── docs/                    架构 / ADR / 数据模型 / agent 契约 / SOP / 发布清单
-├── tests/                   单元 + 集成 + 真实 git E2E（116 个测试文件）
+├── tests/                   单元 + 集成 + 真实 git E2E（130 个测试文件）
 ├── requirements.txt         运行时依赖（PyQt6）
 └── pyproject.toml           项目元数据 + ruff / mypy 配置
 ```
@@ -179,6 +186,10 @@ python -m gcm --cli --diag --json
 
 # 3) 本地只读 HTTP API（强制回环绑定；--allow-mutate 才放行写）
 python -m gcm --cli --serve 127.0.0.1:8765
+
+# 3.1) 实时事件流（SSE：批次/任务/进度/结果/错误/重试）
+curl -N "http://127.0.0.1:8765/api/events?replay=20&heartbeat=15"
+curl "http://127.0.0.1:8765/api/events/snapshot?limit=100&types=task_error"
 ```
 
 退出码：`0` 全成功 / `1` 有失败 / `2` 无有效输入（MCP 未启用另为 `3`）。
@@ -192,6 +203,7 @@ GCM_MCP_ENABLE=1 python -m gcm.mcp_server --allow-export
 
 > **安全边界（G66-6 起强制）**：本地 HTTP API 无鉴权，因此 `--serve` 只接受回环地址
 > （`127.0.0.1` / `127.0.0.2` / `127.0.0.3` / `localhost`）；传 `0.0.0.0` 等非回环地址会被拒绝并以退出码 2 退出。
+> 事件流（SSE）同样只走回环，且事件在入总线前已 redact 打码；**不要**把事件流原样转发到公网。
 > IPv6（含 `::1`）暂不支持（本地 API 基于 AF_INET），传入会明确报错而非崩溃。
 > 需要远程访问请自行用带鉴权的反向代理转发到回环地址。
 
@@ -247,9 +259,9 @@ python -m coverage run --source=gcm -m unittest discover -s tests
 ## 发布
 
 ```bash
-git tag v9.7.0
+git tag v9.8.0
 git push origin main --tags
-python scripts/publish_release.py --tag v9.7.0   # 自动上传 exe 到 GitHub Release
+python scripts/publish_release.py --tag v9.8.0   # 自动上传 exe 到 GitHub Release
 ```
 
 ## License

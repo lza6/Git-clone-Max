@@ -108,6 +108,11 @@ docs/        工程/产品/契约文档
 - **测试隔离铁律**：任何直接构造 `MainWindow`/`QWidget` 的测试，模块级先 `QApplication.instance() or QApplication([])`。
 - **测试断言**：禁止绝对日期表达相对语义（`"2026-09-01"` + "距今 8 天" = 时间炸弹）。用 `datetime.now() - timedelta(...)`。
 - **i18n**：用户可见新文案走 `tr()`；新增 key 必须同时进 `gcm/i18n/zh.py` 与 `en.py`。
+- **事件/观测**：长流程或状态变化（排队/开始/进度/结果/重试）发布到
+  `app/event_bus.EventBus`；发布**永不阻塞、永不抛**，负载在入总线前打码。
+  不要把 SSE/诊断专用字段塞进 UI 信号（两者消费同一份事件）。
+- **JSON 持久化**：一律走 `util/atomic_io.write_json_atomic` / `write_text_atomic`
+  （唯一 tmp + flush/fsync + 替换退避）；不要自拼 `*.json.tmp`（并发会互相截断）。
 - **文件规模**：新模块目标 200–400 行，硬上限 800 行；函数上限 50 行；嵌套上限 4 层。
 - **Windows 约束**：不新增 `.sh`（用 PowerShell / node / python）；`.bat` 必须 CRLF（`.gitattributes` 已强制）。
 
@@ -136,6 +141,10 @@ docs/        工程/产品/契约文档
 | `subprocess` 文本模式必须显式给 `encoding`（gcm / scripts / tests 全覆盖）；git 用 utf-8，Windows 控制台工具用 `_console_encoding()` | `tests/test_g66_patch.py::TestSubprocessTextDecoding` + `TestSubprocessDecodeE2E` + `TestConsoleToolEncoding` |
 | 测试不得用绝对日期表达相对语义 | `tests/test_g66_patch.py::TestNoTimeBombAssertions` |
 | 本地 HTTP API 只允许回环绑定（服务无鉴权） | `tests/test_g66_patch.py::TestHttpApiBindHardening` |
+| SSE 事件流同样只允许回环；事件在入总线前必须 `redact()`（URL 凭据/Authorization/token 参数） | `tests/test_g71_event_stream.py::TestSseEndpoint` · `TestEventBus::test_redaction_at_publish_boundary` |
+| 错误「是否可自动重试」只能由 `app/errors.classify_error` 判定（429/5xx 可重试；401/403/404/磁盘满/平台限制不可） | `tests/test_g71_event_stream.py::TestErrorModel` · `TestRetryQueueVisibility` |
+| JSON 原子写必须唯一 tmp + fsync；不得回退到固定 `.json.tmp` | `tests/test_g71_event_stream.py::TestAtomicWrites` |
+| 诊断包只含已打码文本，不得打包 `settings.json`/数据库/仓库内容 | `tests/test_g71_event_stream.py::TestDiagBundle` |
 | MCP / HTTP API **默认只读**，写操作需显式放行（`GCM_MCP_ENABLE=1` + `--allow-export` / `--allow-mutate`） | `tests/test_g56_mcp*.py` / `test_g56_api_write.py` |
 | 付费外部 API 默认不真实调用（图像/视频/支付等）；用 mock 覆盖 success/timeout/rate_limit/malformed/retry_exhausted | 全局规则 + 现有 mock 惯例 |
 | 写盘互斥必须**跨进程**：`settings.json` / `progress.json` 的读-改-写要走 `gcm/util/filelock.cross_process_lock`（线程锁只保护单进程，多实例会丢更新） | `tests/test_g67_closure.py::TestCrossProcessLock`（含无锁对照组反向自检） |
@@ -208,19 +217,33 @@ docs/        工程/产品/契约文档
   **仍未根治**：正解是让每个用例确定性收尾（close → deleteLater → 泵空事件队列），
   但那要逐个改造 31 个构造 MainWindow 的测试文件；已登记为后续工作。
   **不得**用 `skip`/重试把它「弄绿」。
-- **CI 未锁定 PyQt6 版本**：主矩阵用 `pip install PyQt6`（取最新），
-  而 `requirements-build.txt` 锁了 ruff/mypy/coverage/pyinstaller。上游发新版会让 CI 行为漂移。
-- **代码规模现状（2026-10-19 实测）**：仍为 **3 个**文件超 800 行 —— `main_window.py` **2624**、
-  `service.py` **1740**、`engine.py` **976**（`progress_table.py` **800**、`repo_db.py` **799**、
+- **CI 已锁定 PyQt6 版本**：`.github/workflows/ci.yml` 在 4 处 `pip install PyQt6==6.11.0`；
+  `requirements-build.txt` 另锁 ruff/mypy/coverage/pyinstaller。**旧版本文档曾称「未锁定」，已过期**。
+- **代码规模现状（2026-10-19 G71 后实测）**：仍为 **3 个**文件超 800 行 —— `main_window.py` **2648**、
+  `service.py` **1768**、`engine.py` **1168**（`progress_table.py` **800**、`repo_db.py` **799**、
   `settings_panel.py` **720**、`settings_groups.py` **679**、`theme.py` **565** 均在 800 线内）；
-  8 个函数超 100 行（最大 `service._update` 178 行）。
-  `build_settings_ui` 曾达 432 行，已拆为 `settings_groups.py` 的 7 个构建器；
-  G70 又把进度 delegate 拆到 `progress_delegate.py`（65 行）。
+  14 个函数超 100 行（最大 `MainWindow.__init__` 233 行）。
+  G71 已完成的长函数拆分：`service._update` **337→105**（拆出 `_update_bare_mirror` /
+  `_fetch_remote` / `_merge_remote`）、`MainWindow._launch` **153→124**（参数映射拆到
+  `ui/engine_factory.py`）、`_build_download_tab` **191→约 35**（控件搭建拆到
+  `ui/download_layout.py`）。`build_settings_ui` 曾达 432 行，已拆为 `settings_groups.py`
+  的 7 个构建器；G70 把进度 delegate 拆到 `progress_delegate.py`（65 行）。
   **这是已登记的、被显式接受的技术债，不是缺陷**：`main_window.py` 的体量在
   「拆分收益 < 回归风险」区间，一次大规模 UI 重排会危及发布稳定性。
   约束是**增量的**：新增 UI 逻辑一律落独立模块（既有 `failure_panel` / `onboarding` /
-  `progress_table` / `progress_delegate` / `layout` / `settings_panel` / `main_window_tasks` 先例），
-  不得再往 `main_window.py` 里塞。下次动这几块时**顺手**把所在函数拆小。
+  `progress_table` / `progress_delegate` / `layout` / `settings_panel` / `retry_panel` /
+  `engine_factory` / `download_layout` / `event_panel` 先例），不得再往 `main_window.py` 里塞。
+  下次动这几块时**顺手**把所在函数拆小。
+- **事件流是进程内、非持久**：`app/event_bus.py` 非进度事件环形缓冲默认 500 条、进度事件单独 200 条，
+  进程退出即丢；需要跨重启审计请用 `app.log` / `notify.log` / `progress.json`。
+  SSE 订阅者慢时**丢最旧事件**（`stats.dropped` 可观测），绝不阻塞克隆。
+- **SSE 必须由 GUI 进程托管才看得到引擎事件**：设置页「本地 API / 事件流」
+  （`local_api_enabled` / `local_api_port`）会在 GUI 进程内起 `GcmApiServer`；
+  独立 `--serve` 进程与 GUI 是两个进程，事件总线不互通（只能看到自身事件）。
+- **SSE 与其它 HTTP 端点同一边界**：只绑回环 + Host/Origin 校验，**无鉴权**；
+  事件在入总线前已 `redact()`。不要把事件流经反向代理裸奔到公网。
+- **重试判据唯一来源是 `app/errors.classify_error`**：UI 分类、重试队列、SSE
+  `task_error` 必须共用它；新增错误文案时改这一处，不要再在 UI 里写关键字表。
 - **覆盖率门禁是快集口径**（Windows 81 / POSIX 80），不是全量口径；POSIX 低 1 个点源于 `msvcrt`/`schtasks`/`winreg` 分支不可执行。
 - **`gcm/ui/*.py` 有 E501 豁免**（纯中文文案长行，East-Asian 宽度计数）；`gcm/i18n/*.py` 为生成文件同样豁免。
 - **CI 只在 Linux 上跑慢集**：Windows 特有的编码/路径问题必须本机验证，别只信 CI 绿灯。

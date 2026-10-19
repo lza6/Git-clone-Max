@@ -43,6 +43,9 @@
 - [ ] 双击/命令行启动 exe（或 from source `python -m gcm`）→ 主窗口正常、托盘正常
 - [ ] 下载中心：粘贴地址 → 开始 → 完成 → 状态正确回落
 - [ ] 管理页：导入/更新/删除/备份 任一走查
+- [ ] G71 新入口：设置页「🧾 事件流」可打开并显示批次/任务事件；「重试队列」可打开
+- [ ] G71 本地 API：设置页开启「本地 API / 事件流」→ `curl -N http://127.0.0.1:8765/api/events` 有 `retry:`/连接帧；关闭设置后端口释放
+- [ ] G71 诊断包：下载中心「诊断包」/ 诊断对话框导出 zip，解压含 `manifest.json`/`events.jsonl`，且不含明文 token
 - [ ] 关闭 → `tasklist` 无残留 `Git-clone-Max.exe` / `python -m gcm`（G21-4）
 
 ## 3. 发布

@@ -43,8 +43,8 @@ class TestG53SettingsUI(unittest.TestCase):
         self.assertTrue(any("数据洞察" in t for t in titles))
 
     def test_g7_not_in_legacy_groups(self):
-        # 关键：不进 settings_groups，避免破坏既有 5 组解构
-        self.assertEqual(len(self.w.settings_groups), 5)
+        # 关键：不进 settings_groups（G71-9 新增「本地 API / 事件流」后为 6 组）
+        self.assertEqual(len(self.w.settings_groups), 6)
 
     def test_controls_created(self):
         self.assertTrue(hasattr(self.w, "ck_g53_alerts"))

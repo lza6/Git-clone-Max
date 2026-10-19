@@ -1,6 +1,6 @@
 # Git-clone-Max Agent 契约（G56-5）
 
-> 适用版本：v9.7.0。本文档是所有 agent 接入点
+> 适用版本：v9.8.0。本文档是所有 agent 接入点
 > （CLI `--json` / MCP server / 本地 HTTP API / `skills/gcm-*`）的统一契约。
 > 任何实现与本文档冲突时，以实际输出为准（测试 `tests/test_g56_contract.py` 抽样断言）。
 
@@ -27,7 +27,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ```json
 {
-  "version": "9.7.0",
+  "version": "9.8.0",
   "ok": true,
   "counts": {"success": 2, "failed": 0, "other": 0, "total": 2},
   "results": [
@@ -107,7 +107,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ```
 → {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{}}}
-← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"gcm","version":"9.7.0"}}}
+← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"gcm","version":"9.8.0"}}}
 → {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
 ← {"jsonrpc":"2.0","id":2,"result":{"tools":[{...list_repos...}, ...]}}
 → {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_repos","arguments":{}}}
@@ -131,9 +131,65 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 | GET | `/api/repos/search?q=` | 关键字搜索（不分页，返回全部命中） |
 | GET | `/api/status` | 统计概览 + `readonly` |
 | GET | `/api/report?format=csv\|markdown\|json` | 报表（内存生成，不写盘） |
+| GET | `/api/events?replay=&types=&heartbeat=` | **SSE 事件流**（G71：批次/任务/重试/错误；长连接，见 §5.1） |
+| GET | `/api/events/snapshot?limit=&types=` | 最近事件 JSON 快照（不便维持长连接的 agent 用） |
 | POST | `/api/clone` | 批量克隆；默认 403；`--allow-mutate` 开启后执行并审计 |
 
 - 写边界：任何 `POST` 在只读模式一律 `403`，错误 schema 同 §3。
+
+### 5.1 事件流契约（G71）
+
+> **进程边界**：EventBus 是**进程内**的。独立 `python -m gcm --cli --serve` 进程
+> 只能看到它自己进程内发布的事件（通常为空）。要观察 GUI 引擎的真实事件，
+> 请在设置页开启「本地 API / 事件流」（`local_api_enabled=true` + 端口），
+> 由 GUI 进程内托管同一套端点。
+
+`GET /api/events` 返回 `text/event-stream`，每帧格式：
+
+```
+id: 42
+event: task_result
+data: {"type":"task_result","seq":42,"ts":1760000000.0,"batch_id":"20261019-...","index":0,"key":"owner/repo","status":"success","action":"cloned","message":"ok"}
+
+```
+
+- **参数**：`replay` 0..500（连接时补发最近 N 条，默认 0）；`types` 逗号分隔
+  （未知类型不报错，便于向后兼容）；`heartbeat` 1..60 秒（空闲注释帧
+  `: ping`，默认 15）。
+- **重连**：服务端首帧发送 `retry: 3000`；EventSource 按 3s 重连。
+- **协议**：HTTP/1.0 + `Connection: close`，读到连接关闭为止（没有
+  Content-Length，也不是 chunked）。`curl -N` / EventSource 均可直接消费。
+- **打码**：事件在入总线前已过 `redact()`（URL userinfo、Authorization、
+  PRIVATE-TOKEN、query token 参数）。**仍不要**把事件流原样外发到公网。
+- **无鉴权**：与其它端点一致，仅绑定回环 + Host/Origin 校验；SSE 是只读流。
+
+事件类型：
+
+| `event:` | 关键字段 | 说明 |
+|----------|----------|------|
+| `batch_started` | `batch_id,total,root,fetch_depth,unshallow,mirror,concurrency` | 一批开始（每个 `launch` 一个 batch_id） |
+| `task_queued` | `index,key,folder_name,display,url,host` | 任务进入调度（含 >64 的待发队列） |
+| `task_started` | 同上 | worker 真正开始 |
+| `task_progress` | `index,key,percent,detail` | 100ms 心跳批量发布（可能缺省 percent/detail） |
+| `task_result` | `index,key,status,action,message,detail,commits,duration_ms,path,head_sha,remote_sha` | 终态结果 |
+| `task_error` | `category,code,title,cause,action,retryable,http_status,raw` | 失败时的三段式结构化错误（§3 之外的新 schema） |
+| `retry_queued` | `key,folder_name,attempts,next_retry_at,category,code,title` | 进入自动重试队列 |
+| `retry_dropped` | 同上 + `reason` | 超过最大重试次数而放弃 |
+| `retry_started` | `count,keys[]` | 引擎到期重投 |
+| `batch_finished` | `total,cancelled,counts,state,net_fail` | 一批结束（`state` 含状态机计数） |
+| `system` | `message` | 预留的系统消息 |
+
+错误 schema 扩展：`task_error` 的 `category` 取值
+`network|auth|platform|local|not_found|cancelled|other`；`retryable=true`
+仅对网络/限流/5xx 置真（401/403/404、磁盘满、平台限制均为 false）。
+
+`GET /api/events/snapshot?limit=100&types=task_error` 返回（默认**不含**
+`task_progress`；需要进度时显式传 `types=task_progress`）：
+
+```json
+{"events": [{"type": "task_error", "seq": 7, "ts": 1760000000.0, "...": "..."}],
+ "count": 1, "stats": {"subscribers": 0, "buffered": 7, "published": 7, "dropped": 0, "closed": false}}
+```
 
 ## 6. 退出码总表
 

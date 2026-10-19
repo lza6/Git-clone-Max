@@ -446,6 +446,12 @@ def _build_group_about(owner: MainWindow):
     owner.btn_statistics.setToolTip(tr("查看仓库总数 / 同步次数 / 成功率 / 平台分布"))
     owner.btn_statistics.clicked.connect(owner.show_statistics)
     h4.addWidget(owner.btn_statistics)
+    # G71-10：事件流查看器（黑匣子执行轨迹）
+    owner.btn_event_stream = QPushButton(tr("🧾 事件流"))
+    owner.btn_event_stream.setToolTip(
+        tr("查看最近事件：批次/任务/结果/错误/重试（结构化执行轨迹）"))
+    owner.btn_event_stream.clicked.connect(owner.settings_panel._open_event_stream)
+    h4.addWidget(owner.btn_event_stream)
     # G07-3 报表导出入口
     owner.btn_export = QPushButton(tr("📄 导出报表"))
     owner.btn_export.setToolTip(tr("导出 CSV（Excel 友好）或 Markdown 报表"))
@@ -650,6 +656,41 @@ def _build_group_data_insights(owner: MainWindow):
     return g7
 
 
+def _build_group_local_api(owner: MainWindow, settings: Settings):
+    """G71-9：GUI 内置本地只读 API（含 SSE 事件流）。
+
+    为什么必须由 GUI 托管：独立 `--serve` 进程与 GUI 是**两个进程**，事件总线
+    是进程内的；只有同进程托管，`/api/events` 才能看到引擎的真实事件。
+    """
+    g = QGroupBox(tr("本地 API / 事件流"))
+    g.setToolTip(tr("开启后仅监听 127.0.0.1；只读（不可写仓库），提供 REST + SSE 事件流"))
+    f = QFormLayout(g)
+    f.setContentsMargins(10, 10, 10, 10)
+    f.setHorizontalSpacing(16)
+    f.setVerticalSpacing(10)
+    f.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+    owner.ck_local_api = QCheckBox(tr("启用本地只读 API（含 SSE 事件流）"))
+    owner.ck_local_api.setToolTip(
+        tr("供本机 agent/脚本读取仓库状态、任务事件；默认关闭；只允许回环访问"))
+    owner.ck_local_api.setChecked(bool(getattr(settings, "local_api_enabled", False)))
+    owner.ck_local_api.toggled.connect(owner.settings_panel._save_local_api_enabled)
+    f.addRow(tr("本地 API："), owner.ck_local_api)
+    owner.spin_local_api_port = QSpinBox()
+    owner.spin_local_api_port.setRange(1024, 65535)
+    owner.spin_local_api_port.setValue(int(getattr(settings, "local_api_port", 8765) or 8765))
+    owner.spin_local_api_port.setToolTip(tr("默认 8765；端口被占用时启动会失败并写入日志"))
+    # G71-11（审查 R4）：用 `editingFinished` 而不是 `valueChanged` —— 后者
+    # 每滚一格/输入一位都会触发「停旧服→绑新端口」，连续操作会卡界面。
+    owner.spin_local_api_port.editingFinished.connect(
+        owner.settings_panel._save_local_api_port_current)
+    f.addRow(tr("端口："), owner.spin_local_api_port)
+    hint = QLabel(tr("端点：GET /api/events（SSE）· /api/events/snapshot · /api/repos · /api/status"))
+    hint.setObjectName("muted")
+    hint.setWordWrap(True)
+    f.addRow(tr("说明："), hint)
+    return g
+
+
 def build_settings_ui(owner: MainWindow) -> QScrollArea:
     """在 owner 上构建设置页全部控件并返回滚动区（挂到 owner.settings_scroll）。
 
@@ -664,7 +705,8 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
               _build_group_network(owner, settings),
               _build_group_appearance(owner, settings),
               _build_group_about(owner),
-              _build_group_webhook(owner, settings)):
+              _build_group_webhook(owner, settings),
+              _build_group_local_api(owner, settings)):
         sv.addWidget(g)
         groups.append(g)
 

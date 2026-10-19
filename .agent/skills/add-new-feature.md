@@ -30,3 +30,9 @@ python -m ruff check gcm && python -m mypy gcm
 - 功能写了但没入口 / 入口存在但后端没消费 → 见 `decisions.md` D-04。
 - 设置项只写不读或只读不写 → 有守卫 `test_settings_ui_has_entry_for_previously_unreachable_fields`。
 - `hasattr(obj, "方法名")` 把拼错静默降级成「功能不存在」（`count_repos` 事件）。
+
+## G71 参考实现（可观测性 / 持久化）
+- 任何长流程/状态变化：发布 `EventBus` 事件（`app/event_bus.py`），不要只加 UI 信号。
+- 任何 JSON 持久化：走 `util/atomic_io.write_text_atomic`（唯一 tmp + fsync + 退避）。
+- 错误：用 `app/errors.classify_error` 判 `retryable`，不要在 UI 再写关键字表。
+- 验收：功能定向测试 + `tests.test_g71_event_stream`（事件/SSE/原子写/诊断包/状态机）。

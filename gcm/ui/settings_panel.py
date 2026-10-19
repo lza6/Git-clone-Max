@@ -111,6 +111,45 @@ class SettingsPanel(QWidget):
         return out
 
     # ---- G53 数据洞察保存（评分卡/告警/历史保留/定时报表）
+    def _save_local_api_enabled(self, checked):
+        """G71-9：GUI 内置本地 API（含 SSE）开关；改完立即启停，无需重启。"""
+        try:
+            self.owner.settings.local_api_enabled = bool(checked)
+            self.owner.settings_store.save(self.owner.settings)
+        except Exception:
+            pass
+        self.owner._apply_local_api_settings()
+
+    def _save_local_api_port_current(self):
+        """G71-11：端口编辑完成时才保存/重启（避免逐位输入反复启停）。"""
+        spin = getattr(self.owner, "spin_local_api_port", None)
+        if spin is not None:
+            self._save_local_api_port(spin.value())
+
+    def _save_local_api_port(self, value):
+        """G71-9：本地 API 端口（1024..65535）；改完立即重启监听。"""
+        try:
+            self.owner.settings.local_api_port = int(value)
+            self.owner.settings_store.save(self.owner.settings)
+        except Exception:
+            pass
+        if getattr(self.owner.settings, "local_api_enabled", False):
+            self.owner._apply_local_api_settings()
+
+    def _open_event_stream(self):
+        """G71-10：打开事件流查看器（黑匣子执行轨迹）。"""
+        try:
+            if not self.owner._can_show_modal():
+                return
+            from .event_panel import EventStreamDialog
+            EventStreamDialog(parent=self.owner).exec()
+        except Exception as e:  # noqa: BLE001
+            try:
+                from ..app.applog import warn as _warn
+                _warn(f"事件流对话框打开失败：{e}")
+            except Exception:
+                pass
+
     def _apply_alert_config(self):
         """把当前设置推给运行中的 AlertScanner（间隔/IM 渠道即时生效）。"""
         scanner = getattr(self.owner, "alert_scanner", None)
@@ -188,9 +227,25 @@ class SettingsPanel(QWidget):
             self.owner._start_report_scheduler()
 
     def _save_retry_enabled(self, checked):
-        """G69-18：失败自动重试开关（此前字段有、UI 无 → 用户永远开不了）。"""
+        """G69-18：失败自动重试开关；G71-11：同步/惰性创建运行中的队列。"""
         self.owner.settings.retry_enabled = bool(checked)
         self.owner.settings_store.save(self.owner.settings)
+        try:
+            from pathlib import Path
+            eng = getattr(self.owner, "engine", None)
+            if eng is not None and hasattr(eng, "configure_retry_queue"):
+                eng.configure_retry_queue(
+                    Path(getattr(self.owner, "data_dir", "")) / "retry_queue.json",
+                    bool(checked),
+                    int(getattr(self.owner.settings, "retry_max", 2) or 2),
+                    int(getattr(self.owner.settings,
+                                "retry_backoff_base_sec", 30) or 30))
+            else:
+                q = getattr(eng, "retry_queue", None)
+                if q is not None:
+                    q.set_enabled(bool(checked))
+        except Exception:
+            pass
 
     def _save_retry_max(self, value):
         self.owner.settings.retry_max = int(value)

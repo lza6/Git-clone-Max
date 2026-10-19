@@ -78,3 +78,10 @@ python -m unittest tests.test_g67_docs_freshness
 - 把「活 SOP」当计划删掉（`RELEASE_CHECKLIST.md` 是每次发版要用的）。
 - 只 grep 文件名而不 grep 内容，漏掉正文里的相对路径引用。
 - 删除后用「文档已删」当完成证据 —— 这正是 2026-10-16 复验推翻的说法。
+
+## G71 审计记录（2026-10-19）
+- 扫描到活跃：`workflow_status.md`、`docs/验证记录-2026-10-19-G71事件流.md`、`policy.md`、`test_ledger.md`。
+- 扫描到归档：`docs/archive/plans/20261017/*`（保留）。
+- `参考的结果计划指南.md` 会话开始时为未跟踪，会话中途从工作区消失（非本会话删除）；
+  其 B4/B5/B6 未闭环，**不得当作已完成**。
+- 本轮无删除；结论写入 `workflow_status.md` §18。

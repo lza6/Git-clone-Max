@@ -16,3 +16,13 @@
 3. **压测**能抓到单线程永远绿的问题（幂等竞态）。
 4. **独立审查**必须复验「修复本身」；本轮 10 个缺陷里 4 个是「声称已完成但证据不支持」。
 5. **涉及远端状态的结论先 `fetch`**（tag 断档就是未 fetch 的误判）。
+
+## 2026-10-19 G71 队列可观测性 / 事件流 / 诊断包（v9.8.0）
+
+- 范围：新增 `event_bus/errors/batch_state/diag_bundle/retry_panel/event_panel/engine_factory/download_layout`；
+  修改 `http_api/engine/retry_queue/atomic_io/progress_file/git.service/main_window/settings/onboarding/help/failure_panel/i18n`。
+- 独立审查：`python-reviewer` 无 Critical，5 Required（R1 无限重投、R2 @tag 计数覆盖、
+  R3 诊断包泄露本机路径、R4 GUI 启停阻塞、R5 禁用态假成功）全部关闭；7 Suggestions 已处理。
+- 验证：ruff/mypy 通过；G71 定向 54 OK；相关回归 142 OK；快集 1316 tests / 0 failures / 0 errors / 81%。
+- 真实 E2E：`scripts/e2e_smoke.py` PASS；CLI `--json` 空输入 rc=2、version 9.8.0。
+- 未闭环：B4 仓库知识索引、B5 MCP annotations/outputSchema、B6 真实浏览器/真机点击。

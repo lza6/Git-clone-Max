@@ -3,6 +3,10 @@
 纯 UI 组件，不碰 settings / 文件持久化——first_run_done 的写入由主控
 （main_window）负责。本模块只提供 selected_dir / selected_mode / skipped
 以及 accepted 信号供主控读取。
+
+G71-5：全部用户可见文案走 `tr()`（原先硬编码中文，与项目 i18n 约定冲突）；
+模式值改为**语义值**（full/shallow）并存进 combo 的 `userData`，避免主控
+用 `text.startswith("浅")` 这种依赖中文文案的脆弱判断（切英文即失效）。
 """
 from __future__ import annotations
 
@@ -19,9 +23,14 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-# 克隆模式选项：combo 显示文本（主控可据此映射 full/shallow value）
-MODE_FULL = "满量克隆"
-MODE_SHALLOW = "浅克隆"
+from ..i18n import tr
+
+# 克隆模式语义值（存 combo userData；主控按值判断，不依赖显示文案）
+MODE_FULL = "full"
+MODE_SHALLOW = "shallow"
+# 兼容旧调用方：这两个常量在 v9.7.0 前是中文显示文本
+MODE_FULL_TEXT = "满量克隆"
+MODE_SHALLOW_TEXT = "浅克隆"
 
 
 class OnboardingDialog(QDialog):
@@ -35,7 +44,7 @@ class OnboardingDialog(QDialog):
         super().__init__(parent)
         self.default_dir = default_dir or ""
         self.skipped = False
-        self.setWindowTitle("欢迎使用 Git-clone-Max")
+        self.setWindowTitle(tr("欢迎使用 Git-clone-Max"))
         from .layout import fit_dialog_to_screen
         fit_dialog_to_screen(self, 520, 340, 460, 300)
         self._build_ui()
@@ -45,7 +54,7 @@ class OnboardingDialog(QDialog):
         v = QVBoxLayout(self)
         v.setSpacing(12)
 
-        title = QLabel("👋 欢迎使用 Git-clone-Max")
+        title = QLabel(tr("👋 欢迎使用 Git-clone-Max"))
         title.setObjectName("pageTitle")
         v.addWidget(title)
 
@@ -58,14 +67,14 @@ class OnboardingDialog(QDialog):
 
         footer = QHBoxLayout()
         footer.setSpacing(8)
-        self.btn_skip = QPushButton("跳过")
+        self.btn_skip = QPushButton(tr("跳过"))
         self.btn_skip.clicked.connect(self.skip)
         footer.addWidget(self.btn_skip)
         footer.addStretch(1)
-        self.btn_back = QPushButton("上一步")
+        self.btn_back = QPushButton(tr("上一步"))
         self.btn_back.clicked.connect(self._on_back)
         footer.addWidget(self.btn_back)
-        self.btn_next = QPushButton("下一步")
+        self.btn_next = QPushButton(tr("下一步"))
         self.btn_next.clicked.connect(self._on_next)
         footer.addWidget(self.btn_next)
         v.addLayout(footer)
@@ -76,18 +85,18 @@ class OnboardingDialog(QDialog):
         """步骤 1：选择下载目录。"""
         page = QWidget()
         lay = QVBoxLayout(page)
-        lab = QLabel("选择下载目录")
+        lab = QLabel(tr("选择下载目录"))
         lab.setObjectName("accent")
         lay.addWidget(lab)
-        hint = QLabel("克隆的仓库将保存到该目录，稍后可在设置中修改。")
+        hint = QLabel(tr("克隆的仓库将保存到该目录，稍后可在设置中修改。"))
         hint.setObjectName("muted")
         hint.setWordWrap(True)
         lay.addWidget(hint)
         row = QHBoxLayout()
         self.dir_edit = QLineEdit(self.default_dir)
-        self.dir_edit.setPlaceholderText("请选择下载目录")
+        self.dir_edit.setPlaceholderText(tr("请选择下载目录"))
         row.addWidget(self.dir_edit, 1)
-        self.btn_browse = QPushButton("浏览…")
+        self.btn_browse = QPushButton(tr("浏览…"))
         self.btn_browse.clicked.connect(self._on_browse)
         row.addWidget(self.btn_browse)
         lay.addLayout(row)
@@ -98,15 +107,17 @@ class OnboardingDialog(QDialog):
         """步骤 2：初始克隆模式。"""
         page = QWidget()
         lay = QVBoxLayout(page)
-        lab = QLabel("选择克隆模式")
+        lab = QLabel(tr("选择克隆模式"))
         lab.setObjectName("accent")
         lay.addWidget(lab)
-        hint = QLabel("满量克隆保留完整历史；浅克隆只拉取最新代码，速度更快。")
+        hint = QLabel(tr("满量克隆保留完整历史；浅克隆只拉取最新代码，速度更快。"))
         hint.setObjectName("muted")
         hint.setWordWrap(True)
         lay.addWidget(hint)
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems([MODE_FULL, MODE_SHALLOW])
+        # 显示文案可翻译，值保持稳定语义（主控只认 full/shallow）
+        self.mode_combo.addItem(tr(MODE_FULL_TEXT), MODE_FULL)
+        self.mode_combo.addItem(tr(MODE_SHALLOW_TEXT), MODE_SHALLOW)
         self.mode_combo.setCurrentIndex(0)
         lay.addWidget(self.mode_combo)
         lay.addStretch(1)
@@ -116,13 +127,13 @@ class OnboardingDialog(QDialog):
         """步骤 3：完成摘要 + 开始使用。"""
         page = QWidget()
         lay = QVBoxLayout(page)
-        lab = QLabel("完成设置 🎉")
+        lab = QLabel(tr("完成设置 🎉"))
         lab.setObjectName("accent")
         lay.addWidget(lab)
         self.summary_label = QLabel("")
         self.summary_label.setWordWrap(True)
         lay.addWidget(self.summary_label)
-        self.btn_start = QPushButton("开始使用")
+        self.btn_start = QPushButton(tr("开始使用"))
         self.btn_start.setObjectName("primary")
         self.btn_start.clicked.connect(self.accept)
         lay.addWidget(self.btn_start)
@@ -133,7 +144,7 @@ class OnboardingDialog(QDialog):
     def _on_page_changed(self, index: int) -> None:
         """页面切换时刷新按钮状态与步骤 3 摘要。"""
         self.btn_back.setEnabled(index > 0)
-        self.btn_next.setText("完成" if index == 2 else "下一步")
+        self.btn_next.setText(tr("完成") if index == 2 else tr("下一步"))
         if index == 2:
             self._refresh_summary()
 
@@ -151,13 +162,14 @@ class OnboardingDialog(QDialog):
     def _on_browse(self) -> None:
         """浏览目录：写入模块内引用的 QFileDialog（测试可 mock）。"""
         start = self.dir_edit.text().strip() or self.default_dir
-        path = QFileDialog.getExistingDirectory(self, "选择下载目录", start)
+        path = QFileDialog.getExistingDirectory(self, tr("选择下载目录"), start)
         if path:
             self.dir_edit.setText(path)
 
     def _refresh_summary(self) -> None:
         self.summary_label.setText(
-            f"下载目录：{self.selected_dir}\n克隆模式：{self.selected_mode}")
+            tr("下载目录：{dir}\n克隆模式：{mode}").format(
+                dir=self.selected_dir, mode=self.selected_mode))
 
     def skip(self) -> None:
         """跳过向导：标记已跳过并直接关闭（持久化由主控决定）。"""
@@ -172,5 +184,11 @@ class OnboardingDialog(QDialog):
 
     @property
     def selected_mode(self) -> str:
-        """步骤 2 combo 当前文本（满量克隆 / 浅克隆）。"""
+        """步骤 2 combo 当前显示文本（中文/英文随语言）。"""
         return self.mode_combo.currentText()
+
+    @property
+    def selected_mode_value(self) -> str:
+        """步骤 2 的语义值：`full` / `shallow`（主控应优先用它）。"""
+        value = self.mode_combo.currentData()
+        return str(value) if value in (MODE_FULL, MODE_SHALLOW) else MODE_FULL

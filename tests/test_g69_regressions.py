@@ -352,16 +352,20 @@ class TestLifecycleGuards(unittest.TestCase):
     def test_launch_drains_previous_engine(self):
         """G69-3：`_launch` 替换引擎前必须让旧引擎收敛（否则析构时与 worker 抢 GIL 死锁）。"""
         src = (ROOT / "gcm/ui/main_window.py").read_text(encoding="utf-8")
-        idx_new = src.index("self.engine = SyncEngine(")
-        # 首次构造（__init__:93）之前没有旧引擎；这里检查第二处（_launch 内）
-        second = src.index("self.engine = SyncEngine(", idx_new + 1)
-        window = src[max(0, second - 1400):second]
-        self.assertIn("old_engine", window,
+        launch = src.index("def _launch(")
+        end = src.index("\n    def ", launch + 1)
+        body = src[launch:end]
+        # G71-7：引擎构造已抽到 engine_factory.build_sync_engine（仍必须在
+        # 收敛旧引擎之后调用）；守卫改为在 `_launch` 函数体内按顺序断言。
+        self.assertIn("old_engine", body,
                       "`_launch` 里没有先收敛旧引擎（G69-3 死锁会复发）")
-        # 必须用不泵事件的 `discard()`：`shutdown()` 内部 drain() 会 processEvents()，
-        # 在 UI 槽里重入（G69-13）
-        self.assertIn("old_engine.discard()", window,
+        self.assertIn("old_engine.discard()", body,
                       "旧引擎应收敛后再替换，且不得用会泵事件的 shutdown()")
+        self.assertIn("build_sync_engine(", body,
+                      "`_launch` 未通过 engine_factory 构造引擎（参数映射会漂移）")
+        self.assertLess(body.index("old_engine.discard()"),
+                        body.index("build_sync_engine("),
+                        "必须先 discard 旧引擎，再构造新引擎")
 
     def test_update_next_root_checks_busy_before_pop(self):
         """G69-4：先判 busy 再 pop，否则会静默丢掉一组根目录。"""

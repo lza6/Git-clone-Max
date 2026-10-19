@@ -34,3 +34,12 @@ python -m ruff check gcm && python -m mypy gcm
 - 参数错误抛出未捕获异常 → 打断 stdio 通道。必须转成结构化错误。
 - 非 UTF-8 控制台写中文 → `UnicodeEncodeError`。stdio 服务必须 `reconfigure(encoding="utf-8")`。
 - 自拼数据目录 → 安装版读到 `_internal/data` 的空库。
+
+## G71 参考实现（事件流 / SSE）
+- 事件契约：`docs/agent-contract.md` §5.1（`task_queued/started/progress/result/error`、
+  `retry_*`、`batch_*`；SSE 帧 `id/event/data`）。
+- 发布侧：`gcm/app/event_bus.py`（永不阻塞/抛出；出站 redact；进度单独缓冲）。
+- HTTP 侧：`gcm/http_api.py::_stream_events`（HTTP/1.0 + Connection: close；
+  `select+MSG_PEEK` 立即发现断连；`replay/types/heartbeat` 有界校验）。
+- 验收：`tests/test_g71_event_stream.py::TestSseEndpoint`（含真实 socket 断连、心跳、类型过滤、不占 DB）。
+- 常见坑：独立 `--serve` 进程看不到 GUI 引擎事件（EventBus 进程内）；需设置页 GUI 托管。

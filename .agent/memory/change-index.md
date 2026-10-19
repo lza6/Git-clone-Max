@@ -33,3 +33,17 @@
 | `gcm/ui/main_window.py` | **顶部可滚动区、页签记忆/快捷键、设置导航、管理页延迟加载、`_rehighlight_log`** | v9.7.0 | 管理页首次激活才加载仓库；新增 UI 逻辑仍应落独立模块 |
 | `gcm/db/repo_db.py` | **`list_repos_page` + `readonly=True` 只读快路径** | v9.7.0 | 只读连接会探测 `favorite` 列，旧库回退可写迁移 |
 | `gcm/http_api.py` | `/api/repos` 分页 + 只读连接 + 通用 500 错误 | v9.7.0 | 返回 `count/total/limit/offset/truncated`；契约见 `docs/agent-contract.md` |
+| `gcm/app/event_bus.py` | **新增：有界环形缓冲 + 回放/类型过滤 + 出站 redact + 慢订阅者丢最旧** | v9.8.0 | 发布永不阻塞/抛；SSE/诊断包共用一个进程级单例；`reset_event_bus()` 仅测试用 |
+| `gcm/app/errors.py` | **新增：三段式错误分类 + retryable 判定（唯一判据）** | v9.8.0 | 改分类/文案只改这里；429/5xx 可重试，401/403/404/磁盘满/平台限制不可 |
+| `gcm/app/batch_state.py` | **新增：批次状态机（终态不可回退 + 幂等计数）** | v9.8.0 | `invalid_transitions` 可观测；引擎 `_batch_counts` 由它派生 |
+| `gcm/app/retry_queue.py` | **`record_failure_ex`/`retry_now`/`remove`/`snapshot`/`stats`；修复 path=None 纯内存丢失** | v9.8.0 | 旧 `record_failure()->bool` 保留；记录新增 category/code/title/cause/action/state |
+| `gcm/app/diag_bundle.py` | 新增诊断 zip（报告+事件+日志尾部，全部 redact） | v9.8.0 | 明确不含 settings/DB/仓库内容；zip 原子落盘 |
+| `gcm/util/atomic_io.py` | **新增 `write_text_atomic`（唯一 tmp + fsync + 目录 fsync + 退避）** | v9.8.0 | progress/history/lists/concurrency_state 全部接入；不要再自拼 `*.json.tmp` |
+| `gcm/http_api.py` | **`GET /api/events` SSE + `/api/events/snapshot`；事件端点不打开 DB** | v9.8.0 | HTTP/1.0 + `Connection: close`；只允许回环；heartbeat/replay/types 有界校验 |
+| `gcm/app/engine.py` | **EventBus 发布 + BatchState 记账 + `run_due_retries()`** | v9.8.0 | 事件字段是 agent 契约；改字段同步 `docs/agent-contract.md` |
+| `gcm/ui/retry_panel.py` | 新增重试队列面板（立即重试/移除/全部/清空） | v9.8.0 | 队列可为 explicit/engine/读盘三源；`retry_now` 后调 `run_due_retries()` |
+| `gcm/ui/engine_factory.py` | 新增引擎参数映射（从 `_launch` 抽出） | v9.8.0 | 新设置项必须在这里接线，否则「用户改了没用」 |
+| `gcm/ui/download_layout.py` | 新增下载页顶部控件构建（从 `_build_download_tab` 抽出） | v9.8.0 | 控件仍挂在 MainWindow；改控件名会破坏测试/兼容引用 |
+| `gcm/git/service.py` | **`_update` 337→105：拆出 `_update_bare_mirror`/`_fetch_remote`/`_merge_remote`** | v9.8.0 | 镜像回退语义逐行保留；改这块先跑 `test_g58_mirror_failover` |
+| `gcm/ui/event_panel.py` | 新增事件流查看器（类型过滤/自动刷新/复制 JSON） | v9.8.0 | 默认隐藏 task_progress；读取 EventBus 快照 |
+| `gcm/db/settings.py` / `ui/settings_groups.py` / `ui/settings_panel.py` / `ui/main_window.py` | **`local_api_enabled` / `local_api_port` + GUI 进程内托管本地 API** | v9.8.0 | 默认关、仅回环；改端口先起新服再停旧服；关窗/关闭开关 `wait=True` 释放端口 |

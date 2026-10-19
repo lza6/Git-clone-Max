@@ -28,3 +28,13 @@
 ## 外部受限项
 付费 API / 第三方凭证：用 mock 覆盖 success/timeout/rate_limit/malformed/retry_exhausted，
 并写清「做到哪一步 / 剩余最后一步 / 缺什么 / 如何降级」。
+
+## G71 新增改动面
+| 改动面 | 必跑 |
+|--------|------|
+| EventBus / SSE / 引擎事件 | `tests.test_g71_event_stream` + `tests.test_engine` |
+| 错误分类 / 重试队列 | `tests.test_g71_event_stream` + `tests.test_g52_failure_panel` + `test_g52_retry_queue_extra` |
+| 原子写 / progress / history / lists | `TestAtomicWrites` + `tests.test_g67_closure` |
+| 诊断包 / 事件面板 / 重试面板 | `TestDiagBundle/TestEventPanel/TestRetryPanelRows` |
+| 设置页本地 API | `TestLocalApiSettings` + `TestGuiHostsLocalApi` + `test_g68_settings_ui` |
+| `git/service._update` 拆分 | `tests.test_g58_mirror_failover` + `tests.test_engine` |

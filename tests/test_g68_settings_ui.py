@@ -62,6 +62,8 @@ EXPECTED_GROUP_TITLES = (
     "外观（主题）",
     "关于与更新",
     "完成通知 Webhook",
+    # G71-9：GUI 内置本地只读 API（含 SSE 事件流）
+    "本地 API / 事件流",
 )
 EXPECTED_EXTRA_TITLES = ("G53 数据洞察（告警 / 历史保留 / 定时报表）",)
 
