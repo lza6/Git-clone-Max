@@ -659,6 +659,8 @@ Light 下对比度不足）、校验条强制 `PlainText`（用户原文含 `<>`
 | PyInstaller | EXIT=0；exe 41,173,858 B；zip 79,482,799 B（314 条目） |
 | 健康检查 | `started_ok=true` · `repos_db_created=true` · version_match=9.8.0 · 28.999s |
 | 发布 dry-run | `校验通过，未做任何修改`（Release v9.8.0 不存在，将新建） |
+| CI | run `39238030986` · **7/7 job success** |
+| Release | `v9.8.0` · https://github.com/lza6/Git-clone-Max/releases/tag/v9.8.0 · 双产物 sha256 一致 |
 
 未运行：快集全量、PyInstaller、真实浏览器 EventSource、真机按钮点击（原因见
 `docs/验证记录-2026-10-19-G71事件流.md` §4）。

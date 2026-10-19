@@ -1,0 +1,49 @@
+{
+  "task_id": "G71-release",
+  "status": "passed",
+  "timestamp": "2026-10-19T18:35:00+08:00",
+  "commit": "33f5e64",
+  "tag": "v9.8.0",
+  "remote": "https://github.com/lza6/Git-clone-Max",
+  "ci": {
+    "run_id": 39238030986,
+    "head_sha": "33f5e64",
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/lza6/Git-clone-Max/actions/runs/39238030986",
+    "jobs": [
+      {"name": "perf-baseline", "conclusion": "success"},
+      {"name": "test (windows-latest)", "conclusion": "success"},
+      {"name": "test (ubuntu-latest)", "conclusion": "success"},
+      {"name": "e2e-smoke", "conclusion": "success"},
+      {"name": "fast-smoke", "conclusion": "success"},
+      {"name": "test (macos-latest)", "conclusion": "success"},
+      {"name": "slow", "conclusion": "success"}
+    ]
+  },
+  "release": {
+    "id": 417169620,
+    "url": "https://github.com/lza6/Git-clone-Max/releases/tag/v9.8.0",
+    "assets": [
+      {"name": "Git-clone-Max.exe", "size": 41173858,
+       "sha256": "7092e558a86553804766c25e4f080167149b8872f4ed5d713f7c1af78aa6562d",
+       "server_sha256_matched": true},
+      {"name": "Git-clone-Max-portable.zip", "size": 79482799,
+       "sha256": "fa4950cc5fd5f12d32dd67231bdd46e82d9a2fc5d85d99aaae04a07bf4e7ab13"}
+    ]
+  },
+  "evidence": {
+    "build": "PyInstaller EXIT=0",
+    "portable_zip": "scripts/build_portable_zip.py EXIT=0（314 条目）",
+    "health_check": "evidence/G71-health-check.json（started_ok=true, version_match=9.8.0）",
+    "packaged_cli": "dist/Git-clone-Max.exe --cli --json - → version 9.8.0, rc=2（空输入符合契约）",
+    "packaged_clone_e2e": "action=cloned + FILE_OK",
+    "packaged_update_e2e": "action=updated + content=v2",
+    "publish_dry_run": "scripts/publish_release.py --dry-run → 校验通过",
+    "publish_real": "Release v9.8.0 创建；双产物上传；服务端 sha256 一致"
+  },
+  "limitations": [
+    "真实平台网络克隆未执行（使用本地裸仓 E2E）",
+    "真实浏览器 EventSource、真机鼠标点击未执行（环境无浏览器/显示）"
+  ]
+}
