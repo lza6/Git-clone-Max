@@ -156,4 +156,6 @@ SQLite，文件 `data/repos.db`，WAL 模式。
 
 - `retryable` 由 `app/errors.classify_error` 决定；只有 true 才入 entries。
 - `state`：`queued` / `due`（用户点「立即重试」后置 0）/ `dropped`（超限，移入 dropped）。
+- `dropped`（G73）：同样保留 `url_https/display/folder_name/local_path/ref/is_local`，
+  以便「重新入队」不丢 @tag；重新入队时 attempts 重置为 0、`next_retry_at=0`。
 - `path=None` 时是**纯内存队列**（测试/临时用），结构相同但不出现在磁盘。

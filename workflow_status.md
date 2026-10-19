@@ -749,3 +749,31 @@ OWASP Logging / SQS DLQ）返回 8 条 backlog；本轮实施 7 条低风险高�
 | 构建/健康 | exe 41,187,849 B / zip 79,505,467 B；`started_ok=true`、version_match=9.8.1 |
 | CI | run `39291521568` · **7/7 job success** |
 | Release | `v9.8.1` · https://github.com/lza6/Git-clone-Max/releases/tag/v9.8.1 · 双产物 sha256 一致 |
+
+---
+
+## 20. G73 DLQ 重新入队（2026-10-20 · v9.8.2）
+
+### 20.1 来源
+G72 调研 backlog 的最后一项：把「已放弃/永久失败」做成可操作视图
+（SQS/Azure Service Bus DLQ 的 peek → 修正 → redrive 模式）。
+
+### 20.2 状态
+
+| ID | 节点 | 状态 | 证据 |
+|----|------|------|------|
+| G73-1 | dropped 记录保留 spec 字段 | Done | `test_g73_dlq.TestDlqQueue` |
+| G73-2 | `requeue_dropped`（attempts=0、立即到期） | Done | 同上 |
+| G73-3 | 面板「显示已放弃」+「重新入队选中」 | Done | `TestDlqPanel` |
+| G73-4 | 快集/构建/发布 | 见 §20.3 | — |
+
+### 20.3 验证与发布
+
+| 项 | 结果 |
+|----|------|
+| ruff / mypy | All checks passed / Success（79 文件） |
+| G73 定向 | Ran 3 · OK |
+| 快集全量 | **Ran 1335 · failures=0 · errors=0 · skipped=3 · 覆盖 82%** |
+
+**停止条件**：G72 调研 backlog 已全部处理（DLQ 为最后一项）；无新增 P0/P1。
+B4 仓库知识索引 / B5 MCP annotations / B6 真机点击仍属后续范围，不在本轮擅自扩权。

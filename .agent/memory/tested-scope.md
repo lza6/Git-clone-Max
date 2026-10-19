@@ -172,3 +172,5 @@ QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe scripts/bench_g70_ui.py
 | i18n 键 | `tests.test_g67_docs_freshness`（zh/en 同步） |
 
 - G72 快集全量 → **Ran 1332 · failures=0 · errors=0 · skipped=3 · 覆盖 81%**（2026-10-19）
+
+- G73 快集全量 → **Ran 1335 · failures=0 · errors=0 · skipped=3 · 覆盖 82%**（2026-10-20）

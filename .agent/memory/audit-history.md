@@ -35,3 +35,8 @@
   原子写 mkstemp/winerror、诊断包并发/上限、重试 jitter/批量、SSE Last-Event-ID/背压、订阅者指标）。
 - 未实施：DLQ 可视化（下轮）。
 - 验证：ruff/mypy 通过；G72 16 OK；G71+日志+打码+重试 107 OK；快集见验证记录。
+
+## 2026-10-20 G73 DLQ 重新入队（v9.8.2）
+- dropped 记录补全 spec 字段；`requeue_dropped` 重置 attempts 并立即到期。
+- 重试面板新增「显示已放弃」与「重新入队选中」。
+- 验证：G73 3 OK；定向 103 OK；快集见验证记录。

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>Git-clone-Max G73 DLQ 报告（2026-10-20）</title>
+<style>body{font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;max-width:980px;margin:40px auto;padding:0 24px;line-height:1.7;color:#1d232b}h2{border-bottom:2px solid #d8dee6;padding-bottom:6px;margin-top:32px}table{border-collapse:collapse;width:100%;margin:12px 0}th,td{border:1px solid #d8dee6;padding:8px 10px;text-align:left;vertical-align:top}th{background:#f4f7fa}code{background:#f1f3f5;padding:1px 5px;border-radius:4px;font-family:Consolas,monospace}.ok{color:#2f855a;font-weight:600}.meta{color:#5b6673;font-size:14px}details{margin:8px 0}</style></head>
+<body>
+<h1>Git-clone-Max G73 DLQ 报告</h1>
+<div class="meta">日期：2026-10-20 · 版本：v9.8.2 · 范围：已放弃任务查看与重新入队</div>
+
+<h2>1. 为什么</h2>
+<p>G72 调研 backlog 最后一项：超过最大重试次数的任务只留在 <code>dropped</code> 审计数组里，
+用户看不到、也无法在修正网络/凭据后重新入队。对齐 SQS / Azure Service Bus 的
+“DLQ peek → 修正 → redrive”模式。</p>
+
+<h2>2. 做了什么</h2>
+<table>
+<tr><th>项</th><th>实现</th></tr>
+<tr><td>dropped 记录</td><td>补全 <code>url_https/display/folder_name/local_path/ref/is_local</code>，重新入队不丢 @tag。</td></tr>
+<tr><td>重新入队</td><td><code>RetryQueue.requeue_dropped(key)</code>：从 dropped 摘除、写回 entries，<code>attempts=0</code>、<code>next_retry_at=0</code>。</td></tr>
+<tr><td>UI</td><td>重试面板「显示已放弃」切换 DLQ 视图；「重新入队选中」单条 redrive；待重试/已放弃按钮状态与表头同步。</td></tr>
+<tr><td>安全</td><td>不做“全部重新入队”批量操作，避免误点造成重试风暴；自动重试关闭时提示“开启后才会重投”。</td></tr>
+</table>
+
+<h2>3. 验证证据</h2>
+<table>
+<tr><th>命令</th><th>结果</th></tr>
+<tr><td><code>ruff check gcm</code></td><td class="ok">All checks passed（79 文件）</td></tr>
+<tr><td><code>mypy gcm</code></td><td class="ok">Success（79 文件）</td></tr>
+<tr><td><code>unittest tests.test_g73_dlq</code></td><td class="ok">Ran 3 · OK</td></tr>
+<tr><td>G73+G72+G71+重试+跨进程锁</td><td class="ok">Ran 103 · OK</td></tr>
+<tr><td>快集全量</td><td class="ok">见 <code>docs/验证记录-2026-10-20-G73DLQ.md</code></td></tr>
+</table>
+
+<h2>4. 风险与回滚</h2>
+<ul>
+<li>重新入队只重置 attempts，不改变重试判据；永久失败若配置未修正会再次进入 DLQ。</li>
+<li>无批量 redrive，避免一次点击把大量失败任务同时重投。</li>
+<li>回滚：<code>git revert &lt;v9.8.2 提交&gt;</code>；DLQ 数据仍是兼容的 JSON 数组。</li>
+</ul>
+
+<h2>5. 小测验</h2>
+<details><summary>1. 重新入队后 attempts 是多少？</summary><p>0；下一次失败从 1 开始，避免一入队就再次超限。</p></details>
+<details><summary>2. 为什么 dropped 记录要存 folder_name/ref？</summary><p>同一仓库 @v1/@v2 是不同任务；只存 owner/repo 会丢 tag，重新入队克隆错目录。</p></details>
+<details><summary>3. 为什么不做“全部重新入队”？</summary><p>会造成瞬时重试风暴/二次限流；单条操作更安全。</p></details>
+</body></html>

@@ -382,4 +382,12 @@ EN = {
     '已放弃': 'Dropped',
     '重试队列：{n} 条（自动重试未启用，仍可查看/移除）': 'Retry queue: {n} item(s) (auto-retry disabled; view/remove still available)',
     '自动重试未启用，无法立即重投；请先在设置页开启': 'Auto-retry is disabled; enable it in Settings before retrying now',
+
+    '显示已放弃': 'Show dropped',
+    '查看超过最大重试次数的任务；可单条重新入队（重置尝试次数）': 'View tasks that exceeded max retries; requeue one with attempts reset',
+    '重新入队选中': 'Requeue selected',
+    '把已放弃任务放回重试队列（attempts 重置）': 'Put a dropped task back into the retry queue (attempts reset)',
+    '已放弃：{n} 条（可重新入队；attempts 将重置）': 'Dropped: {n} item(s) (requeue resets attempts)',
+    '已重新入队 {n} 条{note}': 'Requeued {n} item(s){note}',
+    '（自动重试未启用，开启后才会重投）': ' (auto-retry is off; it will run after you enable it)',
 }

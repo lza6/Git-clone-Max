@@ -43,3 +43,8 @@ python -m ruff check gcm && python -m mypy gcm
   `tempfile.mkstemp` + `replace_with_retry`。
 - SSE 客户端重连优先 `Last-Event-ID`；服务端并发上限 16、写超时 30s。
 - 重试退避带 50%–100% jitter；单 tick 上限 50；测试精确时间注入 `jitter=lambda d: d`。
+
+## G73 DLQ 约定
+- 永久失败任务进入 `dropped` 审计；重新入队用 `RetryQueue.requeue_dropped(key)`，
+  attempts 重置为 0，保留 folder/ref。
+- UI 在 `ui/retry_panel` 的「显示已放弃」视图操作；不提供批量 redrive。

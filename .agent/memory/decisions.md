@@ -78,3 +78,9 @@ AST 只统计 `Attribute` / `Name` / `getattr(obj, "名字")`，注释与字符�
   `history-truncated` 注释帧；并发上限 16 + 30s 写超时防线程堆积。
 - **D16 重试 jitter 可注入**：生产默认 50%–100% 抖动；测试注入 identity 保证确定性；
   单 tick 上限 50，剩余下轮。
+
+## G73（v9.8.2）DLQ 决策
+- **D17 重新入队必须保留完整 spec**：dropped 存 url/folder/ref/local_path；
+  否则 @v1/@v2 会克隆到同一目录。
+- **D18 attempts 重置为 0**：下一次失败从 1 开始，避免入队即超限。
+- **D19 不提供批量 redrive**：防止一次点击造成重试风暴；单条操作。

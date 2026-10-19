@@ -1,7 +1,7 @@
 # Git-clone-Max
 
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
-> **当前版本：v9.8.1**（G72 加固：日志落盘打码 / 原子写与诊断包加固 / 重试抖动 / SSE 续传与背压）
+> **当前版本：v9.8.2**（G73：重试队列新增「已放弃」DLQ 视图与重新入队）
 > **v5.0：多平台直克隆** — GitLab / Gitee / Codeberg / Bitbucket / 自建主机（HTTPS/SSH/短格式/子组）同样支持。
 > 克隆目录一律 `host__作者__仓库`（GitHub 为 `作者__仓库`），本地改动永不覆盖。
 
@@ -75,7 +75,7 @@ uv run python -m gcm --portable
 | 冲突保护 | 本地有改动且与远端分叉 → **标记冲突、保留本地、绝不覆盖** |
 | 失败恢复 | 单个仓库失败不中断整体；网络类失败自动降级；平台限制错误明确提示不无效重试 |
 | 三段式错误 | 每个失败给出「发生了什么 / 为什么 / 怎么办」；429/5xx 自动重试，401/403/404/磁盘满/平台限制不无效重试 |
-| 重试队列可见 | 下载中心「重试队列」：失败次数、下次重试时间、错误类别、原因与建议；支持立即重试 / 移除 / 全部重试 / 清空 |
+| 重试队列可见 | 下载中心「重试队列」：失败次数、下次重试时间、错误类别、原因与建议；支持立即重试 / 移除 / 全部重试 / 清空；「显示已放弃」可查看超过上限的 DLQ 任务并重新入队（attempts 重置） |
 | 事件流（SSE） | 设置页可开启「本地只读 API（含 SSE）」由 **GUI 进程内**托管（默认关，仅回环）；`GET /api/events` 实时推送批次/任务/进度/结果/错误/重试事件，`/api/events/snapshot` 供轮询型 agent。设置页「🧾 事件流」可直接查看结构化执行轨迹（类型过滤/自动刷新/复制 JSON） |
 | 诊断包 | 一键导出 zip：状态报告 + 最近事件（黑匣子）+ app.log/notify.log 尾部，全部已打码 |
 | 单任务控制 | 进度表搜索过滤 / 表头排序 / 单仓库暂停 / 右键重试、复制详情、打开目录 |
@@ -103,7 +103,7 @@ uv run python -m gcm --portable
 - `.agent/memory/` —— 已测试范围、已知问题、关键决策、变更索引、审计历史
 - `.agent/skills/` —— 加 API / 加功能 / 发版 / 回滚 / 验证矩阵 / 审查 / 审计 / 并发检查 / 计划文档清理
 - `policy.md` —— 交付门禁：什么条件下允许宣称「完成」
-- `test_ledger.md` —— 接缝注册表（S01–S29）与每条链路由哪个测试证明
+- `test_ledger.md` —— 接缝注册表（S01–S30）与每条链路由哪个测试证明
 - `evidence/` —— 每个任务节点的真实命令与输出证据
 
 改动前请先读 `.agent/memory/tested-scope.md`，避免重复跑同一批验证；
@@ -259,9 +259,9 @@ python -m coverage run --source=gcm -m unittest discover -s tests
 ## 发布
 
 ```bash
-git tag v9.8.1
+git tag v9.8.2
 git push origin main --tags
-python scripts/publish_release.py --tag v9.8.1   # 自动上传 exe 到 GitHub Release
+python scripts/publish_release.py --tag v9.8.2   # 自动上传 exe 到 GitHub Release
 ```
 
 ## License

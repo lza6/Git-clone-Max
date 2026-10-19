@@ -175,6 +175,13 @@ class RetryQueue:
                     "code": info.code,
                     "title": info.title,
                     "retryable": info.retryable,
+                    # G73：DLQ 重新入队需要完整 spec 字段（只存 key 会丢 folder/@tag）
+                    "url_https": spec.url_https,
+                    "display": spec.display or f"{spec.owner}/{spec.repo}",
+                    "folder_name": spec.folder_name or f"{spec.owner}__{spec.repo}",
+                    "local_path": spec.local_path,
+                    "ref": spec.ref,
+                    "is_local": bool(spec.is_local),
                     "time": time.strftime("%Y-%m-%d %H:%M:%S"),
                 })
                 if len(data["dropped"]) > 200:
@@ -328,6 +335,55 @@ class RetryQueue:
         """最近的丢弃审计（新→旧）。"""
         rows = list(self.load().get("dropped") or [])
         return list(reversed(rows))[: max(0, int(limit))]
+
+    def requeue_dropped(self, key: str) -> bool:
+        """G73：把一条已放弃任务重新入队（重置尝试次数，立即到期）。
+
+        与云队列的 DLQ redrive 对齐：用户修正配置/网络后，把永久失败的任务放回
+        主队列，而不是手工重新输入仓库地址。`attempts` 重置为 0，避免一入队就
+        再次超限；下一次失败从 attempts=1 开始。
+        """
+        if not key:
+            return False
+        with self._lock:
+            data = self.load()
+            rows = data.get("dropped") or []
+            idx = None
+            for i in range(len(rows) - 1, -1, -1):
+                if isinstance(rows[i], dict) and rows[i].get("key") == key:
+                    idx = i
+                    break
+            if idx is None:
+                return False
+            rec = rows.pop(idx)
+            entry = {
+                "key": key,
+                "status": "queued",
+                "state": "queued",
+                "attempts": 0,
+                "url_https": str(rec.get("url_https") or ""),
+                "display": str(rec.get("display") or key),
+                "folder_name": str(rec.get("folder_name") or key.replace("/", "__")),
+                "local_path": str(rec.get("local_path") or ""),
+                "ref": str(rec.get("ref") or ""),
+                "is_local": bool(rec.get("is_local", False)),
+                "message": str(rec.get("message") or ""),
+                "detail": str(rec.get("detail") or ""),
+                "category": str(rec.get("category") or "other"),
+                "code": str(rec.get("code") or "unknown"),
+                "title": str(rec.get("title") or ""),
+                "cause": "",
+                "action": "",
+                "retryable": bool(rec.get("retryable", True)),
+                "next_retry_at": 0.0,
+                "next_retry_at_iso": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "last_attempt_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "queued_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            data.setdefault("entries", {})[key] = entry
+            data["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            self._save(data)
+            return True
 
     def stats(self) -> dict[str, Any]:
         """队列健康度：总数 / 到期数 / 各类别计数。"""

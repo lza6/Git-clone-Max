@@ -1,0 +1,120 @@
+{
+  "task_id": "G73-dlq",
+  "status": "passed",
+  "timestamp": "2026-10-20T01:10:00+08:00",
+  "commands_executed": [
+    {
+      "cmd": "ruff check gcm",
+      "exit_code": 0,
+      "raw_output_tail": "All checks passed!"
+    },
+    {
+      "cmd": "mypy gcm",
+      "exit_code": 0,
+      "raw_output_tail": "Success: no issues found in 79 source files"
+    },
+    {
+      "cmd": "unittest tests.test_g73_dlq -v",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 3 tests in 1.186s\n\nOK"
+    },
+    {
+      "cmd": "unittest tests.test_g73_dlq tests.test_g72_hardening tests.test_g71_event_stream tests.test_g52_retry_queue_extra tests.test_g67_closure",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 103 tests in 73.380s\n\nOK"
+    },
+    {
+      "cmd": "coverage run --source=gcm scripts/ci_run_fast.py",
+      "exit_code": 0,
+      "raw_output_tail": "[ci_run_fast] 合计：Ran 1335 tests · failures=0 errors=0 skipped=3\n[ci_run_fast] OK"
+    },
+    {
+      "cmd": "coverage report --include=\"gcm/*\"",
+      "exit_code": 0,
+      "raw_output_tail": "TOTAL 12980 2137 3288 587 82%"
+    },
+    {
+      "cmd": "docs/version guards",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 22 tests in 2.173s\n\nOK"
+    },
+    {
+      "cmd": "python -m PyInstaller --noconfirm Git-clone-Max.spec",
+      "exit_code": 0,
+      "raw_output_tail": "INFO: Build complete! The results are available in: ...dist"
+    },
+    {
+      "cmd": "python scripts/build_portable_zip.py",
+      "exit_code": 0,
+      "raw_output_tail": "[OK] 已生成 ...Git-clone-Max-portable.zip（314 条目，79520444 字节）"
+    },
+    {
+      "cmd": "python scripts/health_check.py --json evidence/G73-health-check.json",
+      "exit_code": 0,
+      "raw_output_tail": "[OK] version_match: src='9.8.2' artifact='9.8.2'\n[OK] started_ok: alive after 60s; repos.db=True"
+    },
+    {
+      "cmd": "dist/Git-clone-Max.exe --cli --json -",
+      "exit_code": 2,
+      "raw_output_tail": "{\"version\": \"9.8.2\", ...} rc=2"
+    },
+    {
+      "cmd": "dist/Git-clone-Max.exe --cli --json --dir <tmp>/out - (clone+update)",
+      "exit_code": 0,
+      "raw_output_tail": "clone: version=9.8.2 action=cloned\nupdate: version=9.8.2 action=updated message=更新完成（+1 提交）\ncontent=v2"
+    }
+  ],
+  "tests": [
+    {
+      "name": "DLQ queue",
+      "type": "unit",
+      "status": "passed",
+      "evidence": "test_g73_dlq.TestDlqQueue"
+    },
+    {
+      "name": "DLQ panel",
+      "type": "integration",
+      "status": "passed",
+      "evidence": "test_g73_dlq.TestDlqPanel"
+    },
+    {
+      "name": "fast suite",
+      "type": "unit+integration",
+      "status": "passed",
+      "evidence": "Ran 1335 · 0 failures · 0 errors · skipped 3 · 覆盖 82%"
+    },
+    {
+      "name": "packaged clone/update E2E",
+      "type": "e2e",
+      "status": "passed",
+      "evidence": "action=cloned; action=updated; content=v2"
+    },
+    {
+      "name": "health check",
+      "type": "smoke",
+      "status": "passed",
+      "evidence": "started_ok=true; version_match=9.8.2"
+    }
+  ],
+  "coverage_summary": {
+    "lines": 83.5,
+    "branches": null,
+    "functions": null,
+    "statements": 82.0,
+    "note": "coverage.py TOTAL Cover=82%（Windows 门禁 81）"
+  },
+  "seams_touched": [
+    "S30"
+  ],
+  "mock_scenarios_covered": [],
+  "browser_validation": {
+    "performed": false,
+    "paths": [],
+    "screenshots": [],
+    "reason": "离屏 Qt 面板测试；未做真机点击"
+  },
+  "limitations": [
+    "未做批量 redrive（刻意不提供）",
+    "未做真机点击"
+  ]
+}

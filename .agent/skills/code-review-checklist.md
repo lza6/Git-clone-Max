@@ -53,3 +53,8 @@ Approve = 严格审查后无阻塞问题，不是「完美」。不得为逃避 
 - [ ] SSE 是否处理 Last-Event-ID、并发上限、写超时？
 - [ ] 重试 jitter 是否可注入？单 tick 是否有批量上限？
 - [ ] 慢订阅者指标是否可按订阅者观测（dropped/qsize）？
+
+## G73 新增审查项
+- [ ] dropped 记录是否保留 url/folder/ref/local_path（@tag 不丢）？
+- [ ] 重新入队是否重置 attempts 并立即到期？
+- [ ] 是否有批量 redrive 造成重试风暴的风险？（本项目刻意不提供）

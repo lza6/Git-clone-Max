@@ -19,6 +19,7 @@ from typing import Any, Optional
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QHBoxLayout,
     QHeaderView,
@@ -134,10 +135,20 @@ class RetryQueuePanel(QWidget):
         self.btn_refresh = QPushButton(tr("刷新"))
         self.btn_refresh.clicked.connect(self.refresh)
         row.addWidget(self.btn_refresh)
+        # G73：DLQ 视图（已放弃任务可查看并重新入队）
+        self.ck_show_dropped = QCheckBox(tr("显示已放弃"))
+        self.ck_show_dropped.setToolTip(
+            tr("查看超过最大重试次数的任务；可单条重新入队（重置尝试次数）"))
+        self.ck_show_dropped.toggled.connect(self.refresh)
+        row.addWidget(self.ck_show_dropped)
         self.btn_retry = QPushButton(tr("立即重试选中"))
         self.btn_retry.setObjectName("primary")
         self.btn_retry.clicked.connect(self.retry_selected)
         row.addWidget(self.btn_retry)
+        self.btn_requeue = QPushButton(tr("重新入队选中"))
+        self.btn_requeue.setToolTip(tr("把已放弃任务放回重试队列（attempts 重置）"))
+        self.btn_requeue.clicked.connect(self.requeue_selected)
+        row.addWidget(self.btn_requeue)
         self.btn_remove = QPushButton(tr("移除选中"))
         self.btn_remove.clicked.connect(self.remove_selected)
         row.addWidget(self.btn_remove)
@@ -195,10 +206,30 @@ class RetryQueuePanel(QWidget):
         return keys
 
     # ------------------------------------------------------------ 刷新
+    def _dropped_mode(self) -> bool:
+        return bool(self.ck_show_dropped.isChecked())
+
     def refresh(self) -> int:
         """重新读取队列并渲染；返回行数。"""
         q = self.queue()
-        rows = retry_rows(q)
+        dropped = self._dropped_mode()
+        if dropped:
+            try:
+                raw = list(q.dropped(200)) if q is not None else []
+            except Exception:
+                raw = []
+            rows = []
+            for rec in raw:
+                if not isinstance(rec, dict):
+                    continue
+                cat = str(rec.get("category") or "other")
+                rows.append({**rec, "category": cat,
+                             "category_text": tr(category_label(cat)),
+                             "next_retry_at": 0})
+        else:
+            rows = retry_rows(q)
+        self.table.setHorizontalHeaderItem(
+            2, QTableWidgetItem(tr("时间") if dropped else tr("下次重试")))
         self.table.setRowCount(0)
         self.table.setRowCount(len(rows))
         for i, rec in enumerate(rows):
@@ -207,7 +238,8 @@ class RetryQueuePanel(QWidget):
             name.setToolTip(str(rec.get("message") or ""))
             self.table.setItem(i, 0, name)
             self.table.setItem(i, 1, QTableWidgetItem(str(rec.get("attempts", 0))))
-            self.table.setItem(i, 2, QTableWidgetItem(_fmt_ts(rec.get("next_retry_at", 0))))
+            when = rec.get("time") if dropped else _fmt_ts(rec.get("next_retry_at", 0))
+            self.table.setItem(i, 2, QTableWidgetItem(str(when or "—")))
             self.table.setItem(i, 3, QTableWidgetItem(str(rec.get("category_text") or "")))
             why = "\n".join(x for x in (
                 tr(str(rec.get("title") or "")),
@@ -216,14 +248,20 @@ class RetryQueuePanel(QWidget):
             why_item = QTableWidgetItem(why or str(rec.get("message") or ""))
             why_item.setToolTip(why or str(rec.get("message") or ""))
             self.table.setItem(i, 4, why_item)
-            state = str(rec.get("state") or rec.get("status") or "queued")
+            state = "dropped" if dropped else str(
+                rec.get("state") or rec.get("status") or "queued")
             self.table.setItem(i, 5, QTableWidgetItem(
                 tr(_STATE_LABELS.get(state, state))))
         enabled = self._enabled()
         # G71-11（审查 R5）：禁用态不能给「已请求立即重试」的假象
-        self.btn_retry.setEnabled(enabled)
-        self.btn_retry_all.setEnabled(enabled)
-        if enabled:
+        self.btn_retry.setEnabled(enabled and not dropped)
+        self.btn_retry_all.setEnabled(enabled and not dropped)
+        self.btn_requeue.setEnabled(dropped)
+        self.btn_remove.setEnabled(not dropped)
+        if dropped:
+            self.summary_lbl.setText(
+                tr("已放弃：{n} 条（可重新入队；attempts 将重置）").format(n=len(rows)))
+        elif enabled:
             self.summary_lbl.setText(tr("重试队列：{n} 条").format(n=len(rows)))
         else:
             self.summary_lbl.setText(
@@ -249,6 +287,27 @@ class RetryQueuePanel(QWidget):
             self.retried.emit(n)
             self.changed.emit()
             self._log(tr("已请求立即重试 {n} 条").format(n=n))
+        self.refresh()
+        return n
+
+    def requeue_selected(self) -> int:
+        """G73：把已放弃任务重新入队（DLQ redrive）。"""
+        if not self._dropped_mode():
+            return 0
+        keys = self._selected_keys()
+        q = self.queue()
+        n = 0
+        for key in keys:
+            try:
+                if q is not None and q.requeue_dropped(key):
+                    n += 1
+            except Exception:
+                pass
+        if n:
+            self._wake_engine()
+            self.changed.emit()
+            note = "" if self._enabled() else tr("（自动重试未启用，开启后才会重投）")
+            self._log(tr("已重新入队 {n} 条{note}").format(n=n, note=note))
         self.refresh()
         return n
 
