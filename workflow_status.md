@@ -774,6 +774,8 @@ G72 调研 backlog 的最后一项：把「已放弃/永久失败」做成可操
 | ruff / mypy | All checks passed / Success（79 文件） |
 | G73 定向 | Ran 3 · OK |
 | 快集全量 | **Ran 1335 · failures=0 · errors=0 · skipped=3 · 覆盖 82%** |
+| CI | run `39316312065` · **7/7 job success** |
+| Release | `v9.8.2` · https://github.com/lza6/Git-clone-Max/releases/tag/v9.8.2 · 双产物 sha256 一致 |
 
 **停止条件**：G72 调研 backlog 已全部处理（DLQ 为最后一项）；无新增 P0/P1。
 B4 仓库知识索引 / B5 MCP annotations / B6 真机点击仍属后续范围，不在本轮擅自扩权。

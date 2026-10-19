@@ -1,0 +1,42 @@
+{
+  "task_id": "G73-release",
+  "status": "passed",
+  "timestamp": "2026-10-20T04:00:00+08:00",
+  "commit": "96ac1cf",
+  "tag": "v9.8.2",
+  "ci": {
+    "run_id": 39316312065,
+    "head_sha": "96ac1cf",
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {"name": "perf-baseline", "conclusion": "success"},
+      {"name": "test (windows-latest)", "conclusion": "success"},
+      {"name": "test (ubuntu-latest)", "conclusion": "success"},
+      {"name": "test (macos-latest)", "conclusion": "success"},
+      {"name": "e2e-smoke", "conclusion": "success"},
+      {"name": "fast-smoke", "conclusion": "success"},
+      {"name": "slow", "conclusion": "success"}
+    ]
+  },
+  "release": {
+    "id": 417698876,
+    "url": "https://github.com/lza6/Git-clone-Max/releases/tag/v9.8.2",
+    "assets": [
+      {"name": "Git-clone-Max.exe", "size": 41197031,
+       "sha256": "09c50c2e7aec0d99311402da89cb9c6883502c7b581922dc5b00c919c112aa17",
+       "server_sha256_matched": true},
+      {"name": "Git-clone-Max-portable.zip", "size": 79520444,
+       "sha256": "f2c6dee94fe1498e63b32a800226f25a3e7b8761e87c07e4d7cebe2cbf6ceac0"}
+    ]
+  },
+  "evidence": {
+    "fast_suite": "Ran 1335 · failures=0 · errors=0 · skipped=3 · 覆盖 82%",
+    "health_check": "started_ok=true; version_match=9.8.2; 无残留进程",
+    "packaged_cli": "version=9.8.2, rc=2",
+    "packaged_clone_e2e": "action=cloned",
+    "packaged_update_e2e": "action=updated（+1 提交）, content=v2",
+    "publish_dry_run": "校验通过",
+    "publish_real": "Release v9.8.2 创建；双产物上传；服务端 sha256 一致"
+  }
+}
