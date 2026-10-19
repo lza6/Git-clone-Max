@@ -43,3 +43,5 @@
 - 原子写重试/清理：`TestAtomicHardening`；诊断包并发/截断/manifest：`TestDiagHardening`。
 - 重试 jitter/批量上限：`TestRetryJitter`。
 - SSE Last-Event-ID/503 并发上限：`TestSseG72`；订阅者指标：`TestEventBusG72`。
+
+- G72 发布：commit `616fd73`；tag `v9.8.1`；CI run `39291521568` 7/7 success；Release id `417540264`，双产物 sha256 一致。

@@ -1,0 +1,48 @@
+{
+  "task_id": "G72-release",
+  "status": "passed",
+  "timestamp": "2026-10-20T00:45:00+08:00",
+  "commit": "616fd73",
+  "tag": "v9.8.1",
+  "remote": "https://github.com/lza6/Git-clone-Max",
+  "ci": {
+    "run_id": 39291521568,
+    "head_sha": "616fd73",
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/lza6/Git-clone-Max/actions/runs/39291521568",
+    "jobs": [
+      {"name": "perf-baseline", "conclusion": "success"},
+      {"name": "test (windows-latest)", "conclusion": "success"},
+      {"name": "test (ubuntu-latest)", "conclusion": "success"},
+      {"name": "test (macos-latest)", "conclusion": "success"},
+      {"name": "e2e-smoke", "conclusion": "success"},
+      {"name": "fast-smoke", "conclusion": "success"},
+      {"name": "slow", "conclusion": "success"}
+    ]
+  },
+  "release": {
+    "id": 417540264,
+    "url": "https://github.com/lza6/Git-clone-Max/releases/tag/v9.8.1",
+    "assets": [
+      {"name": "Git-clone-Max.exe", "size": 41187849,
+       "sha256": "c09e6cb5a72af899629209dd2f53c8abe3a9851e73aa497bfb55b82fe5a92a9b",
+       "server_sha256_matched": true},
+      {"name": "Git-clone-Max-portable.zip", "size": 79505467,
+       "sha256": "46aa5caa5d89f44b97ca3b96e8d92d61c5cee9f3865e9a04c07994b3e2c64742"}
+    ]
+  },
+  "evidence": {
+    "fast_suite": "Ran 1332 · failures=0 · errors=0 · skipped=3 · 覆盖 81%",
+    "health_check": "started_ok=true; version_match=9.8.1; 进程树清理无残留",
+    "packaged_cli": "version=9.8.1, rc=2（空输入）",
+    "packaged_clone_e2e": "action=cloned",
+    "packaged_update_e2e": "action=updated（+1 提交）, content=v2",
+    "publish_dry_run": "校验通过",
+    "publish_real": "Release v9.8.1 创建；双产物上传；服务端 sha256 一致"
+  },
+  "limitations": [
+    "真实浏览器 EventSource、真机点击未执行",
+    "远程平台网络克隆未执行（本地裸仓 E2E）"
+  ]
+}

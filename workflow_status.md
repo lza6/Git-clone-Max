@@ -746,3 +746,6 @@ OWASP Logging / SQS DLQ）返回 8 条 backlog；本轮实施 7 条低风险高�
 | G71+applog+redact+retry 定向 | Ran 107 · OK |
 | 文档/版本守卫 | Ran 22 · OK |
 | 快集全量 | **Ran 1332 · failures=0 · errors=0 · skipped=3 · 覆盖 81%** |
+| 构建/健康 | exe 41,187,849 B / zip 79,505,467 B；`started_ok=true`、version_match=9.8.1 |
+| CI | run `39291521568` · **7/7 job success** |
+| Release | `v9.8.1` · https://github.com/lza6/Git-clone-Max/releases/tag/v9.8.1 · 双产物 sha256 一致 |
