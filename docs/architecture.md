@@ -88,10 +88,10 @@
 
 ## 5. 可观测性现状
 
-- 日志：app.log（RotatingFileHandler 5MB×3，redact）+ error.log（excepthook 兜底）
+- 日志：app.log（RotatingFileHandler 5MB×3，**Formatter 层落盘即 redact**）+ error.log（excepthook 兜底）
 - 诊断：CLI --diag --json（网络+环境体检）/ help 排错地图 / G53 存储看板
 - **事件流**：`app/event_bus.py`（非进度 500 条 + 进度 200 条双缓冲、回放、类型过滤、出站打码）
-  → 本地 HTTP `GET /api/events`（SSE）+ `GET /api/events/snapshot`。
+  → 本地 HTTP `GET /api/events`（SSE：Last-Event-ID 续传 / 并发上限 / 30s 写超时）+ `GET /api/events/snapshot`。
   设置页「本地 API / 事件流」可在 **GUI 进程内**托管该服务（默认关、仅回环）；
   独立 `--serve` 进程与 GUI 的事件总线不互通。
 - **诊断包**：`app/diag_bundle.py` 把报告 + 最近事件 + app.log/notify.log 尾部

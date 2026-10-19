@@ -18,17 +18,21 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import time
 import zipfile
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
+from ..util.atomic_io import replace_with_retry
 from ..util.redact import redact
 
 _MAX_LOG_BYTES = 512 * 1024       # 单份日志最多带 512KB 尾部
+_MAX_REPORT_BYTES = 2 * 1024 * 1024
 _MAX_EVENTS = 500
 _MAX_EVENT_BYTES = 2 * 1024 * 1024
+_REDACTION_VERSION = "2"          # G72：路径变体 + 高置信 token 前缀
 
 
 def _redact_text(text: str) -> str:
@@ -97,15 +101,19 @@ def _events_jsonl(bus: Any, limit: int = _MAX_EVENTS) -> tuple[str, int, bool]:
 
 def build_manifest(*, version: str, files: dict[str, int],
                    events: int, events_truncated: bool = False,
+                   report_truncated: bool = False,
                    extra: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     """诊断包 manifest（纯函数，便于测试）。"""
     return {
         "tool": "Git-clone-Max",
         "version": version,
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "timezone": time.strftime("%z"),
+        "redaction_version": _REDACTION_VERSION,
         "files": dict(files),
         "events": int(events),
         "events_truncated": bool(events_truncated),
+        "report_truncated": bool(report_truncated),
         "note": "所有文本已 redact 打码；不含 settings.json / 仓库内容 / 数据库文件。",
         "extra": dict(extra or {}),
     }
@@ -125,10 +133,14 @@ def build_diag_bundle(out_path: str | Path, *,
     """
     target = Path(out_path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.with_name(f"{target.name}.{os.getpid()}.tmp")
 
     data = Path(data_dir)
-    report = _redact_text(str(report_text or ""))
+    raw_report = str(report_text or "")
+    report_truncated = len(raw_report.encode("utf-8")) > _MAX_REPORT_BYTES
+    if report_truncated:
+        raw_report = raw_report.encode("utf-8")[:_MAX_REPORT_BYTES].decode(
+            "utf-8", errors="ignore") + "\n[TRUNCATED: report exceeds 2MB]\n"
+    report = _redact_text(raw_report)
     events_text, event_count, events_truncated = _events_jsonl(event_bus)
     app_log = _redact_text(_tail_text(data / app_log_name))
     notify_log = _redact_text(_tail_text(data / notify_log_name))
@@ -149,15 +161,20 @@ def build_diag_bundle(out_path: str | Path, *,
     manifest = build_manifest(version=version, files=files,
                               events=event_count,
                               events_truncated=events_truncated,
+                              report_truncated=report_truncated,
                               extra=_redact_obj(extra_manifest or {}))
 
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(target.parent), prefix=f".{target.name}.", suffix=".zip")
+    os.close(fd)
+    tmp = Path(tmp_name)
     try:
         with zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("manifest.json",
                         json.dumps(manifest, ensure_ascii=False, indent=2))
             for name, text in payloads.items():
                 zf.writestr(name, text)
-        os.replace(tmp, target)
+        replace_with_retry(tmp, target)
     except Exception:
         try:
             tmp.unlink(missing_ok=True)

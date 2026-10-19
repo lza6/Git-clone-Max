@@ -713,3 +713,36 @@ Light 下对比度不足）、校验条强制 `PlainText`（用户原文含 `<>`
 
 - 本轮文档改动均可用 `git checkout -- <path>` 回退（若已提交则 `git revert <sha>`）。
 - 归档目录未变更；无不可逆删除。
+
+---
+
+## 19. G72 加固（2026-10-19 · v9.8.1）
+
+### 19.1 来源与取舍
+
+独立调研 agent（WebFetch WHATWG SSE / RFC 9112 / Python os.replace / AWS Backoff /
+OWASP Logging / SQS DLQ）返回 8 条 backlog；本轮实施 7 条低风险高价值项，
+**DLQ 可视化**列入下一轮（涉及 UI/i18n/测试）。
+
+### 19.2 节点状态
+
+| ID | 节点 | 状态 | 证据 |
+|----|------|------|------|
+| G72-1 | app.log 落盘打码 | Done | `test_g72_hardening.TestLogRedaction` |
+| G72-2 | redact 路径变体/token 前缀 | Done | `TestRedactG72` |
+| G72-3 | 原子写 mkstemp/winerror 退避 | Done | `TestAtomicHardening` |
+| G72-4 | 诊断包并发/上限/manifest | Done | `TestDiagHardening` |
+| G72-5 | 重试 jitter + tick 上限 | Done | `TestRetryJitter` |
+| G72-6 | SSE Last-Event-ID/503/写超时 | Done | `TestSseG72` |
+| G72-7 | 订阅者背压指标 | Done | `TestEventBusG72` |
+| G72-8 | DLQ 视图 | **Backlog** | 下轮 |
+
+### 19.3 验证
+
+| 命令 | 结果 |
+|------|------|
+| ruff / mypy | All checks passed / Success（79 文件） |
+| `tests.test_g72_hardening` | Ran 16 · OK |
+| G71+applog+redact+retry 定向 | Ran 107 · OK |
+| 文档/版本守卫 | Ran 22 · OK |
+| 快集全量 | **Ran 1332 · failures=0 · errors=0 · skipped=3 · 覆盖 81%** |

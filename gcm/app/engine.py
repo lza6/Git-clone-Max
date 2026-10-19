@@ -351,7 +351,8 @@ class SyncEngine(QObject):
         if self.busy or self._cancelled:
             return
         try:
-            due = self._retry_queue.due_tasks()
+            # G72：单 tick 最多重投 50 条，避免几百个同时到期造成瞬时尖峰
+            due = self._retry_queue.due_tasks(limit=50)
         except Exception:
             return
         if not due:

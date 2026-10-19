@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import json
+import random
 import threading
 import time
 from collections.abc import Callable
@@ -36,14 +37,21 @@ class RetryQueue:
                  enabled: bool = True,
                  max_retries: int = _MAX_RETRIES_DEFAULT,
                  backoff_base_sec: int = _DEFAULT_BACKOFF_BASE_SEC,
-                 now: Optional[Callable[[], float]] = None):
-        """path 为空 → 仅内存模式（不落盘）；now 注入时钟（测试用）。"""
+                 now: Optional[Callable[[], float]] = None,
+                 jitter: Optional[Callable[[float], float]] = None):
+        """path 为空 → 仅内存模式（不落盘）；now/jitter 可注入（测试用）。
+
+        G72：默认对退避做 **50%–100% full-ish jitter**，避免一批同时失败的仓库
+        在同一秒再次齐发（尤其 429 / abuse detection），降低重试风暴。
+        测试需要精确时间时传 `jitter=lambda d: d`。
+        """
         self.path = Path(path) if path else None
         self.enabled = bool(enabled)
         # 设置页约束 0-3；越界值收敛到合法区间
         self.max_retries = max(0, min(3, int(max_retries)))
         self.backoff_base_sec = max(0, int(backoff_base_sec))
         self._now = now or time.time
+        self._jitter = jitter or (lambda delay: random.uniform(delay * 0.5, delay))
         self._lock = threading.RLock()
         # G71-3：纯内存模式必须有真实存储 —— 原实现 `_load_locked` 每次都返回空骨架、
         # `_save` 直接 return，于是 `RetryQueue(path=None)` 记什么丢什么（旧测试只断言
@@ -205,18 +213,29 @@ class RetryQueue:
                     "attempts": attempts, "next_retry_at": next_at}
 
     def _compute_next_retry_at(self, attempts: int) -> float:
-        """退避：第 n 次重试延迟 = base * n（上限 1 小时）。"""
-        delay = self.backoff_base_sec * max(1, attempts)
-        return self._now() + min(delay, _MAX_BACKOFF_SEC)
+        """退避：delay = min(base * n, 1h)，再施加可注入 jitter。"""
+        delay = min(self.backoff_base_sec * max(1, attempts), _MAX_BACKOFF_SEC)
+        try:
+            delay = max(0.0, float(self._jitter(delay)))
+        except Exception:
+            pass
+        return self._now() + delay
 
-    def due_tasks(self, now: Optional[float] = None) -> list[dict[str, Any]]:
-        """到期（next_retry_at <= now）的重试任务列表，按到期时间升序。"""
+    def due_tasks(self, now: Optional[float] = None,
+                  limit: Optional[int] = None) -> list[dict[str, Any]]:
+        """到期（next_retry_at <= now）的重试任务列表，按到期时间升序。
+
+        `limit` 用于限制单次 tick 重投批量（G72：防止几百个任务同时重投
+        造成瞬时尖峰）；剩余任务留给下一次 tick。
+        """
         ts = self._now() if now is None else float(now)
         with self._lock:
             data = self.load()
             due = [rec for rec in data["entries"].values()
                    if float(rec.get("next_retry_at", 0)) <= ts]
         due.sort(key=lambda r: float(r.get("next_retry_at", 0)))
+        if limit is not None:
+            due = due[:max(0, int(limit))]
         return due
 
     def to_spec(self, rec: dict[str, Any]) -> RepoSpec:

@@ -88,7 +88,8 @@ class TestRetryReusesBatchContext(unittest.TestCase):
             enabled = True
 
             @staticmethod
-            def due_tasks():
+            def due_tasks(limit=None):
+                assert limit == 50, "G72：单 tick 必须限制重投批量"
                 return [{"key": "gitea/demo"}]
 
             @staticmethod
@@ -132,7 +133,8 @@ class TestRetryReusesBatchContext(unittest.TestCase):
             enabled = True
 
             @staticmethod
-            def due_tasks():
+            def due_tasks(limit=None):
+                assert limit == 50, "G72：单 tick 必须限制重投批量"
                 return [{"key": "a/b"}]
 
             @staticmethod

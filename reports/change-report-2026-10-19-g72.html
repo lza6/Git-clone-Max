@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>Git-clone-Max G72 加固报告（2026-10-19）</title>
+<style>
+body{font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;max-width:980px;margin:40px auto;padding:0 24px;line-height:1.7;color:#1d232b}
+h2{border-bottom:2px solid #d8dee6;padding-bottom:6px;margin-top:32px}
+table{border-collapse:collapse;width:100%;margin:12px 0}th,td{border:1px solid #d8dee6;padding:8px 10px;text-align:left;vertical-align:top}th{background:#f4f7fa}
+code{background:#f1f3f5;padding:1px 5px;border-radius:4px;font-family:Consolas,monospace}
+.ok{color:#2f855a;font-weight:600}.meta{color:#5b6673;font-size:14px}
+pre{background:#1d232b;color:#e6edf3;padding:12px;overflow:auto;border-radius:6px}
+details{margin:8px 0}
+</style></head>
+<body>
+<h1>Git-clone-Max G72 加固报告</h1>
+<div class="meta">日期：2026-10-19 · 版本：v9.8.1 · 范围：日志打码 / 原子写 / 诊断包 / 重试抖动 / SSE 续传与背压</div>
+
+<h2>1. 为什么</h2>
+<p>G71 交付后独立调研发现 6 个低风险高价值缺口：<code>app.log</code> 只在诊断包导出时打码；
+原子写未覆盖 Windows 共享冲突；诊断包 tmp 名可能并发撞名；重试无抖动、单 tick 无批量上限；
+SSE 忽略 <code>Last-Event-ID</code> 且无并发/写超时；事件总线缺少按订阅者背压指标。</p>
+
+<h2>2. 做了什么</h2>
+<table>
+<tr><th>项</th><th>实现</th></tr>
+<tr><td>日志落盘打码</td><td><code>applog.RedactingFormatter</code> 在 Formatter 层对最终文本 redact；廉价特征预判避免每条日志跑全部正则。</td></tr>
+<tr><td>打码变体</td><td>Windows 正斜杠 / UNC / Documents and Settings；<code>ghp_/github_pat_/glpat-/xoxb-/AKIA/AIza</code> 等高置信 token；不误伤 40 位 commit SHA。</td></tr>
+<tr><td>原子写</td><td><code>mkstemp</code> O_EXCL；<code>replace_with_retry</code> 只对 PermissionError 与 winerror 5/32/33/1224 退避；非瞬时错误立即上抛并清理 tmp；诊断包 zip 复用。</td></tr>
+<tr><td>诊断包</td><td>report 2MB 上限、<code>report_truncated</code>、<code>timezone</code>、<code>redaction_version=2</code>；并发导出不互相覆盖。</td></tr>
+<tr><td>重试</td><td>退避 <code>min(base*n,1h)</code> 后 50%–100% jitter；引擎单 tick 最多 50 条；测试可注入 jitter。</td></tr>
+<tr><td>SSE</td><td><code>Last-Event-ID</code> 精确补发（覆盖 replay）；历史缺口发 <code>: history-truncated</code>；并发上限 16（503+Retry-After）；30s 写超时。</td></tr>
+<tr><td>背压指标</td><td><code>stats.subscribers_detail[]</code>：label/qsize/received/dropped/last_drop_ts/closed。</td></tr>
+</table>
+
+<h2>3. 验证证据</h2>
+<table>
+<tr><th>命令</th><th>结果</th></tr>
+<tr><td><code>ruff check gcm</code></td><td class="ok">All checks passed（79 文件）</td></tr>
+<tr><td><code>mypy gcm</code></td><td class="ok">Success（79 文件）</td></tr>
+<tr><td><code>unittest tests.test_g72_hardening</code></td><td class="ok">Ran 16 · OK</td></tr>
+<tr><td>G71+日志+打码+重试定向</td><td class="ok">Ran 107 · OK</td></tr>
+<tr><td>快集全量</td><td class="ok">见 <code>docs/验证记录-2026-10-19-G72加固.md</code>（本轮回填）</td></tr>
+</table>
+
+<h2>4. 风险与回滚</h2>
+<ul>
+<li>日志打码只影响文件 handler，不改变 UI 日志；如怀疑误打码可回退 <code>applog.py</code> 的 Formatter。</li>
+<li>winerror 白名单只覆盖瞬时占用；真正权限错误仍立即失败。</li>
+<li>SSE 仍为 HTTP/1.0 close-delimited；不切 chunked。</li>
+<li>回滚：<code>git revert &lt;v9.8.1 提交&gt;</code>；版本/changelog 同步回退。</li>
+</ul>
+
+<h2>5. 小测验</h2>
+<details><summary>1. 为什么日志打码放在 Formatter 层？</summary><p>能看到最终格式化文本（含 args 与异常堆栈），且覆盖所有经 applog 的出口，最不容易漏。</p></details>
+<details><summary>2. Last-Event-ID 与 replay 谁优先？</summary><p>Last-Event-ID 优先，按 seq 精确补发；replay 是兜底。</p></details>
+<details><summary>3. 为什么要给重试退避加 jitter？</summary><p>避免一批同时失败的仓库在同一秒再次齐发，降低 429/重试风暴。</p></details>
+<details><summary>4. 哪些 winerror 会重试？</summary><p>5/32/33/1224（瞬时占用）；其它 OSError 立即上抛。</p></details>
+</body></html>

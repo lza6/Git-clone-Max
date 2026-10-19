@@ -38,3 +38,11 @@
 | 诊断包 / 事件面板 / 重试面板 | `TestDiagBundle/TestEventPanel/TestRetryPanelRows` |
 | 设置页本地 API | `TestLocalApiSettings` + `TestGuiHostsLocalApi` + `test_g68_settings_ui` |
 | `git/service._update` 拆分 | `tests.test_g58_mirror_failover` + `tests.test_engine` |
+
+## G72 新增改动面
+| 改动面 | 必跑 |
+|--------|------|
+| 日志/打码 | `tests.test_g72_hardening.TestLogRedaction/TestRedactG72` + `tests.test_applog` |
+| 原子写/诊断包 | `TestAtomicHardening/TestDiagHardening` + `tests.test_g67_closure` |
+| 重试 jitter/批量 | `TestRetryJitter` + `tests.test_g52_retry_queue_extra` |
+| SSE 续传/背压 | `TestSseG72` + `tests.test_g71_event_stream` |

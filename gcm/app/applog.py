@@ -10,7 +10,32 @@ import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+from ..util.redact import redact
+
 _logger: logging.Logger | None = None
+
+# 只有出现这些「可能含凭据」的廉价特征才跑正则；避免每条日志都做 5 次 regex。
+_REDACT_HINTS = (
+    "://", "authorization", "private-token", "x-auth-token", "x-api-key",
+    "job-token", "access_token", "private_token", "token=", "password=",
+    "ghp_", "github_pat_", "glpat-", "xoxb-", "xoxp-", "akia", "aiza",
+)
+
+
+class RedactingFormatter(logging.Formatter):
+    """日志落盘前统一打码（G72，审查调研 #7）。
+
+    为什么放在 Formatter 而不是各调用点：`app.log` 可能被用户手动发送/被第三方
+    采集工具读取；只在诊断包导出时打码无法覆盖这条路径。Formatter 能看到
+    **最终格式化后的完整文本**（含 args 与异常堆栈），是最不容易漏的一层。
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        text = super().format(record)
+        low = text.lower()
+        if any(h in low for h in _REDACT_HINTS):
+            return redact(text)
+        return text
 
 
 def get_logger(log_path: str | Path | None = None) -> logging.Logger:
@@ -38,7 +63,7 @@ def get_logger(log_path: str | Path | None = None) -> logging.Logger:
                 Path(log_path).parent.mkdir(parents=True, exist_ok=True)
                 fh = RotatingFileHandler(str(log_path), maxBytes=5 * 1024 * 1024,
                                          backupCount=3, encoding="utf-8")
-                fh.setFormatter(logging.Formatter(
+                fh.setFormatter(RedactingFormatter(
                     "%(asctime)s|%(levelname)s|%(name)s|%(message)s"))
                 _logger.addHandler(fh)
             except Exception:

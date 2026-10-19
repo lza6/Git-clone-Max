@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import os
-import threading
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -30,17 +30,49 @@ from .filelock import cross_process_lock
 # 杀毒软件扫描、Windows Search 索引、备份/同步工具都会对刚写完的文件短暂持有句柄。
 # 实测：4 进程 × 150 次并发写中仍有 1 次落在 0.2s 的旧预算之外；
 # 预算抬到约 3.9s（12 次，线性退避）后可覆盖这类瞬时占用。
-# 这是**罕见**路径，最坏多等几秒，好过整次保存失败。
 _REPLACE_RETRIES = 12
 _REPLACE_BACKOFF_SEC = 0.05
+# G72：Windows 上共享冲突/锁冲突不一定表现为 PermissionError；仅对
+# 「瞬时占用」的 winerror 重试，真正的没权限（如 5 之外的 ACL）立即上抛。
+_TRANSIENT_WINERRORS = frozenset({5, 32, 33, 1224})
 
 
-def _unique_tmp(path: Path) -> Path:
-    """与目标同名但含 pid + 线程 id 的临时文件。
+def _is_transient_replace_error(exc: OSError) -> bool:
+    if isinstance(exc, PermissionError):
+        return True
+    return getattr(exc, "winerror", None) in _TRANSIENT_WINERRORS
 
-    **必须唯一**：同进程多线程/多实例并发写同一目标时，共用一个 tmp 名会互相截断。
+
+def replace_with_retry(tmp: str | Path, target: str | Path, *,
+                       retries: int | None = None) -> None:
+    """把 `tmp` 原子替换为 `target`（Windows 瞬时占用退避）。
+
+    G72：提取为公共函数，供 `write_text_atomic` 与 `diag_bundle` 的 zip 共用，
+    避免两处各写一份退避/清理逻辑。失败时清理 tmp 并上抛。
     """
-    return path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    tmp_p = Path(tmp)
+    target_p = Path(target)
+    attempts = _REPLACE_RETRIES if retries is None else max(1, int(retries))
+    last: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            os.replace(tmp_p, target_p)
+            _fsync_dir(target_p.parent)
+            return
+        except OSError as e:
+            if not _is_transient_replace_error(e):
+                try:
+                    tmp_p.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                raise
+            last = e
+            time.sleep(_REPLACE_BACKOFF_SEC * (attempt + 1))
+    try:
+        tmp_p.unlink(missing_ok=True)
+    except Exception:
+        pass
+    raise last if last is not None else OSError("原子替换失败")
 
 
 def _fsync_dir(path: Path) -> None:
@@ -80,32 +112,25 @@ def write_text_atomic(path: str | Path, text: str, *,
     （history/任务清单）可传更小值，避免杀软短暂占用时拖住界面。
     """
     target = Path(path)
-    tmp = _unique_tmp(target)
     attempts = _REPLACE_RETRIES if retries is None else max(1, int(retries))
 
     def _do_write() -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # G72：mkstemp 保证 O_EXCL + 随机名；同 pid/tid 串行复用也不会撞名，
+        # 崩溃残留的旧 tmp 不会被静默截断。
+        fd, tmp_name = tempfile.mkstemp(
+            dir=str(target.parent), prefix=f".{target.name}.", suffix=".tmp")
+        tmp = Path(tmp_name)
         try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with open(tmp, "w", encoding=encoding, newline="\n") as f:
+            with os.fdopen(fd, "w", encoding=encoding, newline="\n") as f:
                 f.write(text)
                 f.flush()
                 try:
                     os.fsync(f.fileno())   # 内容先落盘，再替换目录项
                 except OSError:
                     pass                    # 某些文件系统不支持 fsync；不阻断写入
-            last: Exception | None = None
-            for attempt in range(attempts):
-                try:
-                    os.replace(tmp, target)
-                    _fsync_dir(target.parent)
-                    return
-                except PermissionError as e:
-                    last = e
-                    time.sleep(_REPLACE_BACKOFF_SEC * (attempt + 1))
-            raise last if last is not None else OSError("原子替换失败")
+            replace_with_retry(tmp, target, retries=attempts)
         except Exception:
-            # G71-11（审查 S3）：写入阶段（磁盘满/编码错）或 replace 抛非
-            # PermissionError 时也必须清理唯一 tmp，避免垃圾文件累积。
             try:
                 tmp.unlink(missing_ok=True)
             except Exception:

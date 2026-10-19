@@ -1,7 +1,7 @@
 # Git-clone-Max
 
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
-> **当前版本：v9.8.0**（队列可观测性 + SSE 事件流 + 三段式错误 + 诊断包）
+> **当前版本：v9.8.1**（G72 加固：日志落盘打码 / 原子写与诊断包加固 / 重试抖动 / SSE 续传与背压）
 > **v5.0：多平台直克隆** — GitLab / Gitee / Codeberg / Bitbucket / 自建主机（HTTPS/SSH/短格式/子组）同样支持。
 > 克隆目录一律 `host__作者__仓库`（GitHub 为 `作者__仓库`），本地改动永不覆盖。
 
@@ -93,7 +93,7 @@ uv run python -m gcm --portable
 | 可靠性 | token 加密落盘（有 DPAPI/keyring 时真加密；否则可逆混淆并在日志显式告警）、单实例锁、全局异常兜底 `error.log`、settings 备份恢复、数据库自动迁移备份 |
 | 数据库 | SQLite `repos.db`（WAL）记录元数据 + `sync_history` 全量同步快照健康治理 |
 | 一键更新 | 「仓库管理 → ⟳ 一键更新全部」对库中所有仓库增量同步（黑名单排除） |
-| 黑匣子日志 | 实时 git 原生输出 + 关键字高亮 + 导出 txt（结构化 app.log + error.log 兜底 + redact） |
+| 黑匣子日志 | 实时 git 原生输出 + 关键字高亮 + 导出 txt（结构化 app.log + error.log 兜底；**日志落盘即打码**，token/URL 凭据不落明文） |
 
 ## 本仓库的 AI 协作约定
 
@@ -103,7 +103,7 @@ uv run python -m gcm --portable
 - `.agent/memory/` —— 已测试范围、已知问题、关键决策、变更索引、审计历史
 - `.agent/skills/` —— 加 API / 加功能 / 发版 / 回滚 / 验证矩阵 / 审查 / 审计 / 并发检查 / 计划文档清理
 - `policy.md` —— 交付门禁：什么条件下允许宣称「完成」
-- `test_ledger.md` —— 接缝注册表（S01–S26）与每条链路由哪个测试证明
+- `test_ledger.md` —— 接缝注册表（S01–S29）与每条链路由哪个测试证明
 - `evidence/` —— 每个任务节点的真实命令与输出证据
 
 改动前请先读 `.agent/memory/tested-scope.md`，避免重复跑同一批验证；
@@ -259,9 +259,9 @@ python -m coverage run --source=gcm -m unittest discover -s tests
 ## 发布
 
 ```bash
-git tag v9.8.0
+git tag v9.8.1
 git push origin main --tags
-python scripts/publish_release.py --tag v9.8.0   # 自动上传 exe 到 GitHub Release
+python scripts/publish_release.py --tag v9.8.1   # 自动上传 exe 到 GitHub Release
 ```
 
 ## License

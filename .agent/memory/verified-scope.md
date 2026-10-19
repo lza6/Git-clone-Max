@@ -36,3 +36,10 @@
 - 打包 exe E2E：首次克隆 `action=cloned` + 文件内容校验；第二次 `action=updated (+1)` + 内容 v2。
 - CI：commit `33f5e64` run `39238030986` **7/7 job success**（windows/ubuntu/macos + e2e/fast/slow/perf）。
 - Release：`v9.8.0` 创建成功；exe/zip 上传；服务端 sha256 与本地一致。
+
+## G72（2026-10-19）
+- app.log 落盘打码：`tests.test_g72_hardening.TestLogRedaction`。
+- 路径变体/token 前缀打码：`TestRedactG72`。
+- 原子写重试/清理：`TestAtomicHardening`；诊断包并发/截断/manifest：`TestDiagHardening`。
+- 重试 jitter/批量上限：`TestRetryJitter`。
+- SSE Last-Event-ID/503 并发上限：`TestSseG72`；订阅者指标：`TestEventBusG72`。

@@ -115,7 +115,8 @@ class Event:
 class Subscription:
     """事件订阅句柄（上下文管理器）。`close()` 幂等。"""
 
-    __slots__ = ("_bus", "_queue", "_types", "label", "_closed")
+    __slots__ = ("_bus", "_queue", "_types", "label", "_closed",
+                 "dropped", "last_drop_ts", "received")
 
     def __init__(self, bus: EventBus, q: queue.Queue[Optional[Event]],
                  types: Optional[frozenset[str]], label: str = ""):
@@ -124,6 +125,10 @@ class Subscription:
         self._types = types
         self.label = label
         self._closed = False
+        # G72：按订阅者暴露背压指标，便于定位是哪个消费者被拖慢。
+        self.dropped = 0
+        self.received = 0
+        self.last_drop_ts = 0.0
 
     def matches(self, event_type: str) -> bool:
         return self._types is None or event_type in self._types
@@ -131,6 +136,13 @@ class Subscription:
     @property
     def closed(self) -> bool:
         return self._closed
+
+    @property
+    def qsize(self) -> int:
+        try:
+            return int(self._queue.qsize())
+        except Exception:
+            return 0
 
     def wait(self, timeout: float = 1.0) -> list[Event]:
         """等待并取走当前可用事件；超时返回空列表。
@@ -233,13 +245,17 @@ class EventBus:
     def _enqueue(self, sub: Subscription, event: Event) -> None:
         try:
             sub._queue.put_nowait(event)
+            sub.received += 1
         except queue.Full:
             # 慢订阅者：丢最旧的，保证流仍然“活着”。计数供诊断查看。
             try:
                 sub._queue.get_nowait()
                 sub._queue.put_nowait(event)
+                sub.received += 1
             except (queue.Empty, queue.Full):
                 pass
+            sub.dropped += 1
+            sub.last_drop_ts = time.time()
             with self._lock:
                 self._dropped += 1
 
@@ -292,6 +308,33 @@ class EventBus:
                 pass
 
     # ------------------------------------------------------------ 查询
+    def oldest_seq(self, types: Optional[Iterable[str]] = None) -> int:
+        """当前缓冲中最早事件的 seq（空缓冲 → 0）。"""
+        type_set = None
+        if types is not None:
+            normalized = {str(t).strip() for t in types if str(t).strip()}
+            type_set = frozenset(normalized) if normalized else None
+        with self._lock:
+            items = self._items_locked(type_set)
+        return items[0].seq if items else 0
+
+    def since(self, seq: int, limit: int = 500,
+              types: Optional[Iterable[str]] = None) -> list[Event]:
+        """返回 seq **之后**的事件（G72：SSE `Last-Event-ID` 精确续传）。"""
+        try:
+            after = int(seq)
+        except (TypeError, ValueError):
+            return []
+        type_set = None
+        if types is not None:
+            normalized = {str(t).strip() for t in types if str(t).strip()}
+            type_set = frozenset(normalized) if normalized else None
+        with self._lock:
+            items = self._items_locked(type_set)
+        out = [e for e in items if e.seq > after]
+        n = max(0, int(limit or 0))
+        return out[-n:] if n else out
+
     def snapshot(self, limit: int = 100,
                  types: Optional[Iterable[str]] = None) -> list[Event]:
         """取最近事件（新→旧取再反转），供 `/api/events/snapshot` 与诊断包。
@@ -319,6 +362,12 @@ class EventBus:
                 "published": self._published,
                 "dropped": self._dropped,
                 "closed": self._closed,
+                "subscribers_detail": [
+                    {"label": s.label, "qsize": s.qsize,
+                     "received": s.received, "dropped": s.dropped,
+                     "last_drop_ts": s.last_drop_ts, "closed": s.closed}
+                    for s in self._subs
+                ],
             }
 
     def close(self) -> None:

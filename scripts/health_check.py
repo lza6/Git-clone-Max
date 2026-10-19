@@ -15,8 +15,8 @@
 4. started_ok      : QT_QPA_PLATFORM=offscreen + GCM_DATA_DIR=<临时目录>，
      Popen 启动 exe，最多等待 60s（首次解包/杀软扫描可能较慢），进程仍存活（未闪退）。
 5. repos_db_created: 冒烟期间临时数据目录生成 repos.db 或 settings.json。
-   冒烟结束：proc.terminate()（5s 内未退出则 kill()）并 wait 回收，删除临时目录，
-   不残留进程/文件。
+   冒烟结束：`_terminate_tree()`（Windows taskkill /T /F；POSIX killpg）回收
+   PyInstaller onefile 的父子进程，删除临时目录，不残留进程/文件。
 
 退出码：全部断言通过 → 0；任一失败 → 1（JSON 仍输出，便于登记失败原因）。
 
@@ -115,6 +115,46 @@ def _artifact_version(exe_path: Path) -> tuple[str | None, str]:
     return None, "unavailable"
 
 
+def _terminate_tree(proc: subprocess.Popen) -> None:
+    """结束进程**树**（G72：PyInstaller onefile 的 bootloader 会再 spawn 子进程）。
+
+    只 `proc.terminate()` 在 Windows 上可能只杀掉 bootloader 父进程，GUI 子进程
+    继续存活并占用 dist/Git-clone-Max.exe（实测导致下一次 PyInstaller 构建
+    `PermissionError [WinError 5]`）。Windows 用 `taskkill /T /F`；POSIX 若
+    Popen 以 `start_new_session=True` 启动则 killpg，否则退回 terminate。
+    """
+    if proc.poll() is not None:
+        return
+    if os.name == "nt":
+        try:
+            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                           capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=15)
+        except Exception:
+            pass
+    else:
+        try:
+            os.killpg(os.getpgid(proc.pid), 15)   # SIGTERM
+        except Exception:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+    try:
+        proc.wait(timeout=5)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        proc.kill()
+    except Exception:
+        pass
+    try:
+        proc.wait(timeout=5)
+    except Exception:
+        pass
+
+
 def _run_smoke(exe_path: Path, wait_s: float) -> tuple[bool, bool, str]:
     """离屏启动冒烟；返回 (started_ok, repos_db_created, note)。"""
     tmp = Path(tempfile.mkdtemp(prefix="gcm_health_"))
@@ -127,7 +167,8 @@ def _run_smoke(exe_path: Path, wait_s: float) -> tuple[bool, bool, str]:
         out_fh = open(tmp / "child_stdout.log", "wb")
         err_fh = open(tmp / "child_stderr.log", "wb")
         proc = subprocess.Popen([str(exe_path)], env=env,
-                                stdout=out_fh, stderr=err_fh)
+                                stdout=out_fh, stderr=err_fh,
+                                start_new_session=(os.name != "nt"))
         start_t = time.time()
         while time.time() < start_t + wait_s:
             if proc.poll() is not None:
@@ -141,11 +182,7 @@ def _run_smoke(exe_path: Path, wait_s: float) -> tuple[bool, bool, str]:
                 except Exception:
                     _tail = ""
                 if "DLL load failed" in _tail:
-                    try:
-                        proc.terminate()
-                        proc.wait(timeout=5)
-                    except Exception:
-                        pass
+                    _terminate_tree(proc)
                     return False, False, "startup failed; stderr head=" + repr(_tail[:400])
             time.sleep(0.5)
         time.sleep(0.3)
@@ -153,12 +190,7 @@ def _run_smoke(exe_path: Path, wait_s: float) -> tuple[bool, bool, str]:
             db_ok = (tmp / "repos.db").is_file()
             settings_ok = (tmp / "settings.json").is_file()
             note = f"alive after {wait_s:g}s; repos.db={db_ok} settings.json={settings_ok}"
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait(timeout=5)
+            _terminate_tree(proc)
             return True, db_ok or settings_ok, note
         note = f"exited early rc={proc.returncode}"
         errlog = tmp / "error.log"
@@ -171,11 +203,7 @@ def _run_smoke(exe_path: Path, wait_s: float) -> tuple[bool, bool, str]:
             if fh is not None:
                 fh.close()
         if proc is not None and proc.poll() is None:
-            proc.kill()
-            try:
-                proc.wait(timeout=5)
-            except Exception:
-                pass
+            _terminate_tree(proc)
         shutil.rmtree(tmp, ignore_errors=True)
 
 

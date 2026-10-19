@@ -36,8 +36,22 @@ _SENSITIVE_QPARAM = re.compile(
     r"|auth|authorization|password|passwd|pwd|token)=)[^&#\s]*",
     re.IGNORECASE)
 # G44-4：Windows 用户目录（盘符大小写不敏感）与 POSIX /home/<用户名>
-_WIN_HOME = re.compile(r"(?i)[a-z]:\\users\\[^\\/:*?\"<>|]+")
+# G72：补齐正斜杠、UNC、旧版 Documents and Settings；
+# 只 mask「用户名」这一段，保留后续子路径，便于排障。
+_WIN_HOME = re.compile(
+    r"(?i)(?:[a-z]:[\\/]+users|[a-z]:[\\/]+documents and settings"
+    r"|\\\\[^\\/]+[\\/]+users)[\\/]+[^\\/:*?\"<>|]+")
 _POSIX_HOME = re.compile(r"/home/[^/\s]+")
+# G72 高置信 token 前缀（不匹配裸 40 位 hex，避免把 commit SHA 当凭据）
+_TOKEN_PATTERNS = (
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),
+    re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}\b"),
+    re.compile(r"\bxox[abp]-[A-Za-z0-9-]{10,}\b"),
+    re.compile(r"\bsk-[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"),
+)
 
 # G44-4 全局开关：默认关闭，不影响既有 redact 行为
 _REDACT_USERPROFILE = False
@@ -83,6 +97,10 @@ def redact(text: str, *, userprofile: bool | None = None) -> str:
     out = _PRIVATE.sub(r"\1***", out)
     out = _OTHER_HEADERS.sub(r"\1***", out)
     out = _SENSITIVE_QPARAM.sub(r"\1***", out)
+    # G72：独立出现的高置信 token（不一定带 Authorization/query）
+    for pat in _TOKEN_PATTERNS:
+        if pat.search(out):
+            out = pat.sub("***", out)
     if userprofile if userprofile is not None else _REDACT_USERPROFILE:
         out = redact_home(out)
     return out

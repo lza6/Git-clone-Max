@@ -1,6 +1,6 @@
 # Git-clone-Max Agent 契约（G56-5）
 
-> 适用版本：v9.8.0。本文档是所有 agent 接入点
+> 适用版本：v9.8.1。本文档是所有 agent 接入点
 > （CLI `--json` / MCP server / 本地 HTTP API / `skills/gcm-*`）的统一契约。
 > 任何实现与本文档冲突时，以实际输出为准（测试 `tests/test_g56_contract.py` 抽样断言）。
 
@@ -27,7 +27,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ```json
 {
-  "version": "9.8.0",
+  "version": "9.8.1",
   "ok": true,
   "counts": {"success": 2, "failed": 0, "other": 0, "total": 2},
   "results": [
@@ -107,7 +107,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ```
 → {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{}}}
-← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"gcm","version":"9.8.0"}}}
+← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"gcm","version":"9.8.1"}}}
 → {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
 ← {"jsonrpc":"2.0","id":2,"result":{"tools":[{...list_repos...}, ...]}}
 → {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_repos","arguments":{}}}
@@ -156,11 +156,19 @@ data: {"type":"task_result","seq":42,"ts":1760000000.0,"batch_id":"20261019-..."
 - **参数**：`replay` 0..500（连接时补发最近 N 条，默认 0）；`types` 逗号分隔
   （未知类型不报错，便于向后兼容）；`heartbeat` 1..60 秒（空闲注释帧
   `: ping`，默认 15）。
+- **断线续传（G72）**：浏览器 `EventSource` 重连会自动带 `Last-Event-ID`
+  请求头；服务端优先按该 seq 精确补发 `seq > Last-Event-ID` 的事件（覆盖
+  `replay`）。若请求的 seq 早于缓冲最老事件，会先发一条
+  `: history-truncated` 注释帧，客户端应视为「可能有缺口」。
+- **背压/资源（G72）**：并发 SSE 订阅默认上限 16，超限返回 `503` +
+  `Retry-After: 5`；单连接写超时 30s；慢订阅者队列满时丢最旧事件并在
+  `stats.subscribers_detail[].dropped` 计数。
 - **重连**：服务端首帧发送 `retry: 3000`；EventSource 按 3s 重连。
 - **协议**：HTTP/1.0 + `Connection: close`，读到连接关闭为止（没有
   Content-Length，也不是 chunked）。`curl -N` / EventSource 均可直接消费。
 - **打码**：事件在入总线前已过 `redact()`（URL userinfo、Authorization、
-  PRIVATE-TOKEN、query token 参数）。**仍不要**把事件流原样外发到公网。
+  PRIVATE-TOKEN、query token 参数、高置信 token 前缀）。**仍不要**把事件流
+  原样外发到公网。
 - **无鉴权**：与其它端点一致，仅绑定回环 + Host/Origin 校验；SSE 是只读流。
 
 事件类型：

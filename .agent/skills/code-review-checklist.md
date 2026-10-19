@@ -45,3 +45,11 @@ Approve = 严格审查后无阻塞问题，不是「完美」。不得为逃避 
 - [ ] 事件总线发布是否永不阻塞/抛出？进度事件是否与错误事件分开缓冲？
 - [ ] GUI 线程是否执行了 `server.shutdown()`/`join()` 等阻塞操作？
 - [ ] 自动重试关闭时，重试面板是否还会报“已请求重试”的假成功？
+
+## G72 新增审查项
+- [ ] 日志是否经 applog（Formatter 打码）？有没有直接写 app.log？
+- [ ] 原子写是否 mkstemp O_EXCL？replace 重试是否只覆盖瞬时 winerror？
+- [ ] 诊断包 report 是否有上限、manifest 是否含截断/时区/脱敏版本？
+- [ ] SSE 是否处理 Last-Event-ID、并发上限、写超时？
+- [ ] 重试 jitter 是否可注入？单 tick 是否有批量上限？
+- [ ] 慢订阅者指标是否可按订阅者观测（dropped/qsize）？

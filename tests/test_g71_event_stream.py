@@ -241,7 +241,8 @@ class TestAtomicWrites(unittest.TestCase):
 class TestRetryQueueVisibility(unittest.TestCase):
     def test_non_retryable_removes_stale_entry(self):
         """审查 R1：先网络失败入队，重投变 404 时必须摘除，不能每 15s 无限重投。"""
-        q = RetryQueue(path=None, enabled=True, now=lambda: 1000.0)
+        q = RetryQueue(path=None, enabled=True, now=lambda: 1000.0,
+                       jitter=lambda d: d)
         self.assertTrue(q.record_failure(_spec(), "Connection timed out"))
         self.assertEqual(q.count(), 1)
         out = q.record_failure_ex(_spec(), "remote: Repository not found")
@@ -268,7 +269,8 @@ class TestRetryQueueVisibility(unittest.TestCase):
         self.assertEqual(out["reason"], "exhausted")
 
     def test_retry_now_remove_and_stats(self):
-        q = RetryQueue(path=None, enabled=True, now=lambda: 1000.0)
+        q = RetryQueue(path=None, enabled=True, now=lambda: 1000.0,
+                       jitter=lambda d: d)
         q.record_failure(_spec("a", "r"), "Connection timed out")
         snap = q.snapshot()
         self.assertEqual(snap[0]["state"], "queued")

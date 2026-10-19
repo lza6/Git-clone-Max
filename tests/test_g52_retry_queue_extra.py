@@ -36,7 +36,8 @@ class TestRetryQueueExtra(unittest.TestCase):
     def test_due_tasks_sorted(self):
         with tempfile.TemporaryDirectory() as td:
             q = RetryQueue(Path(td) / "rq.json", enabled=True,
-                           backoff_base_sec=30, now=lambda: 1000.0)
+                           backoff_base_sec=30, now=lambda: 1000.0,
+                           jitter=lambda d: d)
             q.record_failure(_spec("a", "r1"), "Connection timed out")  # next=1000+30
             q.record_failure(_spec("b", "r2"), "Connection timed out")
             due = q.due_tasks(now=1030.0)

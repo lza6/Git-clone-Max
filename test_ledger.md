@@ -41,6 +41,9 @@
 | S24 | 批次状态机 | `app/batch_state.py` | `app/engine.py` | queued→running→终态；终态不可回退；幂等计数；非法转换计数可观测 | `test_g71_event_stream.TestBatchState/TestEnginePublishesEvents` |
 | S25 | 设置 → GUI 内置本地 API 生命周期 | `db/settings.local_api_*` · `ui/settings_panel` | `ui/main_window._apply_local_api_settings` | 改开关/端口立即启停；只绑回环；关窗释放端口；失败只日志不拖垮 GUI | `test_g71_event_stream.TestLocalApiSettings` · `test_g68_settings_ui` |
 | S26 | EventBus 快照 → 事件流 UI | `app/event_bus.snapshot` | `ui/event_panel` | 默认隐藏进度事件；类型过滤纯函数；刷新/复制 JSON；写入与消费都接线 | `test_g71_event_stream.TestEventPanel` |
+| S27 | 日志出口 → app.log 文件 | `app/applog.py` | 磁盘文件 | Formatter 层统一 redact；token/URL 凭据/路径变体不落明文；普通日志不变 | `test_g72_hardening.TestLogRedaction` |
+| S28 | SSE 续传/背压 | `http_api._stream_events` | `app/event_bus.since/oldest_seq` | `Last-Event-ID` 优先、精确 seq 补发、`history-truncated`；并发上限 503；30s 写超时；订阅者 dropped/qsize | `test_g72_hardening.TestSseG72/TestEventBusG72` |
+| S29 | 原子替换 → Windows 瞬时占用 | `util/atomic_io.replace_with_retry` | progress/settings/history/lists/diag | mkstemp O_EXCL；winerror 5/32/33/1224 退避；非瞬时错误立即上抛并清理 tmp | `test_g72_hardening.TestAtomicHardening` |
 
 ---
 
@@ -56,6 +59,9 @@
 | G71 定向 | `unittest tests.test_g71_event_stream` | `Ran 54 · OK`（事件总线/SSE/错误模型/原子写/诊断包/状态机/引擎发布） | 2026-10-19 |
 | G71 引擎回归 | `unittest tests.test_engine tests.test_g43_engine` 等 | `Ran 71 · OK`（含真实 git 本地仓 E2E） | 2026-10-19 |
 | G71 UI 回归 | `unittest tests.test_g70_ui_upgrade tests.test_progress_ui tests.test_onboarding tests.test_g46_tray_help tests.test_download_tools tests.test_g52_mainwindow_methods` | `Ran 85 · OK` | 2026-10-19 |
+| G72 定向 | `unittest tests.test_g72_hardening` | `Ran 16 · OK`（日志打码/原子写/诊断包/jitter/SSE 续传/背压） | 2026-10-19 |
+| G72 回归 | `unittest tests.test_g72_hardening tests.test_g71_event_stream tests.test_applog tests.test_redact tests.test_g52_retry_queue_extra` | `Ran 107 · OK` | 2026-10-19 |
+| G72 快集 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 1332 · failures=0 · errors=0 · skipped=3 · 覆盖 81%` | 2026-10-19（v9.8.1） |
 | 连跑稳定性 | 同一命令 ×3 | `1115 / 1115 / 1122`，0 崩溃 | 2026-10-17（已移除 GC 安全网） |
 | CI | GitHub Actions | 7/7 job success（run 39165009718）；发布后 flake 修复 run 39171656327 success | 2026-10-19 |
 

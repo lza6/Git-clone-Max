@@ -28,3 +28,10 @@
 - 未闭环：B4 仓库知识索引、B5 MCP annotations/outputSchema、B6 真实浏览器/真机点击。
 - 发布：commit `33f5e64` → main；tag `v9.8.0`；Release id `417169620`；CI 7/7 success。
 - 发布证据：`evidence/G71-observability.json`、`evidence/G71-health-check.json`、`evidence/G71-release.json`。
+
+## 2026-10-19 G72 加固（v9.8.1）
+
+- 来源：独立调研 agent 的 8 条 backlog；实施 7 条（日志落盘打码、redact 变体、
+  原子写 mkstemp/winerror、诊断包并发/上限、重试 jitter/批量、SSE Last-Event-ID/背压、订阅者指标）。
+- 未实施：DLQ 可视化（下轮）。
+- 验证：ruff/mypy 通过；G72 16 OK；G71+日志+打码+重试 107 OK；快集见验证记录。

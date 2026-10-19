@@ -244,6 +244,14 @@ docs/        工程/产品/契约文档
   事件在入总线前已 `redact()`。不要把事件流经反向代理裸奔到公网。
 - **重试判据唯一来源是 `app/errors.classify_error`**：UI 分类、重试队列、SSE
   `task_error` 必须共用它；新增错误文案时改这一处，不要再在 UI 里写关键字表。
+- **app.log 落盘即打码（G72）**：`applog.RedactingFormatter` 在 Formatter 层对
+  最终文本跑 `redact`（含高置信 token 前缀/Windows 路径变体）；新增日志出口不要
+  绕过 `applog.info/warn/error`。
+- **SSE 续传/背压（G72）**：优先 `Last-Event-ID`（seq 精确补发），`replay` 是兜底；
+  并发订阅上限 16（超限 503）、写超时 30s、慢订阅者指标在
+  `stats.subscribers_detail`。
+- **重试退避带 jitter（G72）**：`delay = min(base*n, 1h)` 后 50%–100% 抖动；
+  单次 tick 最多重投 50 条。测试精确时间时注入 `jitter=lambda d: d`。
 - **覆盖率门禁是快集口径**（Windows 81 / POSIX 80），不是全量口径；POSIX 低 1 个点源于 `msvcrt`/`schtasks`/`winreg` 分支不可执行。
 - **`gcm/ui/*.py` 有 E501 豁免**（纯中文文案长行，East-Asian 宽度计数）；`gcm/i18n/*.py` 为生成文件同样豁免。
 - **CI 只在 Linux 上跑慢集**：Windows 特有的编码/路径问题必须本机验证，别只信 CI 绿灯。

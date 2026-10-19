@@ -67,3 +67,14 @@ AST 只统计 `Attribute` / `Name` / `getattr(obj, "名字")`，注释与字符�
   `_update` 拆出 fetch/merge/bare 三段；`_launch` 引擎参数映射拆到
   `engine_factory`；下载页控件搭建拆到 `download_layout`。
   不拆高度耦合的控制流，避免为了行数制造回归面。
+
+## G72（v9.8.1）加固决策
+
+- **D13 日志打码放在 Formatter 层**：覆盖 args/异常堆栈与所有 applog 出口；
+  用廉价子串预判避免每条日志跑全部正则。
+- **D14 原子写用 mkstemp O_EXCL + 白名单 winerror 重试**：只对瞬时占用退避，
+  其它权限错误立即失败，避免把真错误拖成数秒。
+- **D15 SSE 续传优先 Last-Event-ID**：replay 仅兜底；历史缺口发
+  `history-truncated` 注释帧；并发上限 16 + 30s 写超时防线程堆积。
+- **D16 重试 jitter 可注入**：生产默认 50%–100% 抖动；测试注入 identity 保证确定性；
+  单 tick 上限 50，剩余下轮。

@@ -1,0 +1,37 @@
+{
+  "task_id": "G72-hardening",
+  "status": "passed",
+  "timestamp": "2026-10-20T00:25:00+08:00",
+  "commands_executed": [
+    {"cmd": "ruff check gcm", "exit_code": 0, "raw_output_tail": "All checks passed!"},
+    {"cmd": "mypy gcm", "exit_code": 0, "raw_output_tail": "Success: no issues found in 79 source files"},
+    {"cmd": "unittest tests.test_g72_hardening -v", "exit_code": 0, "raw_output_tail": "Ran 16 tests in 8.647s\n\nOK"},
+    {"cmd": "unittest tests.test_g72_hardening tests.test_g71_event_stream tests.test_applog tests.test_redact tests.test_g52_retry_queue_extra", "exit_code": 0, "raw_output_tail": "Ran 107 tests in 23.516s\n\nOK"},
+    {"cmd": "coverage run --source=gcm scripts/ci_run_fast.py", "exit_code": 0, "raw_output_tail": "[ci_run_fast] 合计：Ran 1332 tests · failures=0 errors=0 skipped=3\n[ci_run_fast] OK"},
+    {"cmd": "coverage report --include=\"gcm/*\"", "exit_code": 0, "raw_output_tail": "TOTAL 12909 2129 3264 582 81%"},
+    {"cmd": "python -m PyInstaller --noconfirm Git-clone-Max.spec", "exit_code": 0, "raw_output_tail": "INFO: Build complete! The results are available in: ...dist"},
+    {"cmd": "python scripts/build_portable_zip.py", "exit_code": 0, "raw_output_tail": "[OK] 已生成 ...Git-clone-Max-portable.zip（314 条目，79505467 字节）"},
+    {"cmd": "python scripts/health_check.py --json evidence/G72-health-check.json", "exit_code": 0, "raw_output_tail": "[OK] version_match: src='9.8.1' artifact='9.8.1'\n[OK] started_ok: alive after 60s; repos.db=True\n[OK] repos_db_created"},
+    {"cmd": "dist/Git-clone-Max.exe --cli --json -", "exit_code": 2, "raw_output_tail": "{\"version\": \"9.8.1\", \"ok\": false, ...} rc=2"},
+    {"cmd": "dist/Git-clone-Max.exe --cli --json --dir <tmp>/out - (clone + update)", "exit_code": 0, "raw_output_tail": "clone: \"version\": \"9.8.1\" \"action\": \"cloned\"\nupdate: \"version\": \"9.8.1\" \"action\": \"updated\" \"message\": \"更新完成（+1 提交）\"\ncontent=v2"}
+  ],
+  "tests": [
+    {"name": "G72 hardening", "type": "unit+integration", "status": "passed", "evidence": "Ran 16 · OK"},
+    {"name": "G71/日志/打码/重试回归", "type": "regression", "status": "passed", "evidence": "Ran 107 · OK"},
+    {"name": "fast suite", "type": "unit+integration", "status": "passed", "evidence": "Ran 1332 · 0 failures · 0 errors · skipped 3"},
+    {"name": "packaged clone/update E2E", "type": "e2e", "status": "passed", "evidence": "action=cloned; action=updated; content=v2"},
+    {"name": "health check", "type": "smoke", "status": "passed", "evidence": "started_ok=true; version_match=9.8.1"}
+  ],
+  "coverage_summary": {"lines": 83.5, "branches": null, "functions": null, "statements": 81.0,
+    "note": "coverage.py TOTAL Cover=81%（Windows 门禁 81）"},
+  "seams_touched": ["S27", "S28", "S29"],
+  "mock_scenarios_covered": [],
+  "browser_validation": {"performed": false, "paths": [], "screenshots": [],
+    "reason": "无浏览器工具；SSE 用 http.client 逐帧验证 Last-Event-ID/503/心跳"},
+  "limitations": [
+    "未做真实浏览器 EventSource",
+    "未切 HTTP/1.1 chunked（明确不实施）",
+    "Windows winerror 精确占用场景未模拟（PermissionError 路径已测）",
+    "DLQ 可视化列入下一轮"
+  ]
+}

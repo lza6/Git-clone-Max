@@ -216,6 +216,18 @@ class _ApiHandler(BaseHTTPRequestHandler):
         except Exception:
             return False
 
+    @staticmethod
+    def _parse_last_event_id(raw: str | None) -> int | None:
+        """解析 SSE `Last-Event-ID` 请求头；非法/越界 → None（退回 replay）。"""
+        text = (raw or "").strip()
+        if not text or len(text) > 20:
+            return None
+        try:
+            value = int(text)
+        except (TypeError, ValueError):
+            return None
+        return value if 0 <= value <= 2**63 - 1 else None
+
     def _stream_events(self, qs: dict[str, list[str]]) -> None:
         """SSE 长连接：心跳 + 客户端断开自动清理订阅。
 
@@ -231,11 +243,29 @@ class _ApiHandler(BaseHTTPRequestHandler):
             self._error(2, str(e))
             return
         types = self._parse_types(qs)
+        # G72：浏览器 EventSource 重连会自动带 Last-Event-ID，优先级高于 replay
+        last_id = self._parse_last_event_id(self.headers.get("Last-Event-ID"))
 
         server: GcmApiServer = self.server  # type: ignore[assignment]
         stop = getattr(server, "_stop_event", None)
+        # G72：限制并发 SSE 订阅，防止慢/挂死客户端把线程堆满
+        with server._sse_lock:
+            if server._sse_active >= int(getattr(server, "sse_max", 16)):
+                self.send_response(503)
+                self.send_header("Retry-After", "5")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            server._sse_active += 1
         bus = getattr(server, "event_bus", None) or get_event_bus()
-        sub = bus.subscribe(replay=replay, types=types, label="sse")
+        try:
+            sub = bus.subscribe(
+                replay=0 if last_id is not None else replay,
+                types=types, label="sse")
+        except Exception:
+            with server._sse_lock:
+                server._sse_active = max(0, server._sse_active - 1)
+            raise
         try:
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream; charset=utf-8")
@@ -244,15 +274,31 @@ class _ApiHandler(BaseHTTPRequestHandler):
             self.send_header("X-Accel-Buffering", "no")
             self.end_headers()
             self.close_connection = True
+            try:
+                # 写超时：慢/挂死客户端不会永久占用一个 handler 线程
+                self.connection.settimeout(30.0)
+            except OSError:
+                pass
             # EventSource 重连间隔（毫秒）+ 一条注释帧证明连接已建立
             self.wfile.write(b"retry: 3000\n\n: connected\n\n")
+            last_sent = 0
+            if last_id is not None:
+                oldest = bus.oldest_seq(types)
+                if oldest and last_id < oldest - 1:
+                    self.wfile.write(b": history-truncated\n\n")
+                for ev in bus.since(last_id, limit=500, types=types):
+                    self.wfile.write(ev.sse_frame())
+                    last_sent = max(last_sent, ev.seq)
             self.wfile.flush()
             last_write = time.monotonic()
             while (stop is None or not stop.is_set()) and not sub.closed:
                 events = sub.wait(timeout=min(1.0, float(heartbeat)))
                 if events:
                     for ev in events:
+                        if ev.seq <= last_sent:
+                            continue      # 已由 Last-Event-ID 补发过
                         self.wfile.write(ev.sse_frame())
+                        last_sent = ev.seq
                     self.wfile.flush()
                     last_write = time.monotonic()
                 elif time.monotonic() - last_write >= heartbeat:
@@ -266,6 +312,8 @@ class _ApiHandler(BaseHTTPRequestHandler):
             pass                      # 客户端正常断开（关页面 / curl 退出）
         finally:
             sub.close()
+            with server._sse_lock:
+                server._sse_active = max(0, server._sse_active - 1)
 
     # ------------------------------------------------------------ GET
     def do_GET(self) -> None:
@@ -441,6 +489,7 @@ class GcmApiServer(ThreadingHTTPServer):
     data_dir: Path = Path.cwd()
     allow_mutate: bool = False
     event_bus: Any = None             # G71-1：可注入（测试隔离）；None = 进程级单例
+    sse_max: int = 16                 # G72：并发 SSE 订阅上限（超限 503 + Retry-After）
     request_queue_size = 128          # 默认 5 太小：并发调用会被内核直接拒绝
     daemon_threads = True             # 线程随进程退出，避免 shutdown 时挂住
 
@@ -448,6 +497,8 @@ class GcmApiServer(ThreadingHTTPServer):
         # 必须在 `super().__init__` 之前创建：绑定失败时 socketserver 会在
         # 构造过程中回调 `server_close()`，那时本属性必须已存在。
         self._stop_event = threading.Event()
+        self._sse_lock = threading.Lock()
+        self._sse_active = 0
         super().__init__(*args, **kwargs)
 
     def server_close(self) -> None:

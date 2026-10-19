@@ -10,8 +10,8 @@
 
 ## 2. 原子写文件（防崩溃损坏范式）
 - 位置：`gcm/util/atomic_io.py::write_text_atomic`（progress/settings/retry/history/lists 全部接入）
-- 模式：**唯一 tmp 名**（pid+tid）→ 写入 + `flush`/`fsync` → `os.replace`（带 12 次退避）
-  → POSIX 再 `fsync` 目录；失败上抛不静默吞。
+- 模式：`mkstemp` O_EXCL 随机 tmp → 写入 + `flush`/`fsync` → `replace_with_retry`
+  （仅 PermissionError / winerror 5/32/33/1224 退避）→ POSIX 再 `fsync` 目录；失败上抛并清理 tmp。
 - 为什么好：崩溃/断电不产生半写文件；并发写不互相截断；Windows 杀软/索引器短暂占用
   也不会让整次保存静默失败。文件类持久化的标准姿势。
 
@@ -58,8 +58,9 @@
 ## 10. 进程内事件总线（防「状态只活在 UI 信号里」范式）
 
 - 位置：`gcm/app/event_bus.py`（环形缓冲 500、回放、类型过滤、出站 redact）
-- 模式：**发布永不阻塞、永不抛**；每个订阅者独立有界队列，慢订阅者丢最旧并计数。
-  同一份事件同时供 UI/SSE/诊断包消费，新增消费者不改引擎。
+- 模式：**发布永不阻塞、永不抛**；每个订阅者独立有界队列，慢订阅者丢最旧并计数
+  （`subscribers_detail` 可按订阅者观测 dropped/qsize）。同一份事件同时供 UI/SSE/诊断包消费；
+  SSE 重连用 `Last-Event-ID` 精确续传，并发上限 + 写超时防线程堆积。
 - 为什么好：状态变化只写一次；agent 不必轮询数据库；出问题能导出按时间排序的事件流。
 
 ## 11. 纯状态机记账（防「计数对不上」范式）

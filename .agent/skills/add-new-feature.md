@@ -36,3 +36,10 @@ python -m ruff check gcm && python -m mypy gcm
 - 任何 JSON 持久化：走 `util/atomic_io.write_text_atomic`（唯一 tmp + fsync + 退避）。
 - 错误：用 `app/errors.classify_error` 判 `retryable`，不要在 UI 再写关键字表。
 - 验收：功能定向测试 + `tests.test_g71_event_stream`（事件/SSE/原子写/诊断包/状态机）。
+
+## G72 加固约定
+- 日志一律走 `applog.info/warn/error`（Formatter 层已 redact）；不要直接写 app.log。
+- JS/JSON 原子写用 `util/atomic_io.write_text_atomic`；zip/二进制用
+  `tempfile.mkstemp` + `replace_with_retry`。
+- SSE 客户端重连优先 `Last-Event-ID`；服务端并发上限 16、写超时 30s。
+- 重试退避带 50%–100% jitter；单 tick 上限 50；测试精确时间注入 `jitter=lambda d: d`。

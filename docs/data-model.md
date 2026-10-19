@@ -123,10 +123,15 @@ SQLite，文件 `data/repos.db`，WAL 模式。
 
 所有 JSON 持久化统一走 `gcm/util/atomic_io.py`：
 
-1. **唯一 tmp 名**（`<name>.<pid>.<tid>.tmp`）—— 固定 tmp 名在多线程/多实例下会互相截断；
+1. **唯一 tmp 名**（`mkstemp` O_EXCL，随机名）—— 固定 tmp 名在多线程/多实例下会互相截断；
 2. **写后 `flush` + `fsync`**，替换后再 `fsync` 目录（POSIX）—— 掉电不出现「目录项替换了、内容没落盘」；
-3. **替换退避**（12 次线性退避）—— Windows 上杀软/索引器短暂持有句柄时 `os.replace` 会 `WinError 5`；
+3. **替换退避**（12 次线性退避）—— Windows 上杀软/索引器短暂持有句柄时 `os.replace` 会
+   `WinError 5/32/33/1224`；只对这些瞬时 winerror 重试，真正的权限错误立即上抛；
 4. 失败**上抛**，由调用方决定用户可见提示或显式记录，不静默吞。
+5. 诊断包 zip 复用同一 `replace_with_retry`，并发导出不互相覆盖。
+
+`retry_queue.json` 退避（G72）：`delay = min(base*n, 1h)` 后施加 50%–100% jitter，
+避免一批同时失败的仓库在同一秒再次齐发；引擎单次 tick 最多重投 50 条。
 
 `retry_queue.json` 结构：
 
