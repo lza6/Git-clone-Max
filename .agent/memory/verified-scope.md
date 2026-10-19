@@ -32,3 +32,7 @@
 - GUI 本地 API 启停与 `/version`：`TestGuiHostsLocalApi`。
 - 真实 git E2E：`scripts/e2e_smoke.py` → `E2E_SMOKE_RESULT: PASS`。
 - 快集全量：1316 tests / 0 failures / 0 errors / skipped 3 / 覆盖 81%。
+- 构建：PyInstaller EXIT=0；portable zip 314 条目 / 79,482,799 B；健康检查 started_ok=true、version_match=9.8.0。
+- 打包 exe E2E：首次克隆 `action=cloned` + 文件内容校验；第二次 `action=updated (+1)` + 内容 v2。
+- CI：commit `33f5e64` run `39238030986` **7/7 job success**（windows/ubuntu/macos + e2e/fast/slow/perf）。
+- Release：`v9.8.0` 创建成功；exe/zip 上传；服务端 sha256 与本地一致。

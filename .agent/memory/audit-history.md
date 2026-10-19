@@ -26,3 +26,5 @@
 - 验证：ruff/mypy 通过；G71 定向 54 OK；相关回归 142 OK；快集 1316 tests / 0 failures / 0 errors / 81%。
 - 真实 E2E：`scripts/e2e_smoke.py` PASS；CLI `--json` 空输入 rc=2、version 9.8.0。
 - 未闭环：B4 仓库知识索引、B5 MCP annotations/outputSchema、B6 真实浏览器/真机点击。
+- 发布：commit `33f5e64` → main；tag `v9.8.0`；Release id `417169620`；CI 7/7 success。
+- 发布证据：`evidence/G71-observability.json`、`evidence/G71-health-check.json`、`evidence/G71-release.json`。
