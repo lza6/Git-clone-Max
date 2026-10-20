@@ -471,7 +471,7 @@ class SettingsPanel(QWidget):
         prefixes = [str(r.get("url") or "")[: -len("/" + sample)] for r in usable]
         summary = " · ".join(
             f"{str(r.get('url') or '')[: -len('/' + sample)] or '(源站)'} "
-            f"{r.get('ms', 0)}ms {'✓' if r.get('ok') else '✗'}"
+            f"{r.get('ms', 0)}ms {'OK' if r.get('ok') else 'FAIL'}"
             for r in (results or []) if r.get("url"))
         if summary:
             owner._emit_log(_mw._fmt_dt(), LogLevel.INFO, tr("镜像测速：") + summary)

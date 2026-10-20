@@ -11,13 +11,16 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
+from ..i18n import tr
 from .theme import current_palette
 
 
@@ -116,10 +119,12 @@ class StatisticsDialog(QDialog):
 
     def __init__(self, db, parent=None):
         super().__init__(parent)
+        from .theme import apply_parent_theme
+        apply_parent_theme(self)
         self.db = db
         self.setWindowTitle("统计中心")
         from .layout import fit_dialog_to_screen
-        fit_dialog_to_screen(self, 560, 460, 460, 380)
+        fit_dialog_to_screen(self, 860, 720, 620, 480)
         # G70：不再套导入时生成的静态深色 QSS —— 沿用父窗口当前主题/字号。
         self._days = 30  # G47-4 趋势周期（7/30/90）
         self._build_ui()
@@ -127,10 +132,20 @@ class StatisticsDialog(QDialog):
 
     # ------------------------------------------------------------ UI
     def _build_ui(self) -> None:
-        v = QVBoxLayout(self)
+        # G74：统计内容（趋势/评分卡/雷达/存储）在 620px 高对话框里放不下，
+        # 原来雷达图被底部按钮裁掉。改为内容区滚动、按钮固定底部。
+        outer = QVBoxLayout(self)
+        outer.setSpacing(10)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        inner = QWidget()
+        scroll.setWidget(inner)
+        outer.addWidget(scroll, 1)
+        v = QVBoxLayout(inner)
         v.setSpacing(10)
 
-        self.lbl_title = QLabel("📊 统计中心")
+        self.lbl_title = QLabel("统计中心")
         self.lbl_title.setObjectName("pageTitle")
         v.addWidget(self.lbl_title)
 
@@ -148,6 +163,19 @@ class StatisticsDialog(QDialog):
         self.lbl_usage.setObjectName("muted")
         self.lbl_usage.setWordWrap(True)
         v.addWidget(self.lbl_usage)
+
+        # G53-1 多维评分卡（成功率/陈旧度/冲突/大小/标签/最近同步）
+        # G74：评分卡/雷达属于「一眼看健康」的高层摘要，放在概览之后；
+        # 否则 620~720px 高的对话框里雷达图落在可视区外，首次打开只能看到半张图。
+        v.addWidget(QLabel("多维评分卡（0-100，越高越好）"))
+        self.lbl_scorecard = QLabel("")
+        self.lbl_scorecard.setObjectName("muted")
+        self.lbl_scorecard.setWordWrap(True)
+        v.addWidget(self.lbl_scorecard)
+        # G53-1 雷达图：6 维评分的可视化（纯 Qt 绘制，见 radar_chart.py）
+        from .radar_chart import RadarChart
+        self.radar = RadarChart(self)
+        v.addWidget(self.radar)
 
         # G37-1/G47-4 同步趋势（周期可切 7/30/90，可导出 PNG）
         h_trend = QHBoxLayout()
@@ -174,18 +202,6 @@ class StatisticsDialog(QDialog):
         self.lbl_slow.setWordWrap(True)
         v.addWidget(self.lbl_slow)
 
-
-        # G53-1 多维评分卡（成功率/陈旧度/冲突/大小/标签/最近同步）
-        v.addWidget(QLabel("多维评分卡（0-100，越高越好）"))
-        self.lbl_scorecard = QLabel("")
-        self.lbl_scorecard.setObjectName("muted")
-        self.lbl_scorecard.setWordWrap(True)
-        v.addWidget(self.lbl_scorecard)
-        # G53-1 雷达图：6 维评分的可视化（纯 Qt 绘制，见 radar_chart.py）
-        from .radar_chart import RadarChart
-        self.radar = RadarChart(self)
-        v.addWidget(self.radar, 1)
-
         # G53-3 存储看板（数据目录占用 / 磁盘剩余 / 建议）
         v.addWidget(QLabel("存储看板"))
         self.lbl_storage = QLabel("")
@@ -203,10 +219,10 @@ class StatisticsDialog(QDialog):
         self.btn_refresh = QPushButton("刷新")
         self.btn_refresh.clicked.connect(self._refresh)
         btns.addWidget(self.btn_refresh)
-        self.btn_close = QPushButton("关闭")
+        self.btn_close = QPushButton(tr("关闭"))
         self.btn_close.clicked.connect(self.accept)
         btns.addWidget(self.btn_close)
-        v.addLayout(btns)
+        outer.addLayout(btns)
 
     # ------------------------------------------------------------ 数据
     def _refresh(self) -> None:
@@ -271,8 +287,15 @@ class StatisticsDialog(QDialog):
             summary = overall_summary(cards)
             if cards:
                 avg = summary["avg"]
-                parts = [f"{k} {v}" for k, v in avg.items()]
-                lines = [f'总评 {summary["overall"]}/100 · ' + ' '.join(parts)]
+                # G74：不再直接拼英文 key（success_rate 100 freshness 0 ...），
+                # 用中文维度名，和雷达图/README 保持一致。
+                labels = {
+                    "success_rate": "成功率", "freshness": "新鲜度",
+                    "conflicts": "冲突健康", "size_score": "仓库大小",
+                    "tags_score": "标签完整", "recency": "最近同步",
+                }
+                parts = [f"{labels.get(k, k)} {v}" for k, v in avg.items()]
+                lines = [f'总评 {summary["overall"]}/100 · ' + ' · '.join(parts)]
                 for c in summary["weakest"][:3]:
                     lines.append(f'  {c["key"]} {c["overall"]}分：{c["suggestions"][0]}')
                 self.lbl_scorecard.setText("\n".join(lines))

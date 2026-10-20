@@ -42,8 +42,8 @@ try:
     )
     version_info = VSVersionInfo(
         ffi=FixedFileInfo(
-            filevers=(9, 8, 2, 0),
-            prodvers=(9, 8, 2, 0),
+            filevers=(9, 8, 3, 0),
+            prodvers=(9, 8, 3, 0),
             mask=0x3f,
             flags=0x0,
             OS=0x40004,
@@ -56,11 +56,11 @@ try:
                 StringTable('040904B0', [
                     StringStruct('CompanyName', 'Git-clone-Max'),
                     StringStruct('FileDescription', 'GitHub repository batch download tool'),
-                    StringStruct('FileVersion', '9.8.2'),
+                    StringStruct('FileVersion', '9.8.3'),
                     StringStruct('InternalName', 'Git-clone-Max'),
                     StringStruct('OriginalFilename', 'Git-clone-Max.exe'),
                     StringStruct('ProductName', 'Git-clone-Max'),
-                    StringStruct('ProductVersion', '9.8.2'),
+                    StringStruct('ProductVersion', '9.8.3'),
                 ])
             ]),
             VarFileInfo([VarStruct('Translation', [1033, 1200])]),

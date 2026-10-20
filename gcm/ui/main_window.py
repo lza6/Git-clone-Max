@@ -688,9 +688,30 @@ class MainWindow(QMainWindow):
             compact = layout_mode(self.width(), self.height()) in ("compact", "unsupported")
             for btn in getattr(self, "_quick_fill_buttons", []):
                 btn.setVisible(not compact)
+            # G74：Compact 下整行隐藏，避免只剩「快捷填充：」空标签
+            for _name in ("quick_scroll", "quick_label"):
+                _w = getattr(self, _name, None)
+                if _w is not None:
+                    _w.setVisible(not compact)
+            # G74：Compact 把高度还给进度表（1366×768 下原来只能看到 3 行）
+            try:
+                if (hasattr(self, "download_splitter")
+                        and getattr(self, "_last_compact", None) != compact):
+                    self._last_compact = compact
+                    self.download_splitter.setSizes(
+                        [380, 380] if compact else [420, 380])
+                    # 尺寸变化后把顶部滚回起点，避免只露出「下载位置」下半截
+                    try:
+                        self.download_top_scroll.verticalScrollBar().setValue(0)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             nav = getattr(self, "settings_nav", None)
             if nav is not None:
-                nav.setVisible(not compact)
+                # G74：1024 宽仍放得下 150px 导航；只有更窄时才隐藏，
+                # 否则用户在小屏上失去分组定位入口。
+                nav.setVisible(self.width() >= 1000)
         except Exception:
             pass
 
@@ -727,7 +748,7 @@ class MainWindow(QMainWindow):
 
         # 顶栏
         head = QHBoxLayout()
-        t = QLabel("⬇  Git-clone-Max")
+        t = QLabel("Git-clone-Max")
         t.setObjectName("pageTitle")
         head.addWidget(t)
         head.addStretch()
@@ -774,8 +795,9 @@ class MainWindow(QMainWindow):
 
         # G71-7：顶部区域控件搭建已抽到 download_layout.build_download_top
         # （长函数治理；所有控件仍挂在本窗口，外部引用不变）
-        from .download_layout import build_download_top
+        from .download_layout import build_download_actions, build_download_top
         top = build_download_top(self)
+        actions = build_download_actions(self)
 
         # G45-6：进度表/空态/过滤框/暂停 收敛到 progress_table.py（ProgressTable）
         from .progress_table import ProgressTable
@@ -788,14 +810,21 @@ class MainWindow(QMainWindow):
         self.download_top_scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.download_top_scroll.setWidget(top)
-        self.download_top_scroll.setMinimumHeight(160)
+        self.download_top_scroll.setMinimumHeight(180)
+        # G74：主操作区固定在滚动区之外 —— 任何分辨率都能看到「开始/取消」
+        top_container = QWidget()
+        tc = QVBoxLayout(top_container)
+        tc.setContentsMargins(0, 0, 0, 0)
+        tc.setSpacing(6)
+        tc.addWidget(self.download_top_scroll, 1)
+        tc.addWidget(actions)
         self.download_splitter = QSplitter(Qt.Orientation.Vertical)
         self.download_splitter.setChildrenCollapsible(False)
-        self.download_splitter.addWidget(self.download_top_scroll)
+        self.download_splitter.addWidget(top_container)
         self.download_splitter.addWidget(self.progress_panel)
         self.download_splitter.setStretchFactor(0, 0)
         self.download_splitter.setStretchFactor(1, 1)
-        self.download_splitter.setSizes([320, 480])
+        self.download_splitter.setSizes([420, 380])
         v.addWidget(self.download_splitter, 1)
         # 镜像控件（兼容外部引用/测试）
         self.table = self.progress_panel.table
@@ -849,16 +878,38 @@ class MainWindow(QMainWindow):
         # 设置区：所有设置分组放入可滚动区域（日志区固定在下、不被滚动带跑）
         from .settings_panel import build_log_box, build_settings_ui
         self.settings_scroll = build_settings_ui(self)
+        # G74：设置内容禁止横向滚动（WidgetResizable 已让它跟随视口），
+        # 同时把易撑宽的 SpinBox 限宽，避免右侧控件被裁。
+        from PyQt6.QtWidgets import QComboBox, QSpinBox
+        self.settings_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        for _g in (list(getattr(self, "settings_groups", []))
+                   + list(getattr(self, "settings_groups_extra", []))):
+            for _sp in _g.findChildren(QSpinBox):
+                _sp.setMaximumWidth(200)
+            for _cb in _g.findChildren(QComboBox):
+                if _cb.minimumWidth() < 320:
+                    _cb.setMaximumWidth(420)
         # G70：≥1100 宽时提供左侧分组导航（设置项已很长，纯滚动难定位）
         from PyQt6.QtWidgets import QListWidget
         self.settings_nav = QListWidget()
         self.settings_nav.setObjectName("settingsNav")
         self.settings_nav.setMaximumWidth(220)
-        self.settings_nav.setMinimumWidth(160)
+        self.settings_nav.setMinimumWidth(150)
+        # G74：导航用短标题 + tooltip 全称；原来长标题被裁成
+        # "并行与网络（并发 / 超时 / 重试 /..."，且底部出现横向滚动条。
+        self.settings_nav.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.settings_nav.setTextElideMode(Qt.TextElideMode.ElideRight)
         for _grp in (list(getattr(self, "settings_groups", []))
                      + list(getattr(self, "settings_groups_extra", []))):
             try:
-                self.settings_nav.addItem(_grp.title())
+                _full = _grp.title()
+                _short = _full.split("（")[0].strip() or _full
+                self.settings_nav.addItem(_short)
+                _item = self.settings_nav.item(self.settings_nav.count() - 1)
+                if _item is not None:
+                    _item.setToolTip(_full)
             except Exception:
                 self.settings_nav.addItem("")
         self.settings_nav.currentRowChanged.connect(self._scroll_to_settings_group)
@@ -1562,6 +1613,9 @@ class MainWindow(QMainWindow):
         if not lines:
             self.repo_valid_lbl.setText("")
             self.repo_valid_lbl.setStyleSheet("")
+            # G74：无内容时隐藏，否则空标签占一行高度，1366×768 下会让
+            # 顶部滚动区凭空多出一条「其实没内容可滚」的滚动条。
+            self.repo_valid_lbl.setVisible(False)
             return
         bad: list[tuple[str, str]] = []
         for ln in lines:
@@ -1570,6 +1624,7 @@ class MainWindow(QMainWindow):
                 bad.append((ln, err))
         ok = len(lines) - len(bad)
         if not bad:
+            self.repo_valid_lbl.setVisible(True)
             self.repo_valid_lbl.setText(
                 tr("有效 {n} / 无效 0").replace("{n}", str(ok)))
             self.repo_valid_lbl.setStyleSheet(
@@ -1577,6 +1632,7 @@ class MainWindow(QMainWindow):
             return
         shown = "；".join(ln[:40] for ln, _e in bad[:3])
         more = tr("（等 {n} 条）").replace("{n}", str(len(bad))) if len(bad) > 3 else ""
+        self.repo_valid_lbl.setVisible(True)
         self.repo_valid_lbl.setText(
             tr("有效 {ok} / 无效 {bad}：{items}{more}")
             .replace("{ok}", str(ok)).replace("{bad}", str(len(bad)))

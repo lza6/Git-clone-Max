@@ -90,6 +90,10 @@ class ChecklistDialog(QDialog):
 
         btns = QDialogButtonBox()
         btns.addButton(QDialogButtonBox.StandardButton.Close)
+        # G74：标准按钮在中文界面里显示英文 "Close"，与其它对话框统一为「关闭」。
+        _close = btns.button(QDialogButtonBox.StandardButton.Close)
+        if _close is not None:
+            _close.setText(tr("关闭"))
         btns.rejected.connect(self.reject)
         lay.addWidget(btns)
         self.setLayoutDirection(Qt.LayoutDirection.LeftToRight)

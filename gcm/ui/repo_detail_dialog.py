@@ -20,6 +20,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from ..i18n import tr
+
 # 同步动作 → 中文标签
 _ACTION_LABELS = {
     "cloned": "克隆",
@@ -128,10 +130,19 @@ class RepoDetailDialog(QDialog):
         for i, (label, value) in enumerate(rows):
             key = QLabel(label)
             key.setObjectName("muted")
-            val = QLabel(value)
+            is_path = label == "仓库路径"
+            shown = value
+            if is_path and len(value) > 64:
+                # G74：整条路径塞进 QLabel 会被硬裁；换行又会在盘符后断成
+                # 「C:」+ 一长行。中间省略 + tooltip 显示全文更可读。
+                shown = value[:30] + "…" + value[-30:]
+            val = QLabel(shown)
+            val.setWordWrap(not is_path)
+            val.setToolTip(value)
             val.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             grid.addWidget(key, i, 0, alignment=Qt.AlignmentFlag.AlignTop)
             grid.addWidget(val, i, 1, alignment=Qt.AlignmentFlag.AlignTop)
+        grid.setColumnStretch(1, 1)
         # G37-6 备注：可编辑行 + 保存按钮（持久化到 repos.note）
         note_row = len(rows)
         key = QLabel("备注")
@@ -231,7 +242,7 @@ class RepoDetailDialog(QDialog):
         self.lbl_remote.setObjectName("muted")
         btns.addWidget(self.lbl_remote)
 
-        self.btn_close = QPushButton("关闭")
+        self.btn_close = QPushButton(tr("关闭"))
         self.btn_close.clicked.connect(self.accept)
         btns.addWidget(self.btn_close)
         return btns

@@ -54,10 +54,10 @@ class TestRadarData(unittest.TestCase):
 class TestRadarPaint(unittest.TestCase):
     def test_empty_state_paints_without_crash(self):
         w = RadarChart()
-        w.resize(320, 240)
+        w.resize(360, 300)
         pm = w.grab()
         self.assertFalse(pm.isNull())
-        self.assertEqual((pm.width(), pm.height()), (320, 240))
+        self.assertEqual((pm.width(), pm.height()), (360, 300))
 
     def test_paint_with_values(self):
         w = RadarChart()

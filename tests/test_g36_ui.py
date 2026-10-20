@@ -78,15 +78,17 @@ class TestG36Ui(unittest.TestCase):
 
     # ------------------------------------------------------------ G36-2 状态符号
     def test_g362_status_symbols_in_text_and_role(self):
-        """状态文本含符号；UserRole 存原始值（供统计/排序/右键）。"""
+        """G74：状态文本可读（不再依赖缺字形的符号）；UserRole 存原始值。"""
         idx = self._seed_row(status=SyncStatus.SUCCESS)
         st = self.w.table.item(idx, 2)
-        self.assertIn("✓", st.text())
+        self.assertIn("成功", st.text())
+        self.assertNotIn("✓", st.text())
         self.assertEqual(st.data(0x0100), "success")
-        # 失败含 ✕
+        # 失败文本可读
         idx2 = self._seed_row(index=1, status=SyncStatus.FAILED)
         st2 = self.w.table.item(idx2, 2)
-        self.assertIn("✕", st2.text())
+        self.assertIn("失败", st2.text())
+        self.assertNotIn("✕", st2.text())
         self.assertEqual(st2.data(0x0100), "failed")
 
     def test_g362_finished_stats_with_symbols(self):

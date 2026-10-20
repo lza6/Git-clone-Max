@@ -125,7 +125,16 @@ class RetryQueuePanel(QWidget):
             0, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(
             4, QHeaderView.ResizeMode.Stretch)
+        # G74：时间/类别/状态列给出可读宽度；原因列换行，避免全被省略号吃光。
+        self.table.setColumnWidth(1, 48)
+        self.table.setColumnWidth(2, 130)
+        self.table.setColumnWidth(3, 80)
+        self.table.setColumnWidth(5, 70)
+        self.table.setWordWrap(True)
+        self.table.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.ResizeToContents)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setAccessibleName(tr("失败重试队列表"))
@@ -223,7 +232,14 @@ class RetryQueuePanel(QWidget):
                 if not isinstance(rec, dict):
                     continue
                 cat = str(rec.get("category") or "other")
+                # G74：DLQ 记录可能只留了 message；补一次分类，让「怎么办」
+                # 在已放弃视图里同样可读（原来只有一行标题，用户不知道下一步）。
+                info = classify_error(str(rec.get("message") or ""),
+                                      str(rec.get("detail") or ""))
                 rows.append({**rec, "category": cat,
+                             "title": rec.get("title") or info.title,
+                             "cause": rec.get("cause") or info.cause,
+                             "action": rec.get("action") or info.action,
                              "category_text": tr(category_label(cat)),
                              "next_retry_at": 0})
         else:
@@ -241,12 +257,18 @@ class RetryQueuePanel(QWidget):
             when = rec.get("time") if dropped else _fmt_ts(rec.get("next_retry_at", 0))
             self.table.setItem(i, 2, QTableWidgetItem(str(when or "—")))
             self.table.setItem(i, 3, QTableWidgetItem(str(rec.get("category_text") or "")))
-            why = "\n".join(x for x in (
+            # G74：单元格只放「发生了什么 + 怎么办」两段；「为什么」较长，
+            # 全塞进来会把单行撑到 100+px，480 高的对话框只能看到两条。
+            # 完整三段仍保留在 tooltip 与失败汇总面板中。
+            why_lines = [x for x in (tr(str(rec.get("title") or "")),
+                                     tr(str(rec.get("action") or ""))) if x]
+            why = "\n".join(why_lines)
+            full_why = "\n".join(x for x in (
                 tr(str(rec.get("title") or "")),
                 tr(str(rec.get("cause") or "")),
                 tr(str(rec.get("action") or ""))) if x)
-            why_item = QTableWidgetItem(why or str(rec.get("message") or ""))
-            why_item.setToolTip(why or str(rec.get("message") or ""))
+            why_item = QTableWidgetItem(why or full_why or str(rec.get("message") or ""))
+            why_item.setToolTip(full_why or str(rec.get("message") or ""))
             self.table.setItem(i, 4, why_item)
             state = "dropped" if dropped else str(
                 rec.get("state") or rec.get("status") or "queued")
@@ -258,6 +280,15 @@ class RetryQueuePanel(QWidget):
         self.btn_retry_all.setEnabled(enabled and not dropped)
         self.btn_requeue.setEnabled(dropped)
         self.btn_remove.setEnabled(not dropped)
+        # G74：主按钮焦点跟随当前视图，禁用态不再保留蓝色 primary 外观
+        self.btn_retry.setObjectName("primary" if (enabled and not dropped) else "")
+        self.btn_requeue.setObjectName("primary" if dropped else "")
+        for _b in (self.btn_retry, self.btn_requeue):
+            try:
+                _b.style().unpolish(_b)
+                _b.style().polish(_b)
+            except Exception:
+                pass
         if dropped:
             self.summary_lbl.setText(
                 tr("已放弃：{n} 条（可重新入队；attempts 将重置）").format(n=len(rows)))
@@ -266,6 +297,7 @@ class RetryQueuePanel(QWidget):
         else:
             self.summary_lbl.setText(
                 tr("重试队列：{n} 条（自动重试未启用，仍可查看/移除）").format(n=len(rows)))
+        self.table.resizeRowsToContents()
         return len(rows)
 
     # ------------------------------------------------------------ 操作
@@ -398,9 +430,11 @@ class RetryQueueDialog(QDialog):
 
     def __init__(self, owner=None, parent: Optional[QWidget] = None):
         super().__init__(parent)
+        from .theme import apply_parent_theme
+        apply_parent_theme(self)
         self.setWindowTitle(tr("失败重试队列"))
         from .layout import fit_dialog_to_screen
-        fit_dialog_to_screen(self, 760, 420, 520, 320)
+        fit_dialog_to_screen(self, 900, 480, 620, 340)
         self.panel = RetryQueuePanel(owner, parent=self)
         self.panel.retried.connect(self.retried)
         self.panel.changed.connect(self.changed)

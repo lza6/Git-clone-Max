@@ -38,6 +38,25 @@ _STD_ICONS: dict[str, QStyle.StandardPixmap] = {
 }
 
 
+def apply_parent_theme(widget) -> None:
+    """把父窗口当前 QSS 显式套到独立对话框（G74）。
+
+    Qt 对带 parent 的顶层 QDialog 的样式继承在部分平台/样式下不可靠
+    （实测诊断对话框仍是白底）。这里沿 parent 链找到带 `_themed_qss()`
+    的主窗口，显式 setStyleSheet，保证对话框与主窗主题/字号一致。
+    """
+    try:
+        parent = widget.parent()
+        while parent is not None:
+            fn = getattr(parent, "_themed_qss", None)
+            if callable(fn):
+                widget.setStyleSheet(fn())
+                return
+            parent = parent.parent()
+    except Exception:
+        pass
+
+
 def std_icon(name: str, widget=None) -> Optional[QIcon]:
     """返回语义图标的 QIcon；无映射返回 None（调用方保留文本回退）。
 
@@ -143,7 +162,8 @@ TOKENS: dict[str, dict[str, object]] = {
 }
 
 # G46-5 字体栈（中文优先）+ UI 层字号下限（qss_for_scale 底层仍保持 [0.8,1.6] 兼容旧测试）
-FONT_STACK = '"Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", sans-serif'
+FONT_STACK = ('"Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", '
+              '"Segoe UI Symbol", "Segoe UI Emoji", sans-serif')
 FONT_SCALE_MIN_UI = 0.9
 
 # G46-7 强调色预设（3 档，覆盖 accent/accent2）
@@ -299,6 +319,10 @@ QLineEdit:focus, QSpinBox:focus, QComboBox:focus, QPlainTextEdit:focus, QTextEdi
 QLineEdit:disabled, QSpinBox:disabled, QComboBox:disabled, QPlainTextEdit:disabled {{
   color: {dim}; background: {panel};
 }}
+/* G74：原生上下箭头在深色主题下是「深色画深色」——只剩一个空按钮和一条
+   错位的边线。隐藏箭头按钮，保留输入/滚轮/上下键改值。 */
+QSpinBox::up-button, QSpinBox::down-button {{ width: 0; height: 0; border: none; }}
+QSpinBox::up-arrow, QSpinBox::down-arrow {{ width: 0; height: 0; image: none; }}
 QPushButton {{
   background: {panel2}; border: {b_def}px solid {border};
   border-radius: {r_ctl}px; padding: {sp_sm}px {sp_lg}px; color: {text};
@@ -344,6 +368,9 @@ QStatusBar {{ color: {dim}; }}
 QCheckBox::indicator {{ width: 18px; height: 18px; border: {b_def}px solid {border_strong};
   border-radius: {r_cb}px; background: {panel2}; }}
 QCheckBox::indicator:checked {{ background: {accent}; border-color: {accent}; }}
+/* G74：全局 QWidget 背景会让每个 QLabel/QCheckBox 在 GroupBox 的 panel 底色上
+   画出一块块深色补丁（设置页最明显）。这些控件永远不应自绘背景。 */
+QLabel, QCheckBox, QRadioButton {{ background: transparent; }}
 QScrollBar:vertical {{ background: {bg}; width: 14px; }}
 QScrollBar::handle:vertical {{ background: {border}; border-radius: {r_bar}px; min-height: 28px; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
@@ -353,6 +380,12 @@ QTabBar::tab {{ padding: {sp_sm}px {sp_lg}px; background: {panel}; color: {dim};
 QTabBar::tab:selected {{ background: {panel2}; color: {text}; border-top: {b_fmt}px solid {accent}; }}
 QTabBar::tab:hover {{ color: {text}; }}
 QTabBar::tab:focus {{ border-top: {b_fmt}px solid {accent}; }}
+/* G74：原生分割条抓手在浅色主题下会显示成一串游离的「……」，
+   改为 1px 分隔线 + hover 高亮，视觉上像一条有意设计的分隔。 */
+QSplitter::handle {{ background: {border}; }}
+QSplitter::handle:horizontal {{ width: {b_def}px; }}
+QSplitter::handle:vertical {{ height: {b_def}px; }}
+QSplitter::handle:hover {{ background: {accent}; }}
 QListWidget {{ background: {panel}; border: {b_def}px solid {border};
   border-radius: {r_ctl}px; padding: {sp_xs}px; }}
 QListWidget::item {{ padding: {sp_xs + 2}px {sp_sm}px; border-radius: {r_cb}px; }}

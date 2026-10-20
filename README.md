@@ -1,7 +1,7 @@
 # Git-clone-Max
 
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
-> **当前版本：v9.8.2**（G73：重试队列新增「已放弃」DLQ 视图与重新入队）
+> **当前版本：v9.8.3**（G74 UI 布局与可读性修复：主操作常驻、工具栏/设置页自适应、对话框主题与滚动）
 > **v5.0：多平台直克隆** — GitLab / Gitee / Codeberg / Bitbucket / 自建主机（HTTPS/SSH/短格式/子组）同样支持。
 > 克隆目录一律 `host__作者__仓库`（GitHub 为 `作者__仓库`），本地改动永不覆盖。
 
@@ -88,7 +88,7 @@ uv run python -m gcm --portable
 | 多主题 | Deep / Light / Nord / 高对比（HC）四套主题 + 蓝/紫/青强调色 + 跟随系统深浅色（auto），重启恢复 |
 | 首启向导 | 三步设置下载目录/并发/代理，零门槛上手 |
 | 快捷键/动效 | Ctrl+Alt+S/U/M 全局热键；Ctrl+1/2/3 切页签；完成行动效淡出（可关，限 8 并发）；窗口尺寸与页签记忆 |
-| 响应式窗口 | 1024/1280/1440 三档逻辑断点；输入区与进度表可拖动分配高度；对话框按屏幕 90%×85% 自适应；100%–200% DPI |
+| 响应式窗口 | 1024/1280/1440 三档逻辑断点；主操作区常驻；快捷填充横向滚动；管理/设置窄屏分行；对话框按屏幕 90%×85% 自适应；100%–200% DPI |
 | 进度表性能 | 进度列 delegate 自绘（500 行不创建 500 个 QProgressBar）；250ms 合批；批量插行关排序 |
 | 可靠性 | token 加密落盘（有 DPAPI/keyring 时真加密；否则可逆混淆并在日志显式告警）、单实例锁、全局异常兜底 `error.log`、settings 备份恢复、数据库自动迁移备份 |
 | 数据库 | SQLite `repos.db`（WAL）记录元数据 + `sync_history` 全量同步快照健康治理 |
@@ -259,9 +259,9 @@ python -m coverage run --source=gcm -m unittest discover -s tests
 ## 发布
 
 ```bash
-git tag v9.8.2
+git tag v9.8.3
 git push origin main --tags
-python scripts/publish_release.py --tag v9.8.2   # 自动上传 exe 到 GitHub Release
+python scripts/publish_release.py --tag v9.8.3   # 自动上传 exe 到 GitHub Release
 ```
 
 ## License

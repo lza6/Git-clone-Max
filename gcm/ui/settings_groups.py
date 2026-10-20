@@ -77,7 +77,7 @@ def _build_settings_shell(owner: MainWindow):
 
     # ---- G36-7 设置搜索：顶部搜索框，输入关键字隐藏不匹配分组
     search_row = QHBoxLayout()
-    search_row.addWidget(QLabel(tr("🔍 设置搜索")))
+    search_row.addWidget(QLabel(tr("设置搜索")))
     owner.settings_search = QLineEdit()
     owner.settings_search.setPlaceholderText(tr("搜索设置项（分组标题 / 行内标签）…"))
     owner.settings_search.setClearButtonEnabled(True)
@@ -98,39 +98,42 @@ def _build_group_startup(owner: MainWindow, settings: Settings):
     """启动与后台运行（开机自启 / 托盘 / 自动清空 / 剪贴板 / 音效 / 动效）。"""
     g1 = QGroupBox(tr("启动与后台运行（开机自启 / 托盘）"))
     g1.setToolTip(tr("开机自启、下载完成后自动清空输入框 等启动行为"))
-    l1 = QHBoxLayout(g1)
+    # G74：6 个长复选框原来挤在一个 QHBoxLayout，1024/1366 下会撑出横向滚动、
+    # 右侧复选框被裁。改为 2 列网格（3 行），任何宽度都能完整显示。
+    l1 = QGridLayout(g1)
+    l1.setContentsMargins(10, 10, 10, 10)
+    l1.setHorizontalSpacing(18)
+    l1.setVerticalSpacing(8)
     owner.ck_autostart = QCheckBox(tr("开机自启（写入任务计划：登录时启动一次）"))
     # G70：启动时不再同步执行 `schtasks`（实测 ~0.26s）；首次进入设置页再回填真实状态
     owner._autostart_state_loaded = False
     owner.ck_autostart.stateChanged.connect(owner.settings_panel._toggle_autostart_task)
-    l1.addWidget(owner.ck_autostart)
     owner.ck_start_min = QCheckBox(tr("启动时最小化到托盘"))
     owner.ck_start_min.setChecked(bool(getattr(settings, "start_minimized", False)))
     owner.ck_start_min.setToolTip(tr("启动后隐藏主窗口（仅托盘常驻；需托盘可用）"))
     owner.ck_start_min.stateChanged.connect(owner.settings_panel._save_start_minimized)
-    l1.addWidget(owner.ck_start_min)
     owner.ck_auto_clear = QCheckBox(tr("下载完成后自动清空输入框"))
     owner.ck_auto_clear.setChecked(bool(settings.auto_clear))
     owner.ck_auto_clear.stateChanged.connect(owner._save_auto_clear)
-    l1.addWidget(owner.ck_auto_clear)
     # G09-1 剪贴板监听：检测到 git 地址提示加入队列
     owner.ck_clipboard = QCheckBox(tr("监听剪贴板（检测到仓库地址自动提示）"))
     owner.ck_clipboard.setChecked(bool(getattr(settings, "clipboard_watch", False)))
     owner.ck_clipboard.stateChanged.connect(owner._save_clipboard_watch)
-    l1.addWidget(owner.ck_clipboard)
     # G35-2 完成提示音：全部任务结束响一声（挂机用户感知「跑完了」）
     owner.ck_finish_sound = QCheckBox(tr("任务完成提示音"))
     owner.ck_finish_sound.setChecked(bool(getattr(settings, "finish_sound", True)))
     owner.ck_finish_sound.setToolTip(tr("全部任务完成时响一声提示音（QApplication.beep）"))
     owner.ck_finish_sound.stateChanged.connect(owner._save_finish_sound)
-    l1.addWidget(owner.ck_finish_sound)
     # G36-6 完成动效：成功绿/失败红背景淡出（低配/离屏自动关）
     owner.ck_animations = QCheckBox(tr("任务完成动效"))
     owner.ck_animations.setChecked(bool(getattr(settings, "animations", True)))
     owner.ck_animations.setToolTip(tr("任务结束时行背景色 1.2s 淡出（成功绿/失败红）"))
     owner.ck_animations.stateChanged.connect(owner._save_animations)
-    l1.addWidget(owner.ck_animations)
-    l1.addStretch()
+    _checks = (owner.ck_autostart, owner.ck_start_min, owner.ck_auto_clear,
+               owner.ck_clipboard, owner.ck_finish_sound, owner.ck_animations)
+    for _i, _ck in enumerate(_checks):
+        l1.addWidget(_ck, _i // 2, _i % 2)
+    l1.setColumnStretch(2, 1)
     return g1
 
 def _build_group_network(owner: MainWindow, settings: Settings):
@@ -217,7 +220,7 @@ def _network_rows_basic(owner: MainWindow, settings: Settings, f3: QFormLayout) 
     owner.spin_auto_update.setRange(0, 10080)  # 0 或 1 分钟 ~ 7 天
     owner.spin_auto_update.setValue(int(getattr(settings, "auto_update_minutes", 0) or 0))
     owner.spin_auto_update.setSuffix(" 分钟")
-    owner.spin_auto_update.setSpecialValueText(tr("关闭"))
+    owner.spin_auto_update.setSpecialValueText(tr("不启用"))
     owner.spin_auto_update.setToolTip(tr("定时自动一键更新全部（任务运行中自动跳过）；0=关闭"))
     owner.spin_auto_update.valueChanged.connect(owner._save_auto_update)
     f3.addRow(tr("自动更新："), owner.spin_auto_update)
@@ -438,22 +441,22 @@ def _build_group_about(owner: MainWindow):
     owner.btn_selftest.clicked.connect(owner._run_selftest)
     h4.addWidget(owner.btn_selftest)
     # G07-1 统计中心入口
-    owner.btn_diag = QPushButton(tr("🩺 网络诊断"))
+    owner.btn_diag = QPushButton(tr("网络诊断"))
     owner.btn_diag.setToolTip(tr("G48-8：串行探测 git / TCP / GitHub API / 代理，输出分级报告"))
     owner.btn_diag.clicked.connect(owner.settings_panel._run_diag)
     h4.addWidget(owner.btn_diag)
-    owner.btn_statistics = QPushButton(tr("📊 统计中心"))
+    owner.btn_statistics = QPushButton(tr("统计中心"))
     owner.btn_statistics.setToolTip(tr("查看仓库总数 / 同步次数 / 成功率 / 平台分布"))
     owner.btn_statistics.clicked.connect(owner.show_statistics)
     h4.addWidget(owner.btn_statistics)
     # G71-10：事件流查看器（黑匣子执行轨迹）
-    owner.btn_event_stream = QPushButton(tr("🧾 事件流"))
+    owner.btn_event_stream = QPushButton(tr("事件流"))
     owner.btn_event_stream.setToolTip(
         tr("查看最近事件：批次/任务/结果/错误/重试（结构化执行轨迹）"))
     owner.btn_event_stream.clicked.connect(owner.settings_panel._open_event_stream)
     h4.addWidget(owner.btn_event_stream)
     # G07-3 报表导出入口
-    owner.btn_export = QPushButton(tr("📄 导出报表"))
+    owner.btn_export = QPushButton(tr("导出报表"))
     owner.btn_export.setToolTip(tr("导出 CSV（Excel 友好）或 Markdown 报表"))
     owner.btn_export.clicked.connect(owner.export_report)
     h4.addWidget(owner.btn_export)
@@ -461,7 +464,7 @@ def _build_group_about(owner: MainWindow):
     f4.addRow(tr("环境自检："), h4)
     # G46-11 使用说明 + 打开数据目录
     h_help = QHBoxLayout()
-    owner.btn_help = QPushButton(tr("📖 使用说明"))
+    owner.btn_help = QPushButton(tr("使用说明"))
     owner.btn_help.setToolTip(tr("语法速查：@tag / host=token / 镜像 / 快捷键 / 拖拽 / 清单 / Star 导入"))
     owner.btn_help.clicked.connect(owner.settings_panel._open_help)
     h_help.addWidget(owner.btn_help)
@@ -619,7 +622,7 @@ def _add_im_alert_section(owner, l7, row: int) -> int:
     """
     l7.addWidget(QLabel(tr("企业 IM 告警渠道：")), row, 0)
     owner.combo_im_channel = QComboBox()
-    for _label, _val in ((tr("关闭"), ""), ("钉钉", "dingtalk"),
+    for _label, _val in ((tr("不启用"), ""), ("钉钉", "dingtalk"),
                          ("飞书", "feishu"), ("企业微信", "wecom")):
         owner.combo_im_channel.addItem(_label, _val)
     _cur_ch = str(getattr(owner.settings, "alert_im_channel", "") or "")
@@ -717,5 +720,9 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
     groups2_layout.addWidget(g7)
     sv.addLayout(groups2_layout)
     sv.addStretch()
+    # G74：原生上下箭头在深色主题下不可见，只剩一块空按钮 + 错位边框。
+    # 统一去掉箭头（仍可输入/滚轮/上下键改值），避免每个数字框右侧「多个小块」。
+    for _sb in settings_scroll.findChildren(QSpinBox):
+        _sb.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
     return settings_scroll
 

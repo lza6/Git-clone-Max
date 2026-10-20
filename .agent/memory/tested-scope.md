@@ -174,3 +174,10 @@ QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe scripts/bench_g70_ui.py
 - G72 快集全量 → **Ran 1332 · failures=0 · errors=0 · skipped=3 · 覆盖 81%**（2026-10-19）
 
 - G73 快集全量 → **Ran 1335 · failures=0 · errors=0 · skipped=3 · 覆盖 82%**（2026-10-20）
+
+## G74 UI（2026-10-20 · v9.8.3）
+- `tests/test_g74_ui_layout.py`（14）：主操作常驻/compact 快捷填充/管理日期列/设置导航/SpinBox 无箭头/
+  标签透明/进度详情列/诊断 QSS/统计滚动/空校验隐藏/DLQ 建议/清单关闭/详情长路径。
+- `scripts/ui_screenshot_audit.py`：38 张截图（`reports/ui-audit-final/`），改布局后**人工看关键图**。
+- 本区域改动必跑：`test_g74_ui_layout` + `test_g70_ui_upgrade` + `test_g69_regressions`
+  + `test_g36_ui` + `test_g49_i18n`。

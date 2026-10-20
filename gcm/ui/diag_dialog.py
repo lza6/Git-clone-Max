@@ -36,6 +36,8 @@ class DiagReportDialog(QDialog):
     def __init__(self, title: str, body: str, copy_text: str = "", parent=None,
                  data_dir: str | Path | None = None, event_bus=None):
         super().__init__(parent)
+        from .theme import apply_parent_theme
+        apply_parent_theme(self)
         self.setWindowTitle(title)
         from .layout import fit_dialog_to_screen
         fit_dialog_to_screen(self, 680, 460, 480, 340)
@@ -59,7 +61,9 @@ class DiagReportDialog(QDialog):
             tr("导出 zip：报告 + 最近事件 + 日志尾部（全部已打码）"))
         self._btn_export.clicked.connect(self._on_export)
         btns.addButton(self._btn_export, QDialogButtonBox.ButtonRole.ActionRole)
-        btns.addButton(QDialogButtonBox.StandardButton.Close)
+        # G74：标准 Close 按钮在中文 Windows 上仍显示 "Close"；统一走 tr()。
+        self._btn_close = QPushButton(tr("关闭"))
+        btns.addButton(self._btn_close, QDialogButtonBox.ButtonRole.RejectRole)
         btns.rejected.connect(self.reject)
         lay.addWidget(btns)
 
@@ -67,7 +71,7 @@ class DiagReportDialog(QDialog):
         cb = QApplication.clipboard()
         if cb is not None:
             cb.setText(self._copy_text)
-            self._btn_copy.setText(tr("已复制 ✓"))
+            self._btn_copy.setText(tr("已复制"))
 
     def _on_export(self) -> None:
         """选择保存位置并生成诊断 zip；失败给出可读提示。"""
@@ -90,5 +94,5 @@ class DiagReportDialog(QDialog):
         except Exception as exc:  # noqa: BLE001 —— 导出失败必须让用户看到原因
             QMessageBox.warning(self, tr("导出失败"), str(exc))
             return
-        self._btn_export.setText(tr("已导出 ✓"))
+        self._btn_export.setText(tr("已导出"))
         QMessageBox.information(self, tr("诊断包已导出"), str(out))

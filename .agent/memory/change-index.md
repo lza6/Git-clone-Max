@@ -47,3 +47,11 @@
 | `gcm/git/service.py` | **`_update` 337→105：拆出 `_update_bare_mirror`/`_fetch_remote`/`_merge_remote`** | v9.8.0 | 镜像回退语义逐行保留；改这块先跑 `test_g58_mirror_failover` |
 | `gcm/ui/event_panel.py` | 新增事件流查看器（类型过滤/自动刷新/复制 JSON） | v9.8.0 | 默认隐藏 task_progress；读取 EventBus 快照 |
 | `gcm/db/settings.py` / `ui/settings_groups.py` / `ui/settings_panel.py` / `ui/main_window.py` | **`local_api_enabled` / `local_api_port` + GUI 进程内托管本地 API** | v9.8.0 | 默认关、仅回环；改端口先起新服再停旧服；关窗/关闭开关 `wait=True` 释放端口 |
+| `gcm/ui/download_layout.py` | **G74：主操作区移出顶部滚动区；快捷填充横向滚动；占位 3 行；空校验标签隐藏** | v9.8.3 | `btn_start/btn_cancel/btn_diag_bundle` 不能放回 `download_top_scroll`；守卫 `test_g74_ui_layout` |
+| `gcm/ui/theme.py` | **G74：QLabel/QCheckBox/QRadioButton 透明；QSplitter handle 细分隔线；SpinBox 箭头零宽兜底** | v9.8.3 | 全局透明规则；需要标签底色时必须显式覆盖；QSS 校验白名单已加 QRadioButton |
+| `gcm/ui/manage_panel.py` | **G74：工具栏三行；时间/HEAD/历史/健康/大小列 Fixed（时间 150px）** | v9.8.3 | 时间列 <150 会把日期中间省略成乱码；`test_g74_ui_layout` 有断言 |
+| `gcm/ui/retry_panel.py` | **G74：原因列只放 title+action，三段进 tooltip；DLQ 记录补分类** | v9.8.3 | 改单元格文案先跑 `test_g74_ui_layout.TestG74PolishRegressions` |
+| `gcm/ui/statistics_dialog.py` / `ui/radar_chart.py` | **G74：雷达/评分卡上移到概览后；内容 QScrollArea；雷达 min 320×280** | v9.8.3 | 首屏必须完整显示雷达；不要移回趋势图之后 |
+| `gcm/ui/settings_groups.py` | **G74：启动组 2 列网格；设置页 QSpinBox 统一 NoButtons** | v9.8.3 | 新设置分组若用 QSpinBox，`build_settings_ui` 末尾统一处理 |
+| `gcm/ui/onboarding.py` / `ui/checklist.py` / `ui/repo_detail_dialog.py` | **G74：向导提示/去 emoji；清单关闭中文化；详情长路径省略+tooltip** | v9.8.3 | 新文案必须同时进 zh/en |
+| `scripts/ui_screenshot_audit.py` | **G74：离屏截图审计（38 张：4 主题×5 分辨率+页签+8 对话框）** | v9.8.3 | 先建 QApplication 再注册字体；用 `QTest.qWait` 真实等待；诊断内容用 `__version__` |

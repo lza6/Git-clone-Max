@@ -150,6 +150,12 @@ class FailurePanel(QWidget):
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        # G74：三段式原因/建议需要换行，否则在 560px 对话框里被省略成
+        # “网络连接失败或超时...”，用户看不到“怎么办”。
+        self.table.setWordWrap(True)
+        self.table.setTextElideMode(Qt.TextElideMode.ElideNone)
+        self.table.verticalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.ResizeToContents)
         v.addWidget(self.table, 1)
 
     def refresh(self, failed_rows: Optional[list[dict[str, Any]]] = None) -> int:
@@ -180,6 +186,7 @@ class FailurePanel(QWidget):
                 lambda _=False, c=g["category"]: self.retry_category.emit(c))
             self.table.setCellWidget(i, 3, btn)
         self.table.setSortingEnabled(was_sorting)
+        self.table.resizeRowsToContents()
         self.empty_lbl.setVisible(len(rows) == 0)
         self.table.setVisible(len(rows) > 0)
         return len(rows)
@@ -200,9 +207,11 @@ class FailureDialog(QDialog):
 
     def __init__(self, owner, parent: Optional[QWidget] = None):
         super().__init__(parent)
+        from .theme import apply_parent_theme
+        apply_parent_theme(self)
         self.setWindowTitle(tr("失败原因汇总"))
         from .layout import fit_dialog_to_screen
-        fit_dialog_to_screen(self, 560, 360, 420, 300)
+        fit_dialog_to_screen(self, 780, 600, 540, 380)
         self.panel = FailurePanel(owner, self)
         self.panel.retry_category.connect(self.retry_category)
         lay = QVBoxLayout(self)

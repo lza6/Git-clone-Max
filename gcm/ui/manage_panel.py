@@ -58,19 +58,19 @@ class ManagePanel(QWidget):
     def _build_ui(self):
         v = QVBoxLayout(self)
         v.setSpacing(8)
-        top = QHBoxLayout()
+        # G74：统计信息独占一行（原先与 9 个按钮挤在同一 QHBoxLayout，
+        # 1024 宽时被压成 "共 12 个仓库 | github.com: 7 · bitbucke..."）。
         self.manage_stats = QLabel("共 0 个仓库")
         self.manage_stats.setObjectName("muted")
-        top.addWidget(self.manage_stats)
-        # G03-1 管理页搜索过滤：此前 `ManageModel.filter_rows` 定义了却**没有任何控件**，
-        # 而且它写下的 `_vis` 也从没被视图消费 —— README 宣称的「搜索过滤」实际不存在。
+        self.manage_stats.setWordWrap(True)
+        v.addWidget(self.manage_stats)
+        # G03-1 管理页搜索过滤
         self._filter_text = ""
         self.manage_search = QLineEdit()
         self.manage_search.setPlaceholderText(tr("搜索仓库 / 作者 / 标签 / host"))
         self.manage_search.setClearButtonEnabled(True)
-        self.manage_search.setMaximumWidth(240)
-        top.addWidget(self.manage_search)
-        top.addStretch()
+        self.manage_search.setMinimumWidth(180)
+        self.manage_search.setMaximumWidth(360)
         self.btn_update_all = QPushButton("一键更新全部")
         self.btn_update_all.setObjectName("primary")
         self.btn_update_all.clicked.connect(lambda _=False: self.update_all_requested.emit())
@@ -82,6 +82,15 @@ class ManagePanel(QWidget):
         self.btn_refresh = QPushButton("刷新列表")
         self.btn_refresh.clicked.connect(self._refresh_manage)
         self.btn_refresh.setIcon(self.owner._std_icon("refresh", self.btn_refresh))
+        # G74：主操作与搜索同一行（宽度充足且不会被 9 个按钮挤爆）
+        top = QHBoxLayout()
+        top.setSpacing(8)
+        top.addWidget(self.manage_search, 1)
+        top.addWidget(self.btn_update_all)
+        top.addWidget(self.btn_cancel_manage)
+        top.addWidget(self.btn_refresh)
+        v.addLayout(top)
+
         self.btn_import_local = QPushButton("导入本地已有仓库")
         self.btn_import_local.clicked.connect(lambda _=False: self.import_local_requested.emit())
         self.btn_import_local.setIcon(self.owner._std_icon("folder", self.btn_import_local))
@@ -102,16 +111,14 @@ class ManagePanel(QWidget):
         self.btn_import_meta = QPushButton("导入元数据")
         self.btn_import_meta.setToolTip("从 JSON 合并导入仓库元数据(按 owner/repo/host upsert)")
         self.btn_import_meta.clicked.connect(self._import_metadata)
-        top.addWidget(self.btn_export_meta)
-        top.addWidget(self.btn_import_meta)
-        top.addWidget(self.btn_import_local)
-        top.addWidget(self.btn_update_all)
-        top.addWidget(self.btn_cancel_manage)
-        top.addWidget(self.btn_refresh)
-        top.addWidget(self.btn_delete)
-        top.addWidget(self.btn_batch_tag)
-        top.addWidget(self.btn_export_selected)
-        v.addLayout(top)
+        row2 = QHBoxLayout()
+        row2.setSpacing(8)
+        for _btn in (self.btn_export_meta, self.btn_import_meta,
+                     self.btn_import_local, self.btn_delete,
+                     self.btn_batch_tag, self.btn_export_selected):
+            row2.addWidget(_btn)
+        row2.addStretch(1)
+        v.addLayout(row2)
 
         # 模型化视图：数据与视图解耦，大批量行不卡（共享按钮 + 懒加载）
         from .manage_model import ManageModel
@@ -134,11 +141,20 @@ class ManagePanel(QWidget):
         self.manage_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft)
         self.manage_table.horizontalHeader().setStretchLastSection(True)
         self.manage_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        # G74：上次同步/HEAD/历史/健康/大小按内容定宽，避免窄屏把日期从中间省略成
+        # 「2026-10-..0:23:35」这种读不出来的样子；剩余宽度留给仓库名/作者/路径。
+        _hdr = self.manage_table.horizontalHeader()
+        for _col, _w in ((3, 150), (4, 78), (5, 70), (6, 64), (7, 84)):
+            _hdr.setSectionResizeMode(_col, QHeaderView.ResizeMode.Fixed)
+            self.manage_table.setColumnWidth(_col, _w)
         self.manage_table.verticalHeader().setVisible(False)
         self.manage_table.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
         self.manage_table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.manage_table.setSelectionMode(QTableView.SelectionMode.ExtendedSelection)
         self.manage_table.setAlternatingRowColors(False)
+        # G74：路径/HEAD 长文本单行省略 + tooltip，避免整行被撑成两行高
+        self.manage_table.setWordWrap(False)
+        self.manage_table.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         self.manage_table.setMinimumHeight(180)
         self.manage_table.setContextMenuPolicy(Qt.ContextMenuPolicy.DefaultContextMenu)
         self.manage_table.installEventFilter(self)  # G46-6 键盘 Enter 打开详情
@@ -152,7 +168,7 @@ class ManagePanel(QWidget):
         self.manage_table.setItemDelegateForColumn(5, self._hist_delegate)
         v.addWidget(self.manage_table, 3)
         # G36-5 管理页空态引导：overlay 标签（有仓库时隐藏）
-        self._empty_manage = QLabel("📁 尚未导入仓库\n点击「导入本地已有仓库」开始")
+        self._empty_manage = QLabel("尚未导入仓库\n点击「导入本地已有仓库」开始")
         self._empty_manage.setObjectName("muted")
         self._empty_manage.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_manage.setWordWrap(True)

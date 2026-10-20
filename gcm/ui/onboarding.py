@@ -42,6 +42,8 @@ class OnboardingDialog(QDialog):
 
     def __init__(self, parent=None, default_dir: str = ""):
         super().__init__(parent)
+        from .theme import apply_parent_theme
+        apply_parent_theme(self)
         self.default_dir = default_dir or ""
         self.skipped = False
         self.setWindowTitle(tr("欢迎使用 Git-clone-Max"))
@@ -54,7 +56,7 @@ class OnboardingDialog(QDialog):
         v = QVBoxLayout(self)
         v.setSpacing(12)
 
-        title = QLabel(tr("👋 欢迎使用 Git-clone-Max"))
+        title = QLabel(tr("欢迎使用 Git-clone-Max"))
         title.setObjectName("pageTitle")
         v.addWidget(title)
 
@@ -95,12 +97,24 @@ class OnboardingDialog(QDialog):
         row = QHBoxLayout()
         self.dir_edit = QLineEdit(self.default_dir)
         self.dir_edit.setPlaceholderText(tr("请选择下载目录"))
+        # G74：长路径默认把光标放末尾会只显示尾部（看不到盘符），
+        # 改为显示开头并给完整路径 tooltip。
+        self.dir_edit.setCursorPosition(0)
+        if self.default_dir:
+            self.dir_edit.setToolTip(self.default_dir)
         row.addWidget(self.dir_edit, 1)
         self.btn_browse = QPushButton(tr("浏览…"))
         self.btn_browse.clicked.connect(self._on_browse)
         row.addWidget(self.btn_browse)
         lay.addLayout(row)
         lay.addStretch(1)
+        # G74：步骤 1 内容比步骤 2/3 矮，QStackedWidget 取最高页后这里会留下大片空白。
+        # 用一条真实有用的说明填位，而不是让用户面对空面板。
+        tip = QLabel(tr("小提示：仓库按「作者__仓库」命名保存；"
+                        "再次下载同一地址会走增量更新，本地改动不会被覆盖。"))
+        tip.setObjectName("muted")
+        tip.setWordWrap(True)
+        lay.addWidget(tip)
         return page
 
     def _build_step2(self) -> QWidget:
@@ -127,7 +141,7 @@ class OnboardingDialog(QDialog):
         """步骤 3：完成摘要 + 开始使用。"""
         page = QWidget()
         lay = QVBoxLayout(page)
-        lab = QLabel(tr("完成设置 🎉"))
+        lab = QLabel(tr("完成设置"))
         lab.setObjectName("accent")
         lay.addWidget(lab)
         self.summary_label = QLabel("")

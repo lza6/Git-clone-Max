@@ -206,6 +206,8 @@ class EventStreamDialog(QDialog):
 
     def __init__(self, bus: Any = None, parent: Optional[QWidget] = None):
         super().__init__(parent)
+        from .theme import apply_parent_theme
+        apply_parent_theme(self)
         self.setWindowTitle(tr("事件流（黑匣子执行轨迹）"))
         from .layout import fit_dialog_to_screen
         fit_dialog_to_screen(self, 860, 520, 560, 360)

@@ -43,7 +43,8 @@ class RadarChart(QWidget):
             k: tr(v) for k, v in (labels or DEFAULT_LABELS).items()}
         self._values: dict[str, float] = {}
         self._has_data = False
-        self.setMinimumSize(300, 230)
+        # G74：原 230px 高时标签在顶部/底部被裁；给标签留出足够边距。
+        self.setMinimumSize(320, 280)
         self.setSizePolicy(QSizePolicy.Policy.Expanding,
                            QSizePolicy.Policy.Expanding)
         self.setToolTip(tr("6 维评分（0-100）：成功率 / 陈旧度 / 冲突健康 / 仓库大小 / 标签完整 / 最近同步"))
@@ -87,7 +88,7 @@ class RadarChart(QWidget):
         pal = self._palette()
         w, h = self.width(), self.height()
         cx, cy = w / 2.0, h / 2.0
-        radius = min(w, h) / 2.0 - 42.0
+        radius = min(w, h) / 2.0 - 56.0
         if radius < _MIN_RADIUS:
             return
         keys = list(self._labels)

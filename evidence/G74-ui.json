@@ -1,0 +1,106 @@
+{
+  "task_id": "G74-ui",
+  "status": "passed",
+  "timestamp": "2026-10-20T22:05:00+08:00",
+  "commands_executed": [
+    {
+      "cmd": "ruff check gcm tests/test_g74_ui_layout.py",
+      "exit_code": 0,
+      "raw_output_tail": "All checks passed!"
+    },
+    {
+      "cmd": "mypy gcm",
+      "exit_code": 0,
+      "raw_output_tail": "Success: no issues found in 79 source files"
+    },
+    {
+      "cmd": "unittest tests.test_g74_ui_layout -v",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 14 tests in 13.342s\n\nOK"
+    },
+    {
+      "cmd": "unittest tests.test_g74_ui_layout tests.test_g70_ui_upgrade tests.test_g69_regressions tests.test_settings_search tests.test_g68_settings_ui",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 117 tests in 81.979s\n\nOK"
+    },
+    {
+      "cmd": "unittest tests.test_g74_ui_layout tests.test_g70_ui_upgrade tests.test_g36_ui tests.test_manage_ui tests.test_progress_ui tests.test_settings_search tests.test_g68_settings_ui tests.test_onboarding tests.test_g46_tray_help tests.test_g53_radar tests.test_statistics_dialog tests.test_statistics_dialog_more tests.test_g49_i18n",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 178 tests in 73.346s\n\nOK"
+    },
+    {
+      "cmd": "coverage run --source=gcm scripts/ci_run_fast.py",
+      "exit_code": 0,
+      "raw_output_tail": "[ci_run_fast] 合计：Ran 1349 tests · failures=0 errors=0 skipped=3\n[ci_run_fast] OK"
+    },
+    {
+      "cmd": "coverage report --include=\"gcm/*\"",
+      "exit_code": 0,
+      "raw_output_tail": "TOTAL 13145 2152 3330 597 82%"
+    },
+    {
+      "cmd": "python scripts/ui_screenshot_audit.py reports/ui-audit-final",
+      "exit_code": 0,
+      "raw_output_tail": "38 张 PNG 保存成功（download 4 主题×5 分辨率 + 3 页签 + 设置滚动 + 8 对话框）"
+    },
+    {
+      "cmd": "unittest tests.test_g67_docs_freshness tests.test_g66_patch.TestContractVersionSingleSource tests.test_g66_patch.TestPackagingVersionSync",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 22 tests in 1.283s\n\nOK"
+    }
+  ],
+  "tests": [
+    {
+      "name": "G74 layout/theme/text guards",
+      "type": "ui",
+      "status": "passed",
+      "evidence": "tests/test_g74_ui_layout.py（14 项）"
+    },
+    {
+      "name": "UI/i18n regression batch",
+      "type": "integration",
+      "status": "passed",
+      "evidence": "Ran 178 · OK"
+    },
+    {
+      "name": "fast suite",
+      "type": "unit+integration",
+      "status": "passed",
+      "evidence": "Ran 1349 · 0 failures · 0 errors · skipped 3 · 覆盖 82%"
+    },
+    {
+      "name": "offscreen screenshot audit",
+      "type": "visual",
+      "status": "passed",
+      "evidence": "reports/ui-audit-final/（38 PNG，4 主题 × 5 分辨率 + 对话框）"
+    }
+  ],
+  "coverage_summary": {
+    "lines": 83.6,
+    "branches": null,
+    "functions": null,
+    "statements": 82.0,
+    "note": "coverage.py TOTAL Cover=82%（Windows 门禁 81）；13145 语句 / 2152 未覆盖"
+  },
+  "seams_touched": [
+    "S31"
+  ],
+  "mock_scenarios_covered": [],
+  "browser_validation": {
+    "performed": false,
+    "paths": [],
+    "screenshots": [
+      "reports/ui-audit-final/download_{deep,light,nord,hc}_{1920x1080,1440x900,1366x768,1280x800,1024x768}.png",
+      "reports/ui-audit-final/tab_{download,manage,settings}_1440x900.png",
+      "reports/ui-audit-final/tab_settings_{1024x768,bottom_1440x900,bottom_1024x768}.png",
+      "reports/ui-audit-final/dialog_{retry_queue,retry_queue_dlq,event_stream,failure,diag,onboarding,statistics,help,checklist,repo_detail,local_repos}.png"
+    ],
+    "reason": "离屏 Qt 渲染 + QTest.qWait 真实事件循环；未做真机鼠标点击/读屏走查"
+  },
+  "limitations": [
+    "截图非像素基线对比，人工审查",
+    "统计中心/失败汇总在极小高度需要滚动",
+    "全局透明背景规则若将来需要给 QLabel 上底色需显式覆盖",
+    "未做英文界面全量截图"
+  ]
+}

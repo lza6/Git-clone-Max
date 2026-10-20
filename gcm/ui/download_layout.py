@@ -14,12 +14,14 @@ import weakref
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
     QComboBox,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -36,18 +38,25 @@ def build_download_top(owner) -> QWidget:
     owner.repo_input.setPlaceholderText(
         tr("每行一个仓库地址，例如：\n")
         + "https://github.com/vercel-labs/skills\n"
-        + "git@github.com:microsoft/azure-skills.git\n"
-        + "vercel-labs/agent-skills\n"
-        + tr("https://gitlab.com/grp/repo@v1.2.0  （@后指定分支/标签）\n")
-        + tr("（地址中的 作者/仓库名 将自动作为文件夹名：作者__仓库）")
+        + "git@github.com:microsoft/azure-skills.git"
     )
-    owner.repo_input.setMinimumHeight(120)
+    # G74：输入框高度 80~112px 只放得下 3~4 行；更长的说明放 tooltip，
+    # 否则 1024/1366 下占位文案会在第 4 行被裁成半截字。
+    owner.repo_input.setToolTip(
+        tr("支持 GitLab / Gitee / Codeberg / Bitbucket / 自建主机；\n"
+           "可在地址后加 @分支或@标签（如 repo@v1.2.0）；\n"
+           "地址中的 作者/仓库名 将自动作为文件夹名：作者__仓库。"))
+    owner.repo_input.setMinimumHeight(80)
+    # G74：限制最大高度，保证 1366/1440 下「下载位置/克隆模式/快捷填充/清单」
+    # 都能落在首屏；更多地址可在输入框内滚动。
+    owner.repo_input.setMaximumHeight(112)
     owner.repo_input.setAccessibleName(tr("仓库地址输入框"))
     b.addWidget(owner.repo_input)
     # G54-1 实时校验条：输入/粘贴后显示「有效 N / 无效 M」
     owner.repo_valid_lbl = QLabel("")
     owner.repo_valid_lbl.setWordWrap(True)
     owner.repo_valid_lbl.setTextFormat(Qt.TextFormat.PlainText)
+    owner.repo_valid_lbl.setVisible(False)  # 有内容时才出现（G74）
     b.addWidget(owner.repo_valid_lbl)
     owner._validate_timer = QTimer(owner)
     owner._validate_timer.setSingleShot(True)
@@ -73,8 +82,23 @@ def build_download_top(owner) -> QWidget:
     owner.repo_input.dragEnterEvent = _drag_enter
     owner.repo_input.dropEvent = _drop
 
-    quick = QHBoxLayout()
-    quick.addWidget(QLabel(tr("快捷填充：")))
+    # G74：快捷填充按钮放进可横向滚动的容器 —— 6 个按钮 + 右侧功能按钮在
+    # 1366/1024 下会互相挤压，原来靠 QScrollArea 关掉横向滚动直接裁掉控件。
+    quick_row = QHBoxLayout()
+    quick_row.setSpacing(6)
+    owner.quick_label = QLabel(tr("快捷填充："))
+    quick_row.addWidget(owner.quick_label)
+    quick_scroll = QScrollArea()
+    quick_scroll.setObjectName("quickFillScroll")
+    quick_scroll.setWidgetResizable(True)
+    quick_scroll.setFrameShape(QFrame.Shape.NoFrame)
+    quick_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+    quick_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    quick_scroll.setFixedHeight(38)
+    quick_inner = QWidget()
+    quick = QHBoxLayout(quick_inner)
+    quick.setContentsMargins(0, 0, 0, 0)
+    quick.setSpacing(6)
     owner._quick_fill_buttons = []
     for repo in getattr(owner.settings, "quick_repos", None) or ():
         btn = QPushButton(repo)
@@ -83,27 +107,34 @@ def build_download_top(owner) -> QWidget:
         quick.addWidget(btn)
         owner._quick_fill_buttons.append(btn)
     quick.addStretch()
+    quick_scroll.setWidget(quick_inner)
+    quick_row.addWidget(quick_scroll, 1)
+    owner.quick_scroll = quick_scroll
+
+    # 任务清单 / Star 导入单独一行，保证 1024 宽也完整可见
+    list_row = QHBoxLayout()
+    list_row.setSpacing(6)
     # G35-4 任务清单
-    owner.btn_save_list = QPushButton(tr("💾 保存清单"))
+    owner.btn_save_list = QPushButton(tr("保存清单"))
     owner.btn_save_list.setToolTip(
         tr("把当前输入区的地址保存为命名任务清单（data/lists/*.json）"))
     owner.btn_save_list.clicked.connect(owner._save_task_list)
     owner.combo_load_list = QComboBox()
     owner.combo_load_list.setToolTip(tr("选择已保存的清单一键载入"))
-    owner.combo_load_list.setMinimumWidth(180)
+    owner.combo_load_list.setMinimumWidth(160)
     owner.btn_load_list = QPushButton(tr("载入"))
     owner.btn_load_list.setToolTip(tr("把所选清单的地址填入输入区"))
     owner.btn_load_list.clicked.connect(owner._load_task_list)
-    quick.addWidget(owner.btn_save_list)
-    quick.addWidget(owner.combo_load_list)
-    quick.addWidget(owner.btn_load_list)
+    list_row.addWidget(owner.btn_save_list)
+    list_row.addWidget(owner.combo_load_list, 1)
+    list_row.addWidget(owner.btn_load_list)
     # G35-10 GitHub Star 列表导入
-    owner.btn_star_import = QPushButton(tr("⭐ 导入 Star"))
+    owner.btn_star_import = QPushButton(tr("导入 Star"))
     owner.btn_star_import.setToolTip(
         tr("按 GitHub 用户名拉取 Star 列表并填入输入区（需要时在设置页填写令牌）"))
     owner.btn_star_import.clicked.connect(owner.import_starred)
-    quick.addWidget(owner.btn_star_import)
-    b.addLayout(quick)
+    list_row.addWidget(owner.btn_star_import)
+    list_row.addStretch(1)
 
     top = QWidget()
     tv = QVBoxLayout(top)
@@ -138,8 +169,26 @@ def build_download_top(owner) -> QWidget:
     l2.addWidget(owner.depth_spin)
     opts.addWidget(g2)
     tv.addLayout(opts)
+    # G74：快捷填充/清单是次要操作，放在下载位置/克隆模式之后；
+    # 小高度时先保证核心选项可见。
+    tv.addLayout(quick_row)
+    tv.addLayout(list_row)
+    return top
 
-    btns = QHBoxLayout()
+
+def build_download_actions(owner) -> QWidget:
+    """G74：主操作区（固定在滚动区之外，任何分辨率都可见）。
+
+    原实现把 7 个按钮放在下载页顶部 QScrollArea 内；1366/1024 下它们被
+    滚动区裁掉，用户看不到「开始/取消」，只能盲目滚动。现在拆成两行：
+    第一行开始/取消/清空，第二行打开目录/失败汇总/重试队列/诊断包。
+    """
+    wrap = QWidget()
+    v = QVBoxLayout(wrap)
+    v.setContentsMargins(0, 0, 0, 0)
+    v.setSpacing(6)
+
+    row1 = QHBoxLayout()
     owner.btn_start = QPushButton(tr("开始并行下载 / 更新"))
     owner.btn_start.setObjectName("primary")
     owner.btn_start.setMinimumHeight(38)
@@ -153,29 +202,33 @@ def build_download_top(owner) -> QWidget:
     owner.btn_cancel.setIcon(owner._std_icon("stop", owner.btn_cancel))
     owner.btn_clear = QPushButton(tr("清空列表"))
     owner.btn_clear.clicked.connect(owner.repo_input.clear)
+    row1.addWidget(owner.btn_start, 1)
+    row1.addWidget(owner.btn_cancel)
+    row1.addWidget(owner.btn_clear)
+    row1.addStretch(1)
+    v.addLayout(row1)
+
+    row2 = QHBoxLayout()
     owner.btn_open = QPushButton(tr("打开克隆目录"))
     owner.btn_open.clicked.connect(owner.open_target)
     owner.btn_open.setIcon(owner._std_icon("open_dir", owner.btn_open))
-    btns.addWidget(owner.btn_start, 2)
-    btns.addWidget(owner.btn_cancel)
-    btns.addWidget(owner.btn_clear)
-    btns.addWidget(owner.btn_open)
+    row2.addWidget(owner.btn_open)
     # G52-5：失败原因聚合面板入口
     owner.btn_failures = QPushButton(tr("失败汇总"))
     owner.btn_failures.clicked.connect(owner._open_failure_dialog)
-    btns.addWidget(owner.btn_failures)
+    row2.addWidget(owner.btn_failures)
     # G71-4：重试队列可见化
     owner.btn_retry_queue = QPushButton(tr("重试队列"))
     owner.btn_retry_queue.setToolTip(
         tr("查看自动重试队列：失败次数、下次重试时间、原因与处理建议"))
     owner.btn_retry_queue.clicked.connect(owner._open_retry_dialog)
-    btns.addWidget(owner.btn_retry_queue)
+    row2.addWidget(owner.btn_retry_queue)
     # G71-6：一键导出诊断包
     owner.btn_diag_bundle = QPushButton(tr("诊断包"))
     owner.btn_diag_bundle.setToolTip(
         tr("导出 zip 诊断包：状态报告 + 最近事件 + 日志尾部（全部已打码）"))
     owner.btn_diag_bundle.clicked.connect(owner._export_diag_bundle)
-    btns.addWidget(owner.btn_diag_bundle)
-    btns.addStretch()
-    tv.addLayout(btns)
-    return top
+    row2.addWidget(owner.btn_diag_bundle)
+    row2.addStretch(1)
+    v.addLayout(row2)
+    return wrap

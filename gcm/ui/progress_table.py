@@ -86,8 +86,15 @@ class ProgressTable(QWidget):
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(["仓库", "进度", "状态", "本次", "详情"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        for col in (1, 2, 3, 4):
-            self.table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+        for col in (1, 2, 3):
+            self.table.horizontalHeader().setSectionResizeMode(
+                col, QHeaderView.ResizeMode.ResizeToContents)
+        # G74：详情列吃掉剩余宽度并右省略 —— 原来的 ResizeToContents 会让
+        # 一句长错误把表格撑出视口（右侧被裁且很难发现横向滚动条）。
+        self.table.horizontalHeader().setSectionResizeMode(
+            4, QHeaderView.ResizeMode.Stretch)
+        self.table.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.table.setWordWrap(False)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -107,7 +114,7 @@ class ProgressTable(QWidget):
         self.table.customContextMenuRequested.connect(self._progress_table_menu)
         v.addWidget(self.table, 3)
         # G36-5 下载中心空态引导：overlay 标签（绝对定位在表格上，有数据时隐藏）
-        self._empty_default_text = "⬇ 粘贴仓库地址开始下载\n（支持多行 / 拖入 txt 文件）"
+        self._empty_default_text = "粘贴仓库地址开始下载\n（支持多行 / 拖入 txt 文件）"
         self._empty_download = QLabel(self._empty_default_text)
         self._empty_download.setObjectName("muted")
         self._empty_download.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -499,11 +506,13 @@ class ProgressTable(QWidget):
                 pass
         pal = current_palette()
         status_map = {
-            SyncStatus.SUCCESS: (pal["success"], "成功 ✓"),
-            SyncStatus.FAILED: (pal["error"], "失败 ✕"),
-            SyncStatus.CANCELLED: (pal["warning"], "已取消 ⊘"),
-            SyncStatus.CONFLICT: (pal["warning"], "冲突 ⚠"),
-            SyncStatus.SKIPPED: (pal["text_dim"], "跳过 →"),
+            # G74：不再用 ✓/✕/⚠ 等符号 —— Microsoft YaHei 缺这些字形，
+            # 在部分机器/离屏环境会显示成 tofu 方块；颜色已足够区分状态。
+            SyncStatus.SUCCESS: (pal["success"], "成功"),
+            SyncStatus.FAILED: (pal["error"], "失败"),
+            SyncStatus.CANCELLED: (pal["warning"], "已取消"),
+            SyncStatus.CONFLICT: (pal["warning"], "冲突"),
+            SyncStatus.SKIPPED: (pal["text_dim"], "跳过"),
             SyncStatus.RUNNING: (pal["accent"], "更新中…"),
         }
         color, label = status_map.get(res.status, (pal["text"], str(res.status.value)))

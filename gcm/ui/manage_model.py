@@ -201,7 +201,9 @@ class ManageModel(QAbstractItemModel):
         col = index.column()
         if role == Qt.ItemDataRole.DisplayRole:
             if col == 6:
-                return f"⭐{self.health_value(index.row())}"
+                # G74：去掉 ⭐（Microsoft YaHei 无此字形会显示 tofu），
+                # 用 "3/5" 更直接，也保留列语义。
+                return f"{self.health_value(index.row())}/5"
             if col == 7:
                 return r.size or ""
             return (r.folder_name if col == 0 else
@@ -209,7 +211,13 @@ class ManageModel(QAbstractItemModel):
                      (r.local_path if col == 2 else
                       (r.last_sync_at if col == 3 else
                        (r.head_sha if col == 4 else "")))))
-        if role == Qt.ItemDataRole.ToolTipRole and col == 0:
+        if role == Qt.ItemDataRole.ToolTipRole and col in (0, 2, 3, 4):
+            if col == 2:
+                return r.local_path or ""
+            if col == 3:
+                return r.last_sync_at or ""
+            if col == 4:
+                return r.head_sha or ""
             tip = r.url or r.local_path
             # G70：历史库行可能残留 URL 内嵌凭据（写库剥凭据是 G69-11 才加的），
             # 展示前再剥一次，避免 tooltip 把旧凭据带给旁人。

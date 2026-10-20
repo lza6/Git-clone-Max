@@ -54,7 +54,7 @@ ALLOWED_SELECTORS: frozenset[str] = frozenset({
     "QWidget", "QMainWindow", "QDialog", "QLabel", "QGroupBox",
     "QPlainTextEdit", "QTextEdit", "QLineEdit", "QSpinBox", "QComboBox",
     "QPushButton", "QTableWidget", "QTableView", "QHeaderView",
-    "QProgressBar", "QStatusBar", "QCheckBox", "QScrollBar",
+    "QProgressBar", "QStatusBar", "QCheckBox", "QRadioButton", "QScrollBar",
     "QTabWidget", "QTabBar", "QListWidget", "QListView", "QAbstractItemView",
     "QMenu", "QToolTip", "QFrame", "QSplitter", "QStackedWidget",
 })

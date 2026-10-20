@@ -84,8 +84,13 @@ class TestStatisticsPeriodPng(unittest.TestCase):
         try:
             dlg.period_combo.setCurrentIndex(0)  # 7 天 → 触发 _on_period_changed
             self.assertEqual(dlg._days, 7)
-            with mock.patch.object(QFileDialog, "getSaveFileName", return_value=("z.png", "PNG (*.png)")):
-                dlg._export_png()  # 不抛异常即通过
+            # G74：原来固定写 "z.png"（相对路径）会覆盖仓库根目录的跟踪文件，
+            # 每跑一次全量测试 git status 就多一条噪声。改用临时目录。
+            out = d / "trend.png"
+            with mock.patch.object(QFileDialog, "getSaveFileName",
+                                   return_value=(str(out), "PNG (*.png)")):
+                dlg._export_png()
+            self.assertTrue(out.exists(), "导出 PNG 应真实落盘")
         finally:
             dlg.close()
 

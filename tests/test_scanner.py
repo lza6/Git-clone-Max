@@ -146,7 +146,7 @@ class TestManageModel(unittest.TestCase):
         self.assertEqual(model.data(idx4, Qt.ItemDataRole.DisplayRole), "abcdef01")
         # G47-1/5：健康(6)/大小(7) 新列；无 db 时健康取行内默认 3，大小懒加载前为空
         idx6 = model.index(0, 6)
-        self.assertEqual(model.data(idx6, Qt.ItemDataRole.DisplayRole), "⭐3")
+        self.assertEqual(model.data(idx6, Qt.ItemDataRole.DisplayRole), "3/5")
         idx7 = model.index(0, 7)
         self.assertEqual(model.data(idx7, Qt.ItemDataRole.DisplayRole), "")
         self.assertEqual(model.row_at(0).repo_id, 7)

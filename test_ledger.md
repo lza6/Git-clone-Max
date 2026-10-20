@@ -64,7 +64,10 @@
 | G72 回归 | `unittest tests.test_g72_hardening tests.test_g71_event_stream tests.test_applog tests.test_redact tests.test_g52_retry_queue_extra` | `Ran 107 · OK` | 2026-10-19 |
 | G72 快集 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 1332 · failures=0 · errors=0 · skipped=3 · 覆盖 81%` | 2026-10-19（G72 后） |
 | G73 定向 | `unittest tests.test_g73_dlq` | `Ran 3 · OK`（DLQ 字段/重新入队/面板切换） | 2026-10-20 |
-| G73 快集 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 1335 · failures=0 · errors=0 · skipped=3 · 覆盖 82%` | 2026-10-20（v9.8.2） |
+| G73 快集 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 1335 · failures=0 · errors=0 · skipped=3 · 覆盖 82%` | 2026-10-20（G73 后） |
+| G74 定向 | `unittest tests.test_g74_ui_layout -v` | `Ran 14 · OK`（布局/主题/文案 14 项） | 2026-10-20（G74） |
+| G74 截图审计 | `scripts/ui_screenshot_audit.py reports/ui-audit-final` | 38 张 PNG：4 主题 × 5 分辨率 + 页签 + 8 个对话框 | 2026-10-20（G74） |
+| G74 快集 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 1349 · failures=0 · errors=0 · skipped=3 · 覆盖 82%` | 2026-10-20（G74） |
 | 连跑稳定性 | 同一命令 ×3 | `1115 / 1115 / 1122`，0 崩溃 | 2026-10-17（已移除 GC 安全网） |
 | CI | GitHub Actions | 7/7 job success（run 39165009718）；发布后 flake 修复 run 39171656327 success | 2026-10-19 |
 
@@ -86,6 +89,7 @@
 | S12 | ⚠️ 部分 | 版本常量有静态守卫；**exe 构建与健康检查是人工步骤，不在 CI** |
 | S13 | ✅ 覆盖 | — |
 | S14 | ✅ 覆盖 | — |
+| S31 | ✅ 覆盖 | **G74 UI 布局契约**：主操作区不在顶部滚动区内且 1024 可见；compact 隐藏快捷填充；管理页日期列定宽；设置导航短标题/无横向滚动；对话框继承主窗 QSS；统计内容可滚动；空校验标签不占位；数字框隐藏原生箭头；标签/复选框透明；仓库详情长路径省略。守卫 `tests/test_g74_ui_layout.py`（14）+ 截图审计脚本。 |
 
 ### 2.3 未覆盖 / 无法自动化
 
