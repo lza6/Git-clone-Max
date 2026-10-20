@@ -810,7 +810,8 @@ B4 仓库知识索引 / B5 MCP annotations / B6 真机点击仍属后续范围�
 | 构建 | exe 41,220,708 B · zip 79,559,473 B |
 | 健康检查 | version_match 9.8.3 · started_ok=true · 无残留进程 |
 | 打包 E2E | `action=cloned`（真实 GitHub）；二次 `action=fetched / 已是最新`；源级 `e2e_smoke` PASS（含 +1 提交更新） |
-| CI / Release | 发布后回填 |
+| CI | run `39446613322` · **7/7 job success**（ubuntu/windows/macos + e2e + fast + slow + perf） |
+| Release | `v9.8.3` · id 418545682 · https://github.com/lza6/Git-clone-Max/releases/tag/v9.8.3 · exe sha256 一致 |
 
 **停止条件**：截图可见的 P0/P1/P2 布局问题均已修复并有守卫；剩余为「极小高度需滚动」
 与「离屏非真机点击」的已知边界，不再扩大范围。

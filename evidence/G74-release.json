@@ -1,0 +1,56 @@
+{
+  "task_id": "G74-release",
+  "status": "passed",
+  "timestamp": "2026-10-20T23:30:00+08:00",
+  "version": "9.8.3",
+  "commit": "bace51b",
+  "tag": "v9.8.3",
+  "ci": {
+    "run_id": 39446613322,
+    "status": "completed",
+    "conclusion": "success",
+    "jobs_total": 7,
+    "jobs_success": 7,
+    "jobs": [
+      {"name": "e2e-smoke", "conclusion": "success"},
+      {"name": "test (ubuntu-latest)", "conclusion": "success"},
+      {"name": "test (windows-latest)", "conclusion": "success"},
+      {"name": "test (macos-latest)", "conclusion": "success"},
+      {"name": "fast-smoke", "conclusion": "success"},
+      {"name": "slow", "conclusion": "success"},
+      {"name": "perf-baseline", "conclusion": "success"}
+    ]
+  },
+  "release": {
+    "id": 418545682,
+    "url": "https://github.com/lza6/Git-clone-Max/releases/tag/v9.8.3",
+    "assets": [
+      {"name": "Git-clone-Max.exe", "size": 41220708,
+       "sha256_local": "7964e789db2128b68fdbc4d9dbc4a12c5f41f5a08c8627957bf38145d1fbfb83",
+       "server_sha256_verified": true},
+      {"name": "Git-clone-Max-portable.zip", "size": 79559473,
+       "sha256_local": "1248cb6eb75836648b5b7a87092815bfcc40726796295bf0b7f862b4efeb15b9",
+       "server_sha256_verified": false,
+       "note": "发布脚本仅对 exe 做下载回验；zip 以资产 size 与本地一致为准"}
+    ]
+  },
+  "health_check": {
+    "file": "evidence/G74-health-check.json",
+    "version_match": "9.8.3",
+    "started_ok": true,
+    "residual_process": false
+  },
+  "packaged_e2e": [
+    {"step": "clone", "url": "https://github.com/octocat/Hello-World", "action": "cloned", "ok": true},
+    {"step": "update", "url": "https://github.com/octocat/Hello-World", "action": "fetched", "message": "已是最新", "ok": true}
+  ],
+  "source_e2e": {
+    "cmd": "python scripts/e2e_smoke.py",
+    "result": "E2E_SMOKE_RESULT: PASS",
+    "covers": ["clone", "fetch+ff update (+1)", "dirty worktree preserved", "conflict both sides", "merge --abort"]
+  },
+  "limitations": [
+    "打包 E2E 的 update 步骤第二次为 fetched/已是最新（公共仓库无新提交）；带 +1 提交的增量更新由源级 e2e_smoke 覆盖",
+    "zip 未做服务端 sha256 下载回验，仅比对资产大小"
+  ]
+}
