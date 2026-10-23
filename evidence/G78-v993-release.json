@@ -1,0 +1,131 @@
+{
+  "task_id": "G78-v993-release",
+  "status": "passed_with_ci_pending",
+  "timestamp": "2026-10-23T14:40:00+08:00",
+  "scope": "把独立审查整改（含我 G77 拆分引入的真 bug）收进 v9.9.3 并发布；对最终发布物做三方哈希核对 + 下载物 E2E",
+  "why_9_9_3": [
+    "G77 拆分引入的真 bug：update_flow.on_checked 把 _update_checking=False 排到了 from .main_window import _fmt_dt 之后 —— 该导入抛异常时标志永久 True，「检查更新」按钮永久失效且零提示",
+    "progress_delegate：未知进度（pct<0）仍画 25/50/75% 刻度 → 空轨道被误读成已有进度",
+    "test_g66_patch：弱子串断言换成 AST 作用域断言（变异实验验证：改成同步 / 线程挪出 check_now 都会红）"
+  ],
+  "commands_executed": [
+    {
+      "cmd": "ruff check gcm",
+      "exit_code": 0,
+      "raw_output_tail": "All checks passed!"
+    },
+    {
+      "cmd": "mypy gcm",
+      "exit_code": 0,
+      "raw_output_tail": "Success: no issues found in 87 source files"
+    },
+    {
+      "cmd": "unittest（g66_patch/update_auto/g68_settings_ui/g76_wiring/g75_visual_system/g67_docs_freshness）",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 168 tests in 22.859s\n\nOK (skipped=2)"
+    },
+    {
+      "cmd": "coverage run --source=gcm scripts/ci_run_fast.py（9.9.3 代码）",
+      "exit_code": 0,
+      "raw_output_tail": "[ci_run_fast] 合计：Ran 1421 tests · failures=0 errors=0 skipped=4"
+    },
+    {
+      "cmd": "PyInstaller + build_portable_zip + health_check",
+      "exit_code": 0,
+      "raw_output_tail": "version_match 9.9.3 · started_ok=true · repos_db_created=true · exe 41358954 B / zip 79788175 B"
+    },
+    {
+      "cmd": "打包 E2E（dist onedir exe）",
+      "exit_code": 0,
+      "raw_output_tail": "version=9.9.3 action=cloned → 二次 action=fetched / 已是最新"
+    },
+    {
+      "cmd": "publish_release.py --tag v9.9.3",
+      "exit_code": 0,
+      "raw_output_tail": "Release 已存在(id=421507266)，远端附件与本地一致 → 跳过上传"
+    },
+    {
+      "cmd": "API digest + 下载远端 exe 重算 sha256",
+      "exit_code": 0,
+      "raw_output_tail": "exe server=d68cc4ca1506dea6 local=d68cc4ca1506dea6 一致；zip server=fdf773ab18835099 local=一致；下载回来重算 = d68cc4ca… 一致"
+    },
+    {
+      "cmd": "下载物 E2E（从 Release 下载的 exe）",
+      "exit_code": 0,
+      "raw_output_tail": "version=9.9.3 action=cloned → action=fetched/已是最新 → 无效输入 exit=2"
+    }
+  ],
+  "release": {
+    "tag": "v9.9.3",
+    "id": 421507266,
+    "url": "https://github.com/lza6/Git-clone-Max/releases/tag/v9.9.3",
+    "exe": {
+      "size": 41358954,
+      "sha256": "d68cc4ca1506dea6…"
+    },
+    "zip": {
+      "size": 79788175,
+      "sha256": "fdf773ab18835099…"
+    },
+    "three_way_match": "GitHub API asset digest == 本地 dist 实测 sha256 == 从 Release 下载回来重算的 sha256（exe 与 zip 都一致）",
+    "downloaded_artifact_e2e": "cloned → fetched/已是最新 → 无效输入 exit=2"
+  },
+  "artifact_matches_source": {
+    "head_at_build": "afb92e2",
+    "note": "构建在 afb92e2 之上；之后的 5e91f35 / 3fa9b16 只改 tests 与 docs（`git diff --name-only afb92e2..3fa9b16 | grep ^gcm/` 为空），故产物仍对应 HEAD 源码",
+    "version_single_source": "gcm.__version__ == pyproject == installer.iss == spec(FileVersion/ProductVersion) == README == agent-contract == 9.9.3"
+  },
+  "ci": {
+    "confirmed_green": [
+      {
+        "sha": "d69d229",
+        "run": 39905267408,
+        "conclusion": "success",
+        "jobs": 7
+      },
+      {
+        "sha": "e5ab085",
+        "run": 39907950302,
+        "conclusion": "success"
+      },
+      {
+        "sha": "ff1c3f0",
+        "run": 39908471292,
+        "conclusion": "success"
+      },
+      {
+        "sha": "57b31a9",
+        "run": 39908614927,
+        "conclusion": "success"
+      }
+    ],
+    "pending": [
+      {
+        "sha": "0643535",
+        "run": 39909387665,
+        "state": "queued"
+      },
+      {
+        "sha": "afb92e2",
+        "run": 39909918374,
+        "state": "queued"
+      },
+      {
+        "sha": "5e91f35",
+        "run": 39910543348,
+        "state": "queued"
+      },
+      {
+        "sha": "3fa9b16",
+        "run": 39911819728,
+        "state": "queued"
+      }
+    ],
+    "note": "推送后短时间内排了 4 个 run（每个 7 job），GitHub Actions 侧一直 queued，未出结论。**不声称已通过**；本地已跑快集 1421 绿 + 门禁绿 + 定向 168 绿作为替代证据，后台仍在轮询，出结果后补登记。"
+  },
+  "limitations": [
+    "CI（afb92e2 之后）只观察到 queued，未拿到结论 —— 不得声称通过",
+    "v9.9.3 Release 由并发会话先创建，我这边 publish_release 因『远端附件大小一致』跳过上传；因此额外做了 API digest + 下载重算的三方核对与下载物 E2E，确认发布物可用",
+    "真人目检仍未做；125% DPI 用离屏 QT_SCALE_FACTOR 近似"
+  ]
+}

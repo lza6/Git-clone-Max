@@ -1003,3 +1003,17 @@ B4 仓库知识索引 / B5 MCP annotations / B6 真机点击仍属后续范围�
 | 为什么单独成文件 | `tests/test_g66_patch.py` 已 1597 行，且它没有模块级 `QApplication`：把「先建 app 再建 MainWindow」的用例塞进去**实测会把进程挂住**（已复现并回退）|
 | 125% DPI 渲染核查 | `QT_SCALE_FACTOR=1.25` 离屏渲染 38 张（`reports/ui-g75-125/`），逐张看：布局整体正确、pill/刻度/齿条均正常；**发现 1 处外观裁切**（1024×768@125% 下「快速填充」行半截），已登记 `.agent/memory/known-issues.md` |
 | CI 状态 | `57b31a9` → run success **7/7**；`0643535` / `afb92e2` / `5e91f35` 的 run **仍在 GitHub 队列中（queued）**，本报告不把它们计为已通过 |
+
+### 23.3 v9.9.3（独立审查整改）与发布物三方核对
+
+| 项 | 结果 |
+|---|---|
+| 为什么要 9.9.3 | ①**我 G77 拆分引入的真 bug**：`update_flow.on_checked` 把 `_update_checking = False` 排到 `from .main_window import _fmt_dt` **之后** —— 该导入一旦抛异常，标志永久 True，「检查更新」按钮永久失效且零提示；②未知进度（`pct<0`）仍画 25/50/75 刻度 → 空轨道被误读成已有进度；③弱子串断言 → AST 作用域断言（变异实验验证） |
+| 本地验证 | `ruff` 全过 · `mypy` Success(87) · 定向 **168 条 OK** · 快集 **1421 绿** · 打包 E2E cloned→fetched · 无效输入 exit=2 |
+| 产物 | exe **41,358,954 B** / zip **79,788,175 B**；`health_check` = `version_match 9.9.3` + `started_ok` |
+| 发布 | `v9.9.3` id 421507266 · https://github.com/lza6/Git-clone-Max/releases/tag/v9.9.3 |
+| 三方一致 | API asset digest == 本地实测 sha256 == **从 Release 下载回来重算** 的 sha256（exe `d68cc4ca…` / zip `fdf773ab…`） |
+| 下载物 E2E | 用下载回来的 exe：`version=9.9.3` → `cloned` → `fetched/已是最新` → 无效输入 `exit=2` |
+| 产物 == 源码 | 构建于 `afb92e2`；其后 `5e91f35`/`3fa9b16` **只改 tests 与 docs**（`gcm/` 无变更），故产物仍对应 HEAD 源码 |
+| CI | `d69d229`/`e5ab085`/`ff1c3f0`/`57b31a9` 四次 run **7/7 success**；`afb92e2` 之后 4 个 run **一直 queued 未出结论** → **不声称通过**，后台轮询中，出结果后补登记 |
+
