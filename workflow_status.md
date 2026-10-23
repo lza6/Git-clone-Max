@@ -863,6 +863,14 @@ B4 仓库知识索引 / B5 MCP annotations / B6 真机点击仍属后续范围�
 | 构建 | exe 41,340,204 B · zip 79,756,248 B |
 | 健康检查 | version_match 9.9.0 · started_ok=true · artifacts_exist=true |
 | 文件规模 | 超 800 行 3 个（main_window 2750 登记债 / service 1768 / engine 1169） |
-| 未执行 | 本机 Windows 慢集 · CI 三平台（需推送后看） · 真机 125% DPI 目检 · 数据目录真实搬移 |
+| CI（第一次） | run `39897531133` · **5/7 绿**：windows / slow / perf / e2e / fast 通过，**macos-latest 与 ubuntu-latest 的 fast suite 各 1 例红** |
+| CI 红根因（真实缺陷） | `test_migrate_calls_existing_helper_after_confirm`：POSIX 无 `%APPDATA%` → 迁移流程直接放弃 → 用户点「迁移」只会看到「无法确定 %APPDATA%」，**功能等于不可用**（不是测试挑剔） |
+| 修复 | `settings_actions._private_target_dir()`：Windows `%APPDATA%` → POSIX `$XDG_DATA_HOME` → `~/.local/share`；算不出来仍拒绝（不瞎猜）；文案改跨平台；补 `test_migrate_refuses_without_private_target` |
+| CI（修复后） | run `39899096292` · **7/7 success**（windows/ubuntu/macos + slow + fast + e2e + perf） |
+| CI（v9.9.1） | run `39899957217` · **7/7 success** |
+| 发布 | `v9.9.0` id 421433715（已被取代，body 已加说明）· **`v9.9.1` id 421450820** https://github.com/lza6/Git-clone-Max/releases/tag/v9.9.1 |
+| 9.9.1 产物 | exe 41,343,506 B sha256 `9ddc54b1…` · zip 79,761,826 B sha256 `37c69482…` · 服务端 sha256 已核对一致 |
+| 打包 E2E（9.9.1） | `action=cloned`（真实 GitHub），版本 9.9.1 |
+| 未执行 | 本机 Windows 慢集（CI 在 Linux 跑） · 真机 125% DPI 目检 · 数据目录真实搬移 |
 
 **停止条件**：所有 P1「够不到」项已接线并有能失败的断言；门禁/文档/台账与代码一致；剩余为已披露边界。

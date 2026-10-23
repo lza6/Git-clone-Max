@@ -79,13 +79,38 @@
     "docs/计划书/下一步改进指南.md（Rev 4 收口结果）"
   ],
   "tests": {
-    "new": {"file": "tests/test_g76_wiring.py", "count": 23, "status": "passed"},
-    "targeted": {"count": 234, "status": "passed"},
-    "fast_suite": {"count": 1415, "failures": 0, "errors": 0, "skipped": 4, "status": "passed"},
+    "new": {
+      "file": "tests/test_g76_wiring.py",
+      "count": 23,
+      "status": "passed"
+    },
+    "targeted": {
+      "count": 234,
+      "status": "passed"
+    },
+    "fast_suite": {
+      "count": 1415,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 4,
+      "status": "passed"
+    },
     "coverage_total_percent": 82,
-    "coverage_gate": {"windows": 81, "posix": 80, "verdict": "pass"}
+    "coverage_gate": {
+      "windows": 81,
+      "posix": 80,
+      "verdict": "pass"
+    }
   },
-  "seams_touched": ["S05", "S06", "S07", "S14", "S16", "S17", "S32（新增）"],
+  "seams_touched": [
+    "S05",
+    "S06",
+    "S07",
+    "S14",
+    "S16",
+    "S17",
+    "S32（新增）"
+  ],
   "mock_scenarios_covered": [
     "QMessageBox.warning/question/information 注入（Yes/No 两条分支都断言）",
     "QInputDialog.getText 注入（确认 / 取消）",
@@ -107,5 +132,48 @@
     "CI 三平台结论需推送后看 Actions，本地无法替代",
     "数据目录迁移只验证了「拒绝在跑任务 / 确认后调用既有实现」，未在真实用户目录上执行搬移（不可逆操作不在自动化里做）",
     "真机点击与高 DPI 目检未执行"
-  ]
+  ],
+  "ci": {
+    "run_first_red": {
+      "id": 39897531133,
+      "conclusion": "failure",
+      "failed_jobs": [
+        "test (macos-latest)",
+        "test (ubuntu-latest)"
+      ],
+      "failed_test": "tests.test_g76_wiring.TestDataDirEntry.test_migrate_calls_existing_helper_after_confirm",
+      "root_cause": "迁移目标写死 %APPDATA%，POSIX 无该变量 → 流程放弃迁移（真实功能缺陷）"
+    },
+    "run_after_fix": {
+      "id": 39899096292,
+      "conclusion": "success",
+      "jobs": 7
+    },
+    "run_v991": {
+      "id": 39899957217,
+      "conclusion": "success",
+      "jobs": 7
+    },
+    "url": "https://github.com/lza6/Git-clone-Max/actions/runs/39899957217"
+  },
+  "release": {
+    "v9.9.0": {
+      "id": 421433715,
+      "note": "已被 v9.9.1 取代（构建早于 POSIX 修复），Release body 已加说明"
+    },
+    "v9.9.1": {
+      "id": 421450820,
+      "url": "https://github.com/lza6/Git-clone-Max/releases/tag/v9.9.1",
+      "exe": {
+        "size": 41343506,
+        "sha256": "9ddc54b116e01100…"
+      },
+      "zip": {
+        "size": 79761826,
+        "sha256": "37c69482be75ffa8…"
+      },
+      "server_sha256_verified": true
+    },
+    "packaged_e2e": "action=cloned（真实 GitHub），version=9.9.1"
+  }
 }

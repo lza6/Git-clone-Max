@@ -109,3 +109,13 @@
   源码级 git E2E PASS；**打包 exe 真实 GitHub E2E**（cloned → fetched/已是最新）；基准 500 行 26.82ms；
   截图 38/38；构建 exe 41,340,204 B + zip 79,756,248 B；健康检查 version_match 9.9.0。
 - 未闭环边界：本机 Windows 慢集、CI 三平台、真机 125% DPI 目检、数据目录真实搬移（均已在台账披露）。
+
+### 追加（同轮发布结果）
+- CI 第一次（`fa33ebc`）**5/7**：macos/ubuntu 的 fast suite 各 1 例红 → 根因是迁移目标写死 `%APPDATA%`，
+  POSIX 上功能不可用（真实缺陷，不是测试问题）→ 修成跨平台目标目录（`%APPDATA%`→`$XDG_DATA_HOME`→`~/.local/share`）。
+- CI 修复后（`07fc51c`）**7/7 success**；`v9.9.1`（`c4e647f`）**7/7 success**（run 39899957217）。
+- 发布：`v9.9.0`（id 421433715，已被取代，body 已加说明）→ **`v9.9.1`**（id 421450820）
+  exe 41,343,506 B sha256 `9ddc54b1…`、zip 79,761,826 B sha256 `37c69482…`，服务端 sha256 核对一致；
+  打包 exe 真实 GitHub E2E：`action=cloned`、version 9.9.1。
+- 教训入库：**平台路径分支必须在 `unset APPDATA` 下复跑**（本地 Windows 全绿 ≠ 功能可用）。
+
