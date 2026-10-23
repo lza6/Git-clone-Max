@@ -920,3 +920,16 @@ B4 仓库知识索引 / B5 MCP annotations / B6 真机点击仍属后续范围�
 | 下载物 E2E | 用**从 Release 下载回来的 exe**：`action=cloned` → 二次 `action=fetched / 已是最新`，空输入 `exit=2` |
 | 边界 | 并发会话 13:45 又跑了一次本地构建，`dist/` 里的 exe 因此与已发布哈希不同（源码/工作区未变）；发布物以服务端 digest + 下载复验为准 |
 
+### 23.1 发布证据回填（v9.9.2）
+
+| 项 | 真实值 |
+|----|--------|
+| 提交 | `d69d229`（`feat(g77)`，含 G75 收口增量）· 已推送 `origin/main` |
+| CI | run `39905267408` **7/7 success**（test win/ubuntu/macos + e2e-smoke + fast-smoke + slow + perf-baseline）|
+| 本地快集 | `Ran 1421 · failures=0 · errors=0 · skipped=4`；覆盖率 **82%**（Windows 门禁 81）|
+| Lint / 类型 | `ruff check gcm` = All checks passed；`mypy gcm` = Success（87 source files）|
+| 构建 | PyInstaller EXIT=0；exe **41,354,950 B** sha256 `c70a48a8…`；zip **79,779,525 B** |
+| 产物健康 | `health_check.py`：`version=9.9.2`、`archive_version=9.9.2`、`started_ok=true`、`repos_db_created=true` |
+| 打包 E2E | `dist/Git-clone-Max.exe --cli --json`：首跑 `action=cloned`、复跑 `action=fetched`、磁盘 `HEAD=7fd1a60`、`version=9.9.2` |
+| 发布 | Release id `421490075` · https://github.com/lza6/Git-clone-Max/releases/tag/v9.9.2 · 服务端下载校验 sha256 一致 |
+| 未执行 | 真机 125% DPI 目检 · 实际点击更新弹窗开浏览器（`webbrowser.open` 未在自动化里断言，只验到"是否弹窗"分支）|

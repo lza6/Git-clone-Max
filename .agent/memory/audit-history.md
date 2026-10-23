@@ -127,3 +127,6 @@
   而 `test_g66_patch` 仍只 patch `main_window.QMessageBox` → 确定性红；已补打桩（生产代码未动）。
 - 已知环境限制：本机 TLS 代理会打断 Python `urllib` 与 git schannel（`UNEXPECTED_EOF`），
   故更新检查的 urllib 直连路径无法本机实测，改用 requests 取真实 JSON 替换传输层。
+- 发布：`v9.9.2`（Release id 421490075）；CI run 39905267408 **7/7**；本地快集 1421/0/4 skip，覆盖 82%；
+  产物 exe 41,354,950 B（sha256 `c70a48a8…`，服务端校验一致）/ zip 79,779,525 B；
+  打包 E2E：cloned → fetched（HEAD 7fd1a60）。**未做**真机 DPI 目检与"点击更新后真的打开浏览器"。

@@ -72,6 +72,8 @@
 | G74 快集 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 1349 · failures=0 · errors=0 · skipped=3 · 覆盖 82%` | 2026-10-20（G74） |
 | 连跑稳定性 | 同一命令 ×3 | `1115 / 1115 / 1122`，0 崩溃 | 2026-10-17（已移除 GC 安全网） |
 | CI | GitHub Actions | 7/7 job success（run 39165009718）；发布后 flake 修复 run 39171656327 success | 2026-10-19 |
+| G75 收口快集 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 1421 · failures=0 · errors=0 · skipped=4 · 覆盖 82%` | 2026-10-23（v9.9.2） |
+| CI（v9.9.2） | GitHub Actions run `39905267408` | **7/7 job success**（3 OS + e2e-smoke + fast-smoke + slow + perf） | 2026-10-23 |
 | G75 定向 | `unittest tests.test_g75_visual_system` | `Ran 46 · OK`（1 skipped：字体存在性按平台条件化） | 2026-10-23（G75 收口） |
 | G75 慢集（Windows） | 10 个慢模块（真实 git E2E） | `Ran 129 · OK`（65.9s） | 2026-10-23（G75 收口） |
 | G75 基准 | `scripts/bench_g70_ui.py` | 500 行 add 27.85ms/update 2.87ms/0 子控件；QSS 1.989→0.016ms；启动 101.93ms | 2026-10-23 |
