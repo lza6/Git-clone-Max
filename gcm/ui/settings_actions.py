@@ -119,7 +119,7 @@ def add_data_dir_section(owner, layout, row: int) -> int:
     owner.lbl_data_dir.setObjectName("muted")
     owner.lbl_data_dir.setWordWrap(True)
     layout.addWidget(owner.lbl_data_dir, row, 0, 1, 2)
-    owner.btn_migrate_data_dir = QPushButton(tr("迁移到 %APPDATA%"))
+    owner.btn_migrate_data_dir = QPushButton(tr("迁移到用户私有目录"))
     owner.btn_migrate_data_dir.setEnabled(not private)
     owner.btn_migrate_data_dir.setToolTip(
         tr("把设置/数据库/日志搬到用户私有目录；不覆盖同名文件，源目录保留，迁移后需重启"))
@@ -162,6 +162,26 @@ def save_post_clone_hook(panel) -> None:
     owner.settings_store.save(owner.settings)
 
 
+def _private_target_dir() -> str:
+    r"""迁移目标目录：与 `gcm/__main__.get_data_dir()` 保持同一策略。
+
+    Windows → `%APPDATA%\Git-clone-Max`；POSIX → `$XDG_DATA_HOME/Git-clone-Max`，
+    两者都没有时退回 `~/.local/share/Git-clone-Max`；连家目录都取不到则返回空串
+    （调用方必须据空串拒绝迁移，不得瞎猜一个位置）。
+    """
+    import os
+    from pathlib import Path
+
+    for var in ("APPDATA", "XDG_DATA_HOME"):
+        base = os.environ.get(var)
+        if base:
+            return str(Path(base) / "Git-clone-Max")
+    home = os.path.expanduser("~")
+    if home and home != "~":
+        return str(Path(home) / ".local" / "share" / "Git-clone-Max")
+    return ""
+
+
 def migrate_data_dir_flow(panel) -> None:
     """把数据目录迁到 `%APPDATA%\\Git-clone-Max`（G44-6 的能力此前零入口）。
 
@@ -171,7 +191,6 @@ def migrate_data_dir_flow(panel) -> None:
     ③ `migrate_data_dir` 自身不覆盖同名文件、不删源目录 → 失败可回退；
     ④ 迁移后必须重启才生效（数据目录在启动时解析，唯一来源 `get_data_dir()`）。
     """
-    import os
     from pathlib import Path
 
     from ..db.settings import migrate_data_dir
@@ -181,12 +200,11 @@ def migrate_data_dir_flow(panel) -> None:
                             tr("任务运行中不能迁移，请等待完成或先取消。"))
         return
     src = str(getattr(owner, "data_dir", "") or "")
-    appdata = os.environ.get("APPDATA") or ""
-    if not src or not appdata:
+    dst = _private_target_dir()
+    if not src or not dst:
         QMessageBox.warning(owner, tr("迁移数据目录"),
-                            tr("无法确定数据目录或 %APPDATA%，已取消。"))
+                            tr("无法确定数据目录或用户私有目录，已取消。"))
         return
-    dst = str(Path(appdata) / "Git-clone-Max")
     try:
         same = Path(src).resolve() == Path(dst).resolve()
     except OSError:

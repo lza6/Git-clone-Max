@@ -298,18 +298,36 @@ class TestDataDirEntry(_Win):
         mig.assert_not_called()
         warn.assert_called_once()
 
+    def test_migrate_refuses_without_private_target(self):
+        """目标目录算不出来时必须拒绝，而不是瞎猜一个位置搬数据（CI 的 POSIX 覆盖点）。"""
+        self.win.busy = False
+        with mock.patch("gcm.ui.settings_actions._private_target_dir",
+                        return_value=""), \
+                mock.patch("PyQt6.QtWidgets.QMessageBox.warning") as warn, \
+                mock.patch("gcm.db.settings.migrate_data_dir") as mig:
+            self.win.settings_panel.wiring.migrate_data_dir()
+        mig.assert_not_called()
+        warn.assert_called_once()
+
     def test_migrate_calls_existing_helper_after_confirm(self):
-        """`migrate_data_dir` 此前零生产调用；确认后必须调用既有实现，不另写一套。"""
+        """`migrate_data_dir` 此前零生产调用；确认后必须调用既有实现，不另写一套。
+
+        注意：`warning` 也要 patch —— 目标目录算不出来时走 warning 分支，
+        离屏下真模态会把用例挂死（这正是 CI 上 macos/ubuntu 红过一次的原因：
+        APPDATA 在 POSIX 不存在，早期实现直接放弃迁移）。
+        """
         self.win.busy = False
         with mock.patch("PyQt6.QtWidgets.QMessageBox.question",
                         return_value=__import__("PyQt6.QtWidgets",
                                                 fromlist=["QMessageBox"])
                         .QMessageBox.StandardButton.Yes), \
+                mock.patch("PyQt6.QtWidgets.QMessageBox.warning") as warn, \
                 mock.patch("PyQt6.QtWidgets.QMessageBox.information") as info, \
                 mock.patch("gcm.db.settings.migrate_data_dir",
                            return_value=(True, "已迁移 3 项")) as mig:
             self.win.settings_panel.wiring.migrate_data_dir()
         self.assertEqual(mig.call_count, 1, "必须调用既有 migrate_data_dir")
+        warn.assert_not_called()
         info.assert_called()
         src, dst = mig.call_args[0]
         self.assertEqual(str(src), str(self.win.data_dir))
