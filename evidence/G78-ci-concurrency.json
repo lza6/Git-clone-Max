@@ -33,7 +33,8 @@
   },
   "limitations": [
     "api.github.com 出站 TLS 在 15:08–15:12 持续失败（同时 git push/ls-remote 正常），因此**拿不到 concurrency 生效后的 CI 结论**；不声称 CI 通过",
-    "推荐复核方式（网络恢复后一行即可）：GET /repos/lza6/Git-clone-Max/actions/runs?per_page=3，确认只有最新 HEAD 的 run 在跑、旧 run 状态为 cancelled"
+    "推荐复核方式（网络恢复后一行即可）：GET /repos/lza6/Git-clone-Max/actions/runs?per_page=3，确认只有最新 HEAD 的 run 在跑、旧 run 状态为 cancelled",
+    "concurrency 未解除本次堵塞（我已更正先前推断）；CI 结论仍缺失，属外部配额限制"
   ],
   "local_evidence_instead_of_ci": {
     "gates": "ruff All checks passed / mypy Success（87 文件）",
@@ -43,5 +44,92 @@
     "coverage": "82%（门禁 Windows 81 / POSIX 80）",
     "build_health": "exe 41,358,954 B / zip 79,788,175 B；version_match 9.9.3；started_ok=true",
     "downloaded_artifact_e2e": "从 Release 下载的 exe：cloned → fetched/已是最新 → 无效输入 exit=2"
+  },
+  "post_fix_observation": {
+    "at": "2026-10-23T15:14:00+08:00",
+    "runs": [
+      {
+        "sha": "d2ec841",
+        "id": 39916404368,
+        "status": "queued"
+      },
+      {
+        "sha": "7847bd5",
+        "id": 39916378990,
+        "status": "queued"
+      },
+      {
+        "sha": "9051402",
+        "id": 39915482480,
+        "status": "queued"
+      },
+      {
+        "sha": "faa33f4",
+        "id": 39912907093,
+        "status": "queued"
+      },
+      {
+        "sha": "3fa9b16",
+        "id": 39911819728,
+        "status": "queued"
+      },
+      {
+        "sha": "5e91f35",
+        "id": 39910543348,
+        "status": "queued"
+      },
+      {
+        "sha": "afb92e2",
+        "id": 39909918374,
+        "status": "queued"
+      },
+      {
+        "sha": "0643535",
+        "id": 39909387665,
+        "status": "queued"
+      }
+    ],
+    "finding": "**我先前对 concurrency 的推断是错的，更正如下**：加入 concurrency 后旧 run **并未**被取消 —— GitHub 只在调度时评估并发组，而这里一个 job 都没有被派发，所以 group 逻辑根本没被触发。8 个 run 全部 queued、持续 70 分钟、且期间又有新 run（d2ec841）产生 —— 指向**账号/仓库级 Actions 配额或并发配额**问题，不是 workflow 配置问题。",
+    "concurrency_still_worth_keeping": "虽未解决本次堵塞，但它仍是正确的工程改进：后续在同一分支快速连推时，不会再把 35 个 job 一起塞进队列（省额度、也让最新结论先出）。"
+  },
+  "ci_blocked": {
+    "verdict": "BLOCKED（外部资源限制）",
+    "why_it_is_not_my_fix": "workflow 配置已修；平台状态正常；YAML 合法；缺陷在 runner 派发侧（配额）",
+    "min_unblock_conditions": [
+      "确认 https://github.com/settings/billing 的 Actions 分钟额度与并发配额（需仓库管理员权限，本会话 token 无该 scope）",
+      "或改用 self-hosted runner / 减少矩阵（例如 macOS 只在发布前跑）",
+      "或等配额重置周期"
+    ],
+    "do_not_claim": "不得把『本地全绿』写成『CI 通过』"
+  },
+  "local_equivalent_of_every_ci_job": {
+    "note": "CI 的 7 个 job 我已在**本机当前工作区**逐条复现（HEAD 7847bd5 + 并发会话未提交改动），作为可执行的替代证据；它不等同于任何特定 run 的结论",
+    "test_windows": {
+      "cmd": "coverage run --source=gcm scripts/ci_run_fast.py + coverage report",
+      "result": "1421 tests · 0 fail · 0 error · 4 skipped；82%（门禁 81）"
+    },
+    "test_ubuntu_macos": {
+      "note": "同套用例；平台差异（字体/路径/编码）已由 2026-10-23 的历史 CI 绿（57b31a9 及前 3 次 run 7/7）覆盖，但**本次未在 POSIX 重新执行**"
+    },
+    "slow": {
+      "cmd": "10 个慢集模块（engine/v7_fixes/core/extra/v3_p0/submodule/publish/scanner/tag_branch/progress_search）",
+      "result": "129 tests · OK · 69.7s（真实 git E2E）"
+    },
+    "fast_smoke": {
+      "cmd": "tests.test_redact … test_qss_validate_extra（11 模块，与 ci.yml fast-smoke 一致）",
+      "result": "104 tests · OK · 4.9s"
+    },
+    "e2e_smoke": {
+      "cmd": "scripts/e2e_smoke.py",
+      "result": "E2E_SMOKE_RESULT: PASS（clone / fetch+ff / 脏工作区 / 冲突 / merge --abort / HEAD）"
+    },
+    "perf_baseline": {
+      "cmd": "tests.test_scanner_perf tests.test_mem_baseline",
+      "result": "15 tests · OK · 2.3s"
+    },
+    "build_and_release": {
+      "cmd": "PyInstaller + build_portable_zip + health_check + publish_release",
+      "result": "exe 41,358,954 B / zip 79,788,175 B；version_match 9.9.3；下载物 E2E cloned→fetched→exit 2"
+    }
   }
 }
