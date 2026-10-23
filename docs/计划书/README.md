@@ -31,7 +31,7 @@
 | 归档目录 | 原内容 | 归档时间 | 结论 |
 |---------|--------|---------|------|
 | `docs/archive/plans/20261017/` | 早期 `计划书/` 9 个文件 | 2026-10-17 | 逐条状态表见该目录的 `archive-manifest.md`（含「删除理由不成立」的复验记录） |
-| `docs/archive/plans/20261023/` | `UI视觉系统重构指南.md`（T-UI-00…T-UI-10） | 2026-10-23 | **已落地并随 v9.9.0 发布**：`archive-manifest.md` 逐条记录 done/partial 与 4 处计划-现实偏离（D6 齿条与总览条职责划分、D4 保留逐行消隐、P3 两项延后）。可视化证据 `reports/ui-baseline-983` ↔ `reports/ui-g75` |
+| `docs/archive/plans/20261023/` | `UI视觉系统重构指南.md`（T-UI-00…T-UI-10） | 2026-10-23 | **已落地并随 9.9 系列发布**：`archive-manifest.md` 逐条记录 done/partial 与 4 处计划-现实偏离（D6 齿条与总览条职责划分、D4 保留逐行消隐、P3 两项延后）。可视化证据 `reports/ui-baseline-983` ↔ `reports/ui-g75` |
 
 ## 4. 怎么写这类文档（最小要求）
 
