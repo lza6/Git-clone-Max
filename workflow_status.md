@@ -933,3 +933,50 @@ B4 仓库知识索引 / B5 MCP annotations / B6 真机点击仍属后续范围�
 | 打包 E2E | `dist/Git-clone-Max.exe --cli --json`：首跑 `action=cloned`、复跑 `action=fetched`、磁盘 `HEAD=7fd1a60`、`version=9.9.2` |
 | 发布 | Release id `421490075` · https://github.com/lza6/Git-clone-Max/releases/tag/v9.9.2 · 服务端下载校验 sha256 一致 |
 | 未执行 | 真机 125% DPI 目检 · 实际点击更新弹窗开浏览器（`webbrowser.open` 未在自动化里断言，只验到"是否弹窗"分支）|
+
+## 24. 独立审查记录（v9.9.3：G77 拆分 + G75 收口）
+
+> 说明：本轮先后启动过 3 个独立只读 reviewer 子代理，前两个随会话重启被回收（无结论），
+> 第三个改为**前台 + 10 分钟硬时间盒**完成。以下只记录它实际给出的内容。
+
+| 项 | 内容 |
+|----|------|
+| 审查对象 | `git diff 042b641..HEAD -- gcm/ tests/`（`update_flow.py` 抽取 + `progress_delegate.tick_positions` + 相应测试与版本 bump）|
+| 审查方式 | 独立上下文、有罪推定；允许只读命令（`git diff`/`grep`/单模块 `unittest`/python 探针）|
+| **Verdict** | **Approve**（无 Critical Issues）|
+| 它实测过的命令 | `tests.test_g66_patch.TestUpdateCheckThreading` 5 OK · `TestProgressTicks` 3 OK · `test_g76_wiring`+`test_update_auto` 32 OK · `test_g68_settings_ui.TestNoModalFromHiddenWindow`+`test_manage_ui` 29 OK · `ruff` 0 error · `mypy` Success |
+
+### 24.1 Required Changes 与关闭结果（全部已修）
+
+| # | 审查发现（file:line） | 我的处理 | 证据 |
+|---|----------------------|---------|------|
+| R1 | `tests/test_g66_patch.py` 的「给 `update_flow` 也打桩」分支是**死代码**（该模块无模块级 `QMessageBox`，靠 `_msgbox()` 运行期取 `main_window.QMessageBox`），注释宣称的保护不存在 | 删除 `uf_mod`/`real_mb_uf` 两处分支与 import，注释改为「单点打桩即覆盖」 | `grep real_mb_uf` = 0 命中；`tests.test_g66_patch` 66 OK |
+| R2 | `tests/test_g66_patch.py` 新增行 E501（104 > 100）| 折行 | `ruff check gcm` 与人工复核 |
+| R3 | `update_flow.on_checked` 的 `_update_checking = False` 被排到延迟 import **之后**，一旦 import 抛异常该标志永久置位 → 「检查更新」永久失效且零提示 | 复位提到 import 之前（原实现中它也是第一条语句）| 68 行附近删除即回滚；`test_g66_patch`/`test_update_auto`/`test_manage_ui` 绿 |
+
+### 24.2 Suggestions 采纳情况
+
+| # | 建议 | 处理 |
+|---|------|------|
+| S1 | `assertIn("threading.Thread", 全文)` 属弱断言（线程挪到同文件别的函数仍绿）| **采纳**：改成 AST 作用域断言（必须位于 `check_now` 自身语句），并做**变异实验**验证：①把起线程改成 `_worker()` → `Thread` 缺失=真；②把线程挪进另一个函数 → `Thread`/`start` 均缺失=真 |
+| S2 | `mb = _msgbox()` 在 `try` 之外 | **采纳**：移进 `try`，异常走降级提示 |
+| S3 | `check_silent` docstring 丢了 G67-9 的历史理由 | **采纳**：补回「原实现 `QTimer.singleShot(2500,...)` 在 GUI 线程查网 → 弱网冻结窗口」|
+| S4 | 未知进度（`pct<0`）也画刻度 | **采纳**：`if pct >= 0:` 才画；`tick_positions` docstring 写明 `steps` 会 int 截断 |
+| S5 | `tests/test_g76_wiring.py` 巨型 `with` 可读性差（建议 `ExitStack`）| **不采纳**（本轮范围外、纯可读性；登记为后续）|
+| S6 | `progress_delegate.py` 三连空行（E303）| **采纳**：已删 |
+
+### 24.3 审查未覆盖的范围（诚实披露）
+
+- 审查只覆盖 `042b641..HEAD` 的**代码与测试**，未重跑全量快集、未审 `docs/`、未做安全专项。
+- 「点击更新后真的打开浏览器」`webbrowser.open` 仍无自动化断言（只验到"是否弹窗"分支）。
+
+### 23.2 独立复验（发布物被二次构建替换后重做）
+
+| 项 | 结果 |
+|---|---|
+| 服务端事实（API） | `v9.9.2` id 421490075：exe **41,354,950 B** digest `c70a48a8…`；zip **79,779,525 B** digest `05b21b6c…` |
+| 三方一致 | API digest == **从 Release 下载回来重算的 sha256** == 本地 `dist/` 实测 sha256（exe `c70a48a8…`、zip `05b21b6c…`） |
+| 下载物 E2E | 用**下载回来的 exe**：`version=9.9.2` → `action=cloned` → 二次 `action=fetched / 已是最新` → 无效输入 `exit=2` |
+| CI | `d69d229` / `e5ab085` / `ff1c3f0` / **`57b31a9`** 四次 run **全部 7/7 success**（最新 run 39908614927） |
+| 说明 | 首传（`30a76fcd…`）与终传（`c70a48a8…`）是**同源码两次构建**；以终传为准。两次下载遇到 TLS 抖动，第三次成功 —— 网络问题，非产物问题 |
+

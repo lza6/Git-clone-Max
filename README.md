@@ -1,7 +1,7 @@
 # Git-clone-Max
 
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
-> **当前版本：v9.9.2**（G75 视觉系统 + 收口：墨/纸双主题重制、三字族排版、状态形状编码、贴顶仪表齿条、进度刻度）
+> **当前版本：v9.9.3**（G75 视觉系统 + 收口：墨/纸双主题重制、三字族排版、状态形状编码、贴顶仪表齿条、进度刻度）
 > **v5.0：多平台直克隆** — GitLab / Gitee / Codeberg / Bitbucket / 自建主机（HTTPS/SSH/短格式/子组）同样支持。
 > 克隆目录一律 `host__作者__仓库`（GitHub 为 `作者__仓库`），本地改动永不覆盖。
 
@@ -259,9 +259,9 @@ python -m coverage run --source=gcm -m unittest discover -s tests
 ## 发布
 
 ```bash
-git tag v9.9.2
+git tag v9.9.3
 git push origin main --tags
-python scripts/publish_release.py --tag v9.9.2   # 自动上传 exe 到 GitHub Release
+python scripts/publish_release.py --tag v9.9.3   # 自动上传 exe 到 GitHub Release
 ```
 
 ## License

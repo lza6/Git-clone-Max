@@ -130,3 +130,11 @@
 - 发布：`v9.9.2`（Release id 421490075）；CI run 39905267408 **7/7**；本地快集 1421/0/4 skip，覆盖 82%；
   产物 exe 41,354,950 B（sha256 `c70a48a8…`，服务端校验一致）/ zip 79,779,525 B；
   打包 E2E：cloned → fetched（HEAD 7fd1a60）。**未做**真机 DPI 目检与"点击更新后真的打开浏览器"。
+
+## 2026-10-23 独立审查与 v9.9.3（无功能新增）
+- 独立只读 reviewer（第 3 个；前两个随会话重启被回收）→ **Approve**，无 Critical。
+- 关闭 3 条 Required：①删测试里的「给 update_flow 打桩」死分支（该模块无模块级 QMessageBox，
+  靠 `_msgbox()` 运行期取 main_window 的）②E501 折行 ③`_update_checking` 复位提到延迟 import 之前（防永久失效）。
+- 采纳 4 条建议：AST 作用域断言（已变异验证能红）· `_msgbox()` 进 try · `check_silent` 补 G67-9 理由 ·
+  未知进度不画刻度 + 删三连空行。未采纳 1 条（`test_g76_wiring` 巨型 with → ExitStack，纯可读性）。
+- 教训：**给"抽出去的模块"打桩前先确认它有没有模块级符号**，否则写的是死分支还自认为加固了。

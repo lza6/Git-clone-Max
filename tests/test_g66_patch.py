@@ -1207,16 +1207,32 @@ class TestUpdateCheckThreading(unittest.TestCase):
                     call_name = (getattr(node.func, "attr", None)
                                  or getattr(node.func, "id", None) or "")
                     if call_name in ("check_latest", "check_latest_with_sha"):
-                        problems.append(f"{path.name}:{node.lineno} 在函数自身语句里调用了 {call_name}")
+                        problems.append(
+                            f"{path.name}:{node.lineno} 在函数自身语句里调用了 {call_name}")
                 stack.extend(ast.iter_child_nodes(node))
         self.assertEqual(problems, [],
                          "检查更新在 GUI 线程同步跑网络（G67-9 回归）：" + "；".join(problems))
 
-        # 附加：实现必须真的把网络放进工作线程
-        flow_src = (ROOT / "gcm/ui/update_flow.py").read_text(encoding="utf-8")
-        self.assertIn("threading.Thread", flow_src,
-                      "update_flow.check_now 必须用 threading.Thread 起 worker（否则界面会冻结）")
-        self.assertIn(".start()", flow_src, "worker 线程必须真的 start()")
+        # 附加：worker 线程必须真的起在 `check_now` **自身作用域**里。
+        # 早先这里是全文子串判断，把 worker 挪到同文件别的函数也照样绿 → 现改 AST。
+        flow_path = ROOT / "gcm/ui/update_flow.py"
+        flow_tree = ast.parse(flow_path.read_text(encoding="utf-8"))
+        check_now = next((n for n in ast.walk(flow_tree)
+                          if isinstance(n, ast.FunctionDef) and n.name == "check_now"), None)
+        self.assertIsNotNone(check_now, "update_flow 里找不到 check_now（拆分后改名了？）")
+        own_calls: list[str] = []
+        pending = list(check_now.body)
+        while pending:
+            node = pending.pop()
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                continue  # worker 的函数体不在此断言范围
+            if isinstance(node, ast.Call):
+                own_calls.append(getattr(node.func, "attr", None)
+                                 or getattr(node.func, "id", None) or "")
+            pending.extend(ast.iter_child_nodes(node))
+        self.assertIn("Thread", own_calls,
+                      "check_now 必须在自身语句里起 threading.Thread（否则界面会冻结）")
+        self.assertIn("start", own_calls, "worker 线程必须真的 start()")
 
     def test_manual_check_runs_worker_off_gui_thread(self):
         """**真实行为断言**：点「检查更新」时，HTTP 必须在非 GUI 线程执行。
@@ -1261,14 +1277,11 @@ class TestUpdateCheckThreading(unittest.TestCase):
         import gcm.ui.main_window as mw_mod
         # G76 起弹窗实现搬到 gcm.ui.update_flow（它自己 import 了 QMessageBox），
         # 只在 main_window 上打桩拦不住 → 两个模块都打，恢复时也两个都还原。
-        # 弹窗实现可能在 main_window，也可能在拆分出的 gcm.ui.update_flow ——
-        # 两个位置都打桩，谁在就拦谁（不依赖某个重构是否已合入）。
-        try:
-            import gcm.ui.update_flow as uf_mod
-        except Exception:
-            uf_mod = None
+        # G77 起弹窗实现搬到 gcm.ui.update_flow，但它**没有**模块级 QMessageBox ——
+        # `update_flow._msgbox()` 在运行期返回 `main_window.QMessageBox`。
+        # 所以单点打桩 mw_mod.QMessageBox 即覆盖两条路径（曾试过再打桩 update_flow，
+        # 那是死分支：该模块根本没有这个属性）。
         real_mb = mw_mod.QMessageBox
-        real_mb_uf = getattr(uf_mod, "QMessageBox", None) if uf_mod is not None else None
         try:
             win = MainWindow(tmp)
             # G68-4：必须 show() —— `_on_update_checked` 只在窗口**可见**时弹模态
@@ -1295,8 +1308,6 @@ class TestUpdateCheckThreading(unittest.TestCase):
                     return real_mb.StandardButton.No
 
             mw_mod.QMessageBox = _StubMB
-            if real_mb_uf is not None:
-                uf_mod.QMessageBox = _StubMB
 
             # 探针：记录线程 id 后**仍然调用真槽** —— 顺带验证 _update_checking 复位
             win.update_checked.disconnect()
@@ -1333,8 +1344,6 @@ class TestUpdateCheckThreading(unittest.TestCase):
                              "有新版应走 question 分支一次（弹窗只在 GUI 线程发生）")
         finally:
             mw_mod.QMessageBox = real_mb
-            if real_mb_uf is not None:
-                uf_mod.QMessageBox = real_mb_uf
             updater_mod.check_latest = original
             if original_sha is not None:
                 updater_mod.check_latest_with_sha = original_sha

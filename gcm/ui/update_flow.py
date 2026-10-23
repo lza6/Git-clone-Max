@@ -66,9 +66,11 @@ def check_now(win) -> None:
 def on_checked(win, has_new: bool, ver: str, url: str, err: str,
                sha: str | None = None) -> None:
     """`update_checked` 槽（GUI 线程）：弹窗 + 需要时打开下载页；附 SHA256 校对行。"""
+    # 复位放在**任何可能抛异常的动作之前**：这个标志一旦漏复位，"检查更新"按钮
+    # 就永久失效且用户零提示（原实现里它也是函数第一条语句）。
+    win._update_checking = False
     from .main_window import _fmt_dt  # 延迟导入：避免 main_window ↔ update_flow 循环
 
-    win._update_checking = False
     if sha is None:
         sha = str(getattr(win, "_update_sha256", "") or "")
     win._update_sha256 = ""  # 一次性：不要污染下一次检查的提示
@@ -82,8 +84,10 @@ def on_checked(win, has_new: bool, ver: str, url: str, err: str,
         except Exception:  # noqa: BLE001 —— 日志失败不该让检查流程崩
             pass
         return
-    mb = _msgbox()
     try:
+        # `_msgbox()` 也在 try 内：万一 main_window 的 QMessageBox 被改动/移除，
+        # 异常要走下面的降级分支，而不是从槽里冒出去让用户什么都看不到。
+        mb = _msgbox()
         if err:
             mb.information(win, "检查更新", err)
         elif has_new:
@@ -105,7 +109,13 @@ def on_checked(win, has_new: bool, ver: str, url: str, err: str,
 
 
 def check_silent(win) -> None:
-    """启动后静默检查：不阻塞、不弹窗；失败留痕、有新版本写日志 + 托盘提示。"""
+    """启动后静默检查：不阻塞、不弹窗；失败留痕、有新版本写日志 + 托盘提示。
+
+    **为什么必须用 worker 线程**（G67-9 的历史）：原实现由
+    `QTimer.singleShot(2500, ...)` 在 **GUI 线程**里直接查 GitHub，
+    实测弱网下窗口冻结数秒、拖动/重绘全停。现在网络在 `_worker` 里，
+    只 `emit` 回 GUI 线程 —— 谁想把它挪回主线程，先看这条。
+    """
     from .main_window import _fmt_dt  # 延迟导入：避免循环
 
     def _worker():

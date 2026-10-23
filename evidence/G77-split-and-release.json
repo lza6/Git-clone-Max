@@ -165,5 +165,62 @@
     },
     "release_id": 421490075,
     "verified_by": "publish_release 内置下载校验 + GitHub API asset digest + 本地 sha256 三方一致"
+  },
+  "independent_reverify_2026_10_23_1405": {
+    "note": "发布物被同源码二次构建替换过，因此不继承任何会话的结论，重新做三方核对 + 用下载物跑 E2E",
+    "server_facts_via_api": {
+      "release_id": 421490075,
+      "assets": [
+        {
+          "name": "Git-clone-Max.exe",
+          "size": 41354950,
+          "digest": "c70a48a86a973d59…"
+        },
+        {
+          "name": "Git-clone-Max-portable.zip",
+          "size": 79779525,
+          "digest": "05b21b6c85d7527e…"
+        }
+      ]
+    },
+    "three_way_match": {
+      "exe": "GitHub API digest == 下载回来重算的 sha256 == 本地 dist/Git-clone-Max.exe 实测 sha256（c70a48a8…，41,354,950 B）",
+      "zip": "GitHub API digest == 本地 dist/Git-clone-Max-portable.zip 实测 sha256（05b21b6c…，79,779,525 B）",
+      "verdict": "一致"
+    },
+    "downloaded_artifact_e2e": {
+      "cmd": "从 Release 下载的 exe --cli --json <urls>",
+      "clone": "version=9.9.2 action=cloned message=克隆完成",
+      "incremental": "action=fetched message=已是最新",
+      "invalid_input_exit_code": 2,
+      "verdict": "pass"
+    },
+    "ci": {
+      "head": "57b31a9",
+      "run_id": 39908614927,
+      "conclusion": "success",
+      "jobs": 7,
+      "history": [
+        {
+          "sha": "e5ab085",
+          "run": 39907950302,
+          "conclusion": "success"
+        },
+        {
+          "sha": "ff1c3f0",
+          "run": 39908471292,
+          "conclusion": "success"
+        },
+        {
+          "sha": "d69d229",
+          "run": 39905267408,
+          "conclusion": "success"
+        }
+      ]
+    },
+    "limitations": [
+      "两次下载尝试遇到 TLS 抖动（URLError/SSL EOF），第三次成功；这是网络侧问题，不是产物问题",
+      "publish_release 的内置整包下载校验在本会话首传时被跳过（SSL），最终发布物的内置校验由并发会话跑通；本会话用 API digest + 下载重算独立复核"
+    ]
   }
 }
