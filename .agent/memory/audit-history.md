@@ -146,3 +146,8 @@
   发布 v9.9.4：exe 41,361,913 B（sha256 `5e607063…`，服务端校验一致）/ zip 79,792,364 B。
 - 事故/教训：`git add -A` 一度把 38 张截图（3.5MB）带进仓库，已用 `git rm --cached` 移出并把
   `.gitignore` 收敛为 `reports/ui-*/`（不 force push、不改历史）。
+- 阻塞（外部）：GitHub Actions 自 07:24 UTC 起对 `2f4e06e` 的 run **pending 41min 零派发**，
+  `faa33f4` 的 run queued 1h25min；status 页显示 operational。并发会话新增的
+  `concurrency{cancel-in-progress:true}` 已把旧 run（含 afb92e2/d2ec841）**全部取消**，
+  因此 v9.9.3/v9.9.4 两个发布提交**没有 CI 结论**。不得声称 CI 通过。
+  最后一次真实 CI：d69d229 / e5ab085 / ff1c3f0 / 57b31a9 各 7/7。

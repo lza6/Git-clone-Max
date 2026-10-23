@@ -1040,3 +1040,15 @@ B4 仓库知识索引 / B5 MCP annotations / B6 真机点击仍属后续范围�
 | 发布 | https://github.com/lza6/Git-clone-Max/releases/tag/v9.9.4 · 服务端下载校验 sha256 一致 |
 | 环境注记 | 本机此刻**直连 github.com 的 git 全部失败**（`git ls-remote` 3/3 `TLS connect error: unexpected eof`），E2E 首跑因此 failed；重试由**内置镜像回退**成功 —— 顺带验证了 G58-2/G69-21 的镜像链路与「克隆后回源站」规则 |
 | CI | **仍在 GitHub 队列（queued）**，见 §27；本表不把未跑的 run 计为通过 |
+
+## 27. 阻塞登记：GitHub Actions 不派发（2026-10-23 16:05 实测）
+
+| 项 | 事实 |
+|----|------|
+| 现象 | run `39917512506`（`2f4e06e`）自 07:24 UTC 起 **pending 41 分钟**，零 job 启动；`faa33f4` 的 run 自 06:40 UTC 起 **queued 1h25min** |
+| 已排除 | ①`githubstatus.com` 显示 Actions **operational**；②workflow YAML 可解析（run 被成功创建）；③并发组未卡死（见下）|
+| 已确认发生的事 | 并发会话在 `9051402` 给 workflow 加了 `concurrency{group: ci-<ref>, cancel-in-progress: true}` → **旧 run 全部被取消**（`9051402/7847bd5/d2ec841/982cfe7/c6373e3/6023580` 均 `cancelled`），**包括 `afb92e2`（v9.9.3 对应提交）与 `d2ec841`（v9.9.4 对应提交）** |
+| 结论 | 这不是代码问题；**是 runner 不派发**。按停止条件「缺不可替代的环境」上报阻塞，不伪造"CI 通过" |
+| 最后一次真实 CI 结论 | `d69d229` / `e5ab085` / `ff1c3f0` / `57b31a9` 各 **7/7 success**（run 39905267408 等）|
+| 恢复后要做的唯一一件事 | 看**最新 HEAD 的那一个 run**：它包含当前全部代码（G75 + G76 + G77 + 九.9.4 修复）；绿即可把本段改为"已闭环" |
+| 不要再做的事 | 每推一次都会因 `cancel-in-progress` 取消正在等/在跑的 run —— **runner 恢复前不要为了登记而反复推送** |
