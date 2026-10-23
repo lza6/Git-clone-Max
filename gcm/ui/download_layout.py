@@ -34,6 +34,24 @@ from ..i18n import tr
 _QUICK_SPLIT = re.compile(r"[,;，；\s]+")
 
 
+def sync_quick_scroll_height(owner) -> None:
+    """G78：快捷填充滚动区的高度跟着 chip 内容走，**不再写死像素值**。
+
+    为什么改：原实现 `setFixedHeight(38)`，而 chip 按钮实测 `sizeHint().height() == 42`
+    → 底部 4px 被裁（chip 的圆角下沿与文字基线以下整段消失）。
+    这在 **1440×900 标准模式**下就能看到，不是"小屏 + 缩放"的锅
+    （早先 `known-issues.md` 把病因归成了缩放，特此更正）。
+    字号缩放 / 主题切换都会改变 chip 高度，所以每次重建都重算一次。
+    """
+    scroll = getattr(owner, "quick_scroll", None)
+    if scroll is None:
+        return  # 首次构建时 scroll 还没挂到 owner（rebuild 先于赋值）
+    heights = [b.sizeHint().height()
+               for b in (getattr(owner, "_quick_fill_buttons", None) or [])]
+    # +2 是 chip 与视口之间的 1px 余量；没有 chip 时退回历史值 38 附近
+    scroll.setFixedHeight((max(heights) if heights else 36) + 2)
+
+
 def rebuild_quick_fill(owner) -> int:
     """重建「快捷填充」chip 行，返回按钮数（供测试断言）。
 
@@ -57,6 +75,7 @@ def rebuild_quick_fill(owner) -> int:
         buttons.append(btn)
     lay.addStretch()
     owner._quick_fill_buttons = buttons
+    sync_quick_scroll_height(owner)   # G78：增删 chip 后高度跟着变
     return len(buttons)
 
 
@@ -148,7 +167,8 @@ def build_download_top(owner) -> QWidget:
     quick_scroll.setFrameShape(QFrame.Shape.NoFrame)
     quick_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
     quick_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-    quick_scroll.setFixedHeight(38)
+    # G78：高度不再写死 38（chip 实测 42 → 底部被裁 4px），改由
+    # sync_quick_scroll_height() 按内容推导；owner.quick_scroll 赋值后立即同步。
     quick_inner = QWidget()
     quick = QHBoxLayout(quick_inner)
     quick.setContentsMargins(0, 0, 0, 0)
@@ -159,6 +179,7 @@ def build_download_top(owner) -> QWidget:
     quick_scroll.setWidget(quick_inner)
     quick_row.addWidget(quick_scroll, 1)
     owner.quick_scroll = quick_scroll
+    sync_quick_scroll_height(owner)   # G78：按 chip 实际高度定滚动区高度
     # G76：快捷填充的编辑入口（此前只能手改 settings.json）
     owner.btn_edit_quick = QPushButton(tr("编辑"))
     owner.btn_edit_quick.setToolTip(tr("增删「快捷填充」按钮里的仓库地址（逗号或换行分隔）"))

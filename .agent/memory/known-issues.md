@@ -126,11 +126,13 @@
 
 ## G75 收口轮新发现的**外观**边界（2026-10-23，非阻塞）
 
-1. **1024×768 @125% 缩放下「快速填充」行被切成半截**：`QT_SCALE_FACTOR=1.25` 离屏截图
-   （`reports/ui-g75-125/download_deep_1024x768.png`）可见「编辑」按钮上方露出两片被裁的 chip。
-   原因：compact 模式只隐藏 `quick_scroll`，而 G76 新增的「编辑」按钮不在该容器内，
-   缩放下行高变大 → 顶部滚动区在该处截断。
-   **判定**：纯外观、仅出现在「小屏 + 缩放」组合；逻辑无影响，未阻塞发布。
+1. ~~**1024×768 @125% 缩放下「快速填充」行被切成半截**~~ **已修（v9.9.4），且病因登记有误，特此更正**：
+   真实病因是 `quick_scroll.setFixedHeight(38)` 写死，而 chip 按钮 `sizeHint().height() == 42`
+   → **每颗 chip 底部 4px 被裁**，**与缩放无关**（1440×900 标准模式就能看到）。
+   改法：`sync_quick_scroll_height()` 按 chip 实际高度推导 + 在 `rebuild_quick_fill()` 与
+   `_apply_layout_mode()` 两处重同步；守卫 `tests/test_g78_quick_scroll`（3 项几何断言）。
+   教训：**"看起来像缩放问题"要先量尺寸**（`sizeHint` vs `fixedHeight`），别把像素常量与
+   设备缩放混为一谈。
 2. **更新检查的 `urllib` 直连路径在本机无法实测**：本机 TLS 代理会打断 Python `urllib`
    与 git schannel（`SSL: UNEXPECTED_EOF_WHILE_READING`），而 `requests`/PyGithub 正常。
    验证改用 `requests` 取真实 Release JSON 再喂生产解析逻辑（只换传输层）。换机器/CI 网络可直测。

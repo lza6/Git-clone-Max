@@ -1017,3 +1017,13 @@ B4 仓库知识索引 / B5 MCP annotations / B6 真机点击仍属后续范围�
 | 产物 == 源码 | 构建于 `afb92e2`；其后 `5e91f35`/`3fa9b16` **只改 tests 与 docs**（`gcm/` 无变更），故产物仍对应 HEAD 源码 |
 | CI | `d69d229`/`e5ab085`/`ff1c3f0`/`57b31a9` 四次 run **7/7 success**；`afb92e2` 之后 4 个 run **一直 queued 未出结论** → **不声称通过**，后台轮询中，出结果后补登记 |
 
+## 26. v9.9.4：快捷填充 chip 裁切修复（自查发现的真实缺陷）
+
+| 项 | 内容 |
+|----|------|
+| 缺陷 | `quick_scroll` 写死 `setFixedHeight(38)`，chip 实测 `sizeHint().height() == 42` → 底部 4px 被裁（1440×900 标准模式可见）|
+| 误判更正 | 早先登记为「仅 1024×768@125% 缩放」；实测三档尺寸 + 三档 `QT_SCALE_FACTOR` 后确认**与缩放无关**，已改 `known-issues.md` |
+| 修法 | `sync_quick_scroll_height()`：按最高 chip 高度 + 2 推导；在 `rebuild_quick_fill()`（编辑后）与 `_apply_layout_mode()`（尺寸/缩放变化后）两处重新同步 |
+| 守卫 | `tests/test_g78_quick_scroll`(3)：标准模式不裁切 · 紧凑模式按设计隐藏 · 编辑后高度跟随 · 重复同步幂等 · 无 scroll 宿主不抛 |
+| 视觉证据 | `reports/ui-g78/`（38 张，改后）对照 `reports/ui-g75/`（改前）|
+| 教训 | 把"像素常量 vs 设备缩放"混为一谈会误导修复方向；尺寸类缺陷应当**先量 `sizeHint` 再改** |

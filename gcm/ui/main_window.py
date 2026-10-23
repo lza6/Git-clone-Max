@@ -693,6 +693,13 @@ class MainWindow(QMainWindow):
                 _w = getattr(self, _name, None)
                 if _w is not None:
                     _w.setVisible(not compact)
+            # G78：布局模式/缩放变化后，按 chip 真实高度重算滚动区高度
+            # （构建时窗口还没定型，父级会把它压扁 → chip 底部被裁）
+            try:
+                from .download_layout import sync_quick_scroll_height
+                sync_quick_scroll_height(self)
+            except Exception as exc:  # noqa: BLE001 —— 纯外观修正，不能拖垮布局切换
+                self._emit_log(_fmt_dt(), LogLevel.WARN, f"快捷填充高度同步失败：{exc}")
             # G74：Compact 把高度还给进度表（1366×768 下原来只能看到 3 行）
             try:
                 if (hasattr(self, "download_splitter")

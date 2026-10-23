@@ -7,7 +7,7 @@
 
 #define MyAppName "Git-clone-Max"
 ; G66-2：与 gcm/__init__.py 的 __version__ 一致（tests/test_g66_patch.py 强制校验）。
-#define MyAppVersion "9.9.3"
+#define MyAppVersion "9.9.4"
 #define MyAppExeName "Git-clone-Max.exe"
 #define MyAppPublisher "lza6"
 #define MyAppURL "https://github.com/lza6/Git-clone-Max"
