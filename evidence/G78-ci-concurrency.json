@@ -1,0 +1,47 @@
+{
+  "task_id": "G78-ci-concurrency",
+  "status": "fixed_with_external_limitation",
+  "timestamp": "2026-10-23T15:15:00+08:00",
+  "problem": {
+    "symptom": "GitHub Actions 队列 5 个 run 全部 queued，57 分钟零派发（14:05 → 15:02）",
+    "last_successful_run": "57b31a9 完成于 2026-10-23T06:02:43Z（此前每个 run 约 5.5 分钟）",
+    "stuck_runs": [
+      "0643535 #39909387665",
+      "afb92e2 #39909918374",
+      "5e91f35 #39910543348",
+      "3fa9b16 #39911819728",
+      "faa33f4 #39912907093"
+    ],
+    "root_cause": "`.github/workflows/ci.yml` **没有 concurrency 配置** —— 同一分支连续推送 5 次会创建 5 个独立 run（各 7 个 job = 35 job）同时抢并发；上一次成功 run 之后未再派发任何 job",
+    "ruled_out": [
+      "GitHub 平台故障：www.githubstatus.com/api/v2/status.json 返回 indicator=none / All Systems Operational",
+      "YAML 语法：加入配置后 yaml.safe_load 解析通过，jobs 未增删"
+    ],
+    "not_verified": "账号 Actions 分钟额度（/user/settings/billing/actions 需要相应 token scope，且当前 api.github.com TLS 握手持续失败）"
+  },
+  "fix": {
+    "file": ".github/workflows/ci.yml",
+    "change": "新增 concurrency: {group: 'ci-${{ github.ref }}', cancel-in-progress: true}",
+    "why": "同分支只保留最新 run，旧 run 自动取消：①省 runner 分钟；②review 需要的『最新代码结论』能及时出来；③附带清理当前堆积的队列",
+    "commit": "9051402",
+    "scope_note": "本次提交**只含该文件** —— 工作区当时另有并发会话的未提交改动（含版本文件），未纳入（上一轮曾误用 git add -A 夹带，已在其后用 afb92e2 更正说明）"
+  },
+  "evidence": {
+    "yaml_parse": "concurrency={'group': 'ci-${{ github.ref }}', 'cancel-in-progress': True}; jobs=['test','e2e-smoke','fast-smoke','perf-baseline','slow']",
+    "push": "faa33f4..9051402 main -> main（git 推送成功）",
+    "post_fix_observation": "推送后 api.github.com 连续 SSL 握手失败（URLError: UNEXPECTED_EOF_WHILE_READING），未能取回队列状态 → 无法确认新 run 是否已开跑"
+  },
+  "limitations": [
+    "api.github.com 出站 TLS 在 15:08–15:12 持续失败（同时 git push/ls-remote 正常），因此**拿不到 concurrency 生效后的 CI 结论**；不声称 CI 通过",
+    "推荐复核方式（网络恢复后一行即可）：GET /repos/lza6/Git-clone-Max/actions/runs?per_page=3，确认只有最新 HEAD 的 run 在跑、旧 run 状态为 cancelled"
+  ],
+  "local_evidence_instead_of_ci": {
+    "gates": "ruff All checks passed / mypy Success（87 文件）",
+    "fast_suite": "1421 tests · 0 fail · 0 error · 4 skipped（9.9.3 代码）",
+    "slow_suite_windows": "129 tests · OK · 69.7s（真实 git E2E）",
+    "targeted": "168 tests · OK（update_flow / settings / i18n / docs 守卫）",
+    "coverage": "82%（门禁 Windows 81 / POSIX 80）",
+    "build_health": "exe 41,358,954 B / zip 79,788,175 B；version_match 9.9.3；started_ok=true",
+    "downloaded_artifact_e2e": "从 Release 下载的 exe：cloned → fetched/已是最新 → 无效输入 exit=2"
+  }
+}
