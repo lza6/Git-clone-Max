@@ -8,6 +8,15 @@ on:
   pull_request:
     branches: [main]
 
+# G78：并发组 + cancel-in-progress。
+# 事故背景（2026-10-23）：两个会话在同一分支连续推了 5 个提交，而本 workflow 没有 concurrency
+# 配置 → 5 个 run × 7 个 job = 35 个 job 同时抢并发，队列 57 分钟零派发（此前每个 run 约 5.5 分钟）。
+# 加同组互斥后：同一分支只保留最新的一个 run，旧 run 被自动取消 —— 既不浪费 runner 分钟，
+# 也让"最新提交的结论"及时出来（这才是 review 真正需要的那个结论）。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 # G45-7：三平台矩阵（Windows/Linux/macOS）+ 独立真实 git E2E 冒烟 job。
 # GitHub hosted runner 均自带 git，无需额外安装。
 jobs:
