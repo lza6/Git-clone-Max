@@ -908,3 +908,15 @@ B4 仓库知识索引 / B5 MCP annotations / B6 真机点击仍属后续范围�
 | 构建 | PyInstaller 从**已提交树**重建（保证产物 == tag），健康检查见下 |
 | 未执行 | 真人目检（无真人）；真实用户数据目录搬移（只在临时目录做） |
 
+### 23.1 发布与下载复验（v9.9.2）
+
+| 项 | 结果 |
+|---|---|
+| CI | run `39905267408` on `d69d229` · **7/7 success** |
+| 产物 == 源码 | 构建在提交之后，且 `_internal/gcm/__init__.py` 与工作区 sha256 **一致** |
+| 健康检查 | `version_match 9.9.2` · `started_ok=true` · `repos_db_created=true` |
+| Release | `v9.9.2` id 421490075 · https://github.com/lza6/Git-clone-Max/releases/tag/v9.9.2 |
+| 服务端校验 | `publish_release` 的内置下载校验因 SSL 抖动被跳过 → 改用 **API asset digest**（exe `30a76fcd…` / zip `05b21b6c…`），并**下载 exe 重算 sha256 复核一致** |
+| 下载物 E2E | 用**从 Release 下载回来的 exe**：`action=cloned` → 二次 `action=fetched / 已是最新`，空输入 `exit=2` |
+| 边界 | 并发会话 13:45 又跑了一次本地构建，`dist/` 里的 exe 因此与已发布哈希不同（源码/工作区未变）；发布物以服务端 digest + 下载复验为准 |
+

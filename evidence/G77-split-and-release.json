@@ -1,0 +1,152 @@
+{
+  "task_id": "G77-split-and-release",
+  "status": "passed",
+  "timestamp": "2026-10-23T13:55:00+08:00",
+  "scope": "清掉上一轮自登记的剩余项：主窗增量拆分、真实文件搬移、本机慢集、高 DPI 渲染；并把 v9.9.2 发布到 GitHub Release 并用『下载回来的产物』做 E2E",
+  "commands_executed": [
+    {
+      "cmd": "ruff check gcm",
+      "exit_code": 0,
+      "raw_output_tail": "All checks passed!"
+    },
+    {
+      "cmd": "mypy gcm",
+      "exit_code": 0,
+      "raw_output_tail": "Success: no issues found in 87 source files"
+    },
+    {
+      "cmd": "unittest tests.test_g66_patch tests.test_g67_docs_freshness",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 77 tests in 15.266s\n\nOK (skipped=1)"
+    },
+    {
+      "cmd": "unittest tests.test_update_auto tests.test_manage_ui tests.test_g68_settings_ui tests.test_g66_patch tests.test_g76_wiring",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 138 tests in 26.327s\n\nOK (skipped=1)"
+    },
+    {
+      "cmd": "慢集（Windows 真实 git：test_engine/test_v7_fixes/test_core/test_extra/test_v3_p0/test_submodule/test_publish/test_scanner/test_tag_branch/test_progress_search）",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 129 tests in 69.706s\n\nOK"
+    },
+    {
+      "cmd": "coverage run --source=gcm scripts/ci_run_fast.py",
+      "exit_code": 0,
+      "raw_output_tail": "[ci_run_fast] 合计：Ran 1421 tests · failures=0 errors=0 skipped=4\n[ci_run_fast] OK"
+    },
+    {
+      "cmd": "coverage report --include=\"gcm/*\"",
+      "exit_code": 0,
+      "raw_output_tail": "TOTAL 13792 2189 3446 617 82%"
+    },
+    {
+      "cmd": "QT_SCALE_FACTOR=1.25 scripts/ui_screenshot_audit.py reports/ui-g75-dpi125",
+      "exit_code": 0,
+      "raw_output_tail": "OUT: reports/ui-g75-dpi125（38 PNG）"
+    },
+    {
+      "cmd": "PyInstaller --noconfirm Git-clone-Max.spec（从已提交树 d69d229 重建）",
+      "exit_code": 0,
+      "raw_output_tail": "Build complete! ... dist"
+    },
+    {
+      "cmd": "scripts/build_portable_zip.py",
+      "exit_code": 0,
+      "raw_output_tail": "已生成 dist/Git-clone-Max-portable.zip（330 条目，79779525 字节）"
+    },
+    {
+      "cmd": "scripts/health_check.py --json dist/health_check.json",
+      "exit_code": 0,
+      "raw_output_tail": "version_match: src='9.9.2' artifact='9.9.2'; started_ok: alive after 60s; repos_db_created: true"
+    },
+    {
+      "cmd": "产品物一致性：比对 dist/Git-clone-Max-portable/_internal/gcm/__init__.py 与工作区源码",
+      "exit_code": 0,
+      "raw_output_tail": "sha256 07a3b03a276266a6 一致（产物 == 已提交源码）"
+    },
+    {
+      "cmd": "publish_release.py --tag v9.9.2",
+      "exit_code": 0,
+      "raw_output_tail": "上传 exe 41354396 B + zip 79779525 B 成功；服务端下载校验因 SSL 抖动被跳过（见 limitations）"
+    },
+    {
+      "cmd": "API asset digest 核对 + 下载远端 exe 重算 sha256",
+      "exit_code": 0,
+      "raw_output_tail": "下载大小 41354396 | 本地算出 30a76fcd7b0e3819 | 服务端 digest 30a76fcd7b0e3819 | 一致"
+    },
+    {
+      "cmd": "下载回来的 exe 跑真实 E2E：--cli --json（真实 GitHub octocat/Hello-World）",
+      "exit_code": 0,
+      "raw_output_tail": "version=9.9.2 action=cloned；第二次 action=fetched / 已是最新；空输入 exit=2（退出码契约）"
+    }
+  ],
+  "files_changed": [
+    "gcm/ui/update_flow.py（新增 142 行：更新检查三段，含 _msgbox 单一 patch 点约定）",
+    "gcm/ui/main_window.py（三段方法改为薄委派，2750 → 2658 行）",
+    "tests/test_g76_wiring.py（+2 真实文件搬移用例：真 sqlite + 真 shutil.move）",
+    "tests/test_g66_patch.py（AST 守卫跟随代码：同扫 main_window + update_flow，并断言真起线程）",
+    "gcm/__init__.py（changelog 9.9.2 补 ④）",
+    "docs/architecture.md、CLAUDE.md、workflow_status.md、.agent/memory/change-index.md（行数与分层登记）"
+  ],
+  "tests": {
+    "slow_suite_windows": {
+      "count": 129,
+      "status": "passed",
+      "elapsed_s": 69.7
+    },
+    "fast_suite": {
+      "count": 1421,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 4,
+      "status": "passed"
+    },
+    "targeted": {
+      "count": 138,
+      "status": "passed"
+    },
+    "coverage_total_percent": 82,
+    "new_real_fs_cases": 2
+  },
+  "ci": {
+    "head": "d69d229",
+    "run_id": 39905267408,
+    "conclusion": "success",
+    "jobs": 7,
+    "url": "https://github.com/lza6/Git-clone-Max/actions/runs/39905267408"
+  },
+  "release": {
+    "tag": "v9.9.2",
+    "id": 421490075,
+    "url": "https://github.com/lza6/Git-clone-Max/releases/tag/v9.9.2",
+    "exe": {
+      "size": 41354396,
+      "sha256": "30a76fcd7b0e3819…"
+    },
+    "zip": {
+      "size": 79779525,
+      "sha256": "05b21b6c85d7527e…"
+    },
+    "server_digest_verified": true,
+    "downloaded_artifact_e2e": "cloned → fetched/已是最新，exit 0；空输入 exit 2"
+  },
+  "visual_validation": {
+    "dpi": "QT_SCALE_FACTOR=1.25",
+    "screenshots": 38,
+    "human_review": [
+      "download_deep_1440x900：齿条读数 / 进度刻度 / pill 形状编码均正确",
+      "tab_settings_1024x768：G76 新控件（关窗托盘 / 数据目录 + 迁移按钮）完整可见，无裁切/重叠"
+    ]
+  },
+  "mock_scenarios_covered": [
+    "QMessageBox 全分支（Yes/No/warning/information）",
+    "QInputDialog 确认/取消",
+    "migrate_data_dir 注入 + 真实搬移各一条"
+  ],
+  "limitations": [
+    "publish_release 的服务端下载校验（下载整包比 sha256）因 SSL 抖动两次失败后被跳过；改用 GitHub API 的 asset digest 核对（一致），并额外下载 exe 重算 sha256 复核（一致）",
+    "真人目检未做（无真人）；高 DPI 用 QT_SCALE_FACTOR=1.25 离屏渲染近似，非真实 Windows 缩放环境",
+    "数据目录搬移只在临时目录做真实搬移，未在真实用户数据目录执行（不可逆操作）",
+    "并发会话在 13:45 又跑了一次本地构建，导致 dist/Git-clone-Max.exe 本地哈希与已发布产物不同（源码未变、工作区干净）；已发布产物以服务端 digest + 下载复验为准"
+  ]
+}
