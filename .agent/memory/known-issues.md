@@ -123,3 +123,14 @@
    语义虽逐行保留，但改动该函数必须跑 `tests.test_g58_mirror_failover`。
 6. **`path=None` 的 RetryQueue 是纯内存**：G71 修复了「记什么丢什么」；但进程
    退出仍不保留（这是预期语义，不是持久队列）。
+
+## G75 收口轮新发现的**外观**边界（2026-10-23，非阻塞）
+
+1. **1024×768 @125% 缩放下「快速填充」行被切成半截**：`QT_SCALE_FACTOR=1.25` 离屏截图
+   （`reports/ui-g75-125/download_deep_1024x768.png`）可见「编辑」按钮上方露出两片被裁的 chip。
+   原因：compact 模式只隐藏 `quick_scroll`，而 G76 新增的「编辑」按钮不在该容器内，
+   缩放下行高变大 → 顶部滚动区在该处截断。
+   **判定**：纯外观、仅出现在「小屏 + 缩放」组合；逻辑无影响，未阻塞发布。
+2. **更新检查的 `urllib` 直连路径在本机无法实测**：本机 TLS 代理会打断 Python `urllib`
+   与 git schannel（`SSL: UNEXPECTED_EOF_WHILE_READING`），而 `requests`/PyGithub 正常。
+   验证改用 `requests` 取真实 Release JSON 再喂生产解析逻辑（只换传输层）。换机器/CI 网络可直测。

@@ -994,3 +994,12 @@ B4 仓库知识索引 / B5 MCP annotations / B6 真机点击仍属后续范围�
 | 发布 | https://github.com/lza6/Git-clone-Max/releases/tag/v9.9.3 · 服务端下载校验 sha256 一致 |
 | 独立审查 | 见 §24（Approve；3 条 Required + 4 条建议全部关闭/采纳，1 条建议登记不采纳）|
 | 未执行 | 真机 125% DPI 人工目检 · 「点击更新后真的打开浏览器」（`webbrowser.open` 仍无自动化断言）|
+
+### 25.1 收尾补测与边界（同日追加）
+
+| 项 | 结果 |
+|----|------|
+| 新增「更新弹窗尾部链路」测试 | `tests/test_g75_update_flow.py`（5 项，`Ran 5 · OK`）：点「是」→ `webbrowser.open(url)` 恰好一次 · 点「否」→ 不开 · err 分支 → 只提示 · `_update_sha256` 用后清空 · 不可见窗口不弹模态 |
+| 为什么单独成文件 | `tests/test_g66_patch.py` 已 1597 行，且它没有模块级 `QApplication`：把「先建 app 再建 MainWindow」的用例塞进去**实测会把进程挂住**（已复现并回退）|
+| 125% DPI 渲染核查 | `QT_SCALE_FACTOR=1.25` 离屏渲染 38 张（`reports/ui-g75-125/`），逐张看：布局整体正确、pill/刻度/齿条均正常；**发现 1 处外观裁切**（1024×768@125% 下「快速填充」行半截），已登记 `.agent/memory/known-issues.md` |
+| CI 状态 | `57b31a9` → run success **7/7**；`0643535` / `afb92e2` / `5e91f35` 的 run **仍在 GitHub 队列中（queued）**，本报告不把它们计为已通过 |
