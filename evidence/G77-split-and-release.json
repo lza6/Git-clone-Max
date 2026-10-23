@@ -147,6 +147,23 @@
     "publish_release 的服务端下载校验（下载整包比 sha256）因 SSL 抖动两次失败后被跳过；改用 GitHub API 的 asset digest 核对（一致），并额外下载 exe 重算 sha256 复核（一致）",
     "真人目检未做（无真人）；高 DPI 用 QT_SCALE_FACTOR=1.25 离屏渲染近似，非真实 Windows 缩放环境",
     "数据目录搬移只在临时目录做真实搬移，未在真实用户数据目录执行（不可逆操作）",
-    "并发会话在 13:45 又跑了一次本地构建，导致 dist/Git-clone-Max.exe 本地哈希与已发布产物不同（源码未变、工作区干净）；已发布产物以服务端 digest + 下载复验为准"
-  ]
+    "并发会话在 13:45 又跑了一次本地构建，导致 dist/Git-clone-Max.exe 本地哈希与已发布产物不同（源码未变、工作区干净）；已发布产物以服务端 digest + 下载复验为准",
+    "首传与终传是两次构建（同源码）；旧 digest 30a76fcd… 已被 c70a48a8… 取代，勿再引用"
+  ],
+  "final_published_assets": {
+    "note": "并发会话首传产物已被同源码二次构建替换；以下为最终发布物的实测值（本地 sha256 == GitHub API asset digest，且 publish_release 内置下载校验通过）",
+    "source_commit": "d69d229",
+    "exe": {
+      "name": "Git-clone-Max.exe",
+      "size": 41354950,
+      "sha256": "c70a48a86a973d5916d5cf93…"
+    },
+    "zip": {
+      "name": "Git-clone-Max-portable.zip",
+      "size": 79779525,
+      "sha256": "05b21b6c85d7527eded23f97…"
+    },
+    "release_id": 421490075,
+    "verified_by": "publish_release 内置下载校验 + GitHub API asset digest + 本地 sha256 三方一致"
+  }
 }
