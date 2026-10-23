@@ -815,3 +815,54 @@ B4 仓库知识索引 / B5 MCP annotations / B6 真机点击仍属后续范围�
 
 **停止条件**：截图可见的 P0/P1/P2 布局问题均已修复并有守卫；剩余为「极小高度需滚动」
 与「离屏非真机点击」的已知边界，不再扩大范围。
+
+
+## 22. G75 视觉系统 + G76 接线收口（2026-10-23，v9.9.0）
+
+### 22.1 边界与目标
+
+| 项 | 内容 |
+|---|---|
+| 目标 | ①把 G75 视觉系统重构从「半成品」收成可交付；②把 11 处「实现了但用户够不到」降到 0 |
+| 起点 | `main` @ `0018628`（9.8.3）；工作区已有 G75 半成品（5 个新 UI 模块、`progress_table` 848 行、门禁红） |
+| 结束 | `main` @ 见 Release；版本 9.9.0；快集 1415 绿 / 覆盖 82% / exe + 便携包健康 |
+
+### 22.2 节点
+
+| ID | 任务 | 状态 | 验收 |
+|---|---|---|---|
+| G75-1 | 拆 `theme.py`（598→314）为 `palettes`/`typography`/`qss_build` + 22 符号兼容再导出 | Done | `test_g46_theme`/`test_themes`/`test_g70_ui_upgrade` 全绿 |
+| G75-2 | 七级字号 + 三字族；`apply_type`（QFont 字距）真实被 `status_strip` 调用 | Done | `test_g75_visual_system.TestTypography` |
+| G75-3 | 四套色板重制（Ink/Paper/极简/HC）+ `cta/on_cta/glow` token；修 nord success 4.23→4.70 | Done | 逐对 WCAG 断言 |
+| G75-4 | QSS 层级重排（主窗渐变 / 卡片内嵌高光 / 页签选中 / 默认按钮幽灵化） | Done | `test_g75_visual_system.TestQssLayering` |
+| G75-5 | 仪表齿条 `status_strip` + 批次总览 `batch_overview`（职责分离，D23 定案） | Done | `test_status_strip_is_wired` 等 |
+| G75-6 | 状态形状编码 `status_pill`（QPainter，不用字符符号）+ 结果文案 `result_labels` | Done | 5 态 glyph 互不相同 |
+| G75-7 | `progress_table` 848→799（总览/文案外提） | Done | 行数断言 |
+| G75-8 | 设置导航 01–07 编号 + 去掉「G53」工程代号 | Done | `test_g68_settings_ui` 正则守卫 |
+| G76-1 | 6 个「只读不写」设置字段补写入侧（`minimize_to_tray`/`clone_timeout`/`post_clone_hook`/`watchdog_silent`/`sched_report_format`/`quick_repos`） | Done | `test_g76_wiring.TestSettingsWritesPersist` 等 |
+| G76-2 | 克隆后钩子：二次确认（默认 No）、拒绝则回滚、无可见窗口不弹模态 | Done | `TestPostCloneHookSecurity`（3） |
+| G76-3 | 扫描进度确定态（`ScanWorker.progress` 接线；总数未知仍不确定态） | Done | `TestScanProgressDeterminate`（3） |
+| G76-4 | 更新提示附 SHA256（`check_latest_with_sha` 终于有生产调用；信号签名保持 4 参） | Done | `TestUpdateShowsSha256`（2） |
+| G76-5 | 数据目录私密性显示 + 迁移入口（拒绝在跑任务；不覆盖；复用既有 `migrate_data_dir`） | Done | `TestDataDirEntry`（3） |
+| G76-6 | 死信号 `rowsChanged/visChanged` 接到管理页统计行 | Done | `TestManageStatsFollowModelSignals`（2） |
+| G76-7 | 治理：`ci.yml` 覆盖率死值 84 删除、README 测试数改 135、`plan-doc-audit` 过期说法更正、`test_ledger` 新增 S32 | Done | 文档守卫 11 绿 |
+| G76-8 | `bench_g70_ui.py` 因 `_QSS_CACHE` 迁模块而崩 → 修正（回归修复） | Done | 基准跑通并留数 |
+
+### 22.3 验证与发布
+
+| 项 | 结果 |
+|----|------|
+| ruff / mypy | All checks passed / Success（86 文件） |
+| G76 新增守卫 | Ran 23 · OK |
+| 定向回归 | Ran 234 · OK |
+| 快集全量 | **Ran 1415 · failures=0 · errors=0 · skipped=4 · 覆盖 82%** |
+| 真实 git E2E（源码级） | `E2E_SMOKE_RESULT: PASS`（clone/ff 拒绝/冲突/abort/HEAD） |
+| 打包 E2E（exe，真实 GitHub） | `action=cloned` → 二次 `action=fetched / 已是最新`，exit 0 |
+| 性能基准 | 500 行插入 26.82ms · delegate 0 子控件 · 启动 97.84ms · QSS 缓存 2.39→0.02ms |
+| 截图审计 | 基线 38 / 改后 38（已人工过目设置页与下载页） |
+| 构建 | exe 41,340,204 B · zip 79,756,248 B |
+| 健康检查 | version_match 9.9.0 · started_ok=true · artifacts_exist=true |
+| 文件规模 | 超 800 行 3 个（main_window 2750 登记债 / service 1768 / engine 1169） |
+| 未执行 | 本机 Windows 慢集 · CI 三平台（需推送后看） · 真机 125% DPI 目检 · 数据目录真实搬移 |
+
+**停止条件**：所有 P1「够不到」项已接线并有能失败的断言；门禁/文档/台账与代码一致；剩余为已披露边界。

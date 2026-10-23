@@ -5,7 +5,7 @@
 > 这边是**跑了证明什么**（接缝 ↔ 用例 ↔ 最后结果）。
 > 只记录本轮真实运行过的结果；引用历史结果必须标日期。
 
-**最后更新**：2026-10-19（G71）· 版本见 `gcm/__init__.py:__version__`（本文件不写死版本号）
+**最后更新**：2026-10-23（G75 视觉系统 + G76 接线收口）· 版本见 `gcm/__init__.py:__version__`（本文件不写死版本号）
 
 ---
 
@@ -45,6 +45,7 @@
 | S28 | SSE 续传/背压 | `http_api._stream_events` | `app/event_bus.since/oldest_seq` | `Last-Event-ID` 优先、精确 seq 补发、`history-truncated`；并发上限 503；30s 写超时；订阅者 dropped/qsize | `test_g72_hardening.TestSseG72/TestEventBusG72` |
 | S29 | 原子替换 → Windows 瞬时占用 | `util/atomic_io.replace_with_retry` | progress/settings/history/lists/diag | mkstemp O_EXCL；winerror 5/32/33/1224 退避；非瞬时错误立即上抛并清理 tmp | `test_g72_hardening.TestAtomicHardening` |
 | S30 | DLQ → 重新入队 | `app/retry_queue.requeue_dropped` | `ui/retry_panel` | dropped 记录保留 spec 字段；重新入队 attempts=0、立即到期、不丢 @tag/folder | `test_g73_dlq` |
+| S32 | 设置写侧 → 字段（G76 收口） | `ui/settings_groups` + `ui/settings_actions` | `db/settings.SettingsStore` → 引擎/调度器/关窗行为 | 控件 → 保存回调 → **落盘** → 消费方四段都要通；需要执行命令的字段（克隆后钩子）必须二次确认且默认 No；不可逆操作（数据目录迁移）在任务运行中必须拒绝；设置模块行数 ≤800 | `test_g76_wiring`（23）· `test_g68_settings_ui`（含 `EXPECTED_WIDGETS`） |
 
 ---
 
@@ -90,6 +91,7 @@
 | S13 | ✅ 覆盖 | — |
 | S14 | ✅ 覆盖 | — |
 | S31 | ✅ 覆盖 | **G74 UI 布局契约**：主操作区不在顶部滚动区内且 1024 可见；compact 隐藏快捷填充；管理页日期列定宽；设置导航短标题/无横向滚动；对话框继承主窗 QSS；统计内容可滚动；空校验标签不占位；数字框隐藏原生箭头；标签/复选框透明；仓库详情长路径省略。守卫 `tests/test_g74_ui_layout.py`（14）+ 截图审计脚本。 |
+| S32 | ✅ 覆盖 | **G76 接线收口**：6 个只读不写的设置字段 + 扫描进度 + sha256 提示 + 数据目录入口 + 死信号全部补上写入侧；每条都断言「值变化 + 重读 settings.json + 消费方存在」。 |
 
 ### 2.3 未覆盖 / 无法自动化
 

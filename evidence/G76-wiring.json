@@ -1,0 +1,111 @@
+{
+  "task_id": "G76-wiring",
+  "status": "passed",
+  "timestamp": "2026-10-23T12:05:00+08:00",
+  "scope": "G75 视觉系统收口 + G76 接线收口（把「有读侧没写侧 / 零调用点」的能力补齐，并让门禁、文档、台账与代码一致）",
+  "commands_executed": [
+    {
+      "cmd": "ruff check gcm",
+      "exit_code": 0,
+      "raw_output_tail": "All checks passed!"
+    },
+    {
+      "cmd": "mypy gcm",
+      "exit_code": 0,
+      "raw_output_tail": "Success: no issues found in 86 source files"
+    },
+    {
+      "cmd": "unittest tests.test_g76_wiring -v",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 23 tests in 2.155s\n\nOK"
+    },
+    {
+      "cmd": "unittest tests.test_g76_wiring tests.test_g68_settings_ui tests.test_g49_i18n",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 41 tests in 4.484s\n\nOK"
+    },
+    {
+      "cmd": "unittest tests.test_g68_settings_ui tests.test_g69_regressions tests.test_settings_search tests.test_progress_ui tests.test_manage_ui tests.test_g46_settings tests.test_g76_wiring tests.test_g49_i18n tests.test_update_auto tests.test_g66_patch tests.test_g44_secure_mainside",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 234 tests in 51.711s\n\nOK（首轮 3 例红：settings_panel/settings_groups 行数超 800、en 字典 'Markdown' 未翻译；均已修复后复跑全绿）"
+    },
+    {
+      "cmd": "coverage run --source=gcm scripts/ci_run_fast.py",
+      "exit_code": 0,
+      "raw_output_tail": "[ci_run_fast] 合计：Ran 1415 tests · failures=0 errors=0 skipped=4\n[ci_run_fast] OK\n[ci_run_fast] 进程退出，最后进入的模块：<全部完成>"
+    },
+    {
+      "cmd": "coverage report --include=\"gcm/*\"",
+      "exit_code": 0,
+      "raw_output_tail": "TOTAL 13750 2190 3436 617 82%"
+    },
+    {
+      "cmd": "scripts/e2e_smoke.py（真实 git：clone / fetch+ff / 脏工作区 / 冲突 / merge --abort / HEAD）",
+      "exit_code": 0,
+      "raw_output_tail": "[PASS] clone 内容正确\n[PASS] fetch+ff 内容正确\n[PASS] 未提交的改动被保护（ff 拒绝+内容保留） - rc=1\n[PASS] 冲突双方内容都在 - rc=1\n[PASS] merge --abort 恢复干净提交\n[PASS] HEAD 存在\nE2E_SMOKE_RESULT: PASS"
+    },
+    {
+      "cmd": "scripts/bench_g70_ui.py",
+      "exit_code": 0,
+      "raw_output_tail": "{\"progress_table\": {\"rows\": 500, \"add_ms\": 26.82, \"update_ms\": 2.15, \"progress_widgets\": 0}, \"qss_cache\": {\"first_ms\": 2.39, \"cached_ms\": 0.02, \"identical\": true, \"chars\": 7333}, \"startup_empty_db_ms\": 97.84}"
+    },
+    {
+      "cmd": "scripts/ui_screenshot_audit.py reports/ui-g75",
+      "exit_code": 0,
+      "raw_output_tail": "OUT: reports/ui-g75（38 张 PNG，4 主题 × 5 分辨率 + 3 页签 + 设置滚动 + 8 对话框）"
+    },
+    {
+      "cmd": "unittest tests.test_g67_docs_freshness",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 11 tests in 0.085s\n\nOK"
+    }
+  ],
+  "files_changed": [
+    "gcm/ui/settings_actions.py（新增 216 行：SettingsWiring 字段写入回调 + 数据目录分区 + 钩子确认 + 迁移流程）",
+    "gcm/ui/settings_groups.py（+关窗托盘 / clone 超时 / 克隆后钩子 / 静默续跑 / 报表格式，接 settings_actions）",
+    "gcm/ui/settings_panel.py（实例化 SettingsWiring；移出两个需要弹窗的回调以守住 800 行）",
+    "gcm/ui/local_repos_dialog.py（ScanWorker.progress → 确定态进度条；重启扫描清残留）",
+    "gcm/ui/manage_panel.py（rowsChanged/visChanged 接线到统计行）",
+    "gcm/ui/main_window.py（更新检查改用 check_latest_with_sha；提示附 SHA256 + 校验方法；_edit_quick_repos 委派）",
+    "gcm/ui/download_layout.py（parse_quick_repos / rebuild_quick_fill / edit_quick_repos + 「编辑」按钮）",
+    "gcm/ui/result_labels.py、gcm/i18n/zh.py、gcm/i18n/en.py（状态「已跳过」独立键；G76 新增 30 个中英键）",
+    "tests/test_g76_wiring.py（新增 23 条守卫）",
+    "tests/test_g68_settings_ui.py（EXPECTED_WIDGETS 纳入 7 个 G76 控件）",
+    ".github/workflows/ci.yml（删除 job 级覆盖率死值 84）",
+    "README.md（测试文件数 130 → 135）",
+    ".agent/skills/plan-doc-audit.md（更正 _PATH_PREFIXES 的过期说法）",
+    "scripts/bench_g70_ui.py（_QSS_CACHE 随模块迁移而修正）",
+    "test_ledger.md（新增接缝 S32）",
+    "docs/计划书/下一步改进指南.md（Rev 4 收口结果）"
+  ],
+  "tests": {
+    "new": {"file": "tests/test_g76_wiring.py", "count": 23, "status": "passed"},
+    "targeted": {"count": 234, "status": "passed"},
+    "fast_suite": {"count": 1415, "failures": 0, "errors": 0, "skipped": 4, "status": "passed"},
+    "coverage_total_percent": 82,
+    "coverage_gate": {"windows": 81, "posix": 80, "verdict": "pass"}
+  },
+  "seams_touched": ["S05", "S06", "S07", "S14", "S16", "S17", "S32（新增）"],
+  "mock_scenarios_covered": [
+    "QMessageBox.warning/question/information 注入（Yes/No 两条分支都断言）",
+    "QInputDialog.getText 注入（确认 / 取消）",
+    "gcm.db.settings.migrate_data_dir 注入（成功 + 不真实搬文件）",
+    "ScanWorker.progress 直接调用槽（不启动真线程）"
+  ],
+  "browser_validation": null,
+  "visual_validation": {
+    "baseline_dir": "reports/ui-baseline-983（38 PNG）",
+    "after_dir": "reports/ui-g75（38 PNG，本轮重新生成）",
+    "human_review": [
+      "tab_settings_1440x900：新控件可见（关窗托盘复选框 / 数据目录行 + 迁移按钮），导航 01–07 编号，齿条读数正常",
+      "download_deep_1440x900：齿条 + 快捷填充「编辑」按钮 + 状态 pill 形状编码（成功实心圆 / 已跳过空心环 / 冲突半圆 / 失败叉号 / 更新中弧形）"
+    ],
+    "limitations": "离屏渲染；真机 125% DPI 与字族回退仍需人工过目（未在本轮执行）"
+  },
+  "limitations": [
+    "慢集未在本机重跑（CI 只在 Linux 跑慢集；本机 Windows 慢集需另跑）",
+    "CI 三平台结论需推送后看 Actions，本地无法替代",
+    "数据目录迁移只验证了「拒绝在跑任务 / 确认后调用既有实现」，未在真实用户目录上执行搬移（不可逆操作不在自动化里做）",
+    "真机点击与高 DPI 目检未执行"
+  ]
+}

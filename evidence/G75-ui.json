@@ -1,0 +1,151 @@
+{
+  "task_id": "G75-ui",
+  "status": "passed",
+  "timestamp": "2026-10-23T11:25:00+08:00",
+  "version": "9.9.0",
+  "commands_executed": [
+    {
+      "cmd": "ruff check gcm",
+      "exit_code": 0,
+      "raw_output_tail": "All checks passed!"
+    },
+    {
+      "cmd": "mypy gcm",
+      "exit_code": 0,
+      "raw_output_tail": "Success: no issues found in 85 source files"
+    },
+    {
+      "cmd": "python -m unittest tests.test_g75_visual_system -v",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 43 tests · OK (skipped=1 → 字体存在性断言在 CI 无目标字族时条件跳过)"
+    },
+    {
+      "cmd": "python -m unittest tests.test_g74_ui_layout tests.test_g70_ui_upgrade tests.test_g46_theme tests.test_themes tests.test_g46_settings tests.test_g70_coverage tests.test_g69_wiring_gaps tests.test_g36_ui tests.test_progress_ui tests.test_g46_nav_batch tests.test_g49_i18n tests.test_settings_search tests.test_g68_settings_ui tests.test_onboarding tests.test_g46_tray_help tests.test_g53_radar tests.test_manage_ui",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 172 tests · OK (skipped=1)"
+    },
+    {
+      "cmd": "python -m coverage run --source=gcm scripts/ci_run_fast.py",
+      "exit_code": 0,
+      "raw_output_tail": "[ci_run_fast] 合计：Ran 1392 tests · failures=0 errors=0 skipped=4\\n[ci_run_fast] OK"
+    },
+    {
+      "cmd": "python -m coverage report --include=\"gcm/*\"",
+      "exit_code": 0,
+      "raw_output_tail": "TOTAL 13530 2176 3386 608 82%"
+    },
+    {
+      "cmd": "python scripts/ui_screenshot_audit.py reports/ui-baseline-983",
+      "exit_code": 0,
+      "raw_output_tail": "38 张 PNG（改前基线，commit 0018628）"
+    },
+    {
+      "cmd": "python scripts/ui_screenshot_audit.py reports/ui-g75",
+      "exit_code": 0,
+      "raw_output_tail": "38 张 PNG（改后，v9.9.0）"
+    },
+    {
+      "cmd": "python -m PyInstaller --noconfirm Git-clone-Max.spec",
+      "exit_code": 0,
+      "raw_output_tail": "Build complete! The results are available in: dist"
+    },
+    {
+      "cmd": "python scripts/build_portable_zip.py",
+      "exit_code": 0,
+      "raw_output_tail": "已生成 dist/Git-clone-Max-portable.zip（328 条目，79691506 字节）"
+    },
+    {
+      "cmd": "python scripts/health_check.py --json dist/health_check.json",
+      "exit_code": 0,
+      "raw_output_tail": "version=9.9.0 archive_version=9.9.0 started_ok=true repos_db_created=true exe_size=41300899"
+    },
+    {
+      "cmd": "dist/Git-clone-Max.exe --cli --json --dir <tmp>/clones urls.txt  (第一次 https://github.com/octocat/Hello-World)",
+      "exit_code": 0,
+      "raw_output_tail": "ok=true counts.success=1 action=cloned code=0"
+    },
+    {
+      "cmd": "dist/Git-clone-Max.exe --cli --json --dir <tmp>/clones urls.txt  (第二次同一地址)",
+      "exit_code": 0,
+      "raw_output_tail": "ok=true counts.success=1 action=fetched（已是最新）"
+    },
+    {
+      "cmd": "git -C <tmp>/clones/octocat__Hello-World rev-parse --short HEAD",
+      "exit_code": 0,
+      "raw_output_tail": "7fd1a60"
+    },
+    {
+      "cmd": "python -m unittest tests.test_g66_patch tests.test_g67_docs_freshness",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 77 tests · OK (skipped=1)"
+    }
+  ],
+  "files_changed": [
+    "gcm/ui/typography.py (新增 107 行：三字族 + 七级字号阶梯 + type_font/apply_type)",
+    "gcm/ui/palettes.py (新增 211 行：四套色板 + cta/on_cta/glow token + 强调色深/浅成对)",
+    "gcm/ui/qss_build.py (新增 262 行：QSS 拼装 + reduced-motion 分支 + 渐变底)",
+    "gcm/ui/theme.py (598→314 行薄壳 + apply_accent_preset/current_palette 单一来源)",
+    "gcm/ui/status_strip.py (新增 224 行：仪表齿条 + 纯函数 format_elapsed/format_count/format_metrics)",
+    "gcm/ui/status_pill.py (新增 162 行：7 种 QPainter 形状 + StatusPillDelegate)",
+    "gcm/ui/batch_overview.py (新增 90 行：批次完成度组件，从 progress_table 抽出)",
+    "gcm/ui/result_labels.py (新增 62 行：状态/动作文案唯一来源 + tr)",
+    "gcm/ui/progress_table.py (848→799 行；pill delegate、活跃集合、齿条钩子)",
+    "gcm/ui/progress_delegate.py (等宽数字：type_font('mono'))",
+    "gcm/ui/main_window.py (齿条接线、rootBg、强调色状态同步、导航编号)",
+    "gcm/ui/settings_groups.py (去工程代号、强调色预设深/浅、默认 teal 排首位)",
+    "gcm/ui/download_layout.py (主按钮宽度上限 420，保持层级)",
+    "gcm/ui/failure_panel.py (操作列 ResizeToContents，按钮文字不再被裁)",
+    "gcm/ui/tray.py (图标颜色跟随当前色板)",
+    "gcm/db/settings.py (accent_preset 默认 blue→teal)",
+    "gcm/i18n/zh.py, gcm/i18n/en.py (新增 19 个键，zh/en 同步)",
+    "tests/test_g75_visual_system.py (新增 43 项守卫)",
+    "tests/test_g46_theme.py, tests/test_themes.py, tests/test_g70_ui_upgrade.py, tests/test_g46_settings.py, tests/test_g68_settings_ui.py, tests/test_g70_coverage.py (断言改为色板驱动，未放宽)",
+    "docs/architecture.md §4, CLAUDE.md §6, README.md, docs/agent-contract.md, gcm/__init__.py, pyproject.toml, Git-clone-Max.spec, packaging/installer.iss (版本与登记)"
+  ],
+  "tests": [
+    {
+      "name": "G75 视觉系统守卫（字号阶梯/字族/对比度/形状/齿条/接线）",
+      "type": "unit+ui",
+      "status": "passed",
+      "evidence": "tests/test_g75_visual_system.py 43 项：TestTypeScale(6) TestFontFamilies(4) TestPaletteContrast(7) TestAntiGenericAesthetics(3) TestQssLayers(7) TestStatusShapeEncoding(4) TestStatusStripReadouts(6) TestMainWindowVisualWiring(5)"
+    },
+    {
+      "name": "既有 UI/主题/i18n 回归",
+      "type": "ui regression",
+      "status": "passed",
+      "evidence": "172 项 OK（含 test_g74_ui_layout 14 条布局守卫、test_g46_theme、test_g70_ui_upgrade、test_g49_i18n）"
+    },
+    {
+      "name": "全量快集",
+      "type": "full fast suite",
+      "status": "passed",
+      "evidence": "1392 tests / 0 failures / 0 errors / 4 skipped"
+    },
+    {
+      "name": "打包 exe 真实 E2E",
+      "type": "e2e",
+      "status": "passed",
+      "evidence": "clone→cloned；复跑→fetched；磁盘 HEAD=7fd1a60"
+    }
+  ],
+  "coverage_summary": {
+    "line_coverage_percent": 82,
+    "scope": "快集口径（scripts/ci_run_fast.py），门禁 Windows 81 / POSIX 80"
+  },
+  "seams_touched": [
+    "S 主题/色板 → QSS + 自绘 delegate + 日志高亮 + 托盘图标（颜色单一来源）",
+    "S 设置页 → 强调色预设 → apply_accent_preset → current_palette（旧实现只到 QSS）",
+    "S 引擎进度/结果信号 → 齿条读数（零引擎契约变更）",
+    "S 进度表 → pill delegate（只绘制，不改 UserRole/文本）",
+    "S 批次总览 → batch_overview 组件（文本契约不变）"
+  ],
+  "mock_scenarios_covered": [],
+  "browser_validation": "不适用（PyQt6 桌面端）；等价证据：38 张离屏截图（4 主题 × 5 分辨率 + 3 页签 + 8 对话框）+ 打包 exe 启动冒烟",
+  "limitations": [
+    "截图在 offscreen 平台生成，真机 DPI/字体渲染可能存在细微差异（未做真机人工点检）",
+    "字体存在性断言在无目标字族的平台（CI Linux/macOS）条件跳过，只断言 QSS 字族链",
+    "未做逐像素视觉 diff（改版场景噪音大，改为人工过目 + 结构化单测）",
+    "计划中的 3 处 QPropertyAnimation 动效编排与删除逐行消隐未执行（见 archive-manifest D4/§2）",
+    "进度条 25% 刻度、设置表单全角冒号两项延后（P3）"
+  ]
+}

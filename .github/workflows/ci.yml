@@ -17,10 +17,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
-    env:
-      # G45-1/G29-1 覆盖率门禁：数值抽成 job 级常量，矩阵内所有平台一致；
-      # 表达式 ${{ env.COVERAGE_FAIL_UNDER }} 由 runner 预替换，pwsh/bash 通用。
-      COVERAGE_FAIL_UNDER: 84
+    # G76：这里曾有一个 job 级 `COVERAGE_FAIL_UNDER: 84`，但**从未生效** ——
+    # 覆盖率那一步（"Coverage gate"）自带步骤级 env（Windows 81 / POSIX 80），
+    # 步骤级完全覆盖 job 级。死值会误导 review，也可能在某天有人删掉步骤级 env 时
+    # 静默把门禁变成 84。故删除，唯一生效点保留在步骤级。
     steps:
       - uses: actions/checkout@v4
 

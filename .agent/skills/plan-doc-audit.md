@@ -67,8 +67,11 @@ git mv <doc> docs/archive/plans/YYYYMMDD/
 grep -rn "<被删路径>" --include="*.md" --include="*.py" --include="*.yml" .
 python -m unittest tests.test_g67_docs_freshness
 ```
-本项目 `tests/test_g67_docs_freshness.py` 的 `_PATH_PREFIXES` 含 `计划书`，
-删除目录后必须同步，否则守卫会指向不存在的路径。
+**历史提示（已过期，勿据此改动守卫）**：早先 `tests/test_g67_docs_freshness.py` 的
+`_PATH_PREFIXES` 曾含 `计划书`；现在该列表是
+`("gcm", "docs", "scripts", "skills", "tests", "packaging", "evidence")` ——
+`计划书` 属于 `docs` 之下，删除该目录**不需要**改守卫。实测口径：删目录后跑一遍
+`python -m unittest tests.test_g67_docs_freshness` 即可，红了再改文档。
 
 ## 7. 验收输出
 审计表（每条任务的六列）· 删除清单 · 归档 manifest 路径 · 死链检查结果 ·

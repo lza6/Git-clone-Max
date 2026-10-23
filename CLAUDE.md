@@ -219,9 +219,12 @@ docs/        工程/产品/契约文档
   **不得**用 `skip`/重试把它「弄绿」。
 - **CI 已锁定 PyQt6 版本**：`.github/workflows/ci.yml` 在 4 处 `pip install PyQt6==6.11.0`；
   `requirements-build.txt` 另锁 ruff/mypy/coverage/pyinstaller。**旧版本文档曾称「未锁定」，已过期**。
-- **代码规模现状（2026-10-19 G71 后实测）**：仍为 **3 个**文件超 800 行 —— `main_window.py` **2648**、
-  `service.py` **1768**、`engine.py` **1168**（`progress_table.py` **800**、`repo_db.py` **799**、
-  `settings_panel.py` **720**、`settings_groups.py` **679**、`theme.py` **565** 均在 800 线内）；
+- **代码规模现状（2026-10-23 G76 收口后实测）**：仍为 **3 个**文件超 800 行 —— `main_window.py` **2750**、
+  `service.py` **1768**、`engine.py` **1169**（`progress_table.py` **799**、`repo_db.py` **799**、
+  `settings_panel.py` **779**、`settings_groups.py` **783** 均在 800 线内；
+  G76 新增 `settings_actions.py`（216，设置页动作型回调）就是为了让这两个设置模块不越线；
+  G75 把 `theme.py` 从 598 拆到 **314**（色板→`palettes`、字排→`typography`、QSS→`qss_build`），
+  并把批次总览/结果文案/齿条/pill 各自成模块；
   14 个函数超 100 行（最大 `MainWindow.__init__` 233 行）。
   G71 已完成的长函数拆分：`service._update` **337→105**（拆出 `_update_bare_mirror` /
   `_fetch_remote` / `_merge_remote`）、`MainWindow._launch` **153→124**（参数映射拆到
@@ -234,6 +237,17 @@ docs/        工程/产品/契约文档
   `progress_table` / `progress_delegate` / `layout` / `settings_panel` / `retry_panel` /
   `engine_factory` / `download_layout` / `event_panel` 先例），不得再往 `main_window.py` 里塞。
   下次动这几块时**顺手**把所在函数拆小。
+- **视觉系统分层（G75 起，勿回退）**：色值只放 `palettes`、字号/字族只放 `typography`、
+  QSS 只在 `qss_build`、自绘形状在 `status_pill`、用户可见结果文案在 `result_labels`。
+  `theme.py` 只做主题状态 + 兼容再导出（22 个符号，拆之前先看 `tests/test_g46_theme.py`）。
+  三条硬规则：①**颜色只有一个来源** —— 自绘 delegate / 日志高亮 / 托盘图标都读
+  `theme.current_palette()`，它必须已包含强调色预设（G75 实测过"QSS 一套旧蓝、行内进度条一套新青"的双真相）；
+  ②**状态不得用字符符号**（✓ ✕ ⚠ ⊘ 在微软雅黑缺字形 → tofu），用 `status_pill.draw_shape` 的几何图形，
+  形状互不相同才算色盲可辨；③**默认主题不得退回 GitHub Primer 色**（`#0d1117`/`#58a6ff`），
+  有守卫 `tests/test_g75_visual_system.TestAntiGenericAesthetics`。
+- **字体只用系统内置**：Bahnschrift（显示/数字）、Microsoft YaHei UI（中文）、Cascadia Mono（数据/日志）。
+  不打包 ttf、不联网下载；CI 在 Linux/macOS 上没有这些字族，字体**存在性**断言必须条件化
+  （只断言 QSS 字族链，见 `tests/test_g75_visual_system.TestFontFamilies`）。
 - **事件流是进程内、非持久**：`app/event_bus.py` 非进度事件环形缓冲默认 500 条、进度事件单独 200 条，
   进程退出即丢；需要跨重启审计请用 `app.log` / `notify.log` / `progress.json`。
   SSE 订阅者慢时**丢最旧事件**（`stats.dropped` 可观测），绝不阻塞克隆。

@@ -5,6 +5,30 @@
 
 ---
 
+---
+
+## 0. 最新一次真实运行（2026-10-23 · G75+G76 收口，v9.9.0）
+
+> 下次改这几块前先看这一节，别重复跑。
+
+| 项 | 命令 | 结果（实测） |
+|---|---|---|
+| 质量闸 | `ruff check gcm` / `mypy gcm` | All checks passed / Success（**86 文件**） |
+| 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | **Ran 1415 · failures=0 · errors=0 · skipped=4** |
+| 覆盖率 | `coverage report --include="gcm/*"` | **TOTAL 82%**（门禁 Windows 81 / POSIX 80） |
+| G76 新增守卫 | `unittest tests.test_g76_wiring` | Ran 23 · OK |
+| 设置/进度/管理/更新定向 | 11 个模块合集 | Ran 234 · OK |
+| 视觉系统 | `unittest tests.test_g75_visual_system` | Ran 43 · OK（skipped=1：字族存在性按平台条件化） |
+| 源码级 git E2E | `scripts/e2e_smoke.py` | `E2E_SMOKE_RESULT: PASS`（clone/ff 拒绝/冲突/abort/HEAD） |
+| 打包 E2E | `dist/Git-clone-Max-portable/Git-clone-Max.exe --cli --json urls.txt` | `action=cloned` → 二次 `action=fetched / 已是最新`，exit 0 |
+| 性能基准 | `scripts/bench_g70_ui.py` | 500 行插入 26.82ms · delegate 0 子控件 · 启动 97.84ms · QSS 缓存 2.39→0.02ms |
+| 截图审计 | `scripts/ui_screenshot_audit.py reports/ui-g75` | 38 PNG（基线 `reports/ui-baseline-983` 同为 38） |
+| 构建 + 健康 | `PyInstaller` + `build_portable_zip.py` + `health_check.py` | exe 41,340,204 B · zip 79,756,248 B · version_match 9.9.0 · started_ok=true |
+| 文档守卫 | `unittest tests.test_g67_docs_freshness` | Ran 11 · OK |
+
+**本轮没跑（别当成已覆盖）**：本机 Windows 慢集、CI 三平台、真机 125% DPI 目检、
+数据目录真实搬移（不可逆，自动化里只断言「拒绝在跑任务」与「调用既有实现」）。
+
 ## 1. 质量闸（每次改 `gcm/` 必跑，~30s）
 
 ```bash
@@ -181,3 +205,12 @@ QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe scripts/bench_g70_ui.py
 - `scripts/ui_screenshot_audit.py`：38 张截图（`reports/ui-audit-final/`），改布局后**人工看关键图**。
 - 本区域改动必跑：`test_g74_ui_layout` + `test_g70_ui_upgrade` + `test_g69_regressions`
   + `test_g36_ui` + `test_g49_i18n`。
+
+## G75 UI 视觉系统（2026-10-23 · v9.9.0）
+- 已跑：`ruff check gcm`(0) · `mypy gcm`(Success/85) · `tests.test_g75_visual_system`(43 OK)
+  · UI/主题/i18n 17 模块(172 OK) · `scripts/ci_run_fast.py`(1392 tests / 0 fail / 4 skip / 82%)
+  · `scripts/ui_screenshot_audit.py`（baseline 38 + 改后 38）· PyInstaller + portable zip + `health_check.py`
+  · 打包 exe 真实 E2E（clone→fetched，HEAD 7fd1a60）。
+- **不必重复跑**（本轮已证）：上述全部；改 UI/主题/字号/色板时只需跑
+  `test_g75_visual_system + test_g74_ui_layout + test_g46_theme + test_themes + test_g70_ui_upgrade`（约 5s）。
+- 仍需真机/CI：真机 DPI 视觉点检、CI 全矩阵、慢集、perf-baseline（本轮未触发）。
