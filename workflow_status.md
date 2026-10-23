@@ -980,3 +980,17 @@ B4 仓库知识索引 / B5 MCP annotations / B6 真机点击仍属后续范围�
 | CI | `d69d229` / `e5ab085` / `ff1c3f0` / **`57b31a9`** 四次 run **全部 7/7 success**（最新 run 39908614927） |
 | 说明 | 首传（`30a76fcd…`）与终传（`c70a48a8…`）是**同源码两次构建**；以终传为准。两次下载遇到 TLS 抖动，第三次成功 —— 网络问题，非产物问题 |
 
+## 25. v9.9.3 发布证据（独立审查整改轮）
+
+| 项 | 真实值 |
+|----|--------|
+| 提交 | `0643535`（含整改代码，由并发会话代为提交）+ `afb92e2`（归属更正）· 已推送 `origin/main` |
+| 门禁 | `ruff check gcm` = All checks passed；`mypy gcm` = Success（87 source files）|
+| 定向回归 | `unittest`（g66_patch / g75_visual_system / update_auto / g76_wiring / g68_settings_ui / manage_ui / progress_ui）= **196 tests · OK**（2 skipped）|
+| 全量快集 | `Ran 1421 · failures=0 · errors=0 · skipped=4`；覆盖率 **82%** |
+| 构建 | PyInstaller EXIT=0；exe **41,358,954 B** sha256 `d68cc4ca…`；zip **79,788,175 B** |
+| 产物健康 | `health_check.py`：`version=9.9.3`、`archive_version=9.9.3`、`started_ok=true` |
+| 打包 E2E | `action=cloned` → `action=fetched`，`version=9.9.3` |
+| 发布 | https://github.com/lza6/Git-clone-Max/releases/tag/v9.9.3 · 服务端下载校验 sha256 一致 |
+| 独立审查 | 见 §24（Approve；3 条 Required + 4 条建议全部关闭/采纳，1 条建议登记不采纳）|
+| 未执行 | 真机 125% DPI 人工目检 · 「点击更新后真的打开浏览器」（`webbrowser.open` 仍无自动化断言）|

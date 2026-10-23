@@ -138,3 +138,5 @@
 - 采纳 4 条建议：AST 作用域断言（已变异验证能红）· `_msgbox()` 进 try · `check_silent` 补 G67-9 理由 ·
   未知进度不画刻度 + 删三连空行。未采纳 1 条（`test_g76_wiring` 巨型 with → ExitStack，纯可读性）。
 - 教训：**给"抽出去的模块"打桩前先确认它有没有模块级符号**，否则写的是死分支还自认为加固了。
+- 发布 `v9.9.3`：exe 41,358,954 B（sha256 `d68cc4ca…`，服务端校验一致）/ zip 79,788,175 B；
+  health_check version/archive_version 均 9.9.3；打包 E2E cloned→fetched；本地快集 1421/0/4 skip/82%。
