@@ -93,14 +93,18 @@
     "concurrency_still_worth_keeping": "虽未解决本次堵塞，但它仍是正确的工程改进：后续在同一分支快速连推时，不会再把 35 个 job 一起塞进队列（省额度、也让最新结论先出）。"
   },
   "ci_blocked": {
-    "verdict": "BLOCKED（外部资源限制）",
+    "verdict": "BLOCKED（外部队列 + 协作节拍），但 workflow 缺陷已修复并验证生效",
     "why_it_is_not_my_fix": "workflow 配置已修；平台状态正常；YAML 合法；缺陷在 runner 派发侧（配额）",
     "min_unblock_conditions": [
       "确认 https://github.com/settings/billing 的 Actions 分钟额度与并发配额（需仓库管理员权限，本会话 token 无该 scope）",
       "或改用 self-hosted runner / 减少矩阵（例如 macOS 只在发布前跑）",
       "或等配额重置周期"
     ],
-    "do_not_claim": "不得把『本地全绿』写成『CI 通过』"
+    "do_not_claim": "不得把『本地全绿』或『run 被取消』写成『CI 通过』",
+    "how_to_verify_later": [
+      "网络正常且无人推送时：git commit --allow-empty -m 'ci probe' && git push，等 6-8 分钟即可拿到 7 个 job 的完整结论",
+      "或看 Actions 页面：应只保留最新 HEAD 的 run，其余为 cancelled（这就是 concurrency 生效的外观）"
+    ]
   },
   "local_equivalent_of_every_ci_job": {
     "note": "CI 的 7 个 job 我已在**本机当前工作区**逐条复现（HEAD 7847bd5 + 并发会话未提交改动），作为可执行的替代证据；它不等同于任何特定 run 的结论",
@@ -131,5 +135,16 @@
       "cmd": "PyInstaller + build_portable_zip + health_check + publish_release",
       "result": "exe 41,358,954 B / zip 79,788,175 B；version_match 9.9.3；下载物 E2E cloned→fetched→exit 2"
     }
+  },
+  "final_observation_1515_1525": {
+    "concurrency_confirmed_working": true,
+    "sequence": [
+      "15:17  7847bd5 → completed/cancelled；d2ec841 → completed/cancelled（旧排队 run 被并发组清理）",
+      "15:17  c6373e3 → pending（最新 run 获得调度位）",
+      "15:20  982cfe7 → completed/cancelled（并发会话又推了新提交）",
+      "15:24  c6373e3 → completed/cancelled（被 6023580 这个更新的 run 取消）"
+    ],
+    "correction_of_my_earlier_statement": "我先写『concurrency 未生效』是**错的**：GitHub 只在真正评估调度时才取消同组旧 run，停滞期（0 个 job 被派发）不会触发该逻辑。15:17 之后队列恢复，concurrency 立刻按设计开始取消旧 run —— 本次修复**确实生效**。",
+    "why_my_run_has_no_conclusion": "并发会话仍在分钟级推送（d2ec841 → 982cfe7 → 6023580 …），concurrency 的语义是『同分支只保留最新 run』 → 我的提交的 run 必然被后一个取消。这是设计使然，不是失败。想拿到某个提交的 CI 结论，需要在**没有新推送的时间窗**里触发。"
   }
 }
