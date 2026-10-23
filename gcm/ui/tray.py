@@ -156,9 +156,11 @@ class TrayController(QObject):
     def _app_icon(self):
         from PyQt6.QtGui import QColor, QPainter, QPixmap
         pm = QPixmap(64, 64)
-        pm.fill(QColor("#0d1117"))
+        from .theme import current_palette
+        _pal = current_palette()
+        pm.fill(QColor(_pal["console"]))
         p = QPainter(pm)
-        p.setPen(QColor("#58a6ff"))
+        p.setPen(QColor(_pal["accent"]))
         p.setFont(p.font())  # 默认字体
         p.drawText(pm.rect(), Qt.AlignmentFlag.AlignCenter, "G")
         p.end()

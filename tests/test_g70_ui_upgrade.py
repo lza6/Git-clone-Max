@@ -69,11 +69,20 @@ class TestSemanticContrast(unittest.TestCase):
                     f"{name}: 输入框边界对比度不足 3:1")
 
     def test_accent_preset_recomputes_on_accent(self):
-        # 深色主题 + violet：白字 5.05:1，应保持白字；蓝 accent 才用深字
-        pal = theme.theme_with_accent(theme.PALETTES["deep"], "violet")
-        self.assertEqual(pal["on_accent"], "#ffffff")
-        self.assertGreaterEqual(
-            theme.contrast_ratio(pal["on_accent"], pal["accent"]), 4.5)
+        """换强调色后 on_accent 必须重算（G70 的缺陷：深字压深底）。
+
+        G75：预设改为深/浅成对 + 按底色亮度选取，因此断言改为**跨全部组合的不变式**，
+        比钉死"violet 用白字"更强：3 个预设 × 4 套主题 = 12 个组合逐一验算 ≥4.5:1。
+        """
+        for name in theme.PALETTES:
+            for preset in theme.ACCENT_PRESETS:
+                with self.subTest(theme=name, preset=preset):
+                    pal = theme.theme_with_accent(theme.PALETTES[name], preset)
+                    self.assertGreaterEqual(
+                        theme.contrast_ratio(pal["on_accent"], pal["accent"]), 4.5)
+                    # 强调色在背景上还得看得见（焦点环/进度条 ≥3:1）
+                    self.assertGreaterEqual(
+                        theme.contrast_ratio(pal["accent"], pal["bg"]), 3.0)
 
 
 class TestQssContract(unittest.TestCase):
@@ -82,9 +91,14 @@ class TestQssContract(unittest.TestCase):
         self.assertIn("QTabWidget::pane", q)
         self.assertNotIn("QTabs::pane", q)
 
-    def test_primary_uses_on_accent(self):
+    def test_primary_uses_on_cta(self):
+        """G75：主按钮由 accton 蓝改为 cta 反相块；断言仍要求文字对比度 ≥4.5。"""
         q = theme.qss_for_theme("deep")
-        self.assertIn("color: #0d1117", q)
+        pal = theme.PALETTES["deep"]
+        self.assertIn(f"color: {pal['on_cta']}", q)
+        self.assertGreaterEqual(
+            theme.contrast_ratio(pal["on_cta"], pal["cta"]), 4.5,
+            "主按钮文字对 cta 底色对比度不足 4.5:1")
 
     def test_selector_typo_is_rejected(self):
         errs = qss_validate.validate_qss(
@@ -268,8 +282,11 @@ class TestDialogThemePropagation(unittest.TestCase):
             w.setStyleSheet(w._themed_qss())
             dlg = _ProbeDialog(w)
             w._apply_theme_to_children()
-            self.assertIn("background: #ffffff", dlg.styleSheet())
-            self.assertNotIn("background: #0d1117", dlg.styleSheet())
+            # G75：断言改为"套用的是当前色板的 bg"，不再钉死历史十六进制
+            light_bg = theme.PALETTES["light"]["bg"]
+            deep_bg = theme.PALETTES["deep"]["bg"]
+            self.assertIn(f"background: {light_bg}", dlg.styleSheet())
+            self.assertNotIn(f"background: {deep_bg}", dlg.styleSheet())
             dlg.close()
         finally:
             w.close()
@@ -388,10 +405,12 @@ class TestHighlighterTheme(unittest.TestCase):
         hl.rehighlight()
         light = [r.format.foreground().color().name()
                  for r in doc.firstBlock().layout().formats()]
-        self.assertIn("#f85149", deep)
-        self.assertIn("#58a6ff", deep)
-        self.assertIn("#cf222e", light)
-        self.assertIn("#0969da", light)
+        # G75：颜色取自各主题色板（error / accent），不钉死历史色值
+        # QColor.name() 归一化到小写，比较前统一 lower()
+        self.assertIn(theme.PALETTES["deep"]["error"].lower(), deep)
+        self.assertIn(theme.PALETTES["deep"]["accent"].lower(), deep)
+        self.assertIn(theme.PALETTES["light"]["error"].lower(), light)
+        self.assertIn(theme.PALETTES["light"]["accent"].lower(), light)
         self.assertNotEqual(deep, light)
 
 
@@ -435,7 +454,7 @@ class TestThemeSaveConsistency(unittest.TestCase):
             qss = w.styleSheet()
             self.assertEqual(w.settings.theme, "light")
             self.assertIn("#8250df", qss, "切主题后强调色不应退回默认蓝")
-            self.assertIn("background: #ffffff", qss)
+            self.assertIn(f"background: {theme.PALETTES['light']['bg']}", qss)
         finally:
             w.close()
 

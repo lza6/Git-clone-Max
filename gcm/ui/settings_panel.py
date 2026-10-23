@@ -83,6 +83,9 @@ class SettingsPanel(QWidget):
         # owner 允许为 None（测试会构造无宿主的面板单独验证数据逻辑）
         self._owner_ref = (weakref.ref(owner) if owner is not None
                            else (lambda: None))
+        # G76：字段写入回调集中在 settings_actions（本文件已贴近 800 行上限）
+        from .settings_actions import SettingsWiring
+        self.wiring = SettingsWiring(self)
 
     @property
     def owner(self):
@@ -273,6 +276,7 @@ class SettingsPanel(QWidget):
             except Exception:
                 pass
 
+    # G76：字段写入回调集中在 `settings_actions.SettingsWiring`（本文件已贴近 800 行上限）
     def _save_alert_im(self):
         """G69-18：企业 IM 告警渠道/URL/Token（此前无 UI → 不可达）。"""
         ch = getattr(self.owner, "combo_im_channel", None)
@@ -590,7 +594,7 @@ class SettingsPanel(QWidget):
     # ------------------------------------------------------------ G46-5/7/8/10/11
     def _save_accent_preset(self, index):
         """G46-7：保存强调色预设并即时应用（QSS 重生成）。"""
-        self.owner.settings.accent_preset = self.owner.accent_combo.itemData(index) or "blue"
+        self.owner.settings.accent_preset = self.owner.accent_combo.itemData(index) or "teal"
         self.owner.settings_store.save(self.owner.settings)
         try:
             self.owner.setStyleSheet(self.owner._themed_qss())

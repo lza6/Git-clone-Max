@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, pyqtSlot
 from PyQt6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -163,7 +163,24 @@ class LocalReposDialog(QDialog):
         self._worker = ScanWorker(self._roots, self._max_depth, parent=self)
         self._worker.finished.connect(self._on_scan_done)
         self._worker.failed.connect(self._on_scan_failed)
+        # G76：接上扫描进度。此前 `ScanWorker.progress` 只 emit 无人 connect，
+        # 进度条被写成 setRange(0,0)（永远不确定态）→ 万级目录扫描时用户以为卡死。
+        self._worker.progress.connect(self._on_scan_progress)
         self._worker.start()
+
+    @pyqtSlot(int, int)
+    def _on_scan_progress(self, done: int, total: int) -> None:
+        """G76：把扫描进度从「不确定态」变成确定态（done/total）。"""
+        try:
+            total_i = max(0, int(total))
+            done_i = max(0, int(done))
+        except (TypeError, ValueError):
+            return
+        if total_i <= 0:
+            self.progress.setRange(0, 0)  # 还没有候选总数：保持不确定态，不假装有进度
+            return
+        self.progress.setRange(0, total_i)
+        self.progress.setValue(min(done_i, total_i))
 
     def _on_scan_done(self, result: list[RepoInfo]):
         self._rows = result
@@ -182,7 +199,12 @@ class LocalReposDialog(QDialog):
         self.table.setEnabled(not on)
         self.filter_edit.setEnabled(not on)
         self._import_btn.setEnabled(not on)
-        if not on:
+        if on:
+            # G76：开始扫描先回到「不确定态」，等 `progress(done, total)` 到达再变确定态；
+            # 不清零会让上一次扫描的进度条残留在满格位置，误以为这次已经扫完。
+            self.progress.setRange(0, 0)
+            self.progress.setValue(0)
+        else:
             self._worker = None
 
     # ------------------------------------------------------------ 过滤 / 选择

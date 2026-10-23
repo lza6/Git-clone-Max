@@ -152,9 +152,10 @@ class TestProgressTableCoverage(unittest.TestCase):
 
     def test_batch_sort_pause_and_copy(self):
         panel = self.w.progress_panel
-        panel._reset_batch_overview(4)
-        panel._on_batch_result(SyncStatus.SUCCESS)
-        panel._on_batch_result(SyncStatus.FAILED)
+        # G75：批次总览抽成 BatchOverview 组件（progress_table 破 800 行）
+        panel.batch_overview.reset(4)
+        panel.batch_overview.on_result(SyncStatus.SUCCESS)
+        panel.batch_overview.on_result(SyncStatus.FAILED)
         self.assertIn("2/4", panel.batch_total_lbl.text())
         panel._on_sort_changed(2, 0)
         panel.pause_selected()          # 无选中 → 早退

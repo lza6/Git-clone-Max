@@ -50,9 +50,12 @@ class TestStateQss(unittest.TestCase):
             self.assertIn(sel, q, f"缺少状态选择器 {sel}")
 
     def test_focus_border_uses_accent(self):
-        from gcm.ui.theme import qss_for_theme
+        from gcm.ui.theme import PALETTES, qss_for_theme
         q = qss_for_theme("deep")
-        self.assertIn("border: 2px solid #58a6ff;", q, "focus 环未用 accent 色")
+        # G75：不再硬编码历史色值（#58a6ff 是 GitHub Primer 的蓝，已随 Ink 色板退场）；
+        # 口径改为"焦点环必须用当前色板的 accent"，比钉死某个十六进制更强。
+        self.assertIn(f"border: 2px solid {PALETTES['deep']['accent']};", q,
+                      "focus 环未用 accent 色")
 
     def test_font_stack(self):
         from gcm.ui.theme import qss_for_theme, FONT_STACK
@@ -77,12 +80,22 @@ class TestHcTheme(unittest.TestCase):
                                 "HC 文本/背景对比度应 ≥7:1")
 
     def test_accent_presets(self):
-        from gcm.ui.theme import ACCENT_PRESETS, theme_with_accent
-        self.assertEqual(len(ACCENT_PRESETS), 3)
-        deep = __import__("gcm.ui.theme", fromlist=["PALETTES"]).PALETTES["deep"]
-        pal = theme_with_accent(deep, "violet")
-        self.assertEqual(pal["accent"], ACCENT_PRESETS["violet"]["accent"])
-        # 直接传 dict 也可
+        from gcm.ui.theme import ACCENT_PRESETS, PALETTES, contrast_ratio, theme_with_accent
+        self.assertEqual(set(ACCENT_PRESETS), {"teal", "blue", "violet"})
+        deep = PALETTES["deep"]
+        # G75：预设改成"深底/浅底成对"——同一十六进制不可能同时满足深底够亮、浅底够暗
+        for name, spec in ACCENT_PRESETS.items():
+            with self.subTest(preset=name):
+                self.assertEqual(set(spec), {"dark", "light"})
+                pal_dark = theme_with_accent(PALETTES["deep"], name)
+                pal_light = theme_with_accent(PALETTES["light"], name)
+                self.assertEqual(pal_dark["accent"], spec["dark"])
+                self.assertEqual(pal_light["accent"], spec["light"])
+                # on_accent 必须重算到 ≥4.5:1（G70 修过的缺陷，不能被预设绕过）
+                for pal in (pal_dark, pal_light):
+                    self.assertGreaterEqual(
+                        contrast_ratio(pal["on_accent"], pal["accent"]), 4.5)
+        # 直接传 dict 的路径保持可用（自定义配色 / 测试）
         pal2 = theme_with_accent(deep, {"accent": "#123456"})
         self.assertEqual(pal2["accent"], "#123456")
 

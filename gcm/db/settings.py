@@ -278,7 +278,7 @@ class Settings:
     last_tab: int = 0                 # G70 上次使用的页签（0 下载 / 1 管理 / 2 设置）
     animations: bool = True           # G36-6 完成动效（成功绿/失败红背景色 1.2s 消隐；低配/offscreen 自动关）
     prefers_reduced_motion: bool = False  # G46-8 减少动态效果（关闭完成动效与 hover 过渡）
-    accent_preset: str = "blue"           # G46-7 强调色预设（blue/violet/teal）
+    accent_preset: str = "teal"           # G75：默认强调色 = Ink 的示波器青（blue/violet/teal）
     lfs_enabled: bool = False          # G48-2 Git LFS：clone/fetch 追加 -c filter.lfs.required=false
     post_clone_hook: str = ""           # G48-5 克隆后钩子命令模板（%PATH% 替换为仓库路径）
     ssh_key_path: str = ""              # G48-3/G67-16 全局 SSH 私钥路径（经 GIT_SSH_COMMAND 注入）

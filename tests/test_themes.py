@@ -32,14 +32,16 @@ class TestThemePalettes(unittest.TestCase):
 
 class TestApplyTheme(unittest.TestCase):
     def test_apply_theme_sets_palette(self):
-        from gcm.ui.theme import apply_theme, current_palette
+        from gcm.ui.theme import PALETTES, apply_theme, current_palette
         apply_theme("light")
-        self.assertEqual(current_palette()["bg"], "#ffffff")
+        self.assertEqual(current_palette()["bg"], PALETTES["light"]["bg"])
         apply_theme("deep")
-        self.assertEqual(current_palette()["bg"], "#0d1117")
+        self.assertEqual(current_palette()["bg"], PALETTES["deep"]["bg"])
         # 未知主题回退 deep
         apply_theme("nope")
-        self.assertEqual(current_palette()["bg"], "#0d1117")
+        self.assertEqual(current_palette()["bg"], PALETTES["deep"]["bg"])
+        # G75 反 AI 通用美学守卫：默认主题不得再是 GitHub Primer 的 #0d1117
+        self.assertNotEqual(PALETTES["deep"]["bg"].lower(), "#0d1117")
 
 
 class TestSettingsTheme(unittest.TestCase):
@@ -68,9 +70,12 @@ class TestMainWindowTheme(unittest.TestCase):
         win = MainWindow(data_dir=d, db=Database(d / "t.db"),
                          settings=SettingsStore(d / "settings.json"))
         self.assertTrue(hasattr(win, "theme_combo"), "设置页应有主题下拉")
+        from gcm.ui.theme import THEMES
         items = [win.theme_combo.itemText(i) for i in range(win.theme_combo.count())]
-        self.assertIn("深色 (Deep)", items)
-        self.assertIn("浅色 (Light)", items)
+        # G75：主题标签随设计语言改名（深色→墨黑 Ink、浅色→暖纸 Paper）。
+        # 口径改为"下拉必须列出 THEMES 的全部标签"，不再钉死某一句中文。
+        for label in THEMES.values():
+            self.assertIn(label, items)
         win.close()
 
 

@@ -87,7 +87,10 @@ def bench_old_updates() -> float:
 
 
 def bench_qss_cache() -> dict:
-    theme._QSS_CACHE.clear()
+    # G75：QSS 缓存随 `_build_qss` 迁到 `gcm/ui/qss_build.py`（theme.py 只剩兼容再导出），
+    # 清缓存也要清真正持有它的那个模块，否则测出来的是「已命中缓存」的假快。
+    from gcm.ui import qss_build as _qb
+    _qb._QSS_CACHE.clear()
     t0 = time.perf_counter()
     first = theme.qss_for_theme("deep", 1.0)
     first_ms = (time.perf_counter() - t0) * 1000.0

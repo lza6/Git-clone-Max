@@ -147,6 +147,9 @@ class FailurePanel(QWidget):
             [tr("错误类别"), tr("失败次数"), tr("原因与处理"), tr("操作")])
         self.table.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.ResizeMode.Stretch)
+        # G75：操作列里是真实按钮，必须按内容自适应，否则文字被省略成「重试该类」
+        self.table.horizontalHeader().setSectionResizeMode(
+            3, QHeaderView.ResizeMode.ResizeToContents)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)

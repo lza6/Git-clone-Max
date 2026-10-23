@@ -133,6 +133,11 @@ class ManagePanel(QWidget):
         self.manage_search.textChanged.connect(self._on_manage_search)
         self.manage_table = QTableView()
         self.manage_table.setModel(self.manage_model)
+        # G76：两个信号此前**只 emit 不 connect**（死信号）→ 现在驱动统计行。
+        # 好处：行集合或可见性变化时统计自动刷新，不再依赖每个调用方记得手动调
+        # `_update_manage_stats()`（此前一旦漏调，页面上就显示过期数字）。
+        self.manage_model.rowsChanged.connect(self._on_model_rows_changed)
+        self.manage_model.visChanged.connect(self._on_model_vis_changed)
         self.manage_table.setAccessibleName("仓库管理表")
         self.manage_table.setAccessibleDescription(
             "每行一个已下载仓库：名称、平台、标签、健康分、大小与最近同步")
@@ -231,6 +236,14 @@ class ManagePanel(QWidget):
             self.manage_table.setRowHidden(row, not self.manage_model.is_visible(row))
         self._update_manage_stats(n if visible is None else visible)
         return n
+
+    def _on_model_rows_changed(self) -> None:
+        """G76：行集合变化（导入/删除/刷新）→ 刷新统计行。"""
+        self._update_manage_stats()
+
+    def _on_model_vis_changed(self) -> None:
+        """G76：可见性变化（筛选）→ 刷新统计行。"""
+        self._update_manage_stats()
 
     def _update_manage_stats(self, visible: int | None = None) -> None:
         total = self.manage_model.rowCount()

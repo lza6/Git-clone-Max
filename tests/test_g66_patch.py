@@ -1235,9 +1235,17 @@ class TestUpdateCheckThreading(unittest.TestCase):
             _time.sleep(0.30)  # 模拟网络往返
             return (True, "9.9.9", "https://example.invalid/dl", "")
 
+        def _fake_check_latest_sha(*_a, **_kw):
+            # G76 起生产代码改走 check_latest_with_sha（五元组，内部还会二次抓 Release
+            # 取 sha256）。打桩必须打到这一层，否则真网络请求会把 emit 拖过断言窗口。
+            calls.append(threading.get_ident())
+            _time.sleep(0.30)
+            return (True, "9.9.9", "https://example.invalid/dl", "", "deadbeef")
+
         tmp = pathlib.Path(tempfile.mkdtemp(prefix="gcm_g67_upd_"))
         win = None
         original = updater_mod.check_latest
+        original_sha = getattr(updater_mod, "check_latest_with_sha", None)
         import gcm.ui.main_window as mw_mod
         real_mb = mw_mod.QMessageBox
         try:
@@ -1248,6 +1256,8 @@ class TestUpdateCheckThreading(unittest.TestCase):
             win.show()
             app.processEvents()
             updater_mod.check_latest = _fake_check_latest
+            if original_sha is not None:
+                updater_mod.check_latest_with_sha = _fake_check_latest_sha
 
             # 弹窗打桩：真 QMessageBox.question 会阻塞事件循环，测试无法收尾
             class _StubMB:
@@ -1301,6 +1311,8 @@ class TestUpdateCheckThreading(unittest.TestCase):
         finally:
             mw_mod.QMessageBox = real_mb
             updater_mod.check_latest = original
+            if original_sha is not None:
+                updater_mod.check_latest_with_sha = original_sha
             if win is not None:
                 win.close()
                 win.deleteLater()
@@ -1328,12 +1340,21 @@ class TestUpdateCheckThreading(unittest.TestCase):
             _time.sleep(0.30)
             return (False, "0.0.0", "", "")
 
+        def _fake_check_latest_sha(*_a, **_kw):
+            # G76 起生产代码走 check_latest_with_sha（五元组）
+            calls.append(threading.get_ident())
+            _time.sleep(0.30)
+            return (False, "0.0.0", "", "", "")
+
         tmp = pathlib.Path(tempfile.mkdtemp(prefix="gcm_g67_upds_"))
         win = None
         original = updater_mod.check_latest
+        original_sha = getattr(updater_mod, "check_latest_with_sha", None)
         try:
             win = MainWindow(tmp)
             updater_mod.check_latest = _fake_check_latest
+            if original_sha is not None:
+                updater_mod.check_latest_with_sha = _fake_check_latest_sha
             t0 = _time.perf_counter()
             win._check_update_silent()
             elapsed = _time.perf_counter() - t0
@@ -1348,6 +1369,8 @@ class TestUpdateCheckThreading(unittest.TestCase):
                                 "_check_update_silent 仍在 GUI 主线程跑 HTTP")
         finally:
             updater_mod.check_latest = original
+            if original_sha is not None:
+                updater_mod.check_latest_with_sha = original_sha
             if win is not None:
                 win.close()
                 win.deleteLater()

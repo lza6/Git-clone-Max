@@ -13,6 +13,7 @@ from PyQt6.QtGui import QBrush, QColor, QFontMetrics, QPainter, QPen
 from PyQt6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
 from .theme import current_palette
+from .typography import type_font
 
 # 进度详情（速率/对象数）数据角色
 DETAIL_ROLE = Qt.ItemDataRole.UserRole + 3
@@ -55,6 +56,8 @@ class ProgressDelegate(QStyledItemDelegate):
             text = f"{pct}%  {detail}".strip()
         else:
             text = detail or "…"
+        # G75：百分比/速率用等宽族（数字等宽才对齐），字体来自排版系统
+        painter.setFont(type_font("mono"))
         painter.setPen(QColor(pal["text"]))
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
         painter.restore()

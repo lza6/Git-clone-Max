@@ -741,21 +741,21 @@ class MainWindow(QMainWindow):
             pass
 
         central = QWidget()
+        # G75：主窗背景走墨/纸渐变（一条渐变，不做噪点纹理：离屏与 DPI 缩放成本高）
+        central.setObjectName("rootBg")
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(8)
 
-        # 顶栏
-        head = QHBoxLayout()
-        t = QLabel("Git-clone-Max")
-        t.setObjectName("pageTitle")
-        head.addWidget(t)
-        head.addStretch()
-        self.thread_lbl = QLabel(f"并行线程 {self.engine.concurrency}")
-        self.thread_lbl.setObjectName("muted")
-        head.addWidget(self.thread_lbl)
-        root.addLayout(head)
+        # 顶栏 → G75 仪表齿条：铭牌 + 并行线程 + 活跃/成功/失败/用时（等宽读数）
+        from .status_strip import StatusStrip
+        motion = not bool(getattr(self.settings, "prefers_reduced_motion", False))
+        self.status_strip = StatusStrip(
+            self, concurrency=self.engine.concurrency, motion=motion)
+        # 兼容：settings_panel._save_concurrency 会直接改 thread_lbl 文案
+        self.thread_lbl = self.status_strip.thread_lbl
+        root.addWidget(self.status_strip)
 
         self.tabs = QTabWidget()
         root.addWidget(self.tabs, 1)
@@ -906,7 +906,9 @@ class MainWindow(QMainWindow):
             try:
                 _full = _grp.title()
                 _short = _full.split("（")[0].strip() or _full
-                self.settings_nav.addItem(_short)
+                # G75：编号让左导航像仪器通道号（01…07），扫视时不必逐行读中文
+                _idx = self.settings_nav.count() + 1
+                self.settings_nav.addItem(f"{_idx:02d}  {_short}")
                 _item = self.settings_nav.item(self.settings_nav.count() - 1)
                 if _item is not None:
                     _item.setToolTip(_full)
@@ -1243,10 +1245,24 @@ class MainWindow(QMainWindow):
     def _themed_qss(self) -> str:
         """G46-7/G46-8：按当前主题 + 强调色 + 字号 + 动效偏好生成 QSS。"""
         from ..ui import theme as _th
-        pal = _th.PALETTES.get(getattr(self.settings, "theme", "deep")) or _th.PALETTES["deep"]
-        pal = _th.theme_with_accent(pal, getattr(self.settings, "accent_preset", "blue"))
+        # G75：主题/强调色同步进模块状态 —— 自绘 delegate、日志高亮、托盘图标都读它，
+        # 否则会出现"QSS 一套颜色、自绘另一套颜色"的双真相（G75 实测过）。
+        theme_name = getattr(self.settings, "theme", "deep")
+        # theme="auto" 时由 _maybe_apply_system_theme 解析成 light/deep 并写回设置；
+        # 这里若拿 "auto" 去 apply_theme 会退化成 deep，与已解析的色板打架。
+        if theme_name in _th.PALETTES:
+            _th.apply_theme(theme_name)
+        _th.apply_accent_preset(
+            getattr(self.settings, "accent_preset", _th.DEFAULT_ACCENT_PRESET))
+        pal = _th.current_palette()
         motion = not bool(getattr(self.settings, "prefers_reduced_motion", False))
-        return _th.qss_for_palette(pal, getattr(self.settings, "font_scale", 1.0), motion)
+        qss = _th.qss_for_palette(pal, getattr(self.settings, "font_scale", 1.0), motion)
+        # G75：齿条自己画的失败色来自色板，主题切换后必须重取一次
+        strip = getattr(self, "status_strip", None)
+        if strip is not None:
+            strip.set_motion(motion)
+            strip.refresh()
+        return qss
 
     def _apply_font_scale(self):
         try:
@@ -1317,10 +1333,14 @@ class MainWindow(QMainWindow):
 
         def _worker():
             try:
-                from ..app.updater import check_latest
-                has_new, ver, url, err = check_latest()
+                from ..app.updater import check_latest_with_sha
+                # G76：改用带 sha256 的检查（`check_latest_with_sha` 此前零生产调用）。
+                # 信号契约仍是 4 参数（既有测试与跨线程用例都按 4 参数断言），
+                # sha 走实例属性传回 GUI 线程 —— 不扩信号签名，避免破坏既有守卫。
+                has_new, ver, url, err, sha = check_latest_with_sha()
             except Exception as e:  # noqa: BLE001 —— 兜底成 err，绝不从线程抛出
-                has_new, ver, url, err = False, "", "", f"检查更新失败：{e}"
+                has_new, ver, url, err, sha = False, "", "", f"检查更新失败：{e}", ""
+            self._update_sha256 = str(sha or "")
             # 跨线程 emit：Qt 自动走 QueuedConnection，槽在 GUI 线程执行
             self.update_checked.emit(bool(has_new), str(ver or ""), str(url or ""), str(err or ""))
 
@@ -1344,9 +1364,17 @@ class MainWindow(QMainWindow):
         except Exception:
             return False
 
-    def _on_update_checked(self, has_new: bool, ver: str, url: str, err: str):
-        """`update_checked` 槽（GUI 线程）：负责弹窗与打开下载页。"""
+    def _on_update_checked(self, has_new: bool, ver: str, url: str, err: str,
+                           sha: str | None = None):
+        """`update_checked` 槽（GUI 线程）：负责弹窗与打开下载页。
+
+        G76：附带发布方公布的 SHA256（`sha` 为空时退回实例属性 —— worker 在 emit 前写入，
+        因为信号签名固定 4 参数，扩签名会破坏既有守卫与跨线程用例）。
+        """
         self._update_checking = False
+        if sha is None:
+            sha = str(getattr(self, "_update_sha256", "") or "")
+        self._update_sha256 = ""  # 一次性：不要污染下一次检查的提示
         from .. import __version__
         msg = (err or (f"发现新版本 {ver}，可到设置页下载" if has_new
                        else f"已是最新版本（{__version__}）"))
@@ -1361,9 +1389,13 @@ class MainWindow(QMainWindow):
             if err:
                 QMessageBox.information(self, "检查更新", err)
             elif has_new:
+                extra = ""
+                if sha:
+                    extra = (f"\n\n发布方公布的 SHA256：\n{sha}\n"
+                             f"（下载后可用 `certutil -hashfile <文件> SHA256` 核对）")
                 ret = QMessageBox.question(
                     self, "发现新版本",
-                    f"当前版本 {__version__}，最新版本 {ver}。\n是否打开下载页面？",
+                    f"当前版本 {__version__}，最新版本 {ver}。\n是否打开下载页面？{extra}",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
                 if ret == QMessageBox.StandardButton.Yes and url:
                     import webbrowser
@@ -1651,6 +1683,15 @@ class MainWindow(QMainWindow):
         repo = btn.property("quick_repo") if btn is not None else None
         if repo:
             self.repo_input.appendPlainText(f"https://github.com/{repo}")
+
+    def _edit_quick_repos(self) -> int:
+        """G76：编辑快捷填充列表（逻辑在 `download_layout`，主窗只做委派）。
+
+        此前 `quick_repos` 只有读侧（`download_layout` 建按钮），changelog 却承诺
+        「快捷填充可配置」—— 用户只能手改 `settings.json`。
+        """
+        from .download_layout import edit_quick_repos
+        return edit_quick_repos(self)
 
     # ------------------------------------------------------------ G35-10 Star 导入
     def import_starred(self) -> None:
@@ -1986,6 +2027,11 @@ class MainWindow(QMainWindow):
             single_branch = ui_mode or bool(
                 getattr(self.settings, "single_branch", False))
         self.busy = True
+        # G75：仪表齿条清零并起表（活跃数由进度信号累加）
+        try:
+            self.status_strip.begin(len(specs))
+        except Exception as exc:  # noqa: BLE001 —— 齿条只是观测件，不能拖垮下载链路
+            self._emit_log(_fmt_dt(), LogLevel.WARN, f"仪表齿条未能启动：{exc}")
         self.btn_start.setEnabled(False)
         self.btn_cancel.setEnabled(True)
         self.btn_update_all.setEnabled(False)

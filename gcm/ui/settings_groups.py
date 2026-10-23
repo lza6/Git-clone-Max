@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
 
 from ..i18n import tr  # G49-1
 from .main_window import MainWindow
+from .settings_actions import add_data_dir_section  # G76
 
 if TYPE_CHECKING:  # 仅类型标注（避免循环导入）
     from ..db.settings import Settings
@@ -134,6 +135,16 @@ def _build_group_startup(owner: MainWindow, settings: Settings):
     for _i, _ck in enumerate(_checks):
         l1.addWidget(_ck, _i // 2, _i % 2)
     l1.setColumnStretch(2, 1)
+    # G76：关窗行为（此前只有读侧：closeEvent 读 minimize_to_tray，但永远改不到）
+    owner.ck_minimize_to_tray = QCheckBox(tr("关闭窗口时最小化到托盘（不退出）"))
+    owner.ck_minimize_to_tray.setChecked(bool(getattr(settings, "minimize_to_tray", True)))
+    owner.ck_minimize_to_tray.setToolTip(
+        tr("勾选：点 X 只收进托盘；取消勾选：点 X 直接退出。与「启动时最小化」只影响启动那一刻不同。"))
+    owner.ck_minimize_to_tray.stateChanged.connect(
+        owner.settings_panel.wiring.save_minimize_to_tray)
+    l1.addWidget(owner.ck_minimize_to_tray, 3, 0, 1, 2)
+    # G76：数据目录私密性 + 迁移入口（实现在 settings_actions，本文件已贴近 800 行上限）
+    add_data_dir_section(owner, l1, 4)
     return g1
 
 def _build_group_network(owner: MainWindow, settings: Settings):
@@ -224,6 +235,28 @@ def _network_rows_basic(owner: MainWindow, settings: Settings, f3: QFormLayout) 
     owner.spin_auto_update.setToolTip(tr("定时自动一键更新全部（任务运行中自动跳过）；0=关闭"))
     owner.spin_auto_update.valueChanged.connect(owner._save_auto_update)
     f3.addRow(tr("自动更新："), owner.spin_auto_update)
+
+    # G76：单次 clone 超时（engine_factory/clone worker 一直读它，但设置页从来没有写入点）
+    owner.spin_clone_timeout = QSpinBox()
+    owner.spin_clone_timeout.setRange(30, 7200)
+    owner.spin_clone_timeout.setValue(int(getattr(settings, "clone_timeout", 600) or 600))
+    owner.spin_clone_timeout.setSuffix(" 秒")
+    owner.spin_clone_timeout.setToolTip(
+        tr("单个仓库 clone 的超时时间（大仓/慢网调大）；只影响克隆阶段，不影响 fetch"))
+    owner.spin_clone_timeout.valueChanged.connect(
+        owner.settings_panel.wiring.save_clone_timeout)
+    f3.addRow(tr("clone 超时（秒）："), owner.spin_clone_timeout)
+
+    # G76：克隆后钩子 —— **会执行任意命令**，保存时二次确认（见 _save_post_clone_hook）
+    owner.edit_post_hook = QLineEdit(
+        str(getattr(settings, "post_clone_hook", "") or ""))
+    owner.edit_post_hook.setPlaceholderText(
+        tr("例如 npm install（%PATH% = 仓库路径；留空不执行）"))
+    owner.edit_post_hook.setToolTip(
+        tr("⚠ 每个仓库克隆成功后在该仓库目录执行这条命令（可执行任意程序）。只填你自己写的脚本。"))
+    owner.edit_post_hook.editingFinished.connect(
+        owner.settings_panel.wiring.save_post_clone_hook)
+    f3.addRow(tr("克隆后钩子："), owner.edit_post_hook)
 
 
 def _network_rows_credentials(owner: MainWindow, settings: Settings, f3: QFormLayout) -> None:
@@ -391,9 +424,11 @@ def _build_group_appearance(owner: MainWindow, settings: Settings):
     f5.addRow(tr("语言（重启后生效）："), owner.lang_combo)
     # G46-7 强调色预设
     owner.accent_combo = QComboBox()
-    for _k, _lbl in (("blue", tr("蓝色（默认）")), ("violet", tr("紫色")), ("teal", tr("青色"))):
+    # G75：青色（示波器青）是设计默认，排在第一位
+    for _k, _lbl in (("teal", tr("青色（默认）")), ("blue", tr("蓝色")),
+                     ("violet", tr("紫色"))):
         owner.accent_combo.addItem(_lbl, _k)
-    _acc = getattr(settings, "accent_preset", "blue")
+    _acc = getattr(settings, "accent_preset", "teal")
     _ai = owner.accent_combo.findData(_acc)
     if _ai >= 0:
         owner.accent_combo.setCurrentIndex(_ai)
@@ -581,7 +616,19 @@ def _add_sched_report_section(owner, l7, row: int) -> int:
     owner.edit_g53_sched_dir.setPlaceholderText(tr("留空 = 数据目录下 reports/"))
     owner.edit_g53_sched_dir.editingFinished.connect(owner.settings_panel._save_g53_sched_dir)
     l7.addWidget(owner.edit_g53_sched_dir, row + 2, 1)
-    return row + 3
+    # G76：报表格式（调度器读 sched_report_format，此前无写入点 → 只能手改 JSON）
+    l7.addWidget(QLabel(tr("报表格式：")), row + 3, 0)
+    owner.combo_sched_format = QComboBox()
+    for _fmt_label, _fmt_val in ((tr("CSV（Excel 可直接打开）"), "csv"),
+                                 ("Markdown", "md")):
+        owner.combo_sched_format.addItem(_fmt_label, _fmt_val)
+    _cur_fmt = str(getattr(owner.settings, "sched_report_format", "csv") or "csv")
+    _fmt_idx = owner.combo_sched_format.findData(_cur_fmt)
+    owner.combo_sched_format.setCurrentIndex(_fmt_idx if _fmt_idx >= 0 else 0)
+    owner.combo_sched_format.currentIndexChanged.connect(
+        owner.settings_panel.wiring.save_sched_report_format)
+    l7.addWidget(owner.combo_sched_format, row + 3, 1)
+    return row + 4
 
 
 def _add_reliability_section(owner, l7, row: int) -> int:
@@ -611,7 +658,15 @@ def _add_reliability_section(owner, l7, row: int) -> int:
         int(getattr(owner.settings, "watchdog_interval_min", 5) or 5))
     owner.spin_watchdog.valueChanged.connect(owner.settings_panel._save_watchdog_interval)
     l7.addWidget(owner.spin_watchdog, row + 3, 1)
-    return row + 4
+    # G76：静默续跑（engine 读 watchdog_silent 决定是否弹提示，此前无写入点）
+    owner.ck_watchdog_silent = QCheckBox(tr("看门狗静默续跑（不弹提示，只写日志）"))
+    owner.ck_watchdog_silent.setChecked(
+        bool(getattr(owner.settings, "watchdog_silent", False)))
+    owner.ck_watchdog_silent.setToolTip(tr("续跑时不弹提示窗，只在 app.log / 日志区留痕"))
+    owner.ck_watchdog_silent.toggled.connect(
+        owner.settings_panel.wiring.save_watchdog_silent)
+    l7.addWidget(owner.ck_watchdog_silent, row + 4, 0, 1, 2)
+    return row + 5
 
 
 def _add_im_alert_section(owner, l7, row: int) -> int:
@@ -643,12 +698,12 @@ def _add_im_alert_section(owner, l7, row: int) -> int:
 
 
 def _build_group_data_insights(owner: MainWindow):
-    """G53 数据洞察（阈值告警 / 历史保留 / 定时报表 / 稳定性 / IM 告警）。
+    """数据洞察（阈值告警 / 历史保留 / 定时报表 / 稳定性 / IM 告警）。
 
     G69-18：本函数曾因补齐控件涨到 100 行（项目上限 50 行），
     现按主题拆为 5 个子构建器，本函数只做编排。
     """
-    g7 = QGroupBox(tr("G53 数据洞察（告警 / 历史保留 / 定时报表）"))
+    g7 = QGroupBox(tr("数据洞察（告警 / 历史保留 / 定时报表）"))
     g7.setToolTip(tr("多维评分卡/阈值告警/历史保留天数/定时报表 设置"))
     l7 = QGridLayout(g7)
     row = _add_alert_section(owner, l7, 0)

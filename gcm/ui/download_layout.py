@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import re
 import weakref
 
 from PyQt6.QtCore import Qt, QTimer
@@ -28,6 +29,59 @@ from PyQt6.QtWidgets import (
 )
 
 from ..i18n import tr
+
+# 快捷填充地址的分隔符：逗号（中英文）、分号、空白。允许用户直接粘贴一堆地址。
+_QUICK_SPLIT = re.compile(r"[,;，；\s]+")
+
+
+def rebuild_quick_fill(owner) -> int:
+    """重建「快捷填充」chip 行，返回按钮数（供测试断言）。
+
+    G76：`quick_repos` 此前只能手改 `settings.json`（changelog 承诺了「快捷填充可配置」），
+    现在由 `edit_quick_repos()` 编辑后调用本函数重建。`_on_quick_fill` 复用既有回调。
+    """
+    lay = getattr(owner, "_quick_fill_layout", None)
+    if lay is None:
+        return 0
+    while lay.count():
+        item = lay.takeAt(0)
+        w = item.widget()
+        if w is not None:
+            w.deleteLater()
+    buttons = []
+    for repo in getattr(owner.settings, "quick_repos", None) or ():
+        btn = QPushButton(str(repo))
+        btn.setProperty("quick_repo", str(repo))
+        btn.clicked.connect(owner._on_quick_fill)
+        lay.addWidget(btn)
+        buttons.append(btn)
+    lay.addStretch()
+    owner._quick_fill_buttons = buttons
+    return len(buttons)
+
+
+def parse_quick_repos(text: str) -> tuple[str, ...]:
+    """把用户输入的一串地址解析成去重后的元组（保持输入顺序）。"""
+    seen: dict[str, None] = {}
+    for seg in _QUICK_SPLIT.split(text or ""):
+        seg = seg.strip()
+        if seg:
+            seen.setdefault(seg, None)
+    return tuple(seen)
+
+
+def edit_quick_repos(owner) -> int:
+    """快捷填充的增删改入口；确认后写盘并重建 chip。返回新按钮数。"""
+    from PyQt6.QtWidgets import QInputDialog
+    cur = ", ".join(str(r) for r in (getattr(owner.settings, "quick_repos", None) or ()))
+    text, ok = QInputDialog.getText(
+        owner, tr("编辑快捷填充"),
+        tr("用逗号或换行分隔仓库地址（留空 = 不显示任何快捷按钮）："), text=cur)
+    if not ok:
+        return len(getattr(owner, "_quick_fill_buttons", None) or [])
+    owner.settings.quick_repos = parse_quick_repos(text)
+    owner.settings_store.save(owner.settings)
+    return rebuild_quick_fill(owner)
 
 
 def build_download_top(owner) -> QWidget:
@@ -99,17 +153,17 @@ def build_download_top(owner) -> QWidget:
     quick = QHBoxLayout(quick_inner)
     quick.setContentsMargins(0, 0, 0, 0)
     quick.setSpacing(6)
+    owner._quick_fill_layout = quick
     owner._quick_fill_buttons = []
-    for repo in getattr(owner.settings, "quick_repos", None) or ():
-        btn = QPushButton(repo)
-        btn.setProperty("quick_repo", repo)
-        btn.clicked.connect(owner._on_quick_fill)
-        quick.addWidget(btn)
-        owner._quick_fill_buttons.append(btn)
-    quick.addStretch()
+    rebuild_quick_fill(owner)  # G76：chip 构建逻辑集中到一处，编辑后可原地重建
     quick_scroll.setWidget(quick_inner)
     quick_row.addWidget(quick_scroll, 1)
     owner.quick_scroll = quick_scroll
+    # G76：快捷填充的编辑入口（此前只能手改 settings.json）
+    owner.btn_edit_quick = QPushButton(tr("编辑"))
+    owner.btn_edit_quick.setToolTip(tr("增删「快捷填充」按钮里的仓库地址（逗号或换行分隔）"))
+    owner.btn_edit_quick.clicked.connect(owner._edit_quick_repos)
+    quick_row.addWidget(owner.btn_edit_quick)
 
     # 任务清单 / Star 导入单独一行，保证 1024 宽也完整可见
     list_row = QHBoxLayout()
@@ -202,7 +256,9 @@ def build_download_actions(owner) -> QWidget:
     owner.btn_cancel.setIcon(owner._std_icon("stop", owner.btn_cancel))
     owner.btn_clear = QPushButton(tr("清空列表"))
     owner.btn_clear.clicked.connect(owner.repo_input.clear)
-    row1.addWidget(owner.btn_start, 1)
+    # G75：主按钮给足权重但不拉满整行 —— 满宽横幅是模板相，不是"一个主操作"
+    owner.btn_start.setMaximumWidth(420)
+    row1.addWidget(owner.btn_start)
     row1.addWidget(owner.btn_cancel)
     row1.addWidget(owner.btn_clear)
     row1.addStretch(1)

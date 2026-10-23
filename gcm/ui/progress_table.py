@@ -16,7 +16,6 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
-    QProgressBar,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -68,20 +67,13 @@ class ProgressTable(QWidget):
     def _build_ui(self):
         v = QVBoxLayout(self)
         v.setSpacing(10)
-        # G46-4 批次总览条：已完成 x/总 y · 成功率 %（迷你进度条）
-        overview = QHBoxLayout()
-        overview.setSpacing(8)
-        self.batch_total_lbl = QLabel("批次：—")
-        self.batch_total_lbl.setObjectName("muted")
-        self.batch_bar = QProgressBar()
-        self.batch_bar.setRange(0, 100)
-        self.batch_bar.setValue(0)
-        self.batch_bar.setFixedWidth(180)
-        self.batch_bar.setTextVisible(False)
-        overview.addWidget(self.batch_total_lbl)
-        overview.addWidget(self.batch_bar, 1)
-        overview.addStretch()
-        v.addLayout(overview)
+        # G46-4 / G75：批次总览条抽成独立组件（progress_table 已破 800 行红线）。
+        # 职责：**本批次**完成度；进程运行态读数在 status_strip（两者回答不同问题）。
+        from .batch_overview import BatchOverview
+        self.batch_overview = BatchOverview(self)
+        self.batch_total_lbl = self.batch_overview.label   # 兼容既有引用/测试
+        self.batch_bar = self.batch_overview.bar
+        v.addWidget(self.batch_overview)
         # 进度表
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(["仓库", "进度", "状态", "本次", "详情"])
@@ -106,6 +98,16 @@ class ProgressTable(QWidget):
         self._progress_delegate = ProgressDelegate(
             self.table, values=self._progress_values)
         self.table.setItemDelegateForColumn(1, self._progress_delegate)
+        # G75：状态列改 pill 自绘（形状编码 + 语义色）。只影响绘制，
+        # 单元格文本与 UserRole 里的原始状态值保持不变（排序/右键/统计不受影响）。
+        from .palettes import TOKENS
+        from .status_pill import StatusPillDelegate
+        self._status_delegate = StatusPillDelegate(self.table)
+        self.table.setItemDelegateForColumn(2, self._status_delegate)
+        self.table.verticalHeader().setDefaultSectionSize(
+            int(TOKENS["row"]["default"]))
+        # G75：仪表齿条用的"当前活跃任务"集合（按 engine index 记，排序/过滤无关）
+        self._strip_running: set[int] = set()
         # G02-2 表头点击排序（状态列优先级：运行>等待>成功>冲突>失败>取消>跳过）
         self.table.setSortingEnabled(True)
         self.table.horizontalHeader().sortIndicatorChanged.connect(self._on_sort_changed)
@@ -116,7 +118,8 @@ class ProgressTable(QWidget):
         # G36-5 下载中心空态引导：overlay 标签（绝对定位在表格上，有数据时隐藏）
         self._empty_default_text = "粘贴仓库地址开始下载\n（支持多行 / 拖入 txt 文件）"
         self._empty_download = QLabel(self._empty_default_text)
-        self._empty_download.setObjectName("muted")
+        # G75：空态用 #emptyHint（h2 字号），在整屏 13px 里能立刻被看见
+        self._empty_download.setObjectName("emptyHint")
         self._empty_download.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_download.setWordWrap(True)
         self._empty_download.setVisible(False)
@@ -151,8 +154,13 @@ class ProgressTable(QWidget):
         # G70：新批次清空进度值，避免旧值串到新行
         self._progress_values.clear()
         self._progress_batch.clear()
-        # G46-4 批次总览重置
-        self._reset_batch_overview(n)
+        # G75：新批次清空活跃集合（齿条活跃数从 0 重新计）
+        try:
+            self._strip_running.clear()
+        except AttributeError:
+            self._strip_running = set()
+        # G46-4 批次总览重置（组件内部计数）
+        self.batch_overview.reset(n)
         # G70：行 item 尚未建好，不能在这里按名字过滤（全部判空 → 新行永久隐藏）。
         # 过滤统一推迟到 end_bulk()（行已建好之后）；这里只处理 0 行空态。
         if n == 0:
@@ -411,6 +419,13 @@ class ProgressTable(QWidget):
             return index
         return None
 
+    def _strip(self):
+        """G75：取仪表齿条（宿主没有则返回 None，便于单测直接构造 Panel）。"""
+        try:
+            return getattr(self.owner, "status_strip", None)
+        except Exception:  # pragma: no cover - 宿主已销毁的极端情形
+            return None
+
     @pyqtSlot(int, str)
     def _on_worker_progress(self, index, percent):
         if percent is None or percent == "":
@@ -421,6 +436,12 @@ class ProgressTable(QWidget):
             return
         # 0 是合法进度（重跑仓库从 0 开始），不能按 falsy 丢弃
         self._progress_batch[int(index)] = max(0, min(100, value))
+        # G75：首次见到该任务的进度 → 计入"活跃"（排序/过滤无关，按 engine index 记）
+        if int(index) not in self._strip_running:
+            self._strip_running.add(int(index))
+            strip = self._strip()
+            if strip is not None:
+                strip.note_active(len(self._strip_running))
         # 单次定时器：每个信号重置 250ms 窗口，空闲时不再周期唤醒
         self._progress_timer.start()
 
@@ -505,17 +526,16 @@ class ProgressTable(QWidget):
             except (TypeError, ValueError):
                 pass
         pal = current_palette()
-        status_map = {
-            # G74：不再用 ✓/✕/⚠ 等符号 —— Microsoft YaHei 缺这些字形，
-            # 在部分机器/离屏环境会显示成 tofu 方块；颜色已足够区分状态。
-            SyncStatus.SUCCESS: (pal["success"], "成功"),
-            SyncStatus.FAILED: (pal["error"], "失败"),
-            SyncStatus.CANCELLED: (pal["warning"], "已取消"),
-            SyncStatus.CONFLICT: (pal["warning"], "冲突"),
-            SyncStatus.SKIPPED: (pal["text_dim"], "跳过"),
-            SyncStatus.RUNNING: (pal["accent"], "更新中…"),
-        }
-        color, label = status_map.get(res.status, (pal["text"], str(res.status.value)))
+        # G75：文案走 result_labels（唯一来源，含 tr()），颜色走 status_pill（唯一来源）
+        from .result_labels import action_label as _action_text
+        from .result_labels import status_label as _status_text
+        from .status_pill import color_for as _color_for
+
+        raw_status = str(getattr(res.status, "value", res.status))
+        label = _status_text(raw_status)
+        color = (_color_for(raw_status, pal) if raw_status in
+                 ("success", "failed", "cancelled", "conflict", "skipped",
+                  "running", "pending") else pal["text"])
         # G22-4：托盘计数（成功/失败分流；冲突/失败归 bad，其余终态归 ok）
         try:
             if getattr(self.owner, "tray", None) is not None:
@@ -532,19 +552,16 @@ class ProgressTable(QWidget):
         st.setForeground(QColor(color))
         # 状态原始值存 UserRole：排序/右键/统计按原始值判断（符号仅视觉）
         st.setData(Qt.ItemDataRole.UserRole, res.status.value)
+        # G75：终态 → 齿条累加成功/失败，活跃回落
+        self._strip_running.discard(int(index))
+        strip = self._strip()
+        if strip is not None:
+            strip.note_result(getattr(res.status, "value", str(res.status)))
+            strip.note_active(len(self._strip_running))
         # G35-8 状态格 tooltip：message + detail 拼接（与详情列 tooltip 互补）
         st.setToolTip(f"{res.message or ''}" + (f"\n{res.detail or ''}" if res.detail else ""))
         act = self.table.item(row, 3)
-        action_label = {
-            "cloned": "新建克隆",
-            "updated": f"增量 +{res.commits}",
-            "fetched": "已最新",
-            "empty": "空仓库",
-            "skipped": "跳过",
-            "conflict": "冲突保留",
-            "cancelled": "取消",
-            "failed": "失败",
-        }.get(res.action.value, res.action.value)
+        action_label = _action_text(res.action, res.commits)
         if act is not None:
             act.setText(action_label)
             act.setForeground(QColor(color))
@@ -571,7 +588,7 @@ class ProgressTable(QWidget):
         self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO if res.status == SyncStatus.SUCCESS else LogLevel.WARN,
                         f"[{index}] {label}：{res.message}（{action_label}）")
         # G46-4 批次总览累加
-        self._on_batch_result(res.status)
+        self.batch_overview.on_result(res.status)
 
     def _animate_result_row(self, index: int, status: SyncStatus):
         """G36-6 完成动效：成功绿/失败红背景色 1.2s 淡出到主题底色。
@@ -620,6 +637,10 @@ class ProgressTable(QWidget):
     def _on_engine_finished(self):
         if not self.owner.busy:
             return
+        # G75：整批结束 → 齿条停表并冻结用时
+        strip = self._strip()
+        if strip is not None:
+            strip.end()
         done = 0
         ok = fail = conflict = 0
         for i in range(self.table.rowCount()):
@@ -740,37 +761,6 @@ class ProgressTable(QWidget):
     # ------------------------------------------------------------ 管理页
 
     # ------------------------------------------------------------ G46-4 批次总览
-    def _reset_batch_overview(self, total: int):
-        """G46-4：新批次开始时重置总览计数。"""
-        self._batch_total = int(total or 0)
-        self._batch_done = 0
-        self._batch_ok = 0
-        self._render_batch_overview()
-
-    def _on_batch_result(self, status: SyncStatus):
-        """G46-4：单个终态结果到达后累加并刷新总览。"""
-        self._batch_done = getattr(self, "_batch_done", 0) + 1
-        if status == SyncStatus.SUCCESS:
-            self._batch_ok = getattr(self, "_batch_ok", 0) + 1
-        self._render_batch_overview()
-
-    def _render_batch_overview(self):
-        """渲染「已完成 x/总 y · 成功率 %」+ 迷你进度条。"""
-        total = getattr(self, "_batch_total", 0)
-        done = getattr(self, "_batch_done", 0)
-        ok = getattr(self, "_batch_ok", 0)
-        try:
-            if total <= 0:
-                self.batch_total_lbl.setText("批次：—")
-                self.batch_bar.setValue(0)
-                return
-            pct = min(100, round(done / total * 100))
-            rate = round(ok / done * 100) if done else 0
-            self.batch_total_lbl.setText(f"已完成 {done}/{total} · 成功率 {rate}%")
-            self.batch_bar.setValue(pct)
-        except Exception:
-            pass
-
     # ------------------------------------------------------------ G46-12 进度右键菜单统一
     def _build_progress_menu(self, row: int):
         """构造进度表右键菜单（不 exec，便于离屏测试）。

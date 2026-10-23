@@ -34,7 +34,8 @@ class TestSettingsFields(unittest.TestCase):
         from gcm.db.settings import Settings
         s = Settings()
         self.assertFalse(s.prefers_reduced_motion)
-        self.assertEqual(s.accent_preset, "blue")
+        # G75：设计默认强调色 = Ink 的"示波器青"（旧默认是 Primer 蓝）
+        self.assertEqual(s.accent_preset, "teal")
 
     def test_new_fields_persist(self):
         from gcm.db.settings import SettingsStore
@@ -60,7 +61,9 @@ class TestAccentAndMotion(unittest.TestCase):
             panel._save_accent_preset(idx)
             self.assertEqual(w.settings.accent_preset, "violet")
             qss = w.styleSheet()
-            self.assertIn("#8250df", qss, "强调色应出现在 QSS")
+            from gcm.ui.palettes import ACCENT_PRESETS
+            self.assertIn(ACCENT_PRESETS["violet"]["dark"], qss,
+                          "强调色应出现在 QSS")
         finally:
             db.close()
 

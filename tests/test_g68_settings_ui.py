@@ -35,6 +35,10 @@ EXPECTED_WIDGETS = (
     # 启动与后台运行
     "ck_autostart", "ck_start_min", "ck_auto_clear", "ck_clipboard",
     "ck_finish_sound", "ck_animations",
+    # G76 接线收口（关窗行为 / 数据目录 / clone 超时 / 克隆后钩子 / 静默续跑 / 报表格式）
+    "ck_minimize_to_tray", "lbl_data_dir", "btn_migrate_data_dir",
+    "spin_clone_timeout", "edit_post_hook",
+    "ck_watchdog_silent", "combo_sched_format",
     # 并行与网络
     "spin_concurrency", "spin_fetch_timeout", "spin_retries", "edit_proxy",
     "btn_detect_proxy", "spin_rate", "ck_unshallow", "ck_submodule", "ck_lfs",
@@ -65,7 +69,8 @@ EXPECTED_GROUP_TITLES = (
     # G71-9：GUI 内置本地只读 API（含 SSE 事件流）
     "本地 API / 事件流",
 )
-EXPECTED_EXTRA_TITLES = ("G53 数据洞察（告警 / 历史保留 / 定时报表）",)
+# G75：分组标题去掉工程代号（"G53 "）—— 工程编号对用户零价值，且会漏进左导航
+EXPECTED_EXTRA_TITLES = ("数据洞察（告警 / 历史保留 / 定时报表）",)
 
 
 def _non_default_store(data_dir: pathlib.Path):
@@ -147,6 +152,11 @@ class TestSettingsWidgetContract(SettingsUiCase):
         self.assertEqual(extra, EXPECTED_EXTRA_TITLES)
         # G53-2 约定：扩展组不进 groups（否则会破坏既有解构）
         self.assertNotIn(EXPECTED_EXTRA_TITLES[0], titles)
+        # G75：用户可见标题里不得出现内部工程代号（G数字-数字）
+        import re as _re
+        for title in titles + extra:
+            self.assertIsNone(_re.search(r"G\d+-?\d*", title),
+                              f"分组标题暴露了内部代号：{title}")
 
     def test_every_group_has_a_tooltip(self):
         """分组 tooltip 是小白唯一的说明来源，空 tooltip 等于没解释。"""
