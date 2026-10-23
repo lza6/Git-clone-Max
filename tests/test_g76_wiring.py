@@ -334,5 +334,64 @@ class TestDataDirEntry(_Win):
         self.assertTrue(str(dst).endswith("Git-clone-Max"))
 
 
+class TestDataDirMigrationRealFs(_Win):
+    """真的搬文件（不 mock migrate_data_dir）：这是「不可逆操作」的正向证据。
+
+    这条用例的价值：其它用例只断言「调用了既有实现」，一旦 `migrate_data_dir`
+    本身有 bug（例如用 fix 覆盖、搬完删源、把 sqlite 搬坏）它们全绿。这里用临时目录
+    真的搬一次，验证 ①文件到位 ②内容不变 ③源目录保留 ④同名不覆盖。
+    """
+
+    def test_real_migration_moves_files_without_losing_them(self):
+        import sqlite3
+
+        from gcm.db.settings import migrate_data_dir
+
+        src = self.dir / "public_data"
+        dst = self.dir / "private_data"
+        src.mkdir()
+        (src / "settings.json").write_text('{"theme": "deep"}', encoding="utf-8")
+        (src / "app.log").write_text("line1" + chr(10) + "line2", encoding="utf-8")
+        con = sqlite3.connect(src / "repos.db")
+        con.execute("CREATE TABLE repos(id INTEGER PRIMARY KEY, name TEXT)")
+        con.execute("INSERT INTO repos(name) VALUES ('octocat/Hello-World')")
+        con.commit()
+        con.close()
+
+        # 目标里放一个同名文件：必须**不被覆盖**（migrate_data_dir 的既有语义）
+        dst.mkdir()
+        (dst / "app.log").write_text("KEEP-ME", encoding="utf-8")
+
+        ok, msg = migrate_data_dir(str(src), str(dst))
+        self.assertTrue(ok, f"迁移应成功，实际：{msg}")
+        self.assertTrue((dst / "settings.json").exists(), "settings.json 必须搬到目标")
+        self.assertEqual((dst / "app.log").read_text(encoding="utf-8"), "KEEP-ME",
+                         "已存在的同名文件不得被覆盖")
+        self.assertTrue((src / "app.log").exists(), "被跳过的文件应留在源目录")
+        con = sqlite3.connect(dst / "repos.db")
+        rows = con.execute("SELECT name FROM repos").fetchall()
+        con.close()
+        self.assertEqual(rows, [("octocat/Hello-World",)], "sqlite 内容必须完好")
+
+    def test_flow_reports_success_and_never_deletes_source(self):
+        """端到端：走 wiring.migrate_data_dir → 确认 → 真搬 → 提示成功。"""
+        src = self.dir / "public2"
+        dst = self.dir / "private2"
+        src.mkdir()
+        (src / "settings.json").write_text('{"theme": "light"}', encoding="utf-8")
+        self.win.data_dir = src
+        self.win.busy = False
+        with mock.patch("gcm.ui.settings_actions._private_target_dir",
+                        return_value=str(dst)),                 mock.patch("PyQt6.QtWidgets.QMessageBox.question",
+                           return_value=__import__("PyQt6.QtWidgets",
+                                                   fromlist=["QMessageBox"])
+                           .QMessageBox.StandardButton.Yes),                 mock.patch("PyQt6.QtWidgets.QMessageBox.warning") as warn,                 mock.patch("PyQt6.QtWidgets.QMessageBox.information") as info:
+            self.win.settings_panel.wiring.migrate_data_dir()
+        warn.assert_not_called()
+        info.assert_called_once()
+        self.assertTrue((dst / "settings.json").exists())
+        self.assertTrue(src.exists(), "源目录必须保留（失败可回退）")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -20,4 +20,4 @@ _archive_v1/
 
 # G75 截图证据：可重建（python scripts/ui_screenshot_audit.py <dir>），不入库
 reports/ui-baseline-*/
-reports/ui-g75/
+reports/ui-g75*/

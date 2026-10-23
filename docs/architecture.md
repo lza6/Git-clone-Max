@@ -74,7 +74,7 @@
 
 | 模块 | 行数 | 职责 |
 |------|------|------|
-| `gcm/ui/main_window.py` | 2750 | 主窗编排（已登记技术债；引擎构造在 `engine_factory.py`、顶栏齿条在 `status_strip.py`） |
+| `gcm/ui/main_window.py` | 2658 | 主窗编排（已登记技术债；引擎构造在 `engine_factory.py`、顶栏齿条在 `status_strip.py`） |
 | `gcm/git/service.py` | 1768 | Git 操作全链路（`_update` 已拆为 `_update_bare_mirror`/`_fetch_remote`/`_merge_remote`） |
 | `gcm/app/engine.py` | 1169 | 调度/并发/进度/重试/会话/事件发布 |
 | `gcm/ui/progress_table.py` | 799 | 进度表（delegate→`progress_delegate.py`、批次总览→`batch_overview.py`、结果文案→`result_labels.py`） |
@@ -90,6 +90,7 @@
 | `gcm/ui/batch_overview.py` | 74 | 批次完成度条（与齿条职责分离） |
 | `gcm/ui/result_labels.py` | 59 | 状态/动作用户可见文案（唯一来源，走 tr） |
 | `gcm/ui/settings_actions.py` | 216 | 设置页动作型回调（字段写入 wiring / 钩子确认 / 数据目录迁移） |
+| `gcm/ui/update_flow.py` | 142 | 更新检查三段（手动/结果槽/启动静默）+ 唯一 patch 点约定 |
 
 > 当前 **3 个**文件超项目硬上限 800 行（`main_window` / `service` / `engine`），
 > 已登记为显式接受的技术债（见 `CLAUDE.md` §6）。行数会随迭代漂移 —— 引用前请现测。

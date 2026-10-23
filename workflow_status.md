@@ -874,3 +874,37 @@ B4 仓库知识索引 / B5 MCP annotations / B6 真机点击仍属后续范围�
 | 未执行 | 本机 Windows 慢集（CI 在 Linux 跑） · 真机 125% DPI 目检 · 数据目录真实搬移 |
 
 **停止条件**：所有 P1「够不到」项已接线并有能失败的断言；门禁/文档/台账与代码一致；剩余为已披露边界。
+
+## 23. G75 收口（2026-10-23，v9.9.2）
+
+| 项 | 内容 |
+|----|------|
+| 目标 | 补掉 G75 计划里最后一个视觉缺口（进度条 25/50/75% 刻度），并把"计划里写着但上一轮没跑"的实测全部做完 |
+| 代码增量 | `progress_delegate.tick_positions()` 纯函数 + `paint()` 画刻度；`tests/test_g75_visual_system` 新增 `TestProgressTicks`(3) |
+| 测试对齐 | `tests/test_g66_patch` 的弹窗打桩补到 `gcm.ui.update_flow.QMessageBox`（G76 把弹窗搬走后打桩过期 → 确定性红；生产代码未动） |
+| 慢集（Windows） | `Ran 129 · OK`（65.9s，真实 git E2E） |
+| 基准 | 500 行 add 27.85ms · update 2.87ms · 0 个 QProgressBar；QSS 缓存 1.989→0.016ms；空库启动 101.93ms |
+| 启动器 | `scripts/启动Git-clone-Max.bat` 实跑：Python 3.14.3 → 启动常驻 >12s → 进程树回收 |
+| 契约 | CLI 退出码 0/1/2（成功/有失败/无有效输入或读取失败）、`--help`=0、MCP 未启用=3 |
+| 更新链路 | 对真实 Release 三分支验证（9.9.0→有新版、9.9.1/9.10.0→已最新），body sha256 与产物一致；本机 urllib 受 TLS 代理限制，W7 用 requests 取真实 JSON 替换传输层（已披露） |
+| flake 复核 | `TestShutdownClearsInProgress` ×10 全绿（T-33） |
+| SQL 审计 | f-string 仅 PRAGMA 常量；`sync_history` 有索引；`SELECT * FROM repos` 无限量＝本地桌面规模，已评估不适用分页 |
+| 独立审查 | 独立只读 reviewer 子代理对 `0018628..HEAD` 全量 diff 审查（结论见 §24，若已回） |
+| 发布 | `v9.9.2`（见下） |
+
+## 23. G77 主窗再拆一块 + 高 DPI 与慢集实测（2026-10-23，v9.9.2）
+
+| 项 | 结果 |
+|---|---|
+| 目标 | 清掉上一轮自己登记的「剩余未闭环项」：本机慢集、高 DPI 渲染、真实文件搬移、独立审查、`main_window.py` 增量拆分 |
+| 主窗拆分（行为零变化） | 更新检查三段 → `gcm/ui/update_flow.py`（142 行），`main_window` **2750 → 2658**；同名薄方法保留（测试直接调这些名字） |
+| 单一 patch 点 | `update_flow._msgbox()` 运行期从 `gcm.ui.main_window` 取 `QMessageBox` —— 否则 `mock.patch("gcm.ui.main_window.QMessageBox")` 静默失效，测试卡真模态挂死（本轮实测踩到并修复） |
+| 守卫随代码走 | `test_g66_patch` 的 AST 用例改为同扫 `main_window` + `update_flow`，并断言实现里真的 `threading.Thread(...).start()`（原来的写法拆完会退化成空断言） |
+| 真实文件搬移 | `test_g76_wiring` 增 2 条：真 sqlite + 真 `shutil.move`，验 ①文件到位 ②内容完好 ③源目录保留 ④同名不覆盖 |
+| 本机慢集（Windows 真实 git） | **Ran 129 · OK（69.7s）** |
+| 快集全量 | **Ran 1421 · failures=0 · errors=0 · skipped=4 · 覆盖 82%** |
+| 高 DPI 渲染 | `QT_SCALE_FACTOR=1.25` 重跑截图审计：**38/38**，人工过目 `download_deep_1440x900` 与 `tab_settings_1024x768` —— 齿条/刻度/pill/设置页新控件均正确，无裁切、无 tofu、无重叠 |
+| 进度刻度（并发会话落地） | `progress_delegate.tick_positions()` 纯函数 + 3 条单测；paint 里画在填充之上、文本之前（不遮数字） |
+| 构建 | PyInstaller 从**已提交树**重建（保证产物 == tag），健康检查见下 |
+| 未执行 | 真人目检（无真人）；真实用户数据目录搬移（只在临时目录做） |
+

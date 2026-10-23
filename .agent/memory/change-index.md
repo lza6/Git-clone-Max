@@ -76,3 +76,12 @@
 | 设置页字段 | 写入侧集中在 `settings_actions.SettingsWiring`（面板/分组模块都逼近 800 行）；新增字段必须同时有 `EXPECTED_WIDGETS` 条目与 `test_g76_wiring` 式「改值→重读 JSON」断言 |
 | 克隆后钩子 / 数据目录迁移 | 属「执行任意命令 / 不可逆」面：必须二次确认、默认 No、无可见窗口不弹模态、拒绝在跑任务 |
 | 更新检查 | 信号 `update_checked` 保持 4 参数（既有守卫按 4 参断言）；SHA256 走实例属性回传 |
+
+## G77（2026-10-23）主窗再拆一块
+
+| 你改的是 | 连带影响 |
+|---|---|
+| 更新检查（`check_update_now` / `_on_update_checked` / `_check_update_silent`） | 实现在 `gcm/ui/update_flow.py`；`main_window` 只留同名薄方法转调（测试直接调这些名字，改名会静默丢覆盖） |
+| 弹窗打桩 | 仍只 patch `gcm.ui.main_window.QMessageBox` —— `update_flow._msgbox()` 运行期去那里取名字，换成自己 import 会让所有既有补丁失效（表现为测试挂死在真模态） |
+| 「检查更新不得在 GUI 线程跑网络」守卫 | `tests/test_g66_patch` 的 AST 用例同时扫 `main_window` 与 `update_flow`，并断言实现里真的 `threading.Thread(...).start()`；搬迁实现时必须同步改这个用例，否则它退化成空断言 |
+

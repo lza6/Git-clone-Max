@@ -1317,34 +1317,9 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------ 更新检查
     def check_update_now(self):
-        """手动检查更新：网络请求放工作线程，结果经 `update_checked` 回 GUI 线程弹窗。
-
-        G67-9：原实现在按钮回调里**同步**跑 `check_latest()`，而它内部失败时会
-        `time.sleep(2)` 重试一次 —— 点击后界面最长冻结 2s+（弱网/被墙时更久）。
-        现在与 G67-2 的 archive/notify/diag 同款：worker 只发信号，不碰任何控件。
-        """
-        if getattr(self, "_update_checking", False):
-            return  # 防连点：worker 未回前不重复发起
-        self._update_checking = True
-        try:
-            self.statusBar().showMessage("正在检查更新…", 3000)
-        except Exception:
-            pass
-
-        def _worker():
-            try:
-                from ..app.updater import check_latest_with_sha
-                # G76：改用带 sha256 的检查（`check_latest_with_sha` 此前零生产调用）。
-                # 信号契约仍是 4 参数（既有测试与跨线程用例都按 4 参数断言），
-                # sha 走实例属性传回 GUI 线程 —— 不扩信号签名，避免破坏既有守卫。
-                has_new, ver, url, err, sha = check_latest_with_sha()
-            except Exception as e:  # noqa: BLE001 —— 兜底成 err，绝不从线程抛出
-                has_new, ver, url, err, sha = False, "", "", f"检查更新失败：{e}", ""
-            self._update_sha256 = str(sha or "")
-            # 跨线程 emit：Qt 自动走 QueuedConnection，槽在 GUI 线程执行
-            self.update_checked.emit(bool(has_new), str(ver or ""), str(url or ""), str(err or ""))
-
-        threading.Thread(target=_worker, daemon=True, name="gcm-update-check").start()
+        """手动检查更新（实现在 `update_flow.check_now`，本方法只转调）。"""
+        from .update_flow import check_now
+        return check_now(self)
 
     def _can_show_modal(self) -> bool:
         """当前是否适合弹**模态**对话框（G68-4）。
@@ -1366,85 +1341,18 @@ class MainWindow(QMainWindow):
 
     def _on_update_checked(self, has_new: bool, ver: str, url: str, err: str,
                            sha: str | None = None):
-        """`update_checked` 槽（GUI 线程）：负责弹窗与打开下载页。
+        """`update_checked` 槽（实现在 `update_flow.on_checked`，本方法只转调）。
 
-        G76：附带发布方公布的 SHA256（`sha` 为空时退回实例属性 —— worker 在 emit 前写入，
-        因为信号签名固定 4 参数，扩签名会破坏既有守卫与跨线程用例）。
+        保留同名方法：既有测试（`test_update_auto` / `test_g68_settings_ui`）
+        直接调用它，改名会静默失去这些覆盖。
         """
-        self._update_checking = False
-        if sha is None:
-            sha = str(getattr(self, "_update_sha256", "") or "")
-        self._update_sha256 = ""  # 一次性：不要污染下一次检查的提示
-        from .. import __version__
-        msg = (err or (f"发现新版本 {ver}，可到设置页下载" if has_new
-                       else f"已是最新版本（{__version__}）"))
-        if not self._can_show_modal():
-            # 没有可见窗口 → 不弹模态（会永久阻塞），改为写日志留痕
-            try:
-                self._emit_log(_fmt_dt(), LogLevel.INFO, f"检查更新：{msg}")
-            except Exception:
-                pass
-            return
-        try:
-            if err:
-                QMessageBox.information(self, "检查更新", err)
-            elif has_new:
-                extra = ""
-                if sha:
-                    extra = (f"\n\n发布方公布的 SHA256：\n{sha}\n"
-                             f"（下载后可用 `certutil -hashfile <文件> SHA256` 核对）")
-                ret = QMessageBox.question(
-                    self, "发现新版本",
-                    f"当前版本 {__version__}，最新版本 {ver}。\n是否打开下载页面？{extra}",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-                if ret == QMessageBox.StandardButton.Yes and url:
-                    import webbrowser
-                    webbrowser.open(url)
-            else:
-                QMessageBox.information(self, "检查更新", f"已是最新版本（{__version__}）")
-        except Exception as e:  # noqa: BLE001
-            QMessageBox.information(self, "检查更新", f"检查更新失败：{e}")
+        from .update_flow import on_checked
+        return on_checked(self, has_new, ver, url, err, sha)
 
     def _check_update_silent(self):
-        """启动后静默后台检查更新：不阻塞、不弹窗；有新版本写日志 + 托盘提示。
-
-        与手动按钮 check_update_now 共用 check_latest，只是结果呈现方式不同
-        （err 静默返回；发现新版只记日志，需要时用户可去设置页手动操作）。
-
-        G67-9：整段（含 HTTP 与其内部 2s 重试）挪进 daemon 线程 —— 原先由
-        `QTimer.singleShot(2500, ...)` 在 **GUI 线程**调用，启动后 2.5s 的主线程
-        同步网络请求会让窗口短暂无响应（弱网时更明显）。线程内不做任何 Qt 调用，
-        仅经 `_emit_log`（已具备线程安全约定）与 tray 通知回主线程。
-        """
-        def _worker():
-            try:
-                from .. import __version__
-                from ..app.updater import check_latest
-                has_new, ver, url, err = check_latest()
-                if err:
-                    # G21-3：静默检查失败必须留痕（结构化 app.log），不再无痕
-                    try:
-                        from ..app.applog import warn as _log_warn
-                        _log_warn(f"check_update|silent_fail|{err}",
-                                  self.data_dir / "app.log")
-                    except Exception:
-                        pass
-                    return
-                if has_new:
-                    # G67-9：**工作线程内只能走 emit 桥**，不得直接调 _emit_log
-                    self.emit_log_from_worker(
-                        _fmt_dt(), LogLevel.INFO,
-                        f"发现新版本 {ver}（当前 {__version__}），可到设置页检查更新。")
-                    try:
-                        if getattr(self, "tray", None) is not None:
-                            self.tray.notify("Git-clone-Max 有新版本",
-                                             f"最新 {ver}，可下载更新")
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-        threading.Thread(target=_worker, daemon=True, name="gcm-update-silent").start()
+        """启动后静默检查更新（实现在 `update_flow.check_silent`）。"""
+        from .update_flow import check_silent
+        return check_silent(self)
 
     def save_log(self):
         from .download_tools import save_log as _sl

@@ -302,6 +302,48 @@ class TestStatusShapeEncoding(unittest.TestCase):
                 self.assertGreater(painted, 4, f"{shape} 没有画出任何像素")
 
 
+class TestProgressTicks(unittest.TestCase):
+    """A9：进度条 25/50/75% 刻度坐标（纯函数，像素肉眼难验但坐标可断言）。"""
+
+    def test_tick_positions_quarter_steps(self):
+        from PyQt6.QtCore import QRect
+
+        from gcm.ui.progress_delegate import tick_positions
+        rect = QRect(10, 0, 200, 20)
+        self.assertEqual(tick_positions(rect), [60, 110, 160])
+        for x in tick_positions(rect):
+            self.assertTrue(rect.left() < x < rect.right(),
+                            "刻度必须在轨道内部（端点不算刻度）")
+
+    def test_tick_positions_degenerate_inputs(self):
+        from PyQt6.QtCore import QRect
+
+        from gcm.ui.progress_delegate import tick_positions
+        self.assertEqual(tick_positions(QRect(0, 0, 200, 20), steps=1), [])
+        self.assertEqual(tick_positions(QRect(0, 0, 0, 20)), [])
+        self.assertEqual(tick_positions(QRect(0, 0, 200, 20), steps="x"), [])
+        self.assertEqual(len(tick_positions(QRect(0, 0, 200, 20), steps=8)), 7)
+
+    def test_delegate_paints_without_error(self):
+        """真正跑一次 paint（含刻度绘制），防止 Qt 笔刷状态写错导致异常。"""
+        from PyQt6.QtCore import QRect
+        from PyQt6.QtGui import QColor, QPainter, QPixmap
+        from PyQt6.QtWidgets import QStyleOptionViewItem, QTableWidget
+
+        from gcm.ui.progress_delegate import ProgressDelegate
+        table = QTableWidget(1, 2)
+        d = ProgressDelegate(table, values={0: 62})
+        pm = QPixmap(240, 28)
+        pm.fill(QColor("#000000"))
+        painter = QPainter(pm)
+        opt = QStyleOptionViewItem()
+        opt.rect = QRect(0, 0, 240, 28)
+        idx = table.model().index(0, 1)
+        d.paint(painter, opt, idx)      # 不抛异常即为通过
+        painter.end()
+        table.deleteLater()
+
+
 class TestStatusStripReadouts(unittest.TestCase):
     """A7：仪表读数口径（空态 `—`、用时格式）+ 计时器生命周期。"""
 

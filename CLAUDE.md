@@ -219,10 +219,10 @@ docs/        工程/产品/契约文档
   **不得**用 `skip`/重试把它「弄绿」。
 - **CI 已锁定 PyQt6 版本**：`.github/workflows/ci.yml` 在 4 处 `pip install PyQt6==6.11.0`；
   `requirements-build.txt` 另锁 ruff/mypy/coverage/pyinstaller。**旧版本文档曾称「未锁定」，已过期**。
-- **代码规模现状（2026-10-23 G76 收口后实测）**：仍为 **3 个**文件超 800 行 —— `main_window.py` **2750**、
+- **代码规模现状（2026-10-23 G76 收口后实测）**：仍为 **3 个**文件超 800 行 —— `main_window.py` **2658**、
   `service.py` **1768**、`engine.py` **1169**（`progress_table.py` **799**、`repo_db.py` **799**、
   `settings_panel.py` **779**、`settings_groups.py` **783** 均在 800 线内；
-  G76 新增 `settings_actions.py`（216，设置页动作型回调）就是为了让这两个设置模块不越线；
+  G76 新增 `settings_actions.py`（216，设置页动作型回调）就是为了让这两个设置模块不越线；G77 把更新检查三段抽到 `update_flow.py`，主窗从 2750 降到 2658。
   G75 把 `theme.py` 从 598 拆到 **314**（色板→`palettes`、字排→`typography`、QSS→`qss_build`），
   并把批次总览/结果文案/齿条/pill 各自成模块；
   14 个函数超 100 行（最大 `MainWindow.__init__` 233 行）。

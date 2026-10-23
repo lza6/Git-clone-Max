@@ -119,3 +119,11 @@
   打包 exe 真实 GitHub E2E：`action=cloned`、version 9.9.1。
 - 教训入库：**平台路径分支必须在 `unset APPDATA` 下复跑**（本地 Windows 全绿 ≠ 功能可用）。
 
+## 2026-10-23 G75 收口（v9.9.2）
+- 补最后一项视觉缺口：`progress_delegate.tick_positions()` + 25/50/75% 刻度（3 项单测）。
+- 补齐上一轮未跑项：Windows 慢集 129/OK、`bench_g70_ui` 基准、`启动Git-clone-Max.bat` 实跑、
+  CLI 退出码 0/1/2 与 MCP 3、更新链路对**真实 Release** 三分支、T-33 连跑 10/10。
+- 修一处**测试与实现不同步**：G76 把更新弹窗搬到 `gcm/ui/update_flow.py`（模块级 import QMessageBox），
+  而 `test_g66_patch` 仍只 patch `main_window.QMessageBox` → 确定性红；已补打桩（生产代码未动）。
+- 已知环境限制：本机 TLS 代理会打断 Python `urllib` 与 git schannel（`UNEXPECTED_EOF`），
+  故更新检查的 urllib 直连路径无法本机实测，改用 requests 取真实 JSON 替换传输层。

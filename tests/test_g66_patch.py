@@ -1175,36 +1175,48 @@ class TestUpdateCheckThreading(unittest.TestCase):
             "update_checked 未 connect 到槽")
 
     def test_check_update_now_does_not_call_check_latest_on_gui_thread(self):
-        """AST 断言：`check_update_now` **自身**语句不得调用 `check_latest(`。
+        """AST 断言：手动检查的**两条路径**都不得在自身语句里同步调用 `check_latest(`。
 
         只在嵌套函数体（worker）里调用是合法的 —— 那才是修复本身。
         因此用 AST 精确取「函数自身语句」并**不下钻**嵌套 FunctionDef/Lambda，
         避免把 docstring 里提到的 `check_latest()` 误判成真调用。
-        """
-        tree = ast.parse((ROOT / "gcm/ui/main_window.py").read_text(encoding="utf-8"))
-        fn = None
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef) and node.name == "check_update_now":
-                fn = node
-                break
-        self.assertIsNotNone(fn, "main_window.py 中找不到 check_update_now")
 
-        offenders: list[str] = []
-        stack = list(fn.body)
-        while stack:
-            node = stack.pop()
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-                continue  # 嵌套函数体是 worker，合法；不下钻
-            if isinstance(node, ast.Call):
-                name = (getattr(node.func, "attr", None)
-                        or getattr(node.func, "id", None) or "")
-                if name == "check_latest":
-                    offenders.append(f"line {node.lineno}")
-            stack.extend(ast.iter_child_nodes(node))
-        self.assertEqual(
-            offenders, [],
-            "check_update_now 在 GUI 线程同步调用 check_latest（G67-9 回归）："
-            + ", ".join(offenders))
+        G77：实现已从 `main_window.check_update_now` 抽到 `ui/update_flow.check_now`。
+        守卫必须**跟着代码走** —— 只扫 main_window 的话，它现在只会检查一个转调方法
+        （函数体里没有 `check_latest`），等于变成一条永远绿的假断言。故两处都扫，
+        并额外断言实现里**真的起了线程**（防有人把 worker 改回同步调用）。
+        """
+        targets = (
+            (ROOT / "gcm/ui/main_window.py", "check_update_now"),
+            (ROOT / "gcm/ui/update_flow.py", "check_now"),
+        )
+        problems: list[str] = []
+        for path, name in targets:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            fn = next((node for node in ast.walk(tree)
+                       if isinstance(node, ast.FunctionDef) and node.name == name), None)
+            if fn is None:
+                problems.append(f"{path.name} 中找不到 {name}（拆分后名字变了？守卫要跟着改）")
+                continue
+            stack = list(fn.body)
+            while stack:
+                node = stack.pop()
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                    continue  # 嵌套函数体是 worker，合法；不下钻
+                if isinstance(node, ast.Call):
+                    call_name = (getattr(node.func, "attr", None)
+                                 or getattr(node.func, "id", None) or "")
+                    if call_name in ("check_latest", "check_latest_with_sha"):
+                        problems.append(f"{path.name}:{node.lineno} 在函数自身语句里调用了 {call_name}")
+                stack.extend(ast.iter_child_nodes(node))
+        self.assertEqual(problems, [],
+                         "检查更新在 GUI 线程同步跑网络（G67-9 回归）：" + "；".join(problems))
+
+        # 附加：实现必须真的把网络放进工作线程
+        flow_src = (ROOT / "gcm/ui/update_flow.py").read_text(encoding="utf-8")
+        self.assertIn("threading.Thread", flow_src,
+                      "update_flow.check_now 必须用 threading.Thread 起 worker（否则界面会冻结）")
+        self.assertIn(".start()", flow_src, "worker 线程必须真的 start()")
 
     def test_manual_check_runs_worker_off_gui_thread(self):
         """**真实行为断言**：点「检查更新」时，HTTP 必须在非 GUI 线程执行。
@@ -1247,7 +1259,16 @@ class TestUpdateCheckThreading(unittest.TestCase):
         original = updater_mod.check_latest
         original_sha = getattr(updater_mod, "check_latest_with_sha", None)
         import gcm.ui.main_window as mw_mod
+        # G76 起弹窗实现搬到 gcm.ui.update_flow（它自己 import 了 QMessageBox），
+        # 只在 main_window 上打桩拦不住 → 两个模块都打，恢复时也两个都还原。
+        # 弹窗实现可能在 main_window，也可能在拆分出的 gcm.ui.update_flow ——
+        # 两个位置都打桩，谁在就拦谁（不依赖某个重构是否已合入）。
+        try:
+            import gcm.ui.update_flow as uf_mod
+        except Exception:
+            uf_mod = None
         real_mb = mw_mod.QMessageBox
+        real_mb_uf = getattr(uf_mod, "QMessageBox", None) if uf_mod is not None else None
         try:
             win = MainWindow(tmp)
             # G68-4：必须 show() —— `_on_update_checked` 只在窗口**可见**时弹模态
@@ -1274,6 +1295,8 @@ class TestUpdateCheckThreading(unittest.TestCase):
                     return real_mb.StandardButton.No
 
             mw_mod.QMessageBox = _StubMB
+            if real_mb_uf is not None:
+                uf_mod.QMessageBox = _StubMB
 
             # 探针：记录线程 id 后**仍然调用真槽** —— 顺带验证 _update_checking 复位
             win.update_checked.disconnect()
@@ -1310,6 +1333,8 @@ class TestUpdateCheckThreading(unittest.TestCase):
                              "有新版应走 question 分支一次（弹窗只在 GUI 线程发生）")
         finally:
             mw_mod.QMessageBox = real_mb
+            if real_mb_uf is not None:
+                uf_mod.QMessageBox = real_mb_uf
             updater_mod.check_latest = original
             if original_sha is not None:
                 updater_mod.check_latest_with_sha = original_sha
