@@ -1027,3 +1027,16 @@ B4 仓库知识索引 / B5 MCP annotations / B6 真机点击仍属后续范围�
 | 守卫 | `tests/test_g78_quick_scroll`(3)：标准模式不裁切 · 紧凑模式按设计隐藏 · 编辑后高度跟随 · 重复同步幂等 · 无 scroll 宿主不抛 |
 | 视觉证据 | `reports/ui-g78/`（38 张，改后）对照 `reports/ui-g75/`（改前）|
 | 教训 | 把"像素常量 vs 设备缩放"混为一谈会误导修复方向；尺寸类缺陷应当**先量 `sizeHint` 再改** |
+
+### 26.1 v9.9.4 发布证据
+
+| 项 | 真实值 |
+|----|--------|
+| 提交 | `d2ec841`（修复+版本 bump）+ `982cfe7`（移出误提交的 38 张截图，`.gitignore` 收敛为 `reports/ui-*/`）· 已推送 |
+| 门禁 | ruff 0 error · mypy Success · 定向 134 tests OK · 快集 **1429 tests / 0 fail / 4 skip / 覆盖 82%** |
+| 构建 | PyInstaller EXIT=0；exe **41,361,913 B** sha256 `5e607063…`；zip **79,792,364 B** |
+| 产物健康 | `health_check.py`：version=9.9.4 · archive_version=9.9.4 · version_match=true |
+| 打包 E2E | `action=cloned` → `action=fetched`，磁盘 `HEAD=7fd1a60`，`origin` 已规范化回 `https://github.com/...`（镜像只记在 `gcm.mirror`）|
+| 发布 | https://github.com/lza6/Git-clone-Max/releases/tag/v9.9.4 · 服务端下载校验 sha256 一致 |
+| 环境注记 | 本机此刻**直连 github.com 的 git 全部失败**（`git ls-remote` 3/3 `TLS connect error: unexpected eof`），E2E 首跑因此 failed；重试由**内置镜像回退**成功 —— 顺带验证了 G58-2/G69-21 的镜像链路与「克隆后回源站」规则 |
+| CI | **仍在 GitHub 队列（queued）**，见 §27；本表不把未跑的 run 计为通过 |

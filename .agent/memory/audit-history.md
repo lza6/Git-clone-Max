@@ -140,3 +140,9 @@
 - 教训：**给"抽出去的模块"打桩前先确认它有没有模块级符号**，否则写的是死分支还自认为加固了。
 - 发布 `v9.9.3`：exe 41,358,954 B（sha256 `d68cc4ca…`，服务端校验一致）/ zip 79,788,175 B；
   health_check version/archive_version 均 9.9.3；打包 E2E cloned→fetched；本地快集 1421/0/4 skip/82%。
+- 自查发现并修复真实缺陷（v9.9.4）：`quick_scroll` 写死 38px 而 chip 需 42px → 底部 4px 被裁，
+  1440×900 标准模式即可见（早先误记为"仅 125% 缩放"，已更正 known-issues）。
+  修法 `sync_quick_scroll_height()` + 两处重同步；守卫 `tests/test_g78_quick_scroll`(3)。
+  发布 v9.9.4：exe 41,361,913 B（sha256 `5e607063…`，服务端校验一致）/ zip 79,792,364 B。
+- 事故/教训：`git add -A` 一度把 38 张截图（3.5MB）带进仓库，已用 `git rm --cached` 移出并把
+  `.gitignore` 收敛为 `reports/ui-*/`（不 force push、不改历史）。
