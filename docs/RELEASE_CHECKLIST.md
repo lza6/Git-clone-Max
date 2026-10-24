@@ -37,6 +37,11 @@
 - [ ] `python scripts/build_portable_zip.py`（生成/刷新便携版 zip；**必须在 PyInstaller 之后跑**）
 - [ ] `python scripts/build_portable_zip.py --check` → `[OK]`（拦住「新 exe + 旧 zip」）
 - [ ] 产物 sha256 记录（本地）
+- [ ] `python scripts/health_check.py --json dist/health_check.json` → 7 项全 `[OK]`
+      （产物存在 / exe+zip sha256 / 版本一致〔读 CArchive〕/ 离屏启动存活 60s / 建库）
+- [ ] **G80-B3 起**：打 `v*` tag 后 CI 会自动跑 `packaging` job（windows-latest）做同样的事；
+      本地这一步仍要跑一遍 —— CI 绿只证明"那台 runner 上能起来"，而你手上这个 exe 是刚构建的。
+      两者不一致时以**本地**为准（杀软/代理/路径差异是本项目历史上最常见的假绿来源）。
 
 ## 2. 冒烟
 

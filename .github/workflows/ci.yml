@@ -7,6 +7,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # G80-B3：允许手动触发（主要用于单独跑下面的 packaging 门禁）
+  workflow_dispatch:
 
 # G78：并发组 + cancel-in-progress。
 # 事故背景（2026-10-23）：两个会话在同一分支连续推了 5 个提交，而本 workflow 没有 concurrency
@@ -263,3 +265,56 @@ jobs:
           python -m unittest tests.test_engine tests.test_v7_fixes tests.test_core \
             tests.test_extra tests.test_v3_p0 tests.test_submodule tests.test_publish \
             tests.test_scanner tests.test_tag_branch tests.test_progress_search
+
+  # ==========================================================================
+  # G80-B3：打包产物门禁（**只在 tag / 手动触发时跑**，不进每次 push）
+  # --------------------------------------------------------------------------
+  # 为什么只限 tag：Windows runner 上 PyInstaller 单文件打包 + 首次解包冒烟
+  # 通常 5~10 分钟；放进每次 push 会把反馈时间从 ~5 分钟拉到 15 分钟以上，
+  # 结果一定是被人关掉。
+  #
+  # 为什么这个 job 现在是必要的：工具一直都有 —— scripts/health_check.py 会校验
+  #   ① exe 与 portable zip 存在 ② 两者 sha256 ③ 产物内 __version__ 与源码一致
+  #      （用 PyInstaller CArchive 读 onefile 里的 gcm/__init__.py）
+  #   ④ QT_QPA_PLATFORM=offscreen 启动 exe 并存活 60s（防"发出去的 exe 起不来"）
+  #   ⑤ 冒烟期间临时数据目录确实生成了 repos.db / settings.json
+  #   —— 之前只是**没有任何 job 调用它**，于是这些问题只能靠人工在发布时发现。
+  # ==========================================================================
+  packaging:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install PyQt6==6.11.0
+          python -m pip install -r requirements-build.txt
+
+      - name: Build exe (PyInstaller onedir + onefile per spec)
+        run: python -m PyInstaller --noconfirm Git-clone-Max.spec
+
+      - name: Build portable zip
+        run: python scripts/build_portable_zip.py
+
+      - name: Health check (exists / sha256 / version / offscreen launch / db created)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python scripts/health_check.py --json dist/health_check.json
+
+      - name: Upload packaging report + zip
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: packaging-report
+          path: |
+            dist/health_check.json
+            dist/Git-clone-Max-portable.zip
+          if-no-files-found: warn
