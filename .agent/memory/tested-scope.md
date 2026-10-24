@@ -274,3 +274,16 @@ QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe scripts/bench_g70_ui.py
 **注意**：快集第一轮曾红（`test_repo_detail.test_open_dir_posix_opener_via_mock`），
 根因是「打开目录」实现收敛后补丁点失效（不是行为回归），已在 `741706f` 修掉；
 若你看到旧日志里的 failures=1，那是修复前那一轮。
+
+
+## 2026-10-25 · B8 之后全量快集（**已跑过，勿重复**）
+
+| 命令 | 结果 |
+|---|---|
+| `coverage run --source=gcm scripts/ci_run_fast.py` | **Ran 1480 · failures=0 · errors=0 · skipped=4** |
+| `coverage report --include="gcm/*"` | **TOTAL 82%** |
+
+过程（两轮红→第三轮绿，均为机械副作用，非行为回归）：
+1. 第一轮：`test_repo_detail`（open_dir 补丁点随实现收敛而失效）；
+2. 第二轮：`test_g79_repo_hygiene`（`repo_db.py` 799→818 超 800 线 + 测试文件数 139→140 未同步）；
+3. 第三轮绿。教训：**不要在快集跑的过程中改代码**（第二轮里 `test_g66_patch` 的 error 就是这样来的）。

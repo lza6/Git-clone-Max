@@ -5,15 +5,41 @@
   "timestamp": "2026-10-25T01:10:00+08:00",
   "scope": "用户决策 U-2（保留列并真正接线）；批次 B8",
   "commands_executed": [
-    {"cmd": "QT_QPA_PLATFORM=offscreen python -m unittest tests.test_g80_repo_ssh_key -v", "exit_code": 0, "raw_output_tail": "Ran 16 tests in 0.391s\n\nOK"},
-    {"cmd": "python -m ruff check gcm", "exit_code": 0, "raw_output_tail": "All checks passed!"},
-    {"cmd": "python -m mypy gcm", "exit_code": 0, "raw_output_tail": "Success: no issues found in 88 source files"},
-    {"cmd": "python -m unittest tests.test_g80_hygiene tests.test_g80_repo_ssh_key tests.test_repo_detail", "exit_code": 0, "raw_output_tail": "Ran 42 tests in 0.778s\n\nOK"}
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen python -m unittest tests.test_g80_repo_ssh_key -v",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 16 tests in 0.391s\n\nOK"
+    },
+    {
+      "cmd": "python -m ruff check gcm",
+      "exit_code": 0,
+      "raw_output_tail": "All checks passed!"
+    },
+    {
+      "cmd": "python -m mypy gcm",
+      "exit_code": 0,
+      "raw_output_tail": "Success: no issues found in 88 source files"
+    },
+    {
+      "cmd": "python -m unittest tests.test_g80_hygiene tests.test_g80_repo_ssh_key tests.test_repo_detail",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 42 tests in 0.778s\n\nOK"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen python -m coverage run --source=gcm scripts/ci_run_fast.py  ; coverage report --include=\"gcm/*\"",
+      "exit_code": 0,
+      "raw_output_tail": "[ci_run_fast] 合计：Ran 1480 tests · failures=0 errors=0 skipped=4\nTOTAL 13989 2216 3490 623 82%"
+    }
   ],
   "files_changed": [
-    "gcm/util/sshkey.py (new)", "gcm/db/repo_db.py", "gcm/app/engine.py",
-    "gcm/ui/repo_detail_dialog.py", "gcm/i18n/zh.py", "gcm/i18n/en.py",
-    "tests/test_g80_repo_ssh_key.py (new)", "tests/test_g80_hygiene.py (baseline+理由)",
+    "gcm/util/sshkey.py (new)",
+    "gcm/db/repo_db.py",
+    "gcm/app/engine.py",
+    "gcm/ui/repo_detail_dialog.py",
+    "gcm/i18n/zh.py",
+    "gcm/i18n/en.py",
+    "tests/test_g80_repo_ssh_key.py (new)",
+    "tests/test_g80_hygiene.py (baseline+理由)",
     "README.md"
   ],
   "design": {
@@ -24,17 +50,49 @@
     "agent_surface": "HTTP/MCP 出站仍按 _SENSITIVE_COLS 剔除该列（契约不变）"
   },
   "tests": [
-    {"name": "校验器 7 例（真 key / PuTTY / 粘内容 / 不存在 / 目录 / 非 key / 空）", "type": "unit", "status": "passed"},
-    {"name": "DB 读-写-清 + upsert 不冲掉 + 出站剔除 5 例", "type": "integration", "status": "passed"},
-    {"name": "引擎 per-repo 覆盖 / 空回落 / 无串用 / 读库报错降级 4 例", "type": "integration", "status": "passed"}
+    {
+      "name": "校验器 7 例（真 key / PuTTY / 粘内容 / 不存在 / 目录 / 非 key / 空）",
+      "type": "unit",
+      "status": "passed"
+    },
+    {
+      "name": "DB 读-写-清 + upsert 不冲掉 + 出站剔除 5 例",
+      "type": "integration",
+      "status": "passed"
+    },
+    {
+      "name": "引擎 per-repo 覆盖 / 空回落 / 无串用 / 读库报错降级 4 例",
+      "type": "integration",
+      "status": "passed"
+    },
+    {
+      "name": "全量快集（B8 之后）",
+      "type": "integration",
+      "status": "passed",
+      "evidence": "Ran 1480 · failures=0 · errors=0 · skipped=4 · 覆盖率 82%"
+    }
   ],
-  "coverage_summary": {"lines": null, "branches": null, "functions": null, "statements": null},
-  "seams_touched": ["engine → repo_db（每任务查 key）", "engine → GitService（GIT_SSH_COMMAND）", "UI → repo_db（保存/清除）", "HTTP/MCP 出站（剔除）"],
+  "coverage_summary": {
+    "lines": 82.0,
+    "branches": null,
+    "functions": null,
+    "statements": null
+  },
+  "seams_touched": [
+    "engine → repo_db（每任务查 key）",
+    "engine → GitService（GIT_SSH_COMMAND）",
+    "UI → repo_db（保存/清除）",
+    "HTTP/MCP 出站（剔除）"
+  ],
   "mock_scenarios_covered": [],
-  "browser_validation": {"performed": false, "paths": [], "screenshots": []},
+  "browser_validation": {
+    "performed": false,
+    "paths": [],
+    "screenshots": []
+  },
   "limitations": [
     "未做真实两把 key 的手工 E2E（需要两台/两把可用的 SSH key 与可访问的私有仓库）；当前证据止于单元+集成层。",
-    "全量快集未在 B8 之后重跑（提交后立即跑）。",
-    "私钥权限过宽只 WARN 不阻断（POSIX），这是刻意设计。"
+    "私钥权限过宽只 WARN 不阻断（POSIX），这是刻意设计。",
+    "B8 之前的两轮快集各红过：第一轮 test_repo_detail（补丁点失效）、第二轮 g79_repo_hygiene（repo_db.py 超 800 + 测试数未同步）；第三轮转绿，过程已记录在 docs/验证记录-2026-10-25-G80-B2B3.md。"
   ]
 }
