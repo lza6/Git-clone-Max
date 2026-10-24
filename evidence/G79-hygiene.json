@@ -1,11 +1,11 @@
 {
   "task_id": "G79",
   "goal": "工程治理与配置真实性收口：删除零读取的僵尸配置字段 Settings.depth；修复僵尸字段守卫的同名局部变量盲区；截图与根目录死文件出库；新增仓库卫生守卫；同步一阶文档事实。",
-  "status": "done",
+  "status": "done_with_ci_caught_defect",
   "timestamp": "2026-10-24T16:00:00+08:00",
   "baseline": {
     "version_before": "9.9.4",
-    "version_after": "9.10.0",
+    "version_after": "9.10.1",
     "head_before": "7097209",
     "worktree_before": "clean（除上一轮未提交的计划文档）"
   },
@@ -61,6 +61,42 @@
       "exit_code": 0,
       "output_tail": "出库前 git ls-files reports/ui-audit-final/ = 38\n出库后 git ls-files reports/ = 8（仅剩 8 个 change-report HTML）\n本地 reports/ui-audit-final/ 仍有 38 个文件（未删磁盘，可作对照）",
       "note": "截图只出索引、保留本地；z.png 与顶层 cli.py 彻底删除（全仓 grep 确认零引用）"
+    },
+    {
+      "cmd": "git ls-tree -r HEAD --name-only | grep -c ui-audit-final",
+      "exit_code": 0,
+      "output_tail": "38   # v9.10.0 提交后仍是 38 —— 说明 git rm --cached 被 git reset 回滚了",
+      "note": "用『提交树』而不是工作区做校验，这才暴露了问题"
+    },
+    {
+      "cmd": "（CI）GitHub Actions run 40089462143 on 94f6753",
+      "exit_code": 1,
+      "output_tail": "test (windows) failure / test (macos) failure / test (ubuntu) failure；\nfast-smoke success / slow success / perf-baseline success / e2e-smoke success\n失败断言：test_no_png_under_reports_in_index\nAssertionError: Lists differ: ['reports/ui-audit-final/dialog_checklist.[...]png'] != []",
+      "note": "新增守卫在干净检出上精确点名 38 个路径 —— 证明守卫有效"
+    },
+    {
+      "cmd": "git rm --cached -- 'reports/ui-audit-final/*.png'  ;  git ls-files | grep -c ui-audit-final",
+      "exit_code": 0,
+      "output_tail": "0   # 真正出库（本地 38 个文件仍在）",
+      "note": "v9.10.1 修复；随后 CI run 40090205046 on fe0febd = 7/7 success"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe scripts/publish_release.py --tag v9.10.1  （第一次）",
+      "exit_code": 1,
+      "output_tail": "[OK] 附件上传成功 id=672131871 size=41367898\n[FAIL] 运行超时（>= 300s）\n[WARN] 便携包上传失败（不影响主产物）：运行超时\n[WARN] 服务端下载校验跳过：运行超时",
+      "note": "暴露 publish_release.DEADLINE=300s 对 120MB 双产物不够用 → 已修（900s + 环境变量可覆盖）"
+    },
+    {
+      "cmd": "GCM_PUBLISH_DEADLINE 默认 900 后重跑 publish_release.py --tag v9.10.1",
+      "exit_code": 0,
+      "output_tail": "[SKIP] 远端已存在一致附件（41367898 bytes），跳过上传\n[OK] 便携包上传成功 id=672139856 size=79802500\n[OK] 服务端 sha256 一致",
+      "note": "幂等补传成功；exe 未重复上传"
+    },
+    {
+      "cmd": "下载 Release 资产并重算 sha256（exe）+ 用下载物跑 --cli",
+      "exit_code": 0,
+      "output_tail": "bytes 41367898 sha256 5df69214154d812584ee28aaf1742641184ae9dd47b81912f2e9e2c5a046dd1f\nMATCH: True\nversion 9.10.1 / ok true / action cloned (exit 0)\n复跑 action fetched / 已是最新   无效输入 exit=2\n磁盘 HEAD=7fd1a60  origin=https://github.com/octocat/Hello-World.git",
+      "note": "三方一致：本地 health_check == 服务端 asset digest == 下载重算"
     }
   ],
   "files_changed": [
@@ -87,12 +123,44 @@
     "cli.py（根目录 1 行占位；真入口是 gcm/cli.py）"
   ],
   "tests": {
-    "g79_repo_hygiene": { "ran": 9, "failures_initial": 4, "failures_after_fix": 0 },
-    "g69_zombie_settings": { "ran": 2, "failures_initial": 1, "failures_after_fix": 0 },
-    "version_single_source": { "ran": 11, "failures_after_fix": 0 }
+    "g79_repo_hygiene": {
+      "ran": 9,
+      "failures_initial": 4,
+      "failures_after_fix": 0
+    },
+    "g69_zombie_settings": {
+      "ran": 2,
+      "failures_initial": 1,
+      "failures_after_fix": 0
+    },
+    "version_single_source": {
+      "ran": 11,
+      "failures_after_fix": 0
+    },
+    "fast_suite_final": {
+      "ran": 1438,
+      "failures": 0,
+      "skipped": 4,
+      "coverage": "82%"
+    },
+    "slow_suite_windows": {
+      "ran": 129,
+      "result": "OK",
+      "seconds": 68.9
+    },
+    "ci_final": {
+      "run": 40090205046,
+      "sha": "fe0febd",
+      "result": "7/7 success"
+    }
   },
   "coverage": null,
-  "seams_touched": ["S05", "S06", "S12", "S34"],
+  "seams_touched": [
+    "S05",
+    "S06",
+    "S12",
+    "S34"
+  ],
   "mock_scenarios": [],
   "findings_fixed": [
     {
@@ -118,12 +186,20 @@
       "summary": "根目录 z.png（误放截图）与 cli.py（1 行占位）在索引里",
       "evidence": "git log -- z.png：00c8b36 加 → 7a7f6c6 删 → 4728693 又加；cli.py 自 e62039a 起 1 行，全仓零引用",
       "fix": "两者彻底删除（先全仓 grep 确认零引用）；新守卫用根目录白名单拦复发"
+    },
+    {
+      "id": "P0-CI",
+      "summary": "v9.10.0 的截图出库被一次 git reset 静默回滚，CI 三平台 test job 全红（本地误以为绿）",
+      "evidence": "git reset(mixed) 把索引重置回 HEAD → 回滚 git rm --cached；「已跟踪」文件不受 .gitignore 约束 → git add -A 原样带回；本地守卫在 reset 之前跑过所以是绿的，之后没重跑",
+      "fix": "git rm --cached 重新执行并提交（9.10.1）；校验用『提交树』而不是工作区；纪律写进 decisions D29/D30 与 changelog"
     }
   ],
   "limitations": [
-    "本文件的 coverage 字段为 null：快集覆盖率在另一条命令中单独产出并记入 test_ledger.md（本节点不重复搬数）。",
     "Actions 分钟额度仍未核实（外部限制，需登录 GitHub 账单页）。",
-    "本节点未做真实 GUI 交互验证与真机 DPI 目检（改动不触及 UI 渲染，风险为 L1）。",
-    "settings_groups.py 现为 783 行，距 800 红线 17 行 —— 本轮不动（避免在治理轮夹带重构），已登记为下一轮 T-43。"
-  ]
+    "未做真实 GUI 交互与真机 DPI 目检（本轮改动不触及渲染路径，L1）。",
+    "settings_groups.py 现 783 行，距 800 红线 17 行 —— 已排为下一轮 T-43，本轮不夹带重构。",
+    "main_window.py 仍 2665 行 —— 显式接受的技术债，本轮只加「不许再多第 4 个超限文件」的守卫。",
+    "v9.10.0 的 Release 产物本身可用（E2E 通过），但源码树含 38 张截图；已由 v9.10.1 修正，未改写已推送的 v9.10.0 tag（禁止改写历史）。"
+  ],
+  "version_after": "9.10.0"
 }
