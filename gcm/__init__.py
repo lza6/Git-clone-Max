@@ -152,8 +152,11 @@ __changelog__ = (
     "9.1.4: G67 安全与线程安全补丁 - G67-1 克隆后钩子命令注入修复(路径强制双引号包裹, A/B 实测: 目录名 x&mkdir PWNED&y 修复前真的执行了 mkdir) · G67-2 三处跨线程直接操作 Qt 控件改为 pyqtSignal 桥接(main_window/progress_table/settings_panel) · 附带修复归档取光标行与文件名清洗 · 守卫 40→51 用例(含反向自检: 取基线 commit 断言守卫能抓到修复前的违规)",  # noqa: E501
     "9.1.3: G66 第四轮终局审计补丁 - G66-2 契约版本单源(CLI --json/--diag + MCP serverInfo + 2 个技能脚本共 5 处硬编码 8.0.2 → gcm.__version__；pyproject/installer.iss 同步) · G66-3 时间炸弹用例修复(test_repo_tags 写死日期致主矩阵 2026-10-12 实测红灯) · G66-4 中文 Windows(cp936) 子进程解码崩溃修复(26 处 text=True 补 encoding=utf-8) · G66-6 本地 HTTP API 强制回环绑定(拒绝 0.0.0.0 无鉴权暴露) · G66-5/G66-7 CI artifact 与 step 名修复 · 新增 test_g66_patch.py 19 项永久守卫",  # noqa: E501
 
-    "0 子进程+线程池并发+scandir 跳 junction) · 裸仓/worktree 完整性 · local_repos_dialog "
-    "O(1) 预载+item checkState+批量写库 · 实测 300 仓 149.4s→1.6s(约95x) · "
+    # ⚠️ 历史残片（G80-B2 登记）：下面这条的版本前缀在早期被截断，原文从「0 子进程」开始，
+    # 无法从 git 历史可靠还原它属于哪个版本的完整说明。保留原文并显式标注，
+    # 避免它被误读成某条完整的版本记录（原先它没有版本前缀，与相邻条目格式不一致）。
+    "[版本前缀已丢失·历史残片] 子进程+线程池并发+scandir 跳 junction) · 裸仓/worktree 完整性 · "
+    "local_repos_dialog O(1) 预载+item checkState+批量写库 · 实测 300 仓 149.4s→1.6s(约95x) · "
     "全量 770 绿 · 覆盖 84%",
 )
 

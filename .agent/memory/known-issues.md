@@ -1,7 +1,7 @@
 # 已知问题与边界（known-issues）
 
 > 只记录**真实存在**且尚未解决的问题。修掉一个就删一条。
-> 最后更新：2026-10-24（v9.10.0 G79 工程治理与配置真实性收口）
+> 最后更新：2026-10-25（G80-B2：逐条复核 G69-20 清单，5 条已闭环 + 1 条降为单字段）
 
 ## 未闭环功能
 
@@ -75,16 +75,19 @@
 | 7 | `CloneWorker.on_line` 从未使用（所有输出记到 index=0） | `run()` 把外部回调接到 service |
 | 8 | AlertScanner 间隔/IM 构造期固化，改完要重启 | `reconfigure()` + 设置保存即推送 |
 
-### 仍未修（已登记）
+### G69-20 盲点清单（2026-10-24 G80-B2 **逐条复核后**更新）
 
-| # | 问题 | 影响 | 建议 |
+> 复核纪律：**不要相信本表的旧结论**，每条都以「生产调用点 / UI 三段（控件→保存回调→消费方）」
+> 重新验一遍再改状态（`docs/计划书/README.md` §1.3 同款口径）。
+
+| # | 问题 | 现状（G80-B2 实测） | 证据 |
 |---|------|------|------|
-| 9 | `post_clone_hook` 只读不写（无 UI） | 正常 UI 无法启用克隆后钩子 | 加设置项前先确认是否允许执行任意 shell |
-| 10 | `manage_model.rowsChanged/visChanged` 无 connect | 无功能影响（视图自己刷新） | 可删信号或接状态栏 |
-| 11 | `ScanWorker.progress` 已 emit 但对话框未接 | 本地扫描进度条是不确定态 | 接 `progress` → 确定进度 |
-| 12 | `check_latest_with_sha` 无调用 | 更新提示不展示 sha256 | 低价值，可删 |
-| 13 | `is_data_dir_private` / `migrate_data_dir` 无调用 | 目录隐私提示与迁移不可达 | 需产品决策 |
-| 14 | 只读不写字段：`clone_timeout` / `minimize_to_tray` / `watchdog_silent` / `sched_report_format` / `retry_backoff_base_sec` | 只能手改 settings.json | 逐项补 UI 或删字段 |
+| 9 | `post_clone_hook` 只读不写 | **已闭环（G76）**：设置页有输入框 + 保存时二次确认 | `ui/settings_groups.py:250-257` · `_save_post_clone_hook` |
+| 10 | `manage_model.rowsChanged/visChanged` 无 connect | **已闭环**：管理页已连 `rowsChanged` | `ui/manage_panel.py:139` |
+| 11 | `ScanWorker.progress` 已 emit 未 connect | **已闭环（G76）**：对话框已连并改确定态 | `ui/local_repos_dialog.py:166-168` |
+| 12 | `check_latest_with_sha` 无调用 | **已闭环（G76）**：更新检查已用它拿 sha256 | `ui/update_flow.py:56` |
+| 13 | `is_data_dir_private` / `migrate_data_dir` 无调用 | **已闭环（G76）**：数据目录私密性提示 + 迁移入口 | `ui/settings_actions.py:97-112` |
+| 14 | 5 个只读不写字段 | **4 个已接线**（`clone_timeout` / `minimize_to_tray` / `watchdog_silent` / `sched_report_format`），**仅剩 `retry_backoff_base_sec` 只读**：它被 `engine_factory`/`configure_retry_queue` 消费，但设置页没有写入控件 | `ui/settings_actions.py:64-87`（4 个 save）· `ui/settings_panel.py:245`（仅读） |
 | 15 | ~~`quick_repos` 无编辑入口；`depth` 字段完全无引用~~ **已闭环（v9.10.0）** | — | `quick_repos` 已由 G76 接写入侧；`depth` **已删除**（G79：它是唯一零读取的僵尸字段，随 `asdict` 落盘但永不生效）；顺带修掉 `TestG69_18NoZombieSettingsFields` 的同名局部变量盲区 |
 
 其余仅测试引用的内部函数（`token.py`、`slow_remote_hint`、`backup_to`、`TaskLists.delete` 等）

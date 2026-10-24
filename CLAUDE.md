@@ -29,7 +29,7 @@
 |-----------|---------------------|
 | 我该改哪、改动影响什么 | `docs/architecture.md` + `docs/adr/ADR-001..004` |
 | 什么条件下允许宣称「完成」 | `policy.md`（交付门禁 / 任务分级 / 证据标签 / 停止条件） |
-| 这条链路哪个测试证明它通 / 哪个接缝没覆盖 | `test_ledger.md`（S01–S14 接缝注册表 + 测试状态） |
+| 这条链路哪个测试证明它通 / 哪个接缝没覆盖 | `test_ledger.md`（S01–S34 接缝注册表 + 测试状态） |
 | 某个节点本轮的真实命令与输出 | `evidence/<节点ID>.json` |
 | 可复用的代码范式 | `docs/code-gems.md`（单写者/原子写/redact/批聚合/流控/注入时钟/契约/纯校验） |
 | agent 接入契约（CLI/MCP/HTTP schema、退出码、打码规则） | `docs/agent-contract.md` |
@@ -82,7 +82,7 @@ gcm/util/    跨层工具：redact（脱敏）/ filelock（跨进程文件锁）
 gcm/i18n/    文案字典 zh/en（key 即中文，缺失回退中文）
 skills/      agent 技能包（SKILL.md + scripts/），每个必须自包含验收步骤
 scripts/     运维/CI/基准脚本（不参与打包）
-tests/       测试（137 文件）；**新增测试文件默认落在 CI 快集**（scripts/ci_run_fast.py 用黑名单，不是白名单）
+tests/       测试（139 文件）；**新增测试文件默认落在 CI 快集**（scripts/ci_run_fast.py 用黑名单，不是白名单）。G80 起新增 `test_g80_contract` / `test_g80_hygiene` 两个守卫，改契约或删符号前先看它们。
 docs/reports/ 历次审计报告（HTML，只读快照）
 docs/        工程/产品/契约文档
 ```
@@ -220,7 +220,7 @@ docs/        工程/产品/契约文档
   新增代码的约束仍然有效：**信号连接用绑定方法，不要 `lambda` 捕获 `self`**（会重新成环）；
   **不得**用 `skip`/重试把崩溃「弄绿」。
 - **CI 已锁定 PyQt6 版本**：`.github/workflows/ci.yml` 在 4 处 `pip install PyQt6==6.11.0`；
-  `requirements-build.txt` 另锁 ruff/mypy/coverage/pyinstaller。**旧版本文档曾称「未锁定」，已过期**。
+  `requirements-build.txt` 里也锁了 ruff/mypy/coverage/pyinstaller 的精确版本，但 **CI 的 Lint/Type 步骤是裸 `pip install ruff` / `pip install mypy`（不读该文件）→ CI 上的 ruff/mypy 版本仍不锁**。G80 实测登记，别再把「文件里有锁」当成「CI 已锁」。
 - **代码规模现状（2026-10-24 G79 后实测）**：仍为 **3 个**文件超 800 行 —— `main_window.py` **2670**、
   `service.py` **1768**、`engine.py` **1169**（`progress_table.py` **799**、`repo_db.py` **799**、
   `settings_panel.py` **779**、`settings_groups.py` **783** 均在 800 线内；
@@ -229,7 +229,7 @@ docs/        工程/产品/契约文档
   并把批次总览/结果文案/齿条/pill 各自成模块；
   14 个函数超 100 行（最大 `MainWindow.__init__` 233 行）。
   G71 已完成的长函数拆分：`service._update` **337→105**（拆出 `_update_bare_mirror` /
-  `_fetch_remote` / `_merge_remote`）、`MainWindow._launch` **153→124**（参数映射拆到
+  `_fetch_remote` / `_merge_remote`）、`MainWindow._launch` **153→129**（参数映射拆到
   `ui/engine_factory.py`）、`_build_download_tab` **191→约 35**（控件搭建拆到
   `ui/download_layout.py`）。`build_settings_ui` 曾达 432 行，已拆为 `settings_groups.py`
   的 7 个构建器；G70 把进度 delegate 拆到 `progress_delegate.py`（65 行）。
@@ -269,7 +269,7 @@ docs/        工程/产品/契约文档
 - **重试退避带 jitter（G72）**：`delay = min(base*n, 1h)` 后 50%–100% 抖动；
   单次 tick 最多重投 50 条。测试精确时间时注入 `jitter=lambda d: d`。
 - **覆盖率门禁是快集口径**（Windows 81 / POSIX 80），不是全量口径；POSIX 低 1 个点源于 `msvcrt`/`schtasks`/`winreg` 分支不可执行。
-- **`gcm/ui/*.py` 有 E501 豁免**（纯中文文案长行，East-Asian 宽度计数）；`gcm/i18n/*.py` 为生成文件同样豁免。
+- **`gcm/ui/*.py` 有 E501 豁免**（纯中文文案长行，East-Asian 宽度计数）；`gcm/i18n/*.py` 为生成文件同样豁免；`gcm/db/settings.py` 也有 E501 豁免（字段注释长行）。
 - **CI 只在 Linux 上跑慢集**：Windows 特有的编码/路径问题必须本机验证，别只信 CI 绿灯。
 - **打包构建未纳入 CI**：`Git-clone-Max.spec` 的版本常量由静态测试守卫，但 exe 需人工重建验证。
 - **技能包脚本用 `sys.executable` 找解释器**：在打包 exe 环境下需改为打包路径（见 `skills/G56-1-验收说明.md` 遗留风险）。

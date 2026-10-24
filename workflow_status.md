@@ -1259,3 +1259,18 @@ Release `v9.10.2`（id=422788581）产物从 Release 独立下载后重算 sha25
 
 质量闸：`ruff` 0 error · `mypy` Success(87 files) · 定向回归 **91 例 OK**。
 **未做**：全量快集/覆盖率重算、版本 bump、打包重建（发布批次统一处理）。
+
+
+### G80-B2 · 工程卫生（2026-10-25 · 批次 B2，状态 **PARTIAL**）
+
+| 项 | 状态 | 证据 |
+|---|---|---|
+| 删死代码（token.py / iter_sse_frames / is_retryable_message / _is_known_host / summarize_events / _is_detached / _host_token） | 已修 | `tests/test_g80_hygiene::TestDeadSymbolsStayDead` |
+| 打开目录归一（三处→`gcm/util/openfolder.py`，含平台判断不一致） | 已修 | 守卫断言 `os.startfile` 只允许出现在 openfolder.py |
+| 裸吞异常收敛（engine 4 处 + updater 1 处） | 已修 | pass-only 287 → **280**，预算冻结在守卫里 |
+| 凭据助手不交互（G-16）+ token 不落日志结论 | 已修 | `updater._gh_token` 补 `GIT_TERMINAL_PROMPT=0` / `GIT_ASKPASS=echo` |
+| 文档漂移（CLAUDE.md 5 处 / ADR-003 指向已删模块 / README 与守卫的测试数 137→139 / changelog 残片） | 已修 | `test_g67_docs_freshness` + `test_g79_repo_hygiene` 21 例 OK |
+| known-issues G69-20 清单复核 | 已修 | 5 条已闭环（9/10/11/12/13）+ #14 降为单字段（`retry_backoff_base_sec`） |
+| **`docs/计划书/` 归档删除（U-3）** | **未执行（阻塞）** | 项目 `policy.md` §5 + `docs/计划书/README.md` §1.2「存在任一未闭环项不得删除」，而该文档 Rev5.2 自述 **T-41/T-42/T-43 未开始 + P2-5/P2-8 未闭环** → 需用户确认是否放弃这些项 |
+
+校验：ruff 0 · mypy Success(87) · 新守卫 10 例 · 定向回归 **228 例 OK(skip 1)** · 文档守卫 21 例 OK。

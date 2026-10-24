@@ -46,6 +46,9 @@ _ROOT_WHITELIST = {
     "CLAUDE.md", "Git-clone-Max.spec", "LICENSE", "README.md",
     "policy.md", "pyproject.toml", "requirements-build.txt", "requirements.txt",
     "test_ledger.md", "workflow_status.md",
+    # 2026-10-24 登记：参考项目对标审计的**工作流状态文件**（用户明确要求落盘在本仓根，
+    # 是那次任务的单一状态源：1748 条参考项目清单 + 差距台账 + 批次计划）。
+    "参考的结果计划指南.md",
 }
 
 # 被显式接受的超 800 行模块（`CLAUDE.md` §6 登记的技术债）。
@@ -59,7 +62,7 @@ _OVERSIZED_LIMIT = 800
 
 # 断言基线：测试文件数与主窗行数（`CLAUDE.md` / `README.md` 必须与实测一致）。
 # 这两个数字会随开发变化，改代码时**同步改这里和文档**，守卫才有意义。
-_EXPECTED_TEST_FILES = 137
+_EXPECTED_TEST_FILES = 139
 
 
 def _git_ls_files() -> list[str]:
