@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -184,6 +185,10 @@ def build_download_top(owner) -> QWidget:
     owner.btn_edit_quick = QPushButton(tr("编辑"))
     owner.btn_edit_quick.setToolTip(tr("增删「快捷填充」按钮里的仓库地址（逗号或换行分隔）"))
     owner.btn_edit_quick.clicked.connect(owner._edit_quick_repos)
+    # G79b：紧凑模式下 chip 滚动区被收起，它的伸缩空间会轮到本按钮 → 按钮被拉成
+    # 通栏「编辑」。固定为自然宽度，两种布局模式下都保持紧凑。
+    owner.btn_edit_quick.setSizePolicy(
+        QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
     quick_row.addWidget(owner.btn_edit_quick)
 
     # 任务清单 / Star 导入单独一行，保证 1024 宽也完整可见

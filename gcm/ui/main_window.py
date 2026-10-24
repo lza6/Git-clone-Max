@@ -688,8 +688,13 @@ class MainWindow(QMainWindow):
             compact = layout_mode(self.width(), self.height()) in ("compact", "unsupported")
             for btn in getattr(self, "_quick_fill_buttons", []):
                 btn.setVisible(not compact)
-            # G74：Compact 下整行隐藏，避免只剩「快捷填充：」空标签
-            for _name in ("quick_scroll", "quick_label"):
+            # G74：Compact 下把 chip 滚动区收起来（把高度还给进度表）。
+            # G79b 更正：G74 当时连 `quick_label` 一起隐藏，但「编辑」按钮
+            # （`btn_edit_quick`，G76 加的，位于滚动区之外）并不会隐藏 ——
+            # 实测 1024×768 截图里该行只剩一个**无标签的孤立「编辑」按钮**，
+            # 既不是「整行隐藏」，也让人不知道它在编辑什么。现在保留标签，
+            # 紧凑模式下这一行明确读作「快捷填充：［编辑］」，小屏仍够得到该入口。
+            for _name in ("quick_scroll",):
                 _w = getattr(self, _name, None)
                 if _w is not None:
                     _w.setVisible(not compact)

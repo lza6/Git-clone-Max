@@ -51,21 +51,36 @@ class TestQuickScrollNoClipping(unittest.TestCase):
             f"滚动区 {win.quick_scroll.height()} < chip {tallest} → chip 被裁切")
 
     def test_no_clipping_when_visible_and_hidden_in_compact(self):
-        """标准/宽屏下不裁切；紧凑模式下**整行隐藏**（G74 的既定行为）。
+        """标准/宽屏下不裁切；紧凑模式下收起 chip 滚动区但保留「标签 + 编辑」入口。
 
         注意 1366×768 与 1280×800 是 compact（`layout.COMPACT_HEIGHT = 820`），
-        那时快捷填充本就隐藏 —— 别把"按设计隐藏"误判成"被裁切"。
+        那时 chip 本就收起 —— 别把"按设计收起"误判成"被裁切"。
+
+        G79b：原断言只检查 `quick_scroll.isHidden()`，于是「紧凑模式下整行只剩一个
+        无标签的孤立『编辑』按钮」这种半实现也能绿（1024×768 截图实测）。现在把
+        不变量写全：chip 收起时，该行必须**仍有标签 + 仍够得到编辑入口**。
         """
         from gcm.ui.layout import layout_mode
-        for size in ((1440, 900), (1366, 768), (1280, 800), (1920, 1080)):
+        for size in ((1440, 900), (1366, 768), (1280, 800), (1024, 768), (1920, 1080)):
             with self.subTest(size=size):
                 win = self._win(size)
                 compact = layout_mode(win.width(), win.height()) in ("compact", "unsupported")
                 if compact:
                     self.assertTrue(win.quick_scroll.isHidden(),
-                                    f"{size} 属紧凑模式，快捷填充应隐藏")
+                                    f"{size} 属紧凑模式，chip 滚动区应收起")
+                    # 不得退化成「整行只剩一个无标签按钮」
+                    self.assertFalse(win.quick_label.isHidden(),
+                                     f"{size} 紧凑模式下标签被藏掉 → 编辑按钮成了孤儿")
+                    self.assertFalse(win.btn_edit_quick.isHidden(),
+                                     f"{size} 紧凑模式下编辑入口消失 → 小屏用户改不了快捷填充")
+                    # 收起滚动区后，伸缩空间会轮到按钮 → 不得被拉成通栏「编辑」
+                    self.assertLessEqual(
+                        win.btn_edit_quick.width(),
+                        win.btn_edit_quick.sizeHint().width() + 4,
+                        f"{size} 紧凑模式下「编辑」按钮被拉伸成 {win.btn_edit_quick.width()}px")
                 else:
                     self.assertFalse(win.quick_scroll.isHidden(), f"{size} 非紧凑，应可见")
+                    self.assertFalse(win.quick_label.isHidden(), f"{size} 非紧凑，标签应可见")
                     self._assert_not_clipped(win)
 
     def test_height_follows_chip_after_rebuild(self):
