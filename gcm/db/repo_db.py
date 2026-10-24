@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ..models import RepoSpec, SyncAction, SyncStatus
+from .repo_search import SearchMixin
 from .repo_ssh import SshKeyMixin
 
 _SCHEMA = """
@@ -85,7 +86,7 @@ def _migrate(conn):
     conn.commit()
 
 
-class Database(SshKeyMixin):
+class Database(SshKeyMixin, SearchMixin):
     """线程安全 SQLite 封装。"""
 
     def __init__(self, db_path: str | Path, readonly: bool = False):

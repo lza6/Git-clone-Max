@@ -32,6 +32,9 @@ from .util.redact import redact, redact_row
 
 _SENSITIVE_COLS = ("token", "host_tokens", "ssh_key", "url")
 
+# G80-B4-3：写端点请求体上限（1 MiB）。每行一个仓库地址，正常批量远小于此。
+_MAX_BODY_BYTES = 1 << 20
+
 # G66-6：仅允许回环绑定（服务本身无鉴权，非回环等于把仓库清单与写操作对全网开放）。
 # G67-5 修正：**移除 `::1`** —— `GcmApiServer` 继承 `ThreadingHTTPServer`，
 # `address_family` 固定为 `AF_INET`，把 IPv6 字面量交给 AF_INET 的 getaddrinfo
@@ -382,17 +385,20 @@ class _ApiHandler(BaseHTTPRequestHandler):
                 if not q:
                     self._error(2, "缺少 q 参数")
                     return
-                rows = db.list_repos(host=None)
-                hits = [r for r in rows if q in " ".join(
-                    str(r.get(k) or "") for k in
-                    ("owner", "repo", "host", "folder_name", "tags", "note")).lower()]
+                # G80-B4-3：下推成 SQL（原先取全表再在内存里过滤）
+                hits = db.search_repos(q, limit=500)
                 self._send_json({"repos": [_sanitize_row(r) for r in hits],
-                                 "count": len(hits)})
+                                 "count": len(hits), "limit": 500,
+                                 "truncated": len(hits) >= 500})
             elif parsed.path == "/api/status":
                 self._send_json({"status": db.stats_overview(),
                                  "readonly": not server.allow_mutate})
             elif parsed.path == "/api/report":
-                fmt = (qs.get("format") or ["json"])[0]
+                fmt = (qs.get("format") or ["json"])[0].strip().lower()
+                # G80-B4-3：原来非法 format 会**静默回落 JSON**（调用方以为自己拿到 csv）
+                if fmt not in ("json", "csv", "markdown"):
+                    self._error(2, f"format 只支持 json/csv/markdown，收到 {fmt!r}", status=400)
+                    return
                 # G69-10：原实现用 `db.list_repos()`（repos 表）却按 sync_history 的列名
                 # 取字段 → status/action/message/commits/duration_ms/started_at **恒为空**
                 # （实测输出 `a,b,github.com,,,,,,`），与 agent-contract 的「报表」承诺不符。
@@ -453,6 +459,12 @@ class _ApiHandler(BaseHTTPRequestHandler):
             self._error(404, f"未知路径：{parsed.path}", status=404)
             return
         length = int(self.headers.get("Content-Length") or 0)
+        # G80-B4-3：请求体上限（原来无限制，一个 `Content-Length: 2GB` 就能把内存吃光）。
+        # 这里**先看头再决定读不读**，超限直接 413，不读 body。
+        if length > _MAX_BODY_BYTES:
+            self._error(-32600, f"请求体过大：{length} 字节 > 上限 {_MAX_BODY_BYTES}",
+                        status=413)
+            return
         body = self.rfile.read(length).decode("utf-8", errors="replace") if length else ""
         if not body.strip():
             self._error(2, "请求体为空（每行一个仓库地址）")

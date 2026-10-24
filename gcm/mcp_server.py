@@ -143,21 +143,12 @@ def _list_repos(db, host: str | None = None) -> list[dict[str, Any]]:
 
 
 def _search_repos(db, query: str) -> list[dict[str, Any]]:
-    """只读：关键字搜索（owner/repo/host/folder_name/tag/note）。"""
-    q = (query or "").strip().lower()
+    """只读：关键字搜索（G80-B4-3：下推 SQL，不再取全表在内存里过滤）。"""
+    q = (query or "").strip()
     if not q:
         return []
-    try:
-        rows = db.list_repos(host=None)
-    except Exception:  # noqa: BLE001
-        return []
-    hits = []
-    for r in rows:
-        blob = " ".join(str(r.get(k) or "") for k in
-                        ("owner", "repo", "host", "folder_name", "tags", "note"))
-        if q in blob.lower():
-            hits.append(_sanitize_row(r))
-    return hits
+    return [_sanitize_row(r) for r in db.search_repos(q, limit=500)]
+
 
 class _EmptyDB:
     """空数据目录的只读替身：四个工具都能正常工作，且**不会创建任何文件**。
@@ -165,9 +156,14 @@ class _EmptyDB:
     G80-B1：原先 `_open_db` 直接建可写连接 —— 对空数据目录等于「列一下仓库」
     顺手创建 repos.db（把只读契约变成写操作）；对旧库则每次请求都跑
     `executescript(_SCHEMA)+_migrate()+commit()`，与 GUI 抢写锁。
+    G80-B4-3：补 `search_repos`，与真实 Database 的接口保持一致。
     """
 
     def list_repos(self, host: str | None = None) -> list[dict[str, Any]]:
+        return []
+
+    def search_repos(self, query: str, host: str | None = None,
+                     limit: int = 500) -> list[dict[str, Any]]:
         return []
 
     def stats_overview(self) -> dict[str, Any]:

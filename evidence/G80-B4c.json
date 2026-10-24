@@ -1,0 +1,35 @@
+{
+  "task_id": "G80-B4c",
+  "title": "HTTP 硬化：体积上限 / format 白名单 / 搜索下推（B4-3）",
+  "status": "passed",
+  "timestamp": "2026-10-25T02:05:00+08:00",
+  "scope": "批次 B4 的 B4-3 子项（发现 F10 / 差距 G-14）",
+  "commands_executed": [
+    {"cmd": "QT_QPA_PLATFORM=offscreen python -m unittest tests.test_g80_http_hardening -v", "exit_code": 0, "raw_output_tail": "Ran 9 tests in 4.385s\n\nOK"},
+    {"cmd": "python -m ruff check gcm", "exit_code": 0, "raw_output_tail": "All checks passed!"},
+    {"cmd": "python -m mypy gcm", "exit_code": 0, "raw_output_tail": "Success: no issues found in 90 source files"},
+    {"cmd": "python -m unittest tests.test_g56_api_extra tests.test_g56_api_write tests.test_g56_mcp tests.test_g80_http_hardening tests.test_g79_repo_hygiene tests.test_g80_hygiene", "exit_code": 0, "raw_output_tail": "Ran 47 tests in 12.708s\n\nOK"}
+  ],
+  "files_changed": [
+    "gcm/http_api.py", "gcm/mcp_server.py", "gcm/db/repo_search.py (new)",
+    "gcm/db/repo_db.py", "tests/test_g80_http_hardening.py (new)",
+    "tests/test_g79_repo_hygiene.py / CLAUDE.md / README.md (测试数 142)"
+  ],
+  "design": {
+    "body_cap": "先看 Content-Length 再决定读不读；>1MiB → 413，不读 body（原实现直接 read(任意长度)）",
+    "format_whitelist": "json/csv/markdown 之外 → 400（原来静默回落 JSON，调用方以为拿到 csv）",
+    "search_pushdown": "db.search_repos(q, host?, limit=500)：参数化 LIKE + 转义 \\ % _ + LIMIT；HTTP 与 MCP 共用同一实现（MCP 的内存过滤副本已删）",
+    "why_new_module": "repo_db.py 贴着 800 行上限（792），搜索混入抽到 gcm/db/repo_search.py，Database 一并继承"
+  },
+  "tests": [
+    {"name": "搜索命中 / % 转义 / host 过滤 / limit 4 例", "type": "unit+e2e", "status": "passed"},
+    {"name": "非法 format → 400；三种合法 format 仍 200", "type": "e2e", "status": "passed"},
+    {"name": "1.1MiB 请求体 → 413；空体不被 413 拦", "type": "e2e", "status": "passed"},
+    {"name": "MCP search 复用 db.search_repos（无第二份实现）", "type": "guard", "status": "passed"}
+  ],
+  "limitations": [
+    "/api/repos 与 /api/repos/search 的返回未做真正的分页（search 固定 limit=500 + truncated 标志），分页仍只在 /api/repos 提供。",
+    "B4-2（exe 校验）与 B4-1b（右键删除半成品/扫描 needs_attention）未开始。",
+    "全量快集未在本改动后重跑。"
+  ]
+}
