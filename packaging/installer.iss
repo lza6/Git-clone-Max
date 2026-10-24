@@ -1,13 +1,13 @@
 ; G49-5 Inno Setup 安装器脚本（可选产物，不替代便携版）
 ; 编译：iscc packaging/installer.iss   （Inno Setup 6 命令行）
-; 产物：dist\installer\Git-clone-Max-setup-9.10.1.exe
+; 产物：dist\installer\Git-clone-Max-setup-9.10.2.exe
 ; 说明：默认安装到 Program Files；数据目录默认走 %APPDATA%/Git-clone-Max
 ;       （G49-2 非便携语义），卸载不清数据，重装/升级无感。
 ; 需要先构建 dist\Git-clone-Max.exe（见 README 打包段）。
 
 #define MyAppName "Git-clone-Max"
 ; G66-2：与 gcm/__init__.py 的 __version__ 一致（tests/test_g66_patch.py 强制校验）。
-#define MyAppVersion "9.10.1"
+#define MyAppVersion "9.10.2"
 #define MyAppExeName "Git-clone-Max.exe"
 #define MyAppPublisher "lza6"
 #define MyAppURL "https://github.com/lza6/Git-clone-Max"
