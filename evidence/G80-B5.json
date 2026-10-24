@@ -1,0 +1,33 @@
+{
+  "task_id": "G80-B5",
+  "title": "设置项声明期校验（3 字段）+ 退避基数写入/消费接线",
+  "status": "passed",
+  "timestamp": "2026-10-25T03:20:00+08:00",
+  "scope": "批次 B5（发现 F17 + known-issues #14 最后一个只读字段）",
+  "commands_executed": [
+    {"cmd": "QT_QPA_PLATFORM=offscreen python -m unittest tests.test_g80_settings_validation -v", "exit_code": 0, "raw_output_tail": "Ran 13 tests in 0.087s\n\nOK"},
+    {"cmd": "python -m ruff check gcm", "exit_code": 0, "raw_output_tail": "All checks passed!"},
+    {"cmd": "python -m mypy gcm", "exit_code": 0, "raw_output_tail": "Success: no issues found in 94 source files"},
+    {"cmd": "python -m unittest tests.test_g80_settings_validation tests.test_g68_settings_ui tests.test_g79_repo_hygiene tests.test_g80_hygiene", "exit_code": 0, "raw_output_tail": "Ran 46 tests in 1.346s\n\nOK"}
+  ],
+  "files_changed": [
+    "gcm/db/validators.py (new)", "gcm/db/settings.py", "gcm/ui/settings_groups.py",
+    "gcm/ui/settings_local_api.py (new)", "gcm/ui/main_window.py", "gcm/app/retry_queue.py",
+    "gcm/i18n/zh.py", "gcm/i18n/en.py", "tests/test_g80_settings_validation.py (new)"
+  ],
+  "design": {
+    "single_source": "validators.RANGES 是唯一真相；UI 的 setRange 用 int_range(key) 派生，禁止写死（有源码断言）",
+    "load_gate": "SettingsStore.load() 末尾 normalize_settings(s) —— 无论来自 UI、手改 JSON 还是旧版本脏值都过同一道闸",
+    "unparseable_vs_out_of_range": "不能解析成 int 的脏值沿用既有行为（回退默认值）；能解析但越界的纠正到边界。两种输入各有出路，都不崩",
+    "backoff_wiring": "新增 spin_retry_backoff 控件 → MainWindow._save_retry_backoff → retry_queue.set_backoff_base_sec（消费侧生效，不是只改字段）"
+  },
+  "tests": [
+    {"name": "clamp 5 例 + UI/后端同源断言", "type": "unit+guard", "status": "passed"},
+    {"name": "脏 JSON 纠正 / 合法值不动 / 非数字回退默认", "type": "integration", "status": "passed"},
+    {"name": "退避：控件存在 / 保存回调更新队列 / 改基数后下次重试时间真的变", "type": "integration", "status": "passed"}
+  ],
+  "limitations": [
+    "只有 3 个字段做了声明期校验（试点）；其余 61 个字段仍未校验，扩展时只需往 validators.RANGES 加行。",
+    "全量快集未在本改动后重跑。"
+  ]
+}

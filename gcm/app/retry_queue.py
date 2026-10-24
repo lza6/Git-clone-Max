@@ -407,5 +407,13 @@ class RetryQueue:
         rec = self.load().get("entries", {}).get(key)
         return int((rec or {}).get("attempts", 0))
 
+    def set_backoff_base_sec(self, seconds: int) -> None:
+        """G80-B5：设置退避基数（秒）。消费侧与 UI 写入侧终于接通。
+
+        原实现只有构造期传入 `backoff_base_sec` —— 用户改了设置后，运行中的队列
+        仍然用旧值（这正是「改了没用」的形态）。仅更新基数，不改已排队的下次时间。
+        """
+        self.backoff_base_sec = max(1, int(seconds or 1))
+
     def set_enabled(self, enabled: bool) -> None:
         self.enabled = bool(enabled)

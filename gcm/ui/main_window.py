@@ -1328,6 +1328,22 @@ class MainWindow(QMainWindow):
                 pass
 
     # ------------------------------------------------------------ 更新检查
+    def _save_retry_backoff(self, value):
+        """G80-B5：退避基数保存回调（写入侧此前不存在）。
+
+        与 `_save_concurrency` 同族：先写 settings、再存盘、再尽量推送给运行中的引擎。
+        """
+        self.settings.retry_backoff_base_sec = int(value)
+        self.settings_store.save(self.settings)
+        try:
+            eng = getattr(self, "engine", None)
+            q = getattr(eng, "retry_queue", None)
+            if q is not None and hasattr(q, "set_backoff_base_sec"):
+                q.set_backoff_base_sec(int(value))
+        except Exception as e:  # noqa: BLE001 - 推送失败不影响已保存的配置
+            from ..app.applog import warn as _warn
+            _warn(f"退避基数推送到引擎失败（已保存到配置）：{e}")
+
     def check_update_now(self):
         """手动检查更新（实现在 `update_flow.check_now`，本方法只转调）。"""
         from .update_flow import check_now

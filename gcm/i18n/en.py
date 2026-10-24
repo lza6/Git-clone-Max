@@ -187,6 +187,8 @@ EN = {
     '当前没有数据库连接或仓库 id': 'No database connection or repo id',
     '校验我下载的文件…': 'Verify downloaded file…',
     '用发布方公布的 SHA256 校验下载到的安装包/zip': 'Verify the downloaded installer/zip against the publisher SHA256',
+    '重试退避基数（秒）：': 'Retry backoff base (seconds):',
+    '失败重试的退避基数：第 n 次等待 = 基数×n（另加 50%~100% 抖动）': 'Backoff base for failed retries: wait at attempt n = base × n (plus 50%~100% jitter)',
     '无法打开目录': 'Cannot open folder',
     '目录不存在': 'Folder does not exist',
     # G35-10 Star import / G03-1 manage search & favorites

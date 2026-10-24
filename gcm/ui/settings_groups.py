@@ -29,9 +29,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ..db.validators import int_range
 from ..i18n import tr  # G49-1
 from .main_window import MainWindow
 from .settings_actions import add_data_dir_section  # G76
+from .settings_local_api import build_group_local_api
 
 if TYPE_CHECKING:  # 仅类型标注（避免循环导入）
     from ..db.settings import Settings
@@ -166,7 +168,7 @@ def _build_group_network(owner: MainWindow, settings: Settings):
 def _network_rows_basic(owner: MainWindow, settings: Settings, f3: QFormLayout) -> None:
     """网络组第一段：并发 / 超时 / 重试 / 代理 / 限速 / 深浅克隆 / 子模块 / LFS / 自动更新。"""
     owner.spin_concurrency = QSpinBox()
-    owner.spin_concurrency.setRange(1, 32)
+    owner.spin_concurrency.setRange(*int_range("concurrency"))  # G80-B5 单一真相
     owner.spin_concurrency.setValue(int(settings.concurrency))
     # MAX_CONCURRENCY 为 main_window 模块常量（惰性导入避免循环引用）
     from .main_window import MAX_CONCURRENCY as _MAX_C
@@ -188,6 +190,8 @@ def _network_rows_basic(owner: MainWindow, settings: Settings, f3: QFormLayout) 
     owner.spin_retries.setToolTip(tr("网络故障时自动重试次数（0 = 只尝试一次）"))
     owner.spin_retries.valueChanged.connect(owner._save_retries)
     f3.addRow(tr("自动重试（次）："), owner.spin_retries)
+
+
 
     owner.edit_proxy = QLineEdit(settings.proxy)
     owner.edit_proxy.setPlaceholderText(tr("http://127.0.0.1:7890（留空不代理）"))
@@ -238,7 +242,7 @@ def _network_rows_basic(owner: MainWindow, settings: Settings, f3: QFormLayout) 
 
     # G76：单次 clone 超时（engine_factory/clone worker 一直读它，但设置页从来没有写入点）
     owner.spin_clone_timeout = QSpinBox()
-    owner.spin_clone_timeout.setRange(30, 7200)
+    owner.spin_clone_timeout.setRange(*int_range("clone_timeout"))  # G80-B5 单一真相
     owner.spin_clone_timeout.setValue(int(getattr(settings, "clone_timeout", 600) or 600))
     owner.spin_clone_timeout.setSuffix(" 秒")
     owner.spin_clone_timeout.setToolTip(
@@ -246,6 +250,7 @@ def _network_rows_basic(owner: MainWindow, settings: Settings, f3: QFormLayout) 
     owner.spin_clone_timeout.valueChanged.connect(
         owner.settings_panel.wiring.save_clone_timeout)
     f3.addRow(tr("clone 超时（秒）："), owner.spin_clone_timeout)
+    _append_retry_backoff_row(owner, f3)
 
     # G76：克隆后钩子 —— **会执行任意命令**，保存时二次确认（见 _save_post_clone_hook）
     owner.edit_post_hook = QLineEdit(
@@ -719,41 +724,6 @@ def _build_group_data_insights(owner: MainWindow):
     return g7
 
 
-def _build_group_local_api(owner: MainWindow, settings: Settings):
-    """G71-9：GUI 内置本地只读 API（含 SSE 事件流）。
-
-    为什么必须由 GUI 托管：独立 `--serve` 进程与 GUI 是**两个进程**，事件总线
-    是进程内的；只有同进程托管，`/api/events` 才能看到引擎的真实事件。
-    """
-    g = QGroupBox(tr("本地 API / 事件流"))
-    g.setToolTip(tr("开启后仅监听 127.0.0.1；只读（不可写仓库），提供 REST + SSE 事件流"))
-    f = QFormLayout(g)
-    f.setContentsMargins(10, 10, 10, 10)
-    f.setHorizontalSpacing(16)
-    f.setVerticalSpacing(10)
-    f.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-    owner.ck_local_api = QCheckBox(tr("启用本地只读 API（含 SSE 事件流）"))
-    owner.ck_local_api.setToolTip(
-        tr("供本机 agent/脚本读取仓库状态、任务事件；默认关闭；只允许回环访问"))
-    owner.ck_local_api.setChecked(bool(getattr(settings, "local_api_enabled", False)))
-    owner.ck_local_api.toggled.connect(owner.settings_panel._save_local_api_enabled)
-    f.addRow(tr("本地 API："), owner.ck_local_api)
-    owner.spin_local_api_port = QSpinBox()
-    owner.spin_local_api_port.setRange(1024, 65535)
-    owner.spin_local_api_port.setValue(int(getattr(settings, "local_api_port", 8765) or 8765))
-    owner.spin_local_api_port.setToolTip(tr("默认 8765；端口被占用时启动会失败并写入日志"))
-    # G71-11（审查 R4）：用 `editingFinished` 而不是 `valueChanged` —— 后者
-    # 每滚一格/输入一位都会触发「停旧服→绑新端口」，连续操作会卡界面。
-    owner.spin_local_api_port.editingFinished.connect(
-        owner.settings_panel._save_local_api_port_current)
-    f.addRow(tr("端口："), owner.spin_local_api_port)
-    hint = QLabel(tr("端点：GET /api/events（SSE）· /api/events/snapshot · /api/repos · /api/status"))
-    hint.setObjectName("muted")
-    hint.setWordWrap(True)
-    f.addRow(tr("说明："), hint)
-    return g
-
-
 def build_settings_ui(owner: MainWindow) -> QScrollArea:
     """在 owner 上构建设置页全部控件并返回滚动区（挂到 owner.settings_scroll）。
 
@@ -769,7 +739,7 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
               _build_group_appearance(owner, settings),
               _build_group_about(owner),
               _build_group_webhook(owner, settings),
-              _build_group_local_api(owner, settings)):
+              build_group_local_api(owner, settings)):
         sv.addWidget(g)
         groups.append(g)
 
@@ -786,3 +756,18 @@ def build_settings_ui(owner: MainWindow) -> QScrollArea:
         _sb.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
     return settings_scroll
 
+
+def _append_retry_backoff_row(owner, f3) -> None:
+    """退避基数行（G80-B5 抽出，保持 `_network_rows_basic` 在 100 行以内）。
+
+    与 G68 的拆分组同一原则：每个构建器只做一小段，别把一组 UI 都堆进一个函数。
+    """
+    # G80-B5：退避基数此前**只读不写**（known-issues #14 最后一个只读字段）。
+    # 现在补写入点，且上下限与后端校验同源（validators.RANGES）。
+    owner.spin_retry_backoff = QSpinBox()
+    owner.spin_retry_backoff.setRange(*int_range("retry_backoff_base_sec"))
+    owner.spin_retry_backoff.setValue(int(getattr(owner.settings, "retry_backoff_base_sec", 30) or 30))
+    owner.spin_retry_backoff.setSuffix(" 秒")
+    owner.spin_retry_backoff.setToolTip(tr("失败重试的退避基数：第 n 次等待 = 基数×n（另加 50%~100% 抖动）"))
+    owner.spin_retry_backoff.valueChanged.connect(owner._save_retry_backoff)
+    f3.addRow(tr("重试退避基数（秒）："), owner.spin_retry_backoff)

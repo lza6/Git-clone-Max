@@ -15,6 +15,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from ..util.filelock import cross_process_lock
+from .validators import normalize_settings
 
 # 原子替换的退避重试（Windows 上目标被任何人持有句柄时会 PermissionError；
 # 持有者可能是杀软/索引器，不只是本进程的读者）—— 理由与预算见 util/atomic_io.py
@@ -372,6 +373,12 @@ class SettingsStore:
             # G58-3：HTTP 代理串可能内嵌 `user:pass@` —— 读回解密；
             # 历史明文**原样保留**（否则升级会把用户代理设置静默清空）。
             s.proxy = _decrypt_or_keep(str(getattr(s, "proxy", "") or ""))
+            # G80-B5：声明期取值校验（越界纠正，不抛异常，兼容旧配置脏值）。
+            # 放在**读回的最后一步**：无论来自 UI、手改 JSON 还是旧版本，都过同一道闸。
+            corrected = normalize_settings(s)
+            if corrected:
+                from ..app.applog import warn as _warn
+                _warn(f"设置项越界已纠正：{', '.join(corrected)}")
             return s
 
     def _try_restore_backup(self) -> dict:
