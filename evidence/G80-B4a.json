@@ -1,0 +1,35 @@
+{
+  "task_id": "G80-B4a",
+  "title": "检出校验：\"取回了但没检出\" 不再是成功（B4-1）",
+  "status": "passed",
+  "timestamp": "2026-10-25T01:45:00+08:00",
+  "scope": "参考的结果计划指南.md 批次 B4 的 B4-1 子项（发现 F13 / 差距 G-01）",
+  "commands_executed": [
+    {"cmd": "QT_QPA_PLATFORM=offscreen python -m unittest tests.test_g80_checkout_visible -v", "exit_code": 0, "raw_output_tail": "Ran 6 tests in 1.511s\n\nOK"},
+    {"cmd": "python -m ruff check gcm", "exit_code": 0, "raw_output_tail": "All checks passed!"},
+    {"cmd": "python -m unittest tests.test_g80_checkout_visible tests.test_engine tests.test_g43_engine tests.test_g71_event_stream tests.test_g80_hygiene", "exit_code": 0, "raw_output_tail": "Ran 85 tests in 23.419s（更新基线后 16 例子集 OK）"}
+  ],
+  "files_changed": [
+    "gcm/models.py", "gcm/git/service.py", "gcm/app/engine.py",
+    "tests/test_g80_checkout_visible.py (new)", "tests/test_g80_hygiene.py (基线+理由)"
+  ],
+  "design": {
+    "single_point": "Service.sync() → _finalize_checkout(_sync_inner())：唯一出口，避免在 6 条成功分支各插一次",
+    "probe": "_probe_checkout 返回 ok/missing/skip；skip = 裸仓库（rev-parse --is-bare-repository==true）",
+    "missing_action": "status→FAILED、message=「已取回但未能检出（目录已保留）」、detail 三段式，且**保留 .git**（下次可增量补齐）",
+    "contract": "不改 SyncStatus 枚举（7 个值不变，有断言）；checkout_state 是加性可选字段，事件里暴露一次",
+    "not_touched": "EMPTY（空仓库）/SKIPPED/CONFLICT 不参与校验"
+  },
+  "tests": [
+    {"name": "正常克隆 → ok + SUCCESS", "type": "integration", "status": "passed"},
+    {"name": "工作树清空 → missing + FAILED + 目录保留 + 三段式", "type": "integration", "status": "passed"},
+    {"name": "裸仓库 → skip，不误判失败", "type": "integration", "status": "passed"},
+    {"name": "空仓库 → 仍 EMPTY + ok（不误伤）", "type": "integration", "status": "passed"},
+    {"name": "SyncStatus 枚举仍 7 个值（契约不变）", "type": "guard", "status": "passed"}
+  ],
+  "limitations": [
+    "B4-1 的 UI 部分未做：进度表右键「删除半成品目录」、本地扫描的 needs_attention 标记 —— 已登记为 B4-1b，未实施不得声称可用。",
+    "B4-2（exe 校验）与 B4-3（HTTP 硬化）未开始。",
+    "全量快集未在本改动后重跑。"
+  ]
+}

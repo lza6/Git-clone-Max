@@ -980,8 +980,79 @@ class GitService:
         return "main"
 
     # ------------------------------------------------------------ 主入口
+    # ------------------------------------------------------- G80-B4 检出校验
+    def _git_out(self, args: list) -> tuple:
+        """跑一条只读 git 命令，返回 (rc, stdout)。永不抛（探针不该带崩整批）。"""
+        import subprocess as _sp
+        try:
+            r = _sp.run(["git", *args], capture_output=True, text=True,
+                        encoding="utf-8", errors="replace", timeout=20)
+            return (r.returncode, (r.stdout or "").strip())
+        except Exception:  # noqa: BLE001 - 探针失败按"未知/不判定"处理，见调用方
+            return (-1, "")
+
+    def _probe_checkout(self, repo_dir: Path) -> str:
+        """判断工作树是否真的检出了：返回 "ok" / "missing" / "skip"。
+
+        为什么需要（G80-B4 / 差距 G-01）：原来的成功判定只看 `git rev-parse HEAD`
+        能否解析 —— `.git` 存在且 HEAD 可解析就算成功，于是**"取回了但没检出"的目录
+        会被当成健康仓库**（参考库里 101 个只剩 `.git` 的目录、合计 7.4GB，就是这类
+        后果的规模化写照）。本地扫描随后还会把它当仓库导入，形成僵尸条目。
+
+        - "skip"：裸仓库（`--is-bare-repository` 为真）—— 本就没有工作树，不判失败；
+        - "missing"：非裸仓库，但工作树里除 `.git` 外**一个条目都没有**；
+        - "ok"：其余情况。
+        """
+        if not repo_dir.is_dir():
+            return "missing"
+        if not (repo_dir / ".git").exists():
+            # 裸仓库没有 `.git` 子目录；用 git 自己确认，避免把 worktree/submodule 误判
+            rc, out = self._git_out(["-C", str(repo_dir), "rev-parse", "--is-bare-repository"])
+            if rc == 0 and out == "true":
+                return "skip"
+            return "missing"
+        rc, out = self._git_out(["-C", str(repo_dir), "rev-parse", "--is-bare-repository"])
+        if rc == 0 and out == "true":
+            return "skip"
+        try:
+            entries = [p for p in repo_dir.iterdir() if p.name != ".git"]
+        except OSError:
+            return "missing"
+        return "ok" if entries else "missing"
+
+    def _finalize_checkout(self, res: SyncResult) -> SyncResult:
+        """在唯一出口给「成功」补一次检出校验（G80-B4）。
+
+        只对 CLONED / FETCHED 生效；`EMPTY`（空仓库）与 `SKIPPED`/`CONFLICT` 等不碰。
+        判定为 "missing" 时把状态降为 FAILED，但**保留 `.git`**（下次重试可增量补齐），
+        并给出三段式 detail —— 用户至少要能看懂"东西在磁盘上但用不了、下一步做什么"。
+        """
+        if res.status != SyncStatus.SUCCESS:
+            return res
+        if res.action not in (SyncAction.CLONED, SyncAction.FETCHED):
+            return res
+        repo_dir = Path(res.path or "")
+        state = self._probe_checkout(repo_dir)
+        res.checkout_state = state
+        if state != "missing":
+            return res
+        res.status = SyncStatus.FAILED
+        res.action = SyncAction.FAILED
+        res.message = "已取回但未能检出（目录已保留）"
+        res.detail = (
+            "发生了什么：远端数据已经取回（.git 存在），但工作树里没有任何文件。\n"
+            "为什么：常见于磁盘空间不足、杀毒软件锁文件、或检出过程中被中断。\n"
+            "怎么办：先重试一次（会在已有 .git 上增量补齐）；仍失败则删除该目录后重新克隆。"
+        )
+        self._emit(f"[失败] {res.spec.display}：已取回但未能检出（目录已保留）", "warn")
+        return res
+
     def sync(self, spec: RepoSpec) -> SyncResult:
         """统一入口：存在则增量更新，不存在则克隆。"""
+        return self._finalize_checkout(self._sync_inner(spec))
+
+    def _sync_inner(self, spec: RepoSpec) -> SyncResult:
+        """原 `sync` 主体（G80-B4 拆出，便于在唯一出口做检出校验）。"""
         res = SyncResult(spec=spec, status=SyncStatus.RUNNING)
         repo_dir = self._repo_dir(spec)
         res.path = str(repo_dir)

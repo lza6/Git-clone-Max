@@ -57,6 +57,10 @@ class SyncResult:
     remote_sha: str = ""      # 远端 HEAD（fetch 后 origin/HEAD）
     started: float = 0.0
     ended: float = 0.0
+    # G80-B4：检出状态。"" / "ok" = 正常；"missing" = 已取回但工作树没检出；
+    # "skip" = 裸仓库（本就没有工作树，不判失败）。**不改 SyncStatus 枚举**，
+    # 因此对 agent 契约（status 取值集合）零影响。
+    checkout_state: str = "ok"
 
 
 @dataclass

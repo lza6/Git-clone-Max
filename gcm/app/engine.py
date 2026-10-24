@@ -988,6 +988,9 @@ class SyncEngine(QObject):
             path=res.path or "",
             head_sha=res.head_sha or "",
             remote_sha=res.remote_sha or "",
+            # G80-B4：检出状态（ok / missing / skip）。加性字段，老消费者忽略即可；
+            # SSE / CLI --json / 诊断包都用同一份事件，因此只需在这里暴露一次。
+            checkout_state=getattr(res, "checkout_state", "ok") or "ok",
         )
         if res.status == SyncStatus.FAILED:
             try:
