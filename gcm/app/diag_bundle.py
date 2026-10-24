@@ -21,7 +21,6 @@ import os
 import tempfile
 import time
 import zipfile
-from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
@@ -188,11 +187,3 @@ def default_bundle_name(prefix: str = "gcm-diag") -> str:
     return f"{prefix}-{time.strftime('%Y%m%d-%H%M%S')}.zip"
 
 
-def summarize_events(events: Iterable[Any]) -> dict[str, int]:
-    """按类型统计事件数（供 manifest/日志摘要）。"""
-    counts: dict[str, int] = {}
-    for ev in events or []:
-        t = str(getattr(ev, "type", "") or "")
-        if t:
-            counts[t] = counts.get(t, 0) + 1
-    return counts

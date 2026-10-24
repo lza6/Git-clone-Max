@@ -175,6 +175,7 @@ EN = {
     '你选择的是 Windows 系统目录（%SystemRoot%/Program Files），': 'You selected a Windows system folder (%SystemRoot%/Program Files),',
     '在此下载可能触发权限/杀软问题。\n\n仍要继续吗？': 'which may trigger permission/antivirus issues.\n\nContinue?',
     '目录不可用': 'Folder unavailable',
+    '无法打开目录': 'Cannot open folder',
     '目录不存在': 'Folder does not exist',
     # G35-10 Star import / G03-1 manage search & favorites
     '⭐ 导入 Star': '⭐ Import stars',

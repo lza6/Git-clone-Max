@@ -9,10 +9,10 @@
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 
 from ..i18n import tr  # G49-1
+from ..util.openfolder import open_folder
 from .theme import LogLevel
 
 
@@ -168,13 +168,5 @@ def open_target(owner) -> None:
     if not os.path.isdir(path):
         _msgbox().warning(owner, tr("目录不存在"), path)
         return
-    if sys.platform == "win32":
-        os.startfile(path)  # noqa
-    else:
-        import shutil
-        openers = ("xdg-open", "open")
-        for op in openers:
-            if shutil.which(op):
-                import subprocess
-                subprocess.Popen([op, path])
-                break
+    if not open_folder(path):
+        _msgbox().warning(owner, tr("无法打开目录"), path)

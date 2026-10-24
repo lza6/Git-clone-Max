@@ -26,7 +26,7 @@ import queue
 import threading
 import time
 from collections import deque
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -404,7 +404,3 @@ def reset_event_bus() -> EventBus:
     return _GLOBAL_BUS
 
 
-def iter_sse_frames(events: Iterable[Event]) -> Iterator[bytes]:
-    """把事件序列转成 SSE 字节帧（供测试与 HTTP 层复用）。"""
-    for ev in events:
-        yield ev.sse_frame()

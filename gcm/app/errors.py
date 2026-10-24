@@ -195,12 +195,6 @@ def category_label(category: str) -> str:
     return _CATEGORY_LABELS.get(category, _CATEGORY_LABELS[CAT_OTHER])
 
 
-def is_retryable_message(message: str, detail: str = "",
-                         status: Optional[int] = None) -> bool:
-    """轻量判断（供旧调用方/热路径使用）：是否值得自动重投。"""
-    return classify_error(message, detail, status=status).retryable
-
-
 def classify_error(message: str, detail: str = "",
                    status: Optional[int] = None,
                    retry: Optional[bool] = None) -> ErrorInfo:

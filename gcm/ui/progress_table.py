@@ -5,7 +5,6 @@ MainWindow 保持一致（MainWindow 保留同名转发，行为零变化）。
 from __future__ import annotations
 
 import os
-import sys
 import weakref
 from pathlib import Path
 
@@ -23,7 +22,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ..i18n import tr
 from ..models import RepoSpec, SyncResult, SyncStatus
+from ..util.openfolder import open_folder
 from . import main_window as _mw  # 兼容测试对 main_window.QMessageBox 等模块级 patch
 from .progress_delegate import DETAIL_ROLE, ProgressDelegate
 from .theme import LogLevel, current_palette
@@ -365,18 +366,10 @@ class ProgressTable(QWidget):
         else:
             p = Path(self.owner.target_edit.text().strip() or self.owner.data_dir / "clones") / spec.folder_name
         if not p.is_dir():
-            _mw.QMessageBox.warning(self.owner, "目录不存在", str(p))
+            _mw.QMessageBox.warning(self.owner, tr("目录不存在"), str(p))
             return
-        if sys.platform == "win32":
-            os.startfile(str(p))  # noqa
-        else:
-            import shutil
-            openers = ("xdg-open", "open")
-            for op in openers:
-                if shutil.which(op):
-                    import subprocess
-                    subprocess.Popen([op, str(p)])
-                    break
+        if not open_folder(p):
+            _mw.QMessageBox.warning(self.owner, tr("无法打开目录"), str(p))
 
     def _row_engine_index(self, row: int) -> int:
         """从表格行读回 engine index（UserRole+1；排序/过滤后仍精确）。"""

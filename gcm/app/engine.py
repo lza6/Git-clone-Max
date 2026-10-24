@@ -926,8 +926,11 @@ class SyncEngine(QObject):
                     repo_id, res.status, res.action, res.message, res.detail,
                     commits=res.commits, head_before="", head_after=res.head_sha,
                     remote_head=res.remote_sha, duration_ms=res.duration_ms)
-            except Exception:
-                pass  # 落库失败不影响 UI 展示（历史可追溯性损失通过日志暴露）
+            except Exception as e:  # noqa: BLE001 - 落库失败不能打断整批，但必须留痕
+                # G80-B2：原注释称「通过日志暴露」，实际什么都没记（app.log 里查不到）。
+                # 落库失败 = 这条结果不会进历史/报表/统计，事后无法追溯，必须记下来。
+                from . import applog
+                applog.error(f"结果落库失败（{res.spec.folder_name}）：{e}")
         # 进度内存态登记
         self._mark_done(f"{res.spec.owner}/{res.spec.repo}", res.status, res.message)
         # G52-1：网络类失败入自动重试队列；成功/跳过/冲突移除
@@ -944,8 +947,10 @@ class SyncEngine(QObject):
             self._batch_state.mark(res.spec.folder_name, res.status.value)
             # 兼容字段：旧调用方/测试仍读 `_batch_counts`
             self._batch_counts = dict(self._batch_state.counts)
-        except Exception:
-            pass
+        except Exception as e:  # noqa: BLE001 - 计数失败不影响单条结果展示，但计数会偏
+            # G80-B2：批次计数错乱会让顶部「成功/失败」相互矛盾，必须可追溯
+            from . import applog
+            applog.warn(f"批次计数更新失败（{res.spec.folder_name}）：{e}")
         self._publish(
             EventType.TASK_RESULT,
             index=int(index),
@@ -980,14 +985,13 @@ class SyncEngine(QObject):
                     http_status=info.http_status,
                     raw=info.raw,
                 )
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001 - 事件发布永不阻塞/抛（EventBus 契约）
+                from . import applog
+                applog.warn(f"发布 task_error 事件失败（{res.spec.folder_name}）：{e}")
         # G52-6：批次失败计数（网络类失败计入近批失败率）
         if res.status == SyncStatus.FAILED:
-            try:
-                self._batch_net_fail += 1
-            except Exception:
-                pass
+            # G80-B2：整数自增不可能失败，原来的 try/except: pass 是纯噪声（去掉一个裸吞点）
+            self._batch_net_fail += 1
         # G22-2：从待完成清单移除；失败项单独留档供「重试失败项」
         key = f"{res.spec.owner}/{res.spec.repo}"
         ip = self._progress.setdefault("in_progress", {})
@@ -1067,14 +1071,19 @@ class SyncEngine(QObject):
         """
         self.cancel_all()
         deadline = time.time() + max(0.0, timeout_ms / 1000.0)
+        pumped_warned = False
         while self._pending > 0 and time.time() < deadline:
             try:
                 from PyQt6.QtCore import QCoreApplication
                 app = QCoreApplication.instance()
                 if app is not None:
                     app.processEvents()
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001 - 关闭路径不能抛
+                # G80-B2：不再裸吞；只记一次，避免 20ms 轮询刷爆日志。
+                if not pumped_warned:
+                    from . import applog
+                    applog.warn(f"drain 期间泵 Qt 事件失败（可能已无 QApplication）：{e}")
+                    pumped_warned = True
             time.sleep(0.02)
         try:
             self.pool.waitForDone(200)

@@ -491,16 +491,6 @@ class GitService:
                     return line.split(":", 1)[1].strip()
         return raw
 
-    def _host_token(self) -> str:
-        """G38-1 取当前 host 对应的凭据：host_tokens 映射优先，其次全局 token。
-
-        host 判断：_current_host 为 None/空 → 视为 github（向后兼容本工具 github 主战场）。
-        """
-        host = (getattr(self, "_current_host", "") or "").lower().replace("www.", "")
-        if not host:
-            return self.token  # 未知/空 host 默认用全局 token（历史行为仅 github）
-        return (self.host_tokens.get(host) or "").strip() or self.token
-
     def _env(self, extra: Optional[dict[str, str]] = None) -> Optional[dict[str, str]]:
         """构造 subprocess 环境。
 
@@ -988,10 +978,6 @@ class GitService:
         except Exception:
             pass
         return "main"
-
-    def _is_detached(self, repo_dir: Path) -> bool:
-        """仓库是否处于 detached HEAD（tag 检出的典型状态）。"""
-        return self._local_branch(repo_dir) == ""
 
     # ------------------------------------------------------------ 主入口
     def sync(self, spec: RepoSpec) -> SyncResult:

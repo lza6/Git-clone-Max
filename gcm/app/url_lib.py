@@ -72,10 +72,6 @@ def sanitize_name(name: str) -> str:
     return f"{head}{sep}{rest}"
 
 
-def _is_known_host(host: str) -> bool:
-    return (host or "").lower() in KNOWN_HOSTS
-
-
 def _extra_hosts() -> tuple[str, ...]:
     """G38-7 用户「常用主机」白名单（settings.custom_hosts）。
 

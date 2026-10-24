@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..i18n import tr
+from ..util.openfolder import open_folder
 
 # 同步动作 → 中文标签
 _ACTION_LABELS = {
@@ -252,13 +253,8 @@ class RepoDetailDialog(QDialog):
         """打开仓库本地目录；目录不存在时弹警告（POSIX 用系统打开器）。"""
         path = str(self.repo.get("local_path") or "")
         if path and os.path.isdir(path):
-            if os.name == "nt":
-                os.startfile(path)  # noqa
-            else:
-                import shutil
-                opener = shutil.which("open") or shutil.which("xdg-open")
-                if opener:
-                    subprocess.Popen([opener, path])
+            if not open_folder(path):
+                QMessageBox.warning(self, tr("无法打开目录"), f"系统未找到文件管理器：\n{path}")
         else:
             QMessageBox.warning(self, "目录不存在", f"仓库目录不存在：\n{path or '（路径为空）'}")
 

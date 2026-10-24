@@ -17,6 +17,7 @@ _TIMEOUT = 15
 
 def _gh_token() -> str:
     """从 git credential manager 取 GitHub token（未登录时返回空串 → 走匿名限流）。"""
+    import os
     import subprocess
     try:
         r = subprocess.run(
@@ -24,12 +25,17 @@ def _gh_token() -> str:
             input="protocol=https\nhost=github.com\n\n",
             capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=10,
+            # G80-B2（G-16）：检查更新是后台动作，凭据助手若要交互会卡住整个检查。
+            # 禁用终端提示 + echo 兜底 askpass；取不到就当未登录（走匿名限流）。
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "echo"},
         )
         for line in (r.stdout or "").splitlines():
             if line.startswith("password="):
+                # token 只经 Authorization 头发给 api.github.com；不写日志、不进错误串
                 return line[len("password="):].strip()
-    except Exception:
-        pass
+    except Exception as e:  # noqa: BLE001 - 取不到凭据是常态，降级匿名
+        from . import applog
+        applog.warn(f"读取 git 凭据失败（降级匿名限流）：{e}")
     return ""
 
 
