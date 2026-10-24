@@ -99,6 +99,21 @@
       "cmd": "变异实验（F4）：把 CLAUDE.md 的行数声明改成 2600 后跑 tests.test_g79_repo_hygiene",
       "exit_code": 1,
       "raw_output_tail": "AssertionError: 70 not less than or equal to 5 : CLAUDE.md 声明主窗 2600 行，实测 2670 行（容差 ±5）\nRan 10 tests in 0.090s\nFAILED (failures=1)  → 改回 2670 后 Ran 10 · OK"
+    },
+    {
+      "cmd": "python -m PyInstaller --noconfirm Git-clone-Max.spec && python scripts/build_portable_zip.py && python scripts/build_portable_zip.py --check && python scripts/health_check.py --json <tmp>",
+      "exit_code": 0,
+      "raw_output_tail": "Build complete! → dist/Git-clone-Max.exe 41371008 B\n[OK] 已生成 Git-clone-Max-portable.zip（332 条目，79807297 字节）\n[OK] 便携版 zip 未过期（332 条目，79807297 字节）\nversion=9.10.2 archive_version=9.10.2 exe_sha256=43127bd97e127d5426f4cf6949fe8a00b68140e99d2dfd2ee921c287059d89c5 started_ok=true repos_db_created=true"
+    },
+    {
+      "cmd": "python scripts/publish_release.py --tag v9.10.2  +  gh release download v9.10.2 --pattern Git-clone-Max.exe（独立下载复验）",
+      "exit_code": 0,
+      "raw_output_tail": "[OK] 创建 Release v9.10.2 完成\n[OK] Release 创建成功 id=422788581\n[OK] 附件上传成功 id=672510388 size=41371008\n[OK] 便携包上传成功 id=672511415 size=79807297\n[OK] 服务端 sha256=43127bd97e127d54… 一致\n[INFO] Release 页面：https://github.com/lza6/Git-clone-Max/releases/tag/v9.10.2\n下载物 sha256=43127bd97e127d5426f4cf6949fe8a00b68140e99d2dfd2ee921c287059d89c5 → MATCH True"
+    },
+    {
+      "cmd": "gh api repos/lza6/Git-clone-Max/actions/runs/40103690522 (+ /jobs)",
+      "exit_code": 0,
+      "raw_output_tail": "run 40103690522 289adf0 completed success\nfast-smoke: success / slow: success / test (ubuntu-latest): success / e2e-smoke: success / test (windows-latest): success / perf-baseline: success / test (macos-latest): success —— 7/7"
     }
   ],
   "files_changed": [
@@ -237,6 +252,6 @@
     "P2-5（updater/gh_api 用 urllib.request 直连）未修：失败只在企业代理/中间人 TLS 环境复现，本轮无该环境，属未验证边界。",
     "P2-8 根目录 24 个 .log 与 .coverage 本轮刻意不删：它们是各次红→绿的唯一本地物证（如 .g79_slow.log 里那次 FAILED 原文），且全部被 .gitignore 覆盖。",
     "T-41/T-42/T-43（主窗 233/129 行热点、settings_groups 783 行）属重构，按既定排期留 v9.11/v9.12，本轮不做。",
-    "CI 结论以 G79 的 run 40090205046（7/7 success）为基线；本轮 9.10.2 改动后的 CI 结论需由本轮 push 触发的新 run 决定（见 workflow_status §30 登记）。"
+    "本机 curl 下载 Release 资产因 schannel CRYPT_E_REVOCATION_OFFLINE（吊销列表离线）失败，改用 gh release download 完成下载复验（sha256 MATCH）；属 known-issues 已登记的本机 TLS 边界，非产物问题。"
   ]
 }

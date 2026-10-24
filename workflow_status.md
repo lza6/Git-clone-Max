@@ -1198,7 +1198,7 @@ G79 是「按计划执行 + 留 evidence JSON」；本轮是**独立复验 G79 �
 | G79b-4 | 缺陷 F3：`CLAUDE.md` §6 GC 处置与代码矛盾（P1 文档） | Done | 改为「已根治（G79b 复核）」；同时把计划文档 **T-44 / P2-9 / v9.13 降级为已过时** |
 | G79b-5 | 补齐缺失的验证记录 | Done | 新增 `docs/验证记录-2026-10-24-G79b终局审计.md`（G79 当时只留 evidence JSON + 本文件 §28，不符 `CLAUDE.md` §4.6） |
 | G79b-6 | 计划文档闭环审计 | Done | 仍**不可删除/不可归档**：T-41/T-42/T-43 未开始 + P2-5/P2-8 未闭环 + E10/E16 人工/外部受限（与 §29 一致） |
-| G79b-7 | 版本与发布 | Done | `__version__` 9.10.2 + changelog 一行；spec/iss/pyproject/agent-contract/README 同步；构建 + 便携 zip + 健康检查 + dry-run + 发布 |
+| G79b-7 | 版本与发布 | Done | `__version__` 9.10.2 + changelog 一行；spec/iss/pyproject/agent-contract/README 同步；构建 `Build complete!`（exe 41,371,008 B）+ 便携 zip 79,807,297 B + `--check` OK + health_check `version_match 9.10.2 / started_ok` + dry-run 校验通过 + tag `v9.10.2` 已推 + **Release id=422788581 已发布（服务端 sha256 一致）** + **独立下载重算 sha256 MATCH** |
 
 ### 30.3 这一轮最值得记的一条：**「闭环」的口径会被时间悄悄放宽**
 
@@ -1220,4 +1220,17 @@ G79 是「按计划执行 + 留 evidence JSON」；本轮是**独立复验 G79 �
 - **E10** 的「齿条递增并停表」：需真机人眼；本轮用离屏存活 60s + 打包 exe 真实 clone/update + 38 张渲染目检逼近，不等于通过。
 - **P2-5** `urllib` 直连：需企业代理/中间人 TLS 环境才能复现与验证。
 - **P2-8** 根目录 24 个 `.log` + `.coverage`：刻意不删（它们是红→绿的唯一物证，且已被 `.gitignore` 覆盖）。
+
+**CI（定论）**：run `40103690522` on `289adf0` = **completed / success，7/7 job 全绿**；
+Release `v9.10.2`（id=422788581）产物从 Release 独立下载后重算 sha256 与本地一致。
 - **T-41/T-42/T-43**：重构类，按 v9.11 / v9.12 排期。
+
+### 30.5 过程中的真实事故：工作区 16 个 docs 文件被静默删除（已恢复，归因未定）
+
+| 项 | 内容 |
+|---|---|
+| 发现 | 22:50 一次文档编辑脚本报 `FileNotFoundError`，随后文档守卫报「引用了不存在的路径」→ `git status` 显示 **16 个 `docs/` 下被跟踪文件变成 D（删除）**，全部是**非 ASCII 文件名**（`计划书/**`、`验证记录-*.md`、`慢测定位.md`、`SOP-交付与维护.md`） |
+| 影响 | **对已发布产物零影响**（Release/Build 都取自提交树 `289adf0`，文件在 git 里）。但若未察觉就 `git add` 提交，会把 16 份文档一起删掉 —— 正是本项目 2026-10-16「台账被删」的同类事故 |
+| 处置 | `git ls-files -d -z docs/ \| xargs -0 git checkout --` 从 HEAD 恢复；核验 `git ls-files -d` = **0**、tracked `docs/` = **42**、守卫 **32 项 OK** |
+| 归因 | **未确定**。已用受控实验逐个排除窗口期内的破坏性嫌疑：`build_portable_zip.py --check`、`publish_release.py --dry-run`、`health_check.py`（含拉起 exe）、`PyInstaller`（整轮重跑）—— 每次快照前后 `docs/` 都是 42 → 42、零删除。**头号嫌疑**是本轮并行跑的只读审计子代理（其 shell 活动不在主控上下文内；要求了只读，但其执行轨迹无法审计） |
+| 纪律 | ①**提交/发布前必看 `git status --porcelain`**（`RELEASE_CHECKLIST` §0 已有，本轮再次证明它不是形式主义）；②**不要在同一工作区并行跑多个带 shell 的子代理**（「只读」只是提示词约束，不是权限约束）；③任何 `git add` 前若出现意料之外的 `D`，先 `git checkout --` 恢复再继续 |

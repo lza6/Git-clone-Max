@@ -138,3 +138,12 @@ AST 只统计 `Attribute` / `Name` / `getattr(obj, "名字")`，注释与字符�
   **纪律**：①「跑过一次就过」的验证，命令 + 输出尾部必须写进 `docs/验证记录-*.md` 或 `evidence/*.json`；
   ②修好某个结论时，**同一次提交里**全仓 grep 该结论的派生引用（文档/计划/排期）并一起更新；
   ③`*.log` 只能是过程物，不能是唯一证据。
+- **D32 不要在同一工作区并行跑多个带 shell 的子代理；提交前必看 `git status --porcelain`**
+  （2026-10-24，G79b 实测事故）：本轮并行启动了 3 个「只读」审计子代理，期间工作区里 `docs/` 下
+  **16 个被跟踪文件（全部非 ASCII 文件名）被静默删除**（`git status` 显示 D）。发布物不受影响
+  （取自提交树），但**若未察觉就 `git add` 提交，会把 16 份文档一起删掉** —— 与 2026-10-16
+  「台账被删」同类。受控实验已排除 `build_portable_zip --check` / `publish_release --dry-run` /
+  `health_check`（含拉起 exe）/ `PyInstaller`（每次前后快照 42→42，零删除），剩余唯一无法审计的是
+  子代理的 shell 活动。**纪律**：①「只读」是提示词约束，不是权限约束 —— 需要并行时用隔离工作树
+  （`isolation: worktree`）或干脆串行；②任何 `git add` / 发布前先 `git status --porcelain`，
+  出现意料之外的 `D` 先 `git checkout -- <path>` 恢复；③恢复后必须跑守卫族确认（本轮 32 项 OK）。
