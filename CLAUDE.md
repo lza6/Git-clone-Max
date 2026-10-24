@@ -82,7 +82,7 @@ gcm/util/    跨层工具：redact（脱敏）/ filelock（跨进程文件锁）
 gcm/i18n/    文案字典 zh/en（key 即中文，缺失回退中文）
 skills/      agent 技能包（SKILL.md + scripts/），每个必须自包含验收步骤
 scripts/     运维/CI/基准脚本（不参与打包）
-tests/       测试（145 文件）；**新增测试文件默认落在 CI 快集**（scripts/ci_run_fast.py 用黑名单，不是白名单）。G80 起新增 `test_g80_contract` / `test_g80_hygiene` 两个守卫，改契约或删符号前先看它们。
+tests/       测试（146 文件）；**新增测试文件默认落在 CI 快集**（scripts/ci_run_fast.py 用黑名单，不是白名单）。G80 起新增 `test_g80_contract` / `test_g80_hygiene` 两个守卫，改契约或删符号前先看它们。
 docs/reports/ 历次审计报告（HTML，只读快照）
 docs/        工程/产品/契约文档
 ```
@@ -152,6 +152,7 @@ docs/        工程/产品/契约文档
 | 同步网络 I/O（检查更新、诊断、归档、通知）**不得在 GUI 线程**执行：worker 只 `emit`，槽回主线程 | `tests/test_g66_patch.py::TestNoCrossThreadWidgetAccess` / `TestUpdateCheckThreading` |
 | 自动重投（retry）必须复用上一批的 `host_by_key` / `fetch_depth` / `mirror`（否则污染 `host` 列、克隆语义错位） | `tests/test_g67_closure.py::TestRetryReusesBatchContext` |
 | 新增的模块/函数/设置项**必须有生产调用点或 UI 入口**（只在 tests 里出现 = 虚伪实现） | `tests/test_g69_regressions.py::TestG69_18WiringClosure` |
+| **三条边界冻结**：`gcm/app` 不再新增 Qt 依赖（现存 5 个文件白名单）；`["git"` 子进程不得在 `gcm/git/` 之外新增；SQL 只能在 `gcm/db/`（`reports.py` 为已登记例外） | `tests/test_g80_boundaries.py`（G80-B6） |
 | 新增设置项必须**写入侧与消费侧都接线**（只写不读 = 用户改了没用） | 同上 |
 | 断言 `GIT_CONFIG_*` 精确索引的测试必须隔离进程环境（父进程可能已带该变量） | `tests/_gitcfg_isolation.py` mixin |
 | 异常处理分支不得引用不存在的 API（会把可容忍坏输入升级为全局中断） | `TestG69_18VerifierFindings::test_env_uses_only_existing_applog_api` |

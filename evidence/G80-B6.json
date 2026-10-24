@@ -1,0 +1,23 @@
+{
+  "task_id": "G80-B6",
+  "title": "三条边界守卫：Qt / subprocess / SQL（只加守卫，不搬生产代码）",
+  "status": "passed",
+  "timestamp": "2026-10-25T03:45:00+08:00",
+  "scope": "批次 B6（差距 G-04 / G-06）",
+  "commands_executed": [
+    {"cmd": "QT_QPA_PLATFORM=offscreen python -m unittest tests.test_g80_boundaries -v", "exit_code": 0, "raw_output_tail": "Ran 5 tests in 0.503s\n\nOK"},
+    {"cmd": "python -m unittest tests.test_g80_boundaries tests.test_g79_repo_hygiene tests.test_g80_hygiene tests.test_g67_docs_freshness", "exit_code": 0, "raw_output_tail": "Ran 36 tests in 1.120s\n\nOK"}
+  ],
+  "files_changed": ["tests/test_g80_boundaries.py (new)", "CLAUDE.md", "tests/test_g79_repo_hygiene.py", "README.md"],
+  "design": {
+    "whitelist_set_equality": "白名单 + 集合相等（不是黑名单匹配）：挡住「悄悄多出来的第 N+1 处」",
+    "qt_whitelist": "app 层 5 个文件（engine/worker/watchdog/clipboard_watcher/diag）—— 首轮实测发现 diag 也取 QT_VERSION_STR，按实测更正为 5 而非 4",
+    "git_subprocess_whitelist": "7 个文件，每条必须写清「为什么现在不进 git 层」",
+    "sql_whitelist": "reports.py（历史例外，已登记应改为调 repo_db 公开方法）",
+    "self_check": "TestGuardsAreNotSelfDefeating：直接验证 AST 探测函数能抓到违规，防止守卫本身失效"
+  },
+  "limitations": [
+    "本批只加守卫，**没有搬迁任何代码**：app 层 Qt 耦合、8 处 git 探测、reports.py 的 SQL 越层仍然存在，只是被冻结不再增长。",
+    "全量快集未在本改动后重跑。"
+  ]
+}
