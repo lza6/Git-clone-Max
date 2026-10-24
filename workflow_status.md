@@ -1173,3 +1173,51 @@ B4 仓库知识索引 / B5 MCP annotations / B6 真机点击仍属后续范围�
 测试文件数 113/135→137 · 主窗 2658→2665 · 构造 MainWindow 的测试文件 31→42 ·
 `known-issues` 的 PyQt6「未锁版本」→ 已锁 6.11.0 · `workflow_status` §27 阻塞→已闭环 ·
 `test_ledger` 门禁数字回填 · `docs/agent-contract.md` 版本号 · `README` 版本行。
+
+---
+
+## 30. G79b 终局审计（2026-10-24，v9.10.2）
+
+> 来源：用户 2026-10-24 授权「全量审计 + 多代理编排 + 真实 E2E + 部署发布 + 计划文档闭环 + 技能记忆沉淀」。
+> 纪律：先复验（不信任何 ✅）→ 再修 → 每条结论附本轮真实命令与输出尾部。
+> 完整证据：`docs/验证记录-2026-10-24-G79b终局审计.md` · `evidence/G79b-final-audit.json`。
+
+### 30.1 本轮做了什么（与 G79 的差别）
+
+G79 是「按计划执行 + 留 evidence JSON」；本轮是**独立复验 G79 本身**，并把 §11 里此前从没跑过的
+验收项（慢集绿灯、SSE 长连接、高 DPI、变异实验、打包 exe 真实 E2E、性能基准）全部真跑一遍。
+复验抓出 **3 处真实缺陷**，其中 1 处是**入口文档与代码直接矛盾**。
+
+### 30.2 节点
+
+| ID | 任务 | 状态 | 验收（真实输出） |
+|---|---|---|---|
+| G79b-1 | 全量验证矩阵 V1–V19 | Done | ruff All checks passed · mypy Success(87) · 快集 `Ran 1439 · 0/0 · skip 4 · 82%` · **慢集 `Ran 129 in 63.586s OK`** · e2e_smoke PASS · health_check version_match+started_ok · 打包 exe `cloned→fetched→exit 2` · SSE `retry:` 帧+事件+打码+非回环拒绝 · 截图 38/38×2 轮 · bench 500 行 15.56ms · `tasklist` 无残留 |
+| G79b-2 | 缺陷 F1：紧凑布局孤儿「编辑」按钮（P2） | Done | 截图实测 652/609/481px 通栏 → 保留标签 + `QSizePolicy.Fixed`；守卫 1→4 条不变量；两次变异实验 `FAILED (failures=3)` / `652 not less than or equal to 64` → 恢复后 `Ran 3 · OK` |
+| G79b-3 | 缺陷 F2：同版本断言语义退化（P2） | Done | `tests/test_extra.py` 改按真实 `__version__` 动态构造 → `Ran 3 · OK` |
+| G79b-4 | 缺陷 F3：`CLAUDE.md` §6 GC 处置与代码矛盾（P1 文档） | Done | 改为「已根治（G79b 复核）」；同时把计划文档 **T-44 / P2-9 / v9.13 降级为已过时** |
+| G79b-5 | 补齐缺失的验证记录 | Done | 新增 `docs/验证记录-2026-10-24-G79b终局审计.md`（G79 当时只留 evidence JSON + 本文件 §28，不符 `CLAUDE.md` §4.6） |
+| G79b-6 | 计划文档闭环审计 | Done | 仍**不可删除/不可归档**：T-41/T-42/T-43 未开始 + P2-5/P2-8 未闭环 + E10/E16 人工/外部受限（与 §29 一致） |
+| G79b-7 | 版本与发布 | Done | `__version__` 9.10.2 + changelog 一行；spec/iss/pyproject/agent-contract/README 同步；构建 + 便携 zip + 健康检查 + dry-run + 发布 |
+
+### 30.3 这一轮最值得记的一条：**「闭环」的口径会被时间悄悄放宽**
+
+复验发现 G79 的两处折扣，都不是「写错代码」，而是**证据纪律**问题：
+
+1. **慢集绿灯没留档**：`evidence/G79-hygiene.json` 写 `result=OK, seconds=68.9`，但仓库里唯一的
+   `.g79_slow.log` 是**修复之前**那次 `FAILED (failures=1, errors=1)`（`AttributeError: 'Settings'
+   object has no attribute 'depth'`）。绿色那次跑过但没落盘 → 事后无法复核。本轮重跑拿到
+   `Ran 129 in 63.586s OK`，并把原文写进验证记录（持久化，不再依赖临时日志）。
+2. **过期结论没有连带清理**：`CLAUDE.md` §6 在 9.4.5 就移除 `gc.disable` 之后仍写着「未根治、
+   要改造 42 个测试文件」，计划文档据此排了 v9.13。**一条过期结论会派生出一整轮无效工作**。
+
+对应纪律（已写进 `.agent/memory/decisions.md` D31）：
+**凡是「跑过一次就过」的验证，输出必须落进版本控制里的文档/JSON，不能只留在本机 `*.log`**。
+
+### 30.4 本轮未闭环（如实登记）
+
+- **E16** Actions 分钟额度：需登录账单页，外部受限。
+- **E10** 的「齿条递增并停表」：需真机人眼；本轮用离屏存活 60s + 打包 exe 真实 clone/update + 38 张渲染目检逼近，不等于通过。
+- **P2-5** `urllib` 直连：需企业代理/中间人 TLS 环境才能复现与验证。
+- **P2-8** 根目录 24 个 `.log` + `.coverage`：刻意不删（它们是红→绿的唯一物证，且已被 `.gitignore` 覆盖）。
+- **T-41/T-42/T-43**：重构类，按 v9.11 / v9.12 排期。

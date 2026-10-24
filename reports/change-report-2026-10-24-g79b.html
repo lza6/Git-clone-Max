@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>变更报告 · G79b 终局审计 · v9.10.2</title>
+<style>
+  :root{
+    --bg:#0d1117; --surface:#151b23; --surface-2:#1c232d; --line:#2b3441;
+    --ink:#e6edf3; --muted:#9aa7b4; --dim:#6b7684;
+    --accent:#35c8b4; --accent-2:#f0b429; --danger:#f85149; --ok:#3fb950;
+    --mono:"Cascadia Mono",Consolas,monospace;
+    --sans:"Microsoft YaHei UI","Segoe UI",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       line-height:1.75;font-size:15px}
+  .wrap{max-width:1080px;margin:0 auto;padding:56px 28px 120px}
+  header{border-bottom:1px solid var(--line);padding-bottom:28px;margin-bottom:40px}
+  .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.18em;color:var(--accent);
+          text-transform:uppercase;margin-bottom:12px}
+  h1{font-size:clamp(24px,3.2vw,36px);line-height:1.28;margin:0 0 14px}
+  h1 em{font-style:normal;color:var(--accent)}
+  .lede{color:var(--muted);font-size:16px;max-width:76ch;margin:0}
+  h2{font-size:21px;margin:48px 0 16px;padding-left:14px;border-left:3px solid var(--accent)}
+  h3{font-size:15px;margin:24px 0 8px;color:var(--accent-2);font-family:var(--mono);
+     letter-spacing:.04em}
+  code{font-family:var(--mono);font-size:.9em;background:var(--surface-2);
+       padding:2px 6px;border-radius:4px;color:#a5d6ff}
+  table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:12.5px;letter-spacing:.06em;
+     text-transform:uppercase;background:var(--surface)}
+  td.ok{color:var(--ok)} td.bad{color:var(--danger)} td.warn{color:var(--accent-2)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;
+        padding:18px 20px;margin:18px 0}
+  .card h3{margin-top:0}
+  .flow{font-family:var(--mono);font-size:13px;background:var(--surface-2);border-radius:8px;
+        padding:16px 18px;overflow-x:auto;white-space:pre;color:#c9d5e3}
+  .quiz{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:22px 24px}
+  .quiz li{margin:12px 0}
+  .ans{color:var(--muted);font-size:14px;margin-top:6px}
+  .pill{display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:999px;
+        border:1px solid var(--line);color:var(--muted)}
+  footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--line);color:var(--dim);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="kicker">change report · 2026-10-24 · v9.10.2</div>
+  <h1>G79b 终局审计：把「闭环」的<em>证据口径</em>收紧</h1>
+  <p class="lede">独立复验 G79 的全部交付，真跑了此前从没跑过的验收项（慢集绿灯、SSE 长连接、高 DPI、
+  变异实验、打包 exe 真实 E2E），抓出 3 处真实缺陷 —— 其中一处是入口文档与代码直接矛盾，
+  会指挥下一个 AI 做整整一轮无效工作。</p>
+</header>
+
+<h2>1. 上下文：为什么会有这一轮</h2>
+<p>G79 按「工程治理收口」计划交付了 8 个任务，自称闭环。本轮不接受这个结论，做了两件事：
+<b>逐条复验</b>（不信任何 ✅，用命令重新证明）与<b>补齐验收面</b>（§11 的 E1–E18 里有一半从未真跑）。</p>
+<div class="card">
+  <h3>复验抓到的两处「证据折扣」</h3>
+  <p>① <b>慢集绿灯没有持久化留档</b>：<code>evidence/G79-hygiene.json</code> 写「129 OK / 68.9s」，
+  而仓库里唯一的 <code>.g79_slow.log</code> 是<b>修复之前</b>那次 <code>FAILED (failures=1, errors=1)</code>
+  （<code>AttributeError: 'Settings' object has no attribute 'depth'</code>）。绿色那次跑过却没落盘 → 事后不可复核，等效于没跑。</p>
+  <p>② <b>过期结论没有连带清理</b>：<code>CLAUDE.md</code> §6 在 9.4.5 移除 <code>gc.disable</code> 之后，
+  仍写着「整轮关闭自动循环 GC…<b>仍未根治</b>…要逐个改造 <b>42 个</b>构造 MainWindow 的测试文件」，
+  计划文档据此排了一个版本（v9.13）。</p>
+</div>
+
+<h2>2. 直觉与取舍</h2>
+<p>一个「绿着的守卫」比一个「红着的 bug」更贵：bug 会被人撞到，失效的守卫会让人<b>以为不存在</b>。
+所以本轮优先修的是<b>断言与实现之间的缝</b>，而不是加功能。</p>
+<table>
+<tr><th>决定</th><th>理由</th></tr>
+<tr><td>修紧凑布局的孤儿按钮，而不是「把行整行隐藏」</td>
+    <td>整行隐藏会让小屏用户<b>永久够不到</b>快捷填充编辑入口（违反本项目「新增能力必须有 UI 入口」红线）；保留标签 + 固定宽度按钮，既省空间又不丢入口</td></tr>
+<tr><td>扩守卫，而不是只改代码</td>
+    <td>原守卫只断言 <code>quick_scroll.isHidden()</code>，于是「只剩一个孤立的编辑按钮」也算绿。守卫要断言的是一条<b>不变量</b>（收起后仍可读、仍可用、不被拉伸），不是某个控件的某个布尔值</td></tr>
+<tr><td>不做 T-41/T-42/T-43（主窗与设置模块拆分）</td>
+    <td>它们是重构（<code>__init__</code> 233 行 / <code>_launch</code> 129 行 / <code>settings_groups</code> 783 行），按既定排期留 v9.11 / v9.12。本轮授权明确禁止大幅重构</td></tr>
+<tr><td>撤销 T-44 / P2-9 而不是继续排期</td>
+    <td>前提已不成立（<code>gc.disable</code> 全库无、引用环已打断、1439 用例 0 崩溃）。继续排期 = 用过期结论制造无效工作</td></tr>
+</table>
+
+<h2>3. 做了什么</h2>
+<h3>F1 · 紧凑布局「快捷填充」行退化（P2，代码 + 守卫）</h3>
+<p>窗口高 &lt; 820px（1024×768 / 1366×768 / 1280×800）时，chip 滚动区被收起，但 G76 新增的「编辑」按钮
+在滚动区之外<b>不会隐藏</b>，且被收起控件的伸缩空间轮到它 —— 实测被拉成 <code>652 / 609 / 481px</code> 的通栏按钮。
+既不是 G74 注释自称的「整行隐藏」，也让人不知道在编辑什么。</p>
+<div class="flow">layout_mode(w,h) ──compact──▶ _apply_layout_mode()
+                                     ├─ hide: quick_scroll        ← chip 区收起（设计如此）
+                                     ├─ keep: quick_label         ← 改：该行读作「快捷填充：」
+                                     └─ keep+Fixed: btn_edit_quick ← 改：自然宽度，不被拉伸
+                                            │
+                                            └─▶ 守卫 4 条不变量（1024×768 也纳入矩阵）
+                                                 + 两次变异实验：改回旧行为必须红</div>
+
+<h3>F2 · 同版本断言语义退化（P2，测试）</h3>
+<p><code>test_check_latest_no_exe_asset</code> 把 <code>3.0.0</code> 写死并注释「= 当时的版本号」。
+版本越过后它实际测的是「更旧版本不算更新」，<b>同版本分支再没人覆盖</b>，而断言仍绿（断言强度悄悄退化）。
+改为按真实 <code>__version__</code> 动态构造，语义回到注释所写。</p>
+
+<h3>F3 · <code>CLAUDE.md</code> §6 与代码直接矛盾（P1，文档）</h3>
+<p>改为「<b>已根治（G79b 复核更正）</b>」：保留历史根因与观测（复盘材料），补上现状
+（弱引用 + 绑定方法，9.4.2–9.4.5）、守卫名与实测结论；明确「改造 42 个测试文件已不是待办」；
+保留仍然有效的编码约束（信号连接不要用 <code>lambda</code> 捕获 <code>self</code>）。</p>
+
+<h2>4. 验证证据（本轮真实运行）</h2>
+<table>
+<tr><th>项</th><th>结果</th></tr>
+<tr><td>静态门禁</td><td class="ok">ruff All checks passed · mypy Success（87 文件）</td></tr>
+<tr><td>快集 + 覆盖率</td><td class="ok">Ran 1439 · failures=0 · errors=0 · skipped=4 · 82%</td></tr>
+<tr><td><b>慢集（真实 git E2E）</b></td><td class="ok">Ran 129 in 63.586s · OK（补齐 G79 缺口）</td></tr>
+<tr><td>源码级 E2E</td><td class="ok">E2E_SMOKE_RESULT: PASS（clone / fetch+ff / ff 被拒不覆盖 / 冲突双保留 / abort）</td></tr>
+<tr><td>打包 exe E2E</td><td class="ok">cloned → fetched → 无效输入 exit 2</td></tr>
+<tr><td>CLI 契约</td><td class="ok">空文件 exit 2 · 缺失文件 exit 2 · JSON schema 完整且带 redacted</td></tr>
+<tr><td><b>本地 API / SSE</b></td><td class="ok">retry: 帧 · event: task_started · token 与 URL 凭据打码 · 快照 · 0.0.0.0 绑定被拒 · 端口释放</td></tr>
+<tr><td>截图审计</td><td class="ok">38/38 @100% · 38/38 @125% + 人工目检（1440×900 / 1024×768）</td></tr>
+<tr><td>性能基准</td><td class="ok">500 行 add 15.56ms · delegate 0 子控件 · QSS 1.767→0.019ms · 启动 81.63ms</td></tr>
+<tr><td>产物健康检查</td><td class="ok">version_match 9.10.x · started_ok 60s · repos.db 生成</td></tr>
+<tr><td>变异实验（F1）</td><td class="bad">旧行为 → FAILED (failures=3)：孤儿按钮 / 652px 通栏</td></tr>
+<tr><td>守卫族</td><td class="ok">Ran 37 · OK（卫生 10 / 文档 11 / 版本单源 11 / 僵尸字段 2 / 快速滚动 3）</td></tr>
+<tr><td>进程残留</td><td class="ok">tasklist 无 Git-clone-Max.exe</td></tr>
+</table>
+<p class="pill">证据文件：docs/验证记录-2026-10-24-G79b终局审计.md · evidence/G79b-final-audit.json · workflow_status.md §30</p>
+
+<h2>5. 风险与回滚</h2>
+<table>
+<tr><th>改动</th><th>风险</th><th>回滚</th></tr>
+<tr><td>紧凑布局隐藏清单 + 按钮尺寸策略</td><td>L1：纯外观，不影响数据流；有 4 条不变量守卫</td><td><code>git revert</code> 单提交</td></tr>
+<tr><td>同版本断言改动态构造</td><td>L1：只改测试输入构造，断言强度不变</td><td>同上</td></tr>
+<tr><td><code>CLAUDE.md</code> §6 / 计划文档状态降级</td><td>L1：文档；已保留历史复盘段落</td><td>同上</td></tr>
+<tr><td>版本 bump 9.10.2</td><td>L1：patch 版；tag 与产物需一致（健康检查已验）</td><td>重发或回退 tag（不改写历史）</td></tr>
+</table>
+
+<h2>6. 已知限制（未闭环，如实登记）</h2>
+<ul>
+  <li><b>E16</b> Actions 分钟额度：需登录 GitHub 账单页，外部受限。</li>
+  <li><b>E10</b> 的「齿条读数递增并停表」：需真机人眼。本轮用离屏存活 60s + 打包 exe 真实 clone/update + 38 张渲染目检逼近，<b>不等于</b>通过人眼硬门。</li>
+  <li><b>P2-5</b> <code>urllib.request</code> 直连：失败只在企业代理 / 中间人 TLS 环境复现，本轮无该环境。</li>
+  <li><b>P2-8</b> 根目录 24 个 <code>.log</code> + <code>.coverage</code>：刻意不删（它们是各次「红→绿」的唯一本地物证，且已被 <code>.gitignore</code> 覆盖）。</li>
+  <li><b>T-41 / T-42 / T-43</b>：重构类，留 v9.11 / v9.12。</li>
+</ul>
+
+<h2>7. 测验（自测通过率 100%，通过标准 ≥ 80%）</h2>
+<div class="quiz">
+<ol>
+  <li>紧凑布局下，为什么不能简单地把「快捷填充」整行藏掉？<div class="ans">答：G76 加在滚动区之外的「编辑」按钮是<b>唯一的</b>快捷填充编辑入口，整行藏掉会让高 &lt;820px 的用户永久够不到该功能，违反「新增能力必须有 UI 入口」的红线。正解是保留标签 + 固定宽度按钮。</div></li>
+  <li>旧的 <code>test_g78_quick_scroll</code> 为什么绿着放过了缺陷？<div class="ans">答：它只断言 <code>quick_scroll.isHidden()</code>，而缺陷的形态是「滚动区确实藏了，但同一行还剩一个无标签的孤立按钮，且被拉成通栏」。断言覆盖的是「某个控件的一个布尔值」，不是「这一行的可用性与可读性」这条不变量。</div></li>
+  <li>「变异实验」在这轮起了什么作用？给出两次实验的失败信息关键片段。<div class="ans">答：证明新守卫<b>能真失败</b>（不是空转）。① 还原旧隐藏清单 → <code>AssertionError: (1366,768) 紧凑模式下标签被藏掉 → 编辑按钮成了孤儿</code>（failures=3）；② 删掉尺寸策略 → <code>652 not less than or equal to 64 : 被拉伸成 652px</code>（1280×800 → 609px，1024×768 → 481px）。</div></li>
+  <li>为什么 <code>3.0.0</code> 这条断言「绿着但已经不再测它声称要测的东西」？<div class="ans">答：注释写「= 当时的版本号」，但版本早已 &gt; 3.0.0，于是 <code>check_latest</code> 比较的是「更旧版本 → 不是更新」，<b>同版本分支</b>（相等 ⇒ 不是更新）不再被任何用例覆盖。断言能过，是因为它测的是另一个分支。</div></li>
+  <li><code>CLAUDE.md</code> §6 那段的错误属于哪一类？为什么它比一个普通 bug 更贵？<div class="ans">答：属于「过期结论未连带清理」。它是所有 AI 与新协作者的第一入口，会直接指挥下一轮去改造 42 个测试文件、并据此排出 v9.13 —— 一条过期结论派生出一整轮无效工作。</div></li>
+  <li>本项目判定「一个计划文档能不能删」的三个前提是什么？<div class="ans">答：①逐条复验过；②无未闭环项；③无待决策项（<code>policy.md</code> §5）。三者同时成立才可归档删除；本轮 T-41/T-42/T-43 未开始 + P2-5/P2-8 未闭环 ⇒ 不可删。</div></li>
+  <li>慢集「留档缺口」是怎么发现的？正确的留档方式是什么？<div class="ans">答：用 <code>evidence/G79-hygiene.json</code> 声称的「129 OK」去对仓库里唯一的 <code>.g79_slow.log</code>，发现那是修复前的 <code>FAILED (failures=1, errors=1)</code>。正确做法是把命令 + 输出尾部写进版本控制里的 <code>docs/验证记录-*.md</code> 或 <code>evidence/*.json</code>（决策 D31），<code>*.log</code> 只能是过程物。</div></li>
+  <li>SSE 这一项本轮验证了哪四件事？<div class="ans">答：①<code>/api/events</code> 返回 <code>text/event-stream</code> 且有 <code>retry:</code> 帧；②进程内 <code>event_bus.publish</code> 的事件真的流到 HTTP 客户端；③入总线前已打码（token 与 URL 内嵌凭据都取不到）；④非回环绑定被拒绝、关闭后端口释放。另加验证了 <code>/api/events/snapshot</code>。</div></li>
+  <li>为什么这轮<b>不</b>删根目录那 24 个 <code>.log</code>？<div class="ans">答：它们是各次「红→绿」的唯一本地物证（例如上面那次 FAILED 原文），且全部被 <code>.gitignore</code> 覆盖、不进仓库、不影响干净检出。清理前应先在受控位置留快照，否则会重演「结论没留证据」的老问题。</div></li>
+  <li>如果要把主窗 <code>__init__</code>（233 行）拆小，需要先做什么？<div class="ans">答：先写 AST 行数守卫（<code>__init__</code> ≤60 行）并让它能失败，再「只搬语句不改语义」地抽私有方法，薄方法保留；随后跑定向回归（<code>test_g52_mainwindow_extra</code> / <code>test_g66_patch</code> / <code>test_g68_settings_ui</code>）+ 截图 38/38 + 打包 E2E。属 v9.11 的 T-41/T-42。</div></li>
+</ol>
+<p class="ans"><b>自测记录</b>：10/10 正确（100%，通过标准 ≥80%）。依据：以上答案全部对应本轮实际命令与输出（见 §4 与 <code>docs/验证记录-2026-10-24-G79b终局审计.md</code>）。</p>
+</div>
+
+<footer>
+  Git-clone-Max · G79b 终局审计 · v9.10.2 · 生成本报告时全部验证项均为本轮真实执行<br>
+  配套：<code>docs/验证记录-2026-10-24-G79b终局审计.md</code> · <code>evidence/G79b-final-audit.json</code> · <code>workflow_status.md</code> §30
+</footer>
+</div>
+</body>
+</html>

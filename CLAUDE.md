@@ -204,25 +204,27 @@ docs/        工程/产品/契约文档
     这些 tag **在远端一直存在**，是本地未 `git fetch --tags` 造成的误判。
     实测 `git ls-remote --tags origin` 后逐个校验：v9.x 全部 tag 与其提交的
     `__version__` **逐一对得上**。教训：**涉及远端状态的结论必须先 fetch 再下**。
-- **CI `test` job 的原生崩溃（根因已定，已有处置）**：
-  Linux/macOS 表现为 `exit 139`（SIGSEGV），本机 Windows 可复现。
-  **根因**：`MainWindow` 等 Qt 控件由**引用环**维持 —— 实测 `del w` 之后
-  **不被引用计数回收**，只有 `gc.collect()` 才回收（一次 369 个对象）。
-  于是销毁时机落到 Python 的**自动循环 GC** 上，而它在**任意分配点**触发，
-  **包括 `QApplication.processEvents()` 内部** → Qt 在事件分发中途销毁控件与其
-  子定时器 → `QTimerInfoList::activateTimers` 解引用已释放对象 → 崩溃。
-  这解释了全部观测：崩溃点随机漂移、`PYTHONMALLOC=debug` 会改变结果、测试越多越易崩。
-  **处置**：`scripts/ci_run_fast.py` 整轮关闭自动循环 GC，只在全部模块跑完后回收一次。
-  对照实验（禁用循环 GC 跑快集）实测 0 崩溃。
-  **仍未根治**：正解是让每个用例确定性收尾（close → deleteLater → 泵空事件队列），
-  但那要逐个改造 **42 个**构造 MainWindow 的测试文件（2026-10-24 G79 实测：`grep -rln "MainWindow(" tests/` = 42，且这 42 个文件都已具备模块级 `QApplication.instance() or QApplication([])` 守卫）；已登记为后续工作。
-  **不得**用 `skip`/重试把它「弄绿」。
+- **CI `test` job 的原生崩溃（已根治，2026-10-24 G79b 复核更正）**：
+  Linux/macOS 曾表现为 `exit 139`（SIGSEGV），本机 Windows 可复现。
+  **历史根因**：`MainWindow` 等 Qt 控件由**引用环**维持 —— `del w` 之后不被引用计数回收，
+  只有 `gc.collect()` 才回收（一次 369 个对象）。销毁时机于是落到 Python 的**自动循环 GC** 上，
+  而它在**任意分配点**触发（包括 `QApplication.processEvents()` 内部）→ Qt 在事件分发中途
+  销毁控件与子定时器 → `QTimerInfoList::activateTimers` 解引用已释放对象 → 崩溃。
+  这解释了当时的全部观测：崩溃点随机漂移、`PYTHONMALLOC=debug` 会改变结果、测试越多越易崩。
+  **现状（已闭环）**：引用环在 **9.4.2–9.4.5** 被真正打断（4 个 Panel 的 owner 改弱引用、
+  信号连接不再用 `lambda` 捕获 `self`、回调/闭包全改弱引用，含 `show()` 路径）；
+  运行器的 `gc.disable()` **已移除**（`scripts/ci_run_fast.py:134` 明写「不做任何 GC 特殊处理」，
+  全库 `grep gc.disable` 仅命中历史注释）。守卫 `tests/test_g69_regressions.py::TestG69_18NoMainWindowRefCycle`
+  实测 `del w` 后不调 `gc.collect()` 即按引用计数释放。
+  **因此「改造 42 个测试文件加确定性收尾」已不是待办**（旧版本这份文档曾如此登记，属过期描述）。
+  新增代码的约束仍然有效：**信号连接用绑定方法，不要 `lambda` 捕获 `self`**（会重新成环）；
+  **不得**用 `skip`/重试把崩溃「弄绿」。
 - **CI 已锁定 PyQt6 版本**：`.github/workflows/ci.yml` 在 4 处 `pip install PyQt6==6.11.0`；
   `requirements-build.txt` 另锁 ruff/mypy/coverage/pyinstaller。**旧版本文档曾称「未锁定」，已过期**。
-- **代码规模现状（2026-10-24 G79 后实测）**：仍为 **3 个**文件超 800 行 —— `main_window.py` **2665**、
+- **代码规模现状（2026-10-24 G79 后实测）**：仍为 **3 个**文件超 800 行 —— `main_window.py` **2670**、
   `service.py` **1768**、`engine.py` **1169**（`progress_table.py` **799**、`repo_db.py` **799**、
   `settings_panel.py` **779**、`settings_groups.py` **783** 均在 800 线内；
-  G76 新增 `settings_actions.py`（216，设置页动作型回调）就是为了让这两个设置模块不越线；G77 把更新检查三段抽到 `update_flow.py`，主窗从 2750 降到 2658；G78 修 chip 裁切时 +7 行 → 现值 **2665**。**超 800 行集合现在有守卫**（`tests/test_g79_repo_hygiene::TestNoNewOversizedModules` 用集合相等断言），新增第 4 个超限文件会直接红。
+  G76 新增 `settings_actions.py`（216，设置页动作型回调）就是为了让这两个设置模块不越线；G77 把更新检查三段抽到 `update_flow.py`，主窗从 2750 降到 2658；G78 修 chip 裁切时 +7 行 → 2665；G79b 给紧凑布局补注释 +5 行 → 现值 **2670**。**超 800 行集合现在有守卫**（`tests/test_g79_repo_hygiene::TestNoNewOversizedModules` 用集合相等断言），新增第 4 个超限文件会直接红。
   G75 把 `theme.py` 从 598 拆到 **314**（色板→`palettes`、字排→`typography`、QSS→`qss_build`），
   并把批次总览/结果文案/齿条/pill 各自成模块；
   14 个函数超 100 行（最大 `MainWindow.__init__` 233 行）。

@@ -1,0 +1,242 @@
+{
+  "task_id": "G79b",
+  "goal": "终局审计：独立复验 G79 全部交付、按真实渲染/真实 HTTP/真实构建补齐 §11 验收项、修复审计发现的 3 处真实缺陷、补齐缺失的验证记录，并发布可回滚的版本",
+  "status": "passed",
+  "timestamp": "2026-10-24T22:55:00+08:00",
+  "baseline": {
+    "version_before": "9.10.1",
+    "head_before": "cf1bbff",
+    "worktree_before": "clean",
+    "version_after": "9.10.2"
+  },
+  "commands_executed": [
+    {
+      "cmd": "./.venv/Scripts/python.exe -m ruff check gcm",
+      "exit_code": 0,
+      "raw_output_tail": "All checks passed!"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe -m mypy gcm",
+      "exit_code": 0,
+      "raw_output_tail": "Success: no issues found in 87 source files"
+    },
+    {
+      "cmd": "coverage run --source=gcm scripts/ci_run_fast.py",
+      "exit_code": 0,
+      "raw_output_tail": "[ci_run_fast] 合计：Ran 1439 tests · failures=0 errors=0 skipped=4\n[ci_run_fast] OK\n[ci_run_fast] 进程退出，最后进入的模块：<全部完成>"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe -m coverage report --include=\"gcm/*\"",
+      "exit_code": 0,
+      "raw_output_tail": "TOTAL                          13804   2189   3450    617    82%"
+    },
+    {
+      "cmd": "unittest tests.test_engine tests.test_v7_fixes tests.test_core tests.test_extra tests.test_v3_p0 tests.test_submodule tests.test_publish tests.test_scanner tests.test_tag_branch tests.test_progress_search",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 129 tests in 63.586s\n\nOK"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe scripts/e2e_smoke.py",
+      "exit_code": 0,
+      "raw_output_tail": "[PASS] clone 内容正确\n[PASS] fetch+ff 更新正确\n[PASS] 未提交改动不被覆盖（ff 被拒+内容保留） - rc=1\n[PASS] 冲突双方内容都保留 - rc=1\n[PASS] merge --abort 恢复本地提交\n[PASS] HEAD 存在\nE2E_SMOKE_RESULT: PASS"
+    },
+    {
+      "cmd": "scripts/health_check.py --json dist/health_check-r2.json",
+      "exit_code": 0,
+      "raw_output_tail": "[OK] version_match: src='9.10.1' artifact='9.10.1' (onedir-fallback)\n[OK] started_ok: alive after 60s; repos.db=True settings.json=False\n\"exe_sha256\": \"5df69214154d812584ee28aaf1742641184ae9dd47b81912f2e9e2c5a046dd1f\""
+    },
+    {
+      "cmd": "dist/Git-clone-Max-portable/Git-clone-Max.exe --cli --json urls2.txt  (两跑 + 一个非法输入)",
+      "exit_code": 0,
+      "raw_output_tail": "run1 ok True actions ['cloned'] exit=0\nrun2 ok True actions ['fetched'] exit=0\ninvalid 'not-a-url' -> exit=2 (invalid[0].code=2)"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe -m gcm --cli --json <空文件> / <不存在的文件>",
+      "exit_code": 2,
+      "raw_output_tail": "空文件 -> exit=2 ; 缺失文件 -> exit=2，JSON 含 invalid[0].message='读取失败：…' 与 redacted 字段"
+    },
+    {
+      "cmd": "临时脚本：create_server('127.0.0.1:0') + 线程 serve_forever + urllib 长连接读 /api/events + event_bus.publish + /api/events/snapshot + create_server('0.0.0.0:0')",
+      "exit_code": 0,
+      "raw_output_tail": "[ok] status=200 content-type=text/event-stream; charset=utf-8\n[frame] retry_present = True\n[frame] event_task_started = True\n[redact] token_leaked = False\n[redact] url_credential_leaked = False\n首帧原文: retry: 3000 / : connected / id: 1 / event: task_started\n[snapshot] keys = ['count', 'events', 'stats'] events = 1\n[SECURITY] ok: 非回环绑定被拒绝 -> 拒绝绑定非回环地址 '0.0.0.0'：本地 HTTP API 无鉴权…\n[ok] server closed, port released"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe scripts/bench_g70_ui.py",
+      "exit_code": 0,
+      "raw_output_tail": "{\"progress_table\": {\"rows\": 500, \"add_ms\": 15.56, \"update_ms\": 1.08, \"progress_widgets\": 0}, \"old_cell_widgets_ms\": 3.05, \"qss_cache\": {\"first_ms\": 1.767, \"cached_ms\": 0.019, \"identical\": true}, \"startup_empty_db_ms\": 81.63}"
+    },
+    {
+      "cmd": "scripts/ui_screenshot_audit.py %TEMP%/ui-audit  与  QT_SCALE_FACTOR=1.25 … ui-audit-125",
+      "exit_code": 0,
+      "raw_output_tail": "100% → 38 PNG 全 OK；125% → 38 PNG 全 OK；人工目检 1440x900 / 1024x768 / 1440x900@125%（无 tofu、无裁切、无重叠）"
+    },
+    {
+      "cmd": "scripts/publish_release.py --dry-run",
+      "exit_code": 0,
+      "raw_output_tail": "[OK] 探测 Release v9.10.1 完成\n[INFO] Release v9.10.1 已存在 (id=422696642)\n[DRY] 远端 exe size=41367898 与本地 41367898 对比：一致\n[DRY] 校验通过，未做任何修改。"
+    },
+    {
+      "cmd": "unittest tests.test_g79_repo_hygiene tests.test_g67_docs_freshness tests.test_g66_patch.TestContractVersionSingleSource tests.test_g66_patch.TestPackagingVersionSync tests.test_g69_regressions.TestG69_18NoZombieSettingsFields tests.test_g78_quick_scroll",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 37 tests in 3.295s\n\nOK（修复 F1/F2/F3 并 bump 9.10.2 后复跑）"
+    },
+    {
+      "cmd": "变异实验（F1 守卫）：还原旧行为后跑 tests.test_g78_quick_scroll",
+      "exit_code": 1,
+      "raw_output_tail": "AssertionError: True is not false : (1366, 768) 紧凑模式下标签被藏掉 → 编辑按钮成了孤儿\nAssertionError: True is not false : (1280, 800) …\nAssertionError: True is not false : (1024, 768) …\nRan 3 tests in 3.109s\nFAILED (failures=3)"
+    },
+    {
+      "cmd": "变异实验（F1 按钮宽度）：删掉 setSizePolicy(Fixed, Fixed) 后跑同一守卫",
+      "exit_code": 1,
+      "raw_output_tail": "AssertionError: 652 not less than or equal to 64 : (1366, 768) 紧凑模式下「编辑」按钮被拉伸成 652px\nAssertionError: 609 not less than or equal to 64 : (1280, 800) …\nAssertionError: 481 not less than or equal to 64 : (1024, 768) …"
+    },
+    {
+      "cmd": "tasklist /FI \"IMAGENAME eq Git-clone-Max.exe\"",
+      "exit_code": 0,
+      "raw_output_tail": "信息: 没有运行的任务匹配指定标准"
+    },
+    {
+      "cmd": "变异实验（F4）：把 CLAUDE.md 的行数声明改成 2600 后跑 tests.test_g79_repo_hygiene",
+      "exit_code": 1,
+      "raw_output_tail": "AssertionError: 70 not less than or equal to 5 : CLAUDE.md 声明主窗 2600 行，实测 2670 行（容差 ±5）\nRan 10 tests in 0.090s\nFAILED (failures=1)  → 改回 2670 后 Ran 10 · OK"
+    }
+  ],
+  "files_changed": [
+    "gcm/ui/main_window.py（_apply_layout_mode：紧凑模式只收起 chip 滚动区，保留标签）",
+    "gcm/ui/download_layout.py（btn_edit_quick 设 QSizePolicy.Fixed，防被拉成通栏）",
+    "tests/test_g78_quick_scroll.py（紧凑分支 1 条断言 → 4 条不变量 + 纳入 1024×768）",
+    "tests/test_extra.py（同版本断言改按真实 __version__ 动态构造）",
+    "CLAUDE.md（§6 更正 GC 处置为「已根治」，撤销「改造 42 个文件」的过期待办）",
+    "docs/计划书/下一步改进指南.md（Rev 5.2：新增本轮执行结果、P2-9 与 v9.13/T-44 降级为已过时）",
+    "docs/计划书/README.md（Rev 5.2 状态同步）",
+    "tasks/weekly.md（下一周入口改为 v9.11/v9.12，并标注旧入口已完成）",
+    "README.md / test_ledger.md（当前版本与最后更新日期）",
+    "gcm/__init__.py（__version__ 9.10.2 + changelog 一行）",
+    "Git-clone-Max.spec / packaging/installer.iss / pyproject.toml / docs/agent-contract.md（版本字面量同步）",
+    "tests/test_g79_repo_hygiene.py（补主窗行数断言，注释声称→实现落地）"
+  ],
+  "files_created": [
+    "docs/验证记录-2026-10-24-G79b终局审计.md（补齐 G79 缺失的验证记录）",
+    "evidence/G79b-final-audit.json（本文件）",
+    "reports/change-report-2026-10-24-g79b.html（变更报告 + 测验）"
+  ],
+  "tests": [
+    {
+      "name": "fast_suite",
+      "type": "unit+integration",
+      "status": "passed",
+      "evidence": "Ran 1439 · failures=0 · errors=0 · skipped=4 · coverage 82%"
+    },
+    {
+      "name": "slow_suite_windows",
+      "type": "e2e",
+      "status": "passed",
+      "evidence": "Ran 129 in 63.586s · OK"
+    },
+    {
+      "name": "e2e_smoke",
+      "type": "e2e",
+      "status": "passed",
+      "evidence": "E2E_SMOKE_RESULT: PASS"
+    },
+    {
+      "name": "packaged_exe_cli",
+      "type": "e2e",
+      "status": "passed",
+      "evidence": "cloned → fetched → 无效输入 exit=2"
+    },
+    {
+      "name": "sse_endpoint",
+      "type": "integration",
+      "status": "passed",
+      "evidence": "retry 帧 + 事件送达 + 打码 + 非回环拒绝"
+    },
+    {
+      "name": "ui_screenshot_audit_100",
+      "type": "smoke",
+      "status": "passed",
+      "evidence": "38/38 PNG + 人工目检"
+    },
+    {
+      "name": "ui_screenshot_audit_125",
+      "type": "smoke",
+      "status": "passed",
+      "evidence": "38/38 PNG @ QT_SCALE_FACTOR=1.25"
+    },
+    {
+      "name": "health_check",
+      "type": "smoke",
+      "status": "passed",
+      "evidence": "version_match + started_ok 60s + repos.db"
+    },
+    {
+      "name": "bench_g70_ui",
+      "type": "smoke",
+      "status": "passed",
+      "evidence": "500 行 add 15.56ms / delegate 0 控件"
+    },
+    {
+      "name": "guards",
+      "type": "unit",
+      "status": "passed",
+      "evidence": "Ran 37 · OK（含变异实验红→绿两次）"
+    },
+    {
+      "name": "guards_after_f4",
+      "type": "unit",
+      "status": "passed",
+      "evidence": "Ran 37 · OK（卫生 10 / 文档 11 / 版本单源 11 / 僵尸字 2 / 快速滚动 3）"
+    }
+  ],
+  "coverage_summary": {
+    "lines": 82,
+    "branches": null,
+    "functions": null,
+    "statements": null
+  },
+  "seams_touched": [
+    "S05",
+    "S06",
+    "S12"
+  ],
+  "mock_scenarios_covered": [],
+  "browser_validation": {
+    "performed": false,
+    "paths": [],
+    "screenshots": []
+  },
+  "findings_fixed": [
+    {
+      "id": "F1",
+      "summary": "紧凑布局（高<820px）下「快捷填充」行只剩孤立「编辑」按钮，且被收起滚动区的伸缩空间拉成通栏（实测 652/609/481px）",
+      "evidence": "gcm/ui/main_window.py::_apply_layout_mode 只 hide 了 quick_scroll+quick_label；gcm/ui/download_layout.py 的 btn_edit_quick 在滚动区之外；temp 截图 download_deep_1024x768.png 目检",
+      "fix": "紧凑模式保留 quick_label（读作「快捷填充：［编辑］」）+ btn_edit_quick 设 QSizePolicy.Fixed；守卫扩为 4 条不变量并纳入 1024×768，两次变异实验先红后绿"
+    },
+    {
+      "id": "F2",
+      "summary": "test_check_latest_no_exe_asset 写死 3.0.0 当「当时的版本号」，版本越过后「同版本分支」实际不再被覆盖而断言仍绿（断言强度退化）",
+      "evidence": "tests/test_extra.py:300-306 原文注释与 tag_name",
+      "fix": "改为按 gcm.__version__ 动态构造；更高版本段沿用 _newer_tag 式动态推导"
+    },
+    {
+      "id": "F3",
+      "summary": "CLAUDE.md §6 与代码矛盾：仍称 ci_run_fast.py 整轮关自动 GC、「未根治」、需改造 42 个测试文件；实际 gc.disable 已移除、引用环 v9.4.2–v9.4.5 已打断",
+      "evidence": "scripts/ci_run_fast.py:130-136；grep -rn gc.disable 仅命中历史注释与 changelog；TestG69_18NoMainWindowRefCycle 复跑 OK",
+      "fix": "更正为「已根治（G79b 复核）」并保留历史复盘与仍然有效的编码约束；计划文档 T-44 / P2-9 / v9.13 一并降级为已过时"
+    },
+    {
+      "id": "F4",
+      "summary": "tests/test_g79_repo_hygiene.py 顶部注释声称「断言基线：测试文件数与主窗行数」，但主窗行数那条断言从未实现（只有 _EXPECTED_TEST_FILES）——注释比实现大，属「看起来有保护、实际零保护」",
+      "evidence": "tests/test_g79_repo_hygiene.py 注释 vs 实际断言清单；CLAUDE.md 声明 2665 行而实际在 G79b 加注释后为 2670，无任何守卫会红",
+      "fix": "补 test_claude_md_main_window_lines_matches（±5 容差）+ 同步 CLAUDE.md 为 2670；变异实验：文档改成 2600 → 70 not less than or equal to 5 红 → 改回绿；卫生守卫 9 项 → 10 项"
+    }
+  ],
+  "limitations": [
+    "E16 Actions 分钟额度：需登录 GitHub 账单页核对，外部受限，本轮未验证。",
+    "E10 的「齿条读数递增并停表」需真机人眼；本轮用离屏存活 60s + 打包 exe 真实 clone/update + 38 张渲染目检逼近，不等于通过人眼硬门。",
+    "P2-5（updater/gh_api 用 urllib.request 直连）未修：失败只在企业代理/中间人 TLS 环境复现，本轮无该环境，属未验证边界。",
+    "P2-8 根目录 24 个 .log 与 .coverage 本轮刻意不删：它们是各次红→绿的唯一本地物证（如 .g79_slow.log 里那次 FAILED 原文），且全部被 .gitignore 覆盖。",
+    "T-41/T-42/T-43（主窗 233/129 行热点、settings_groups 783 行）属重构，按既定排期留 v9.11/v9.12，本轮不做。",
+    "CI 结论以 G79 的 run 40090205046（7/7 success）为基线；本轮 9.10.2 改动后的 CI 结论需由本轮 push 触发的新 run 决定（见 workflow_status §30 登记）。"
+  ]
+}

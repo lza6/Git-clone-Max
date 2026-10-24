@@ -88,4 +88,7 @@
 | 更新检查（`check_update_now` / `_on_update_checked` / `_check_update_silent`） | 实现在 `gcm/ui/update_flow.py`；`main_window` 只留同名薄方法转调（测试直接调这些名字，改名会静默丢覆盖） |
 | 弹窗打桩 | 仍只 patch `gcm.ui.main_window.QMessageBox` —— `update_flow._msgbox()` 运行期去那里取名字，换成自己 import 会让所有既有补丁失效（表现为测试挂死在真模态） |
 | 「检查更新不得在 GUI 线程跑网络」守卫 | `tests/test_g66_patch` 的 AST 用例同时扫 `main_window` 与 `update_flow`，并断言实现里真的 `threading.Thread(...).start()`；搬迁实现时必须同步改这个用例，否则它退化成空断言 |
+| `gcm/ui/main_window.py::_apply_layout_mode` | 紧凑模式（高<820px）**只收起 chip 滚动区**，保留 `quick_label` 与 `btn_edit_quick` | v9.10.2（G79b） | 改动隐藏清单后必须重渲染 1024×768 截图目检；守卫在 `test_g78_quick_scroll`（4 条不变量） |
+| `gcm/ui/download_layout.py::btn_edit_quick` | 设 `QSizePolicy.Fixed`，防止隐藏滚动区后继承伸缩空间被拉成通栏 | v9.10.2（G79b） | 同上 |
+| `tests/test_extra.py::TestUpdaterExtra` | 版本类断言统一按真实 `__version__` / `_newer_tag()` 动态构造 | v9.10.2（G79b） | 任何写死版本号的断言都会在下个 minor 版炸一次 |
 

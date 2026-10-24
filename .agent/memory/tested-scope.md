@@ -215,6 +215,24 @@ QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe scripts/bench_g70_ui.py
   `test_g75_visual_system + test_g74_ui_layout + test_g46_theme + test_themes + test_g70_ui_upgrade`（约 5s）。
 - 仍需真机/CI：真机 DPI 视觉点检、CI 全矩阵、慢集、perf-baseline（本轮未触发）。
 
+## G79b 终局审计（2026-10-24 · v9.10.2）
+
+- 已跑（**含此前从未真跑过的项**）：`ruff`(0) · `mypy`(Success/87) ·
+  `scripts/ci_run_fast.py`（**Ran 1439 · 0 fail · 0 error · skip 4 · 覆盖 82%**）·
+  **慢集 `Ran 129 in 63.586s OK`** · `scripts/e2e_smoke.py`(PASS) ·
+  `scripts/health_check.py`(version_match + started_ok 60s + repos.db) ·
+  **打包 exe 真实 E2E**（cloned→fetched→无效输入 exit 2）·
+  **本地 API/SSE 长连接**（`retry:` 帧 + 事件送达 + token/URL 凭据打码 + 快照 + 非回环拒绝 + 端口释放）·
+  `scripts/bench_g70_ui.py`（500 行 add **15.56ms** · delegate **0** 子控件 · QSS 1.767→0.019ms · 启动 81.63ms）·
+  `ui_screenshot_audit.py` **38/38 @100% 与 38/38 @125%** + 人工目检（1440×900 / 1024×768）·
+  守卫族 `Ran 37 · OK`（含两次变异实验先红后绿）。
+- **不必重复跑**：以上全部 —— 除非再改 `gcm/ui/main_window.py::_apply_layout_mode`、
+  `gcm/ui/download_layout.py`、`tests/test_extra.py::test_check_latest_no_exe_asset`。
+- 改这三处的**最小回归**（秒级）：
+  `tests.test_g78_quick_scroll`（紧凑布局不变量）· `tests.test_extra.TestUpdaterExtra`（版本语义）。
+- **新纪律**：改动 `_apply_layout_mode` 的隐藏清单后，**必须重渲染 1024×768 截图**目检 ——
+  紧凑模式的问题在标准尺寸上完全看不见（本轮 F1 就是这么漏掉的）。
+
 ## G79 工程治理与配置真实性（2026-10-24 · v9.10.0）
 
 - 已跑：`ruff check gcm`(0) · `mypy gcm`(Success/87) · `scripts/ci_run_fast.py`
