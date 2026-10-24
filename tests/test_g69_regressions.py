@@ -1201,8 +1201,36 @@ class TestG69_18NoZombieSettingsFields(unittest.TestCase):
 
     ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-    @staticmethod
-    def _referenced_names(root: pathlib.Path) -> set[str]:
+    # G79-46（v9.10.0）收紧口径：原实现把**所有** `ast.Attribute.attr` 与 `ast.Name.id`
+    # 都算作「引用」，于是一个与字段同名的**局部变量**就能让僵尸字段蒙混过关。
+    # 真实案例：`Settings.depth` 全库没有任何读取点，却被
+    # `gcm/app/diag_bundle.py` 的 `_redact_obj(value, depth=0)` 参数名（其函数体里
+    # 的 `if depth > 4` 是 `ast.Name`）放行 —— 守卫绿了整整一年。
+    #
+    # 现在只认两种真实引用：
+    #   ① `settings`/`s`/`owner.settings` 等**设置对象上的**属性访问；
+    #   ② 以字符串键读写设置的调用（`getattr(x,"f")` / `self._save_field("f", v)`）。
+    _SETTINGS_ALIASES = frozenset({
+        "s", "st", "cfg", "settings", "_settings", "self_settings", "new_settings",
+    })
+    _STRING_KEY_CALLS = frozenset({
+        "getattr", "setattr", "_save_field", "_set_field", "_save",
+    })
+
+    @classmethod
+    def _is_settings_like(cls, node) -> bool:
+        """判断表达式的值是否就是「设置对象」本身。"""
+        import ast
+
+        if isinstance(node, ast.Name):
+            return node.id in cls._SETTINGS_ALIASES
+        if isinstance(node, ast.Attribute):
+            name = node.attr.lower()
+            return name in cls._SETTINGS_ALIASES or name.endswith("settings")
+        return False
+
+    @classmethod
+    def _referenced_names(cls, root: pathlib.Path) -> set[str]:
         import ast
 
         used: set[str] = set()
@@ -1214,17 +1242,21 @@ class TestG69_18NoZombieSettingsFields(unittest.TestCase):
             except SyntaxError:
                 continue
             for node in ast.walk(tree):
-                if isinstance(node, ast.Attribute):
+                if isinstance(node, ast.Attribute) and cls._is_settings_like(node.value):
+                    # 只有「从设置对象上取的属性」才算设置字段引用
                     used.add(node.attr)
-                elif isinstance(node, ast.Name):
-                    used.add(node.id)
                 elif isinstance(node, ast.Call):
                     fn = node.func
-                    if (isinstance(fn, ast.Name) and fn.id == "getattr"
-                            and len(node.args) >= 2):
-                        arg = node.args[1]
-                        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                            used.add(arg.value)
+                    if isinstance(fn, ast.Name):
+                        fname = fn.id
+                    elif isinstance(fn, ast.Attribute):
+                        fname = fn.attr
+                    else:
+                        continue
+                    if fname in cls._STRING_KEY_CALLS:
+                        for arg in node.args:
+                            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                                used.add(arg.value)
         return used
 
     def test_every_setting_is_referenced_outside_settings_module(self):

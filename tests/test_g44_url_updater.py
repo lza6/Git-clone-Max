@@ -19,7 +19,23 @@ _RAW = '{"tag_name":"v9.9.9","html_url":"https://x","body":"## v9.9.9\n- onefile
 # 上面是 48 位非 hex 占位 —— 改用真正的 64 位 hex
 _SHA = "a" * 64
 _RELEASE_BODY = "exe sha256: `" + _SHA + "`  \n- portable zip sha256: `" + ("b" * 64) + "`"
-_RELEASE_JSON = json.dumps({"tag_name": "v9.9.9", "html_url": "https://x", "body": _RELEASE_BODY})
+
+
+def _newer_tag() -> str:
+    """构造一个**必然大于当前版本**的 tag。
+
+    G79：原实现把 `v9.9.9` 写死当成「比当前更新」的版本 —— 版本升到 9.10.0 后
+    9.9.9 < 9.10.0，这条断言就变成假失败（版本时间炸弹，与「绝对日期表达相对语义」同类）。
+    改为按当前主版本号 +1 推导：既保证永远更大，又不需要每次发版改测试。
+    """
+    from gcm import __version__
+
+    major = int(__version__.split(".")[0])
+    return f"v{major + 1}.0.0"
+
+
+_NEWER_TAG = _newer_tag()
+_RELEASE_JSON = json.dumps({"tag_name": _NEWER_TAG, "html_url": "https://x", "body": _RELEASE_BODY})
 
 
 class TestExtractSha256(unittest.TestCase):
@@ -37,8 +53,8 @@ class TestExtractSha256(unittest.TestCase):
 class TestCheckLatestWithSha(unittest.TestCase):
     def test_injected_fetcher_five_tuple(self):
         has_new, ver, url, err, sha = check_latest_with_sha(fetcher=lambda: _RELEASE_JSON)
-        self.assertTrue(has_new, "v9.9.9 > 当前")
-        self.assertEqual(ver, "v9.9.9")
+        self.assertTrue(has_new, f"{_NEWER_TAG} 应被判定为比当前版本新")
+        self.assertEqual(ver, _NEWER_TAG)
         self.assertEqual(sha, _SHA)
         self.assertEqual(err, "")
 

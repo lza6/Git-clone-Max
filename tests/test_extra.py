@@ -89,10 +89,10 @@ class TestSettingsExtra(unittest.TestCase):
     def test_coerce_failure_falls_back_to_default(self):
         d = Path(tempfile.mkdtemp())
         p = d / "settings.json"
-        p.write_text('{"concurrency": "abc", "depth": "zz"}', encoding="utf-8")
+        p.write_text('{"concurrency": "abc", "fetch_timeout": "zz"}', encoding="utf-8")
         s = SettingsStore(p).load()
-        self.assertEqual(s.concurrency, 8)   # int("abc") 抛异常 → 保持默认
-        self.assertEqual(s.depth, 1)
+        self.assertEqual(s.concurrency, 8)     # int("abc") 抛异常 → 保持默认
+        self.assertEqual(s.fetch_timeout, 300)  # 同上（G79 起 depth 字段已删除，改用仍存在的 int 字段）
 
     def test_unknown_keys_ignored(self):
         d = Path(tempfile.mkdtemp())
@@ -305,12 +305,16 @@ class TestUpdaterExtra(unittest.TestCase):
         has_new, ver, url, err = updater.check_latest(fetcher=lambda: json.dumps(payload))
         self.assertFalse(has_new, "同版本不应判定为更新")
         # 更高版本 + 无 exe 资产 → 有更新且 url 兜底 html_url
-        payload2 = {"tag_name": "v9.9.9", "assets": [],
+        # G79：原写死 "v9.9.9" 当「更高版本」，9.10.0 之后 9.9.9 < 9.10.0 语义反转 →
+        # 版本时间炸弹（与「绝对日期表达相对语义」同类）。改为按当前主版本 +1 推导。
+        from gcm import __version__ as _cur
+        newer = f"v{int(_cur.split('.')[0]) + 1}.0.0"
+        payload2 = {"tag_name": newer, "assets": [],
                     "html_url": "https://example.com/releases/latest"}
         has_new2, ver2, url2, err2 = updater.check_latest(fetcher=lambda: json.dumps(payload2))
-        self.assertTrue(has_new2)
+        self.assertTrue(has_new2, f"{newer} 应被判定为更新")
         self.assertEqual(url2, "https://example.com/releases/latest")  # 兜底 html_url
-        self.assertEqual(ver2, "v9.9.9")
+        self.assertEqual(ver2, newer)
 
     def test_check_latest_bad_json(self):
         from gcm.app import updater

@@ -244,7 +244,6 @@ class Settings:
     """应用级可持久化配置。"""
 
     concurrency: int = 8              # 并行线程数 1..32
-    depth: int = 1                    # 浅克隆深度
     auto_clear: bool = True           # 下载完成自动清空输入框
     proxy: str = ""                   # HTTP 代理，形如 http://127.0.0.1:7890
     fetch_timeout: int = 300          # 单次 fetch 超时秒数
