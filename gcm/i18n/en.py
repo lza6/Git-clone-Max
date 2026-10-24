@@ -185,6 +185,8 @@ EN = {
     '权限提醒': 'Permission warning',
     '清除': 'Clear',
     '当前没有数据库连接或仓库 id': 'No database connection or repo id',
+    '校验我下载的文件…': 'Verify downloaded file…',
+    '用发布方公布的 SHA256 校验下载到的安装包/zip': 'Verify the downloaded installer/zip against the publisher SHA256',
     '无法打开目录': 'Cannot open folder',
     '目录不存在': 'Folder does not exist',
     # G35-10 Star import / G03-1 manage search & favorites

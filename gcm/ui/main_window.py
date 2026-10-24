@@ -1333,6 +1333,11 @@ class MainWindow(QMainWindow):
         from .update_flow import check_now
         return check_now(self)
 
+    def verify_downloaded_file(self):
+        """G80-B4-2：校验下载到的安装包（实现在 `update_flow.verify_downloaded_file`）。"""
+        from .update_flow import verify_downloaded_file
+        return verify_downloaded_file(self)
+
     def _can_show_modal(self) -> bool:
         """当前是否适合弹**模态**对话框（G68-4）。
 

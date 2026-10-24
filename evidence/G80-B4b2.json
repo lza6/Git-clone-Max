@@ -1,0 +1,33 @@
+{
+  "task_id": "G80-B4b2",
+  "title": "安装包校验：一键比对下载文件与发布方 SHA256（B4-2）",
+  "status": "passed",
+  "timestamp": "2026-10-25T02:25:00+08:00",
+  "scope": "批次 B4 的 B4-2 子项（发现 F14 / 差距 G-02/G-23）",
+  "commands_executed": [
+    {"cmd": "QT_QPA_PLATFORM=offscreen python -m unittest tests.test_g80_verify_file -v", "exit_code": 0, "raw_output_tail": "Ran 12 tests in 0.060s\n\nOK"},
+    {"cmd": "python -m ruff check gcm", "exit_code": 0, "raw_output_tail": "All checks passed!"},
+    {"cmd": "python -m mypy gcm", "exit_code": 0, "raw_output_tail": "Success: no issues found in 91 source files"}
+  ],
+  "files_changed": [
+    "gcm/util/hashfile.py (new)", "gcm/ui/update_flow.py",
+    "gcm/ui/settings_groups.py", "gcm/ui/main_window.py",
+    "gcm/i18n/zh.py", "gcm/i18n/en.py", "tests/test_g80_verify_file.py (new)"
+  ],
+  "design": {
+    "single_impl": "分块 sha256 唯一实现在 gcm/util/hashfile.py（health_check.py 的算法同源化留待脚本侧接入）；UI 禁止另写 hashlib.sha256（有 AST 断言）",
+    "outcomes": "match / mismatch / no_baseline / unreadable 四种结论；没有基准值时明确说「先点检查更新」，绝不假装成功",
+    "baseline_source": "win._last_release_sha（on_checked 把最近一次发布方 sha 留存下来；一次性属性 _update_sha256 只管提示不污染）",
+    "wiring": "设置页「校验我下载的文件…」按钮 → MainWindow 转发方法 → update_flow 实现（三段接线有守卫）"
+  },
+  "tests": [
+    {"name": "分块==整读 / 大小写与 sha256: 前缀归一 / match / mismatch / 无基准 / 不可读", "type": "unit", "status": "passed"},
+    {"name": "三段接线（按钮存在并连回调 / 转发方法 / 复用共享实现）", "type": "guard", "status": "passed"},
+    {"name": "真调流程：一致弹「校验通过」/ 不一致弹警告 / 无基准不谎报成功", "type": "integration", "status": "passed"}
+  ],
+  "limitations": [
+    "scripts/health_check.py 仍是自己的分块实现（算法相同），脚本侧接入 hashfile.py 留待下次动该脚本时顺手做。",
+    "真实 Release 的端到端（下载 exe → 校验）未做：需下载 41MB 产物，属发布批次的一部分。",
+    "全量快集未在本改动后重跑。"
+  ]
+}

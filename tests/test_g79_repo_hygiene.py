@@ -62,7 +62,7 @@ _OVERSIZED_LIMIT = 800
 
 # 断言基线：测试文件数与主窗行数（`CLAUDE.md` / `README.md` 必须与实测一致）。
 # 这两个数字会随开发变化，改代码时**同步改这里和文档**，守卫才有意义。
-_EXPECTED_TEST_FILES = 142
+_EXPECTED_TEST_FILES = 143
 
 
 def _git_ls_files() -> list[str]:

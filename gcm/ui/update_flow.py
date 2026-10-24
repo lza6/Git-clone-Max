@@ -74,6 +74,10 @@ def on_checked(win, has_new: bool, ver: str, url: str, err: str,
     if sha is None:
         sha = str(getattr(win, "_update_sha256", "") or "")
     win._update_sha256 = ""  # 一次性：不要污染下一次检查的提示
+    # G80-B4-2：把最近一次拿到的发布方校验值**留存**（不清空），供「校验我下载的文件」使用。
+    # 上面那个一次性的属性是为了不让旧 sha 出现在下一次提示里，但校验入口需要它。
+    if sha:
+        win._last_release_sha = sha
     from .. import __version__
     msg = (err or (f"发现新版本 {ver}，可到设置页下载" if has_new
                    else f"已是最新版本（{__version__}）"))
@@ -106,6 +110,50 @@ def on_checked(win, has_new: bool, ver: str, url: str, err: str,
             mb.information(win, "检查更新", f"已是最新版本（{__version__}）")
     except Exception as e:  # noqa: BLE001 —— 弹窗失败只能降级成再弹一次提示
         mb.information(win, "检查更新", f"检查更新失败：{e}")
+
+
+def verify_downloaded_file(win) -> None:
+    """G80-B4-2：校验用户下载的安装包（sha256 与发布方公布值比对）。
+
+    为什么值得做：更新提示里一直让用户自己 `certutil -hashfile` 手抄比对 ——
+    对目标用户（小白）等于没做。这里把「选文件 → 算 sha256 → 比对 → 给结论」收敛成一步，
+    并且**没有基准值时明确说无法比对**，不假装成功。
+    """
+    from PyQt6.QtWidgets import QFileDialog
+
+    from ..util.hashfile import (
+        OUTCOME_MATCH,
+        OUTCOME_MISMATCH,
+        OUTCOME_UNREADABLE,
+        verify_by_sha256,
+    )
+
+    expected = str(getattr(win, "_last_release_sha", "") or "").strip()
+    if not expected:
+        # 没有发布方校验值时不弹文件选择器，直接说清怎么拿到基准值
+        _msgbox().information(
+            win, "校验下载的文件",
+            "还没有拿到发布方公布的 SHA256。\n"
+            "请先点「检查更新」——拿到版本信息后，这里才有可比对的基准值。")
+        return
+    path, _ = QFileDialog.getOpenFileName(
+        win, "选择下载的安装包", "", "安装包 (*.exe *.zip);;所有文件 (*)")
+    if not path:
+        return
+    ok, actual, outcome = verify_by_sha256(path, expected)
+    if outcome == OUTCOME_MATCH:
+        _msgbox().information(win, "校验通过",
+                              f"文件与发布方公布值一致。\nSHA256：{actual}")
+    elif outcome == OUTCOME_MISMATCH:
+        _msgbox().warning(
+            win, "校验不通过",
+            "文件与发布方公布值**不一致**，请勿安装。\n\n"
+            f"期望：{expected}\n实际：{actual}\n\n"
+            "可能原因：下载不完整、代理/镜像篡改、或下到了别的版本。建议重新从 Release 页面下载。")
+    elif outcome == OUTCOME_UNREADABLE:
+        _msgbox().warning(win, "无法读取", "这个文件读不了（可能被杀毒软件占用或权限不足）。")
+    else:  # 防御性：理论上到不了（no_baseline 已在前面拦住）
+        _msgbox().information(win, "无法比对", "没有基准校验值。")
 
 
 def check_silent(win) -> None:

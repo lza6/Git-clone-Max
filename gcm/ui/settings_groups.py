@@ -471,6 +471,11 @@ def _build_group_about(owner: MainWindow):
     owner.btn_check_update = QPushButton(tr("检查更新"))
     owner.btn_check_update.clicked.connect(owner.check_update_now)
     h4.addWidget(owner.btn_check_update)
+    # G80-B4-2：下载后校验安装包（需要先点「检查更新」拿到发布方 SHA256 作为基准）
+    owner.btn_verify_file = QPushButton(tr("校验我下载的文件…"))
+    owner.btn_verify_file.setToolTip(tr("用发布方公布的 SHA256 校验下载到的安装包/zip"))
+    owner.btn_verify_file.clicked.connect(owner.verify_downloaded_file)
+    h4.addWidget(owner.btn_verify_file)
     owner.btn_selftest = QPushButton(tr("自检环境"))
     owner.btn_selftest.setToolTip(tr("检测 git / PyQt6 / 数据目录 / 当前并发 是否正常可用"))
     owner.btn_selftest.clicked.connect(owner._run_selftest)
