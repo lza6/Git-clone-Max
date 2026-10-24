@@ -287,3 +287,13 @@ QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe scripts/bench_g70_ui.py
 1. 第一轮：`test_repo_detail`（open_dir 补丁点随实现收敛而失效）；
 2. 第二轮：`test_g79_repo_hygiene`（`repo_db.py` 799→818 超 800 线 + 测试文件数 139→140 未同步）；
 3. 第三轮绿。教训：**不要在快集跑的过程中改代码**（第二轮里 `test_g66_patch` 的 error 就是这样来的）。
+
+
+## 2026-10-25 · G80 第四/五轮全量快集（**已跑过，勿重复**）
+
+| 轮次 | 触发 | 结果 |
+|---|---|---|
+| 第 4 轮（B4-1/B4-3 后） | 检出校验 + HTTP 硬化 | **Ran 1495 · failures=0 · errors=0 · skipped=4** · 82% |
+| 第 5 轮（B4-2 后） | 安装包校验 | **Ran 1507 · failures=0 · errors=0 · skipped=4** · 82% |
+
+累计教训不变：改代码别和跑测并行；守卫红先查是不是自己这轮的机械副作用。
