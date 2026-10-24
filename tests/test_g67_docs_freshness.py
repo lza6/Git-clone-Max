@@ -227,10 +227,18 @@ class TestDocsVersionFreshness(unittest.TestCase):
 class TestDocsPathReferences(unittest.TestCase):
     """文档引用的仓库内路径必须真实存在（防引用已删除模块 / 写错文件名）。"""
 
+    # 归档快照不参与「路径必须存在」扫描：归档文档记录的**就是归档当时**的路径，
+    # 原文件后来被删/被搬是正常的；把它们改成新路径 = 篡改历史（与版本号豁免同一道理）。
+    # 这条豁免只针对 docs/archive/**，其余文档（含验证记录）仍必须引用真实存在的路径。
+    _ARCHIVE_GLOB = "docs/archive/*"
+
     def test_no_missing_path_references(self):
         problems: list[str] = []
         checked = 0
         for path in iter_scan_files():
+            rel = _rel(path)
+            if fnmatch.fnmatch(rel, self._ARCHIVE_GLOB):
+                continue
             text = path.read_text(encoding="utf-8")
             checked += len(_PATH_TOKEN.findall(text))
             problems += scan_missing_paths(path, text)

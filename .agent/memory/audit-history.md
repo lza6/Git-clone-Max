@@ -52,7 +52,7 @@
   `sched_report_format` / `post_clone_hook` / `quick_repos`）、`ScanWorker.progress` 半接线、
   `check_latest_with_sha` / `is_data_dir_private` / `migrate_data_dir` 零生产调用、
   `manage_model` 两个信号只 emit 不 connect。
-- 产出：`docs/计划书/README.md`（目录生命周期纪律）+ `docs/计划书/下一步改进指南.md`
+- 产出：`docs/计划书/README.md`（目录生命周期纪律）+ `docs/计划书/下一步改进指南.md`（两者已于 2026-10-25 归档至 `docs/archive/plans/20261024/`）
   （P1 5 / P2 6 / P3 6；方案 5 个；任务 T-01…T-18；含待执行验收项）。
 - 验证：`python -m unittest tests.test_g67_docs_freshness` → `Ran 11 tests · OK`
   （首轮失败 2 条，因文档引用已删的限流模块路径；改文档后全绿，守卫未动）。
@@ -71,15 +71,15 @@
   当前不可达但可再生）；`typography.apply_type` 零生产调用；`gcm/ui/palettes.py:15` docstring
   引用尚不存在的 `test_g75_visual_system`；齿条（`status_strip`）与 `progress_table.batch_total_lbl`
   并存，与 UI 计划「合并」口径冲突且无决策记录。**正向**：齿条/pill 均已真实接线（非空壳）。
-- 产出：`docs/计划书/下一步改进指南.md` Rev 3（P1 8 / P2 11 / P3 7；T-19…T-33）+
-  `history/下一步改进指南-R2-20261021.md` 留档 + `docs/计划书/README.md` 索引更新 +
+- 产出：`下一步改进指南.md` Rev 3（P1 8 / P2 11 / P3 7；T-19…T-33，现归档于 `docs/archive/plans/20261024/`）+
+  `下一步改进指南-R2-20261021.md` 留档 + `README.md` 索引更新 +
   `tasks/riper5_20261023_1105.md`。
 - 验证：`tests.test_g67_docs_freshness` → `Ran 11 · OK`（守卫未动）。未跑快集/覆盖率/构建/真机/CI。
 - 未闭环：D6 齿条与总览条去留 · D7 4 个设置字段补 UI 或删 · D8 基线 PNG 入库或忽略 ·
   D9 本地 API token（需授权）。下一轮入口：T-19（门禁清零）→ T-24（登记同步）。
 
 ## 2026-10-23 G75 UI 视觉系统落地（v9.9.0，已改代码）
-- 范围：把 `docs/计划书/UI视觉系统重构指南.md`（T-UI-00…T-UI-10）真实落地并发布。
+- 范围：把当时的 `UI视觉系统重构指南.md`（T-UI-00…T-UI-10，已随 2026-10-25 归档进 `docs/archive/plans/20261024/`）真实落地并发布。
 - 结构：`theme.py` 598→314 行，拆出 `typography`(107) / `palettes`(211) / `qss_build`(262)；
   新增 `status_strip`(224) / `status_pill`(162) / `batch_overview`(90) / `result_labels`(62)；
   `progress_table` 848→799 行（回到 800 线内）。超 800 仍为 3 个：main_window 2725 / service 1768 / engine 1169。
