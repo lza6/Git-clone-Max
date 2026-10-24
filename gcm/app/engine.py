@@ -718,7 +718,22 @@ class SyncEngine(QObject):
         svc.send_progress_detail = self._emit_progress_detail
         return svc
 
-    def _worker_service(self, flag: CancelFlag) -> GitService:
+    def _repo_ssh_key(self, spec: RepoSpec, host: str) -> str:
+        """查该仓库的 SSH 私钥**路径**（G80-B8）；无 db / 查不到 / 出错 → 空串（回落全局）。
+
+        单独抽出来是为了可测：`_start_worker` 会真的起线程池，测试里不该为了查一个字段
+        就把整个 worker 拉起来。
+        """
+        if self.db is None:
+            return ""
+        try:
+            return self.db.get_repo_ssh_key(spec.owner, spec.repo, host) or ""
+        except Exception as e:  # noqa: BLE001 - 读失败不能阻断整批，降级全局 key
+            from . import applog
+            applog.warn(f"读取仓库级 SSH key 失败（降级全局）：{e}")
+            return ""
+
+    def _worker_service(self, flag: CancelFlag, ssh_key: str = "") -> GitService:
         """为单个 worker 构造带「单任务取消」回调的 service（G02-3）。
 
         每个 worker 独占一个 service 实例，cancelled 同时反映「全局取消」与
@@ -727,6 +742,10 @@ class SyncEngine(QObject):
         svc = self._service()
         global_cancelled = self.is_cancelled
         svc.cancelled = lambda: global_cancelled() or flag()
+        if ssh_key:
+            # G80-B8：仓库级 SSH 私钥**按任务**覆盖全局 `settings.ssh_key_path`。
+            # 优先在任务粒度覆盖，而不是共享 service —— 同批里不同仓库可以用不同 key。
+            svc._ssh_key = ssh_key
         return svc
 
     def _precheck_skip(self, spec: RepoSpec) -> Optional[tuple]:
@@ -884,9 +903,11 @@ class SyncEngine(QObject):
                       folder_name=spec.folder_name, display=spec.display,
                       url=spec.url_https, host=host)
         payload = TaskPayload(spec=spec, flag=flag, host=host)
+        # G80-B8：仓库级 SSH 私钥（只存路径）。查不到 → 空串 → 走全局设置。
+        repo_ssh_key = self._repo_ssh_key(spec, host)
         # G02-3: 每个 worker 独占一个 service（带自身 flag 的取消回调），
         # 支持单任务暂停，其余 worker 互不影响
-        service = self._worker_service(flag)
+        service = self._worker_service(flag, ssh_key=repo_ssh_key)
         # worker 只负责 git 同步与结果回传；DB 写入与 progress 落盘统一由引擎
         # 在 _on_result / flush 处理，避免多 worker 并发写同一 SQLite 连接与进度文件
         worker = CloneWorker(index, payload, service, None, None,

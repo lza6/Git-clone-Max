@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import pathlib
 import subprocess
 import threading
 
@@ -9,6 +10,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
+    QFileDialog,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -18,10 +20,12 @@ from PyQt6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
 from ..i18n import tr
 from ..util.openfolder import open_folder
+from ..util.sshkey import permission_warning, validate_ssh_key_path
 
 # 同步动作 → 中文标签
 _ACTION_LABELS = {
@@ -156,6 +160,29 @@ class RepoDetailDialog(QDialog):
         grid.addWidget(key, note_row, 0, alignment=Qt.AlignmentFlag.AlignTop)
         grid.addWidget(self.note_edit, note_row, 1, alignment=Qt.AlignmentFlag.AlignTop)
         grid.addWidget(self.btn_save_note, note_row, 2, alignment=Qt.AlignmentFlag.AlignTop)
+        # G80-B8：仓库级 SSH 私钥（**只存路径**，per-repo > 全局 settings.ssh_key_path）
+        ssh_row = note_row + 1
+        ssh_key = QLabel(tr("SSH 私钥（可选）"))
+        ssh_key.setObjectName("muted")
+        ssh_key.setToolTip(tr("该仓库单独使用的 SSH 私钥文件路径；留空则用设置页的全局私钥"))
+        self.ssh_edit = QLineEdit(str(self.repo.get("ssh_key") or ""))
+        self.ssh_edit.setPlaceholderText(tr("留空 = 用全局 SSH 私钥"))
+        self.btn_browse_ssh = QPushButton(tr("浏览…"))
+        self.btn_browse_ssh.clicked.connect(self._browse_ssh_key)
+        self.btn_save_ssh = QPushButton(tr("保存"))
+        self.btn_save_ssh.clicked.connect(self._save_ssh_key)
+        self.btn_clear_ssh = QPushButton(tr("清除"))
+        self.btn_clear_ssh.clicked.connect(self._clear_ssh_key)
+        ssh_btns = QWidget()
+        h = QHBoxLayout(ssh_btns)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.addWidget(self.btn_browse_ssh)
+        h.addWidget(self.btn_save_ssh)
+        h.addWidget(self.btn_clear_ssh)
+        h.addStretch(1)
+        grid.addWidget(ssh_key, ssh_row, 0, alignment=Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(self.ssh_edit, ssh_row, 1, alignment=Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(ssh_btns, ssh_row, 2, alignment=Qt.AlignmentFlag.AlignTop)
         grid.setColumnStretch(1, 1)
         return grid
 
@@ -176,6 +203,63 @@ class RepoDetailDialog(QDialog):
             QMessageBox.information(self, "备注", "备注已保存。")
         except Exception as e:
             QMessageBox.warning(self, "保存失败", str(e))
+
+    # ------------------------------------------------------------ 仓库级 SSH key（G80-B8）
+    def _db_or_none(self):
+        """取 parent 的 Database（对话框测试时可能没有）。"""
+        try:
+            parent = self.parent()
+            return getattr(parent, "db", None)
+        except Exception:  # noqa: BLE001 - 无 parent/db 是合法场景
+            return None
+
+    def _browse_ssh_key(self) -> None:
+        """选私钥文件（只记录路径）。"""
+        start = self.ssh_edit.text().strip() or str(pathlib.Path.home())
+        path, _ = QFileDialog.getOpenFileName(self, tr("选择 SSH 私钥"), start)
+        if path:
+            self.ssh_edit.setText(path)
+            warn = permission_warning(path)
+            if warn:
+                QMessageBox.warning(self, tr("权限提醒"), warn)
+
+    def _save_ssh_key(self) -> None:
+        """校验后写入 repos.ssh_key（**只存路径**，下次同步生效）。"""
+        raw = self.ssh_edit.text().strip()
+        rid = int(self.repo.get("id") or 0)
+        db = self._db_or_none()
+        if not raw:
+            self._clear_ssh_key()
+            return
+        ok, err = validate_ssh_key_path(raw)
+        if not ok:
+            QMessageBox.warning(self, tr("SSH 私钥无效"), err)
+            return
+        if db is None or not rid:
+            QMessageBox.warning(self, tr("保存失败"), tr("当前没有数据库连接或仓库 id"))
+            return
+        try:
+            db.set_ssh_key(rid, raw)
+        except Exception as e:  # noqa: BLE001 - 保存失败必须让用户看到
+            QMessageBox.warning(self, tr("保存失败"), str(e))
+            return
+        self.repo["ssh_key"] = raw
+        QMessageBox.information(self, tr("SSH 私钥"), tr("已保存（下次同步生效）"))
+
+    def _clear_ssh_key(self) -> None:
+        """清除仓库级私钥 → 回落到全局 settings.ssh_key_path。"""
+        rid = int(self.repo.get("id") or 0)
+        db = self._db_or_none()
+        if db is None or not rid:
+            self.ssh_edit.clear()
+            return
+        try:
+            db.set_ssh_key(rid, "")
+        except Exception as e:  # noqa: BLE001 - 清除失败必须让用户看到
+            QMessageBox.warning(self, tr("保存失败"), str(e))
+            return
+        self.ssh_edit.clear()
+        self.repo["ssh_key"] = ""
 
     def _build_table(self) -> QTableWidget:
         self.table = QTableWidget(0, 5)

@@ -776,6 +776,25 @@ class Database:
         return n
 
     # ------------------------------------------------------------ G48-3 指定 SSH key
+    def get_repo_ssh_key(self, owner: str, repo: str, host: str = "github.com") -> str:
+        """读仓库级 SSH 私钥**路径**（空串 = 用全局 `settings.ssh_key_path`）。
+
+        G80-B8：`repos.ssh_key` 此前只有写入方法没有读取点（死列）。这里补上唯一读取入口，
+        由引擎在每个任务启动时查一次并覆盖全局配置（per-repo > global）。
+        只返回路径，绝不返回私钥内容（库里也不存内容）。
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT ssh_key FROM repos WHERE owner=? AND repo=? AND host=?",
+                (str(owner or ""), str(repo or ""), str(host or "github.com")),
+            ).fetchone()
+        if row is None:
+            return ""
+        try:
+            return str(row["ssh_key"] or "")
+        except (IndexError, KeyError, TypeError):
+            return ""
+
     def set_ssh_key(self, repo_id: int, key_path: str) -> None:
         """G48-3：为仓库指定 SSH key（clone/fetch 时经 GIT_SSH_COMMAND 注入）。"""
         with self._lock:

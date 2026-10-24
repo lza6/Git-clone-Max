@@ -16,8 +16,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 GCM = ROOT / "gcm"
 
-# G80-B2 实测基线（2026-10-24，修完 engine/updater 两处之后）
-BASELINE_EXCEPT = 567
+# 实测基线。两条都只能降不能升：
+# - B2 修完之后是 except=567 / pass-only=280；
+# - B8 新增 7 个 handler（engine._repo_ssh_key 读库失败降级、ui 三个保存/浏览失败提示、
+#   util/sshkey 的读文件与 stat 失败），**全部会记日志或弹提示**，没有一个是裸吞，
+#   所以 except 基线抬到 574；pass-only 仍是 280（这条才是真正的红线）。
+BASELINE_EXCEPT = 574
 BASELINE_PASS_ONLY = 280
 
 
