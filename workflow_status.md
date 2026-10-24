@@ -1124,3 +1124,52 @@ B4 仓库知识索引 / B5 MCP annotations / B6 真机点击仍属后续范围�
 
 > 这条值得单独记：**发版本身是一次回归测试**。凡是把版本号写死进断言的地方，
 > 都会在下一个 minor 版本上炸一次。
+
+### 28.6 v9.10.1：CI 抓到的真实问题（我的操作失误，不是代码缺陷）
+
+| 项 | 内容 |
+|---|---|
+| 现象 | v9.10.0 的 CI（run `40089462143` on `94f6753`）**test 三平台全红**，而 fast-smoke / slow / perf-baseline / e2e-smoke 全绿 |
+| 直接原因 | 新增守卫 `test_g79_repo_hygiene::test_no_png_under_reports_in_index` 报出 38 个 `reports/ui-audit-final/*.png` —— 它们**仍在索引里** |
+| 根因 | 为拆原子提交我执行了 `git reset`（mixed）→ 把索引重置回 HEAD，**静默回滚了先前的 `git rm --cached`**；随后 `git add -A` 里这些文件"已被跟踪"，不受 `.gitignore` 约束（ignore 只对 untracked 生效）→ 原样进了提交 |
+| 为什么本地没发现 | 本地是在 `git reset` **之前**跑的守卫（绿），之后没再跑。而这条断言检查的正是 `git ls-files`，**索引恰好会被临时 git 操作污染** |
+| 修复 | `git rm --cached 'reports/ui-audit-final/*.png'` + 版本 patch 到 9.10.1；验证 `git ls-files \| grep -c ui-audit-final` = **0**，守卫 9 项 OK |
+| 这件事证明了什么 | ①这条守卫**有效** —— 它在干净检出上精确点名了 38 个路径；②**CI 是最后一道独立关卡**，「本地跑过守卫了」不能替代「干净检出上的结果」 |
+
+> 已写进 `gcm/__init__.py` 的 changelog 与 `.agent/memory/decisions.md`（D29）。
+
+## 29. 计划文档闭环审计（2026-10-24）
+
+> 依据 `policy.md` §5 与 `.agent/skills/plan-doc-audit.md`。**审计结论：可删除 0 个，未执行任何删除。**
+
+### 29.1 扫描范围
+
+`docs/**/*.md`（33 个）+ `tasks/**/*.md`（4 个）+ 根目录 5 个 md + `.agent/` 下 16 个 md。
+
+### 29.2 逐项判定
+
+| 文档 | 类型 | 未闭环任务 | 判定 | 理由 |
+|---|---|---|---|---|
+| `docs/计划书/下一步改进指南.md`（774 行，Rev 5.1） | 活跃计划 | **有**：T-41/T-42（主窗拆分）、T-43（`settings_groups`）、T-44（测试确定性） | **保留** | 含未闭环项 → `policy.md` §5 禁止删除 |
+| `docs/计划书/README.md` | 目录索引 | — | 保留 | 目录纪律与归档史的唯一入口 |
+| `docs/计划书/history/下一步改进指南-R2/R4` | 只读留档 | — | 保留 | 追溯原始口径的唯一依据（R2 的 T-01…T-18、R4 的 T-19…T-35） |
+| `docs/archive/plans/20261017/`（含 manifest） | 已归档 | 无（manifest 逐条记录状态） | 保留 | 归档物本身是审计证据 |
+| `docs/archive/plans/20261023/`（含 manifest） | 已归档 | 无（T-UI-00…09 done，T-UI-08 与 2 处 P3 明确「不做」） | 保留 | 同上 |
+| `docs/RELEASE_CHECKLIST.md` | 长期清单 | 不适用（是流程不是待办） | 保留 | 每次发版要用 |
+| `docs/SOP-交付与维护.md` | SOP | 不适用 | 保留 | 交接必需 |
+| `tasks/riper5_20261021_0020.md`、`riper5_20261023_1105.md`、`riper5_20261024_160329.md` | 过程台账 | 不适用 | 保留 | `policy.md` §5：台账是证据，不是待办 |
+| `tasks/weekly.md` | 周报 | 不适用 | 保留 | 同上 |
+| `docs/验证记录-*.md`（10 个） | 验证台账 | 不适用 | 保留 | 历史实测证据，篡改即失真 |
+
+### 29.3 为什么这次一个都不删
+
+本项目在「删除计划文档」上翻过一次车：`计划书/` 曾被以「台账全部闭环并经用户确认」为由删除，
+2026-10-16 的独立复验推翻了该理由（定时报表零调用点、告警未接线、9 个设置字段不可达）。
+现在的纪律是：**只有「逐条复验过」「无未闭环」「无待决策」三者同时成立才可归档删除**。
+本轮 Rev 5 仍有 4 个未开始的任务（T-41…T-44），因此**不满足删除条件**，只更新状态。
+
+### 29.4 顺带修掉的文档漂移（8 处，详见 §28.2 与 `evidence/G79-hygiene.json`）
+
+测试文件数 113/135→137 · 主窗 2658→2665 · 构造 MainWindow 的测试文件 31→42 ·
+`known-issues` 的 PyQt6「未锁版本」→ 已锁 6.11.0 · `workflow_status` §27 阻塞→已闭环 ·
+`test_ledger` 门禁数字回填 · `docs/agent-contract.md` 版本号 · `README` 版本行。

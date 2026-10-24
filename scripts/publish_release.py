@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import inspect
+import os
 import subprocess
 import sys
 import time
@@ -96,7 +97,13 @@ def _build_body() -> str:
 BODY = _build_body()
 
 # 整体运行时长兜底（秒）：超过则 [FAIL] 运行超时 返回 1，绝不无限挂。
-DEADLINE = 300.0
+#
+# G79（v9.10.1）实测修正：原值 300s 在「两个产物合计约 120 MB」时不够用 ——
+# 9.10.1 发布时 exe（41 MB）上传成功，zip（79 MB）在同样的网络下超时，
+# 结果是 Release 只带一半产物，还得手工补传。这不是网络异常，是**常量定得太紧**。
+# 现在默认 900s（仍是有界兜底，不会无限挂），并允许用环境变量
+# `GCM_PUBLISH_DEADLINE` 覆盖（慢网络可调到 1800）。
+DEADLINE = float(os.environ.get("GCM_PUBLISH_DEADLINE", "900"))
 # 每个网络操作的重试次数（首次 + NET_RETRIES 次重试 = 3 次尝试），间隔 3 秒。
 NET_RETRIES = 2
 NET_BACKOFF = 3.0
