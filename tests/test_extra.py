@@ -299,11 +299,15 @@ class TestUpdaterExtra(unittest.TestCase):
 
     def test_check_latest_no_exe_asset(self):
         from gcm.app import updater
-        # 同版本（v3.0.0 = 当前 __version__）且无 exe 资产 → 不是新版本
-        payload = {"tag_name": "v3.0.0", "assets": [],
+        # 同版本（取当前 __version__ 动态构造）且无 exe 资产 → 不是新版本。
+        # G79b 更正：原写死 `v3.0.0` 并注释「= 当前 __version__」。版本号早已越过
+        # 3.0.0，于是这条实际测的是「更旧版本 → 不是更新」，**同版本分支再没人覆盖**，
+        # 而断言仍然绿（断言强度悄悄退化）。现在按真实当前版本构造，语义回到注释所写。
+        from gcm import __version__ as _cur0
+        payload = {"tag_name": f"v{_cur0}", "assets": [],
                    "html_url": "https://example.com/releases/latest"}
         has_new, ver, url, err = updater.check_latest(fetcher=lambda: json.dumps(payload))
-        self.assertFalse(has_new, "同版本不应判定为更新")
+        self.assertFalse(has_new, f"同版本 v{_cur0} 不应判定为更新")
         # 更高版本 + 无 exe 资产 → 有更新且 url 兜底 html_url
         # G79：原写死 "v9.9.9" 当「更高版本」，9.10.0 之后 9.9.9 < 9.10.0 语义反转 →
         # 版本时间炸弹（与「绝对日期表达相对语义」同类）。改为按当前主版本 +1 推导。

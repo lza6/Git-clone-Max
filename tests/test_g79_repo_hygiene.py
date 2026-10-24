@@ -176,6 +176,24 @@ class TestDocsCountsMatchCode(unittest.TestCase):
             "本守卫的基线常量过期：改了测试文件数就同步改 _EXPECTED_TEST_FILES",
         )
 
+    def test_claude_md_main_window_lines_matches(self) -> None:
+        """`CLAUDE.md` §6 登记的「主窗现值 N 行」必须等于实测（容差 ±5）。
+
+        G79b：本文件顶部注释早就声称「断言基线：测试文件数与**主窗行数**」，但实际只实现了
+        测试文件数 —— 又一处「注释比实现大」的空转风险。补齐它，并给 ±5 容差
+        （只加注释/空行不算漂移，见指南 R-05）。
+        """
+        text = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+        m = re.search(r"main_window\.py`\s*\*\*(\d+)\*\*", text)
+        self.assertIsNotNone(m, "CLAUDE.md 里找不到「main_window.py` **N**」的行数声明")
+        declared = int(m.group(1))
+        actual = len((ROOT / "gcm/ui/main_window.py").read_text(
+            encoding="utf-8").splitlines())
+        self.assertLessEqual(
+            abs(declared - actual), 5,
+            f"CLAUDE.md 声明主窗 {declared} 行，实测 {actual} 行（容差 ±5）",
+        )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
