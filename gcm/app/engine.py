@@ -45,6 +45,22 @@ _PROGRESS_HEARTBEAT_MS = 100
 _BATCH_START_LIMIT = 64
 
 
+
+def _redact_result(res: SyncResult) -> SyncResult:
+    """G80-B1：结果落库/上屏前的**唯一**打码点。
+
+    为什么在引擎而不是在 worker：worker 里 `res.message/detail` 由 git 输出拼成，
+    其中可能含 `https://user:pass@host`、`Authorization: ...`、`ghp_xxx`；
+    这些文本随后会进 DB（→ /api/report、CSV/xlsx、MCP 导出）与 UI 重试面板。
+    在唯一结果汇聚点打码一次，比在每个出口各打一次可靠（新增出口不会漏）。
+
+    非字符串值原样返回（redact 对非 str 是恒等函数）。
+    """
+    res.message = redact(res.message)
+    res.detail = redact(res.detail)
+    return res
+
+
 class SyncEngine(QObject):
     """统一的并行同步调度器。"""
 
@@ -895,6 +911,8 @@ class SyncEngine(QObject):
 
     # ------------------------------------------------------------ 回调
     def _on_result(self, index: int, res: SyncResult):
+        # G80-B1：先打码再落库/上屏（唯一打码点）
+        res = _redact_result(res)
         # 引擎统一落库（worker 不再写 DB，避免并发写同一 SQLite 连接）
         if self.db is not None:
             try:

@@ -13,6 +13,7 @@ G44-4 提供两个入口（默认均不影响既有行为）：
 from __future__ import annotations
 
 import re
+from typing import Any
 
 _URL_CRED = re.compile(r"(https?://)([^/\s@]+)@")
 # G66-11：补齐 Authorization 方案词。原实现只认 Bearer|Basic，漏掉 GitHub 旧式
@@ -104,3 +105,33 @@ def redact(text: str, *, userprofile: bool | None = None) -> str:
     if userprofile if userprofile is not None else _REDACT_USERPROFILE:
         out = redact_home(out)
     return out
+
+
+def _redact_value(value: Any) -> Any:
+    """递归打码：str 走 redact；dict/list/tuple 逐项递归；其它类型原样返回。"""
+    if isinstance(value, str):
+        return redact(value)
+    if isinstance(value, dict):
+        return {k: _redact_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_value(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_value(v) for v in value)
+    return value
+
+
+def redact_row(row: Any) -> Any:
+    """G80-B1：**出站打码的唯一实现** —— 对一行记录/一个事件负载的全部文本值跑 redact。
+
+    为什么需要它：原先 http_api 与 mcp_server 各写一份 `_sanitize_row`，且**只对 url 打码**，
+    于是 `message` / `detail` 里的 `https://user:pass@host`、`Authorization: ...`、
+    `ghp_xxx` 会原样进入 /api/report、CSV/xlsx、MCP 导出与 CLI stderr（违反
+    `docs/agent-contract.md` §1 与 CLAUDE.md §3 的脱敏红线）。新增一个出口就漏一次，
+    因此收敛成单点：**任何面向 UI / 日志 / agent 的行或负载，出站前都过这里。**
+
+    语义：非 dict 原样返回（保持旧 `_sanitize_row` 行为）；只改文本值，
+    数字/布尔/None 等保持原样，避免改变契约字段的类型。
+    """
+    if not isinstance(row, dict):
+        return row
+    return {k: _redact_value(v) for k, v in row.items()}

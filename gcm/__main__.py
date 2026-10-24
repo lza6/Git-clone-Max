@@ -60,6 +60,18 @@ def _parse_flags(argv=None) -> dict:
     }
 
 
+# G80-B1：仅 GUI 生效的全局标志，不属于 CLI argv ——
+# 若原样交给 `cli.main`，它会被当成「URLs 文件名」（实测：读取失败 "No such file
+# or directory: '--portable'" → exit 2，且 `--cli --portable` / `--portable --cli`
+# 两种顺序都中招）。cli.py 只剥自己认识的标志，剥不到这两个。
+_GUI_ONLY_FLAGS = ("--portable", "--minimized")
+
+
+def _strip_global_flags(argv) -> list:
+    """剥掉 GUI 专属全局标志，避免 CLI 把它们当输入文件名。"""
+    return [a for a in argv if a not in _GUI_ONLY_FLAGS]
+
+
 def main(argv=None) -> int:
     flags = _parse_flags(argv)
 
@@ -71,7 +83,8 @@ def main(argv=None) -> int:
     # G49-3：CLI 批量克隆模式（离屏，不创建 GUI 窗口）
     if flags["cli"]:
         from gcm.cli import main as cli_main
-        return cli_main(argv)
+        raw = list(sys.argv[1:] if argv is None else argv)
+        return cli_main(_strip_global_flags(raw))
 
     from PyQt6.QtCore import Qt
     from PyQt6.QtWidgets import QApplication

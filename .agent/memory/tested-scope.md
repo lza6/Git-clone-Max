@@ -246,3 +246,17 @@ QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe scripts/bench_g70_ui.py
   同名局部变量不再能让字段蒙混过关。
 - **发版即回归**：把版本写死进断言的地方会在下一个 minor 版炸一次（本轮 `test_g44_url_updater` 实证）。
   写「更新版本」类断言请用 `_newer_tag()` 这类动态推导。
+
+
+## G80-B1（2026-10-24 00:12，批次 B1）— 已跑的验证，勿重复跑
+
+| 命令 | 结果 |
+|---|---|
+| `QT_QPA_PLATFORM=offscreen python -m unittest tests.test_g80_contract -v` | 12 OK（改代码前 failures=5/errors=4） |
+| `python -m unittest tests.test_g49_cli tests.test_g56_mcp tests.test_g56_mcp_extra tests.test_g44_secure tests.test_g44_secure_mainside tests.test_g71_event_stream` | 91 tests OK（9.7s） |
+| `python -m ruff check gcm` / `python -m mypy gcm` | All checks passed / Success 87 files |
+| MCP stdio 真机（空数据目录） | 4 个 tools/call 正常，且**未创建 repos.db** |
+| 本地 HTTP API 出站打码（真起 `--serve`） | 3 个只读端点 0 明文凭据 |
+| CLI 全局标志（3 组 + 对照） | `--cli FILE` / `--cli --portable FILE` / `--portable --cli FILE` / `--cli --minimized -` 全部「未提供仓库地址」exit 2 |
+
+**改这块必跑**：`tests.test_g80_contract`、`tests.test_g49_cli`、`tests.test_g56_mcp*`、`tests.test_g44_secure*`、`tests.test_g71_event_stream`。

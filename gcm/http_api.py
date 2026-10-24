@@ -28,7 +28,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from .util.redact import redact
+from .util.redact import redact, redact_row
 
 _SENSITIVE_COLS = ("token", "host_tokens", "ssh_key", "url")
 
@@ -56,11 +56,11 @@ def _version() -> str:
 
 
 def _sanitize_row(row: dict[str, Any]) -> dict[str, Any]:
-    """剔除敏感列并打码 URL。"""
+    """剔除敏感列，并对**所有文本值**打码（G80-B1：message/detail 里也有凭据）。"""
     if not isinstance(row, dict):
         return row
-    return {k: (redact(str(v)) if k == "url" else v) for k, v in row.items()
-            if k not in _SENSITIVE_COLS or k == "url"}
+    kept = {k: v for k, v in row.items() if k not in _SENSITIVE_COLS or k == "url"}
+    return redact_row(kept)
 
 
 class _ApiHandler(BaseHTTPRequestHandler):

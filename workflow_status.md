@@ -1241,3 +1241,21 @@ Release `v9.10.2`（id=422788581）产物从 Release 独立下载后重算 sha25
 仅登记；结论：事故归因从「只读子代理」细化为「同工作区的并行会话/代理活动」，纪律见 D32。
 
 | 纪律 | ①**提交/发布前必看 `git status --porcelain`**（`RELEASE_CHECKLIST` §0 已有，本轮再次证明它不是形式主义）；②**不要在同一工作区并行跑多个带 shell 的子代理**（「只读」只是提示词约束，不是权限约束）；③任何 `git add` 前若出现意料之外的 `D`，先 `git checkout --` 恢复再继续 |
+
+
+---
+
+## G80-B1 · agent 契约与安全边界收口（2026-10-24 00:12，批次 B1）
+
+> 依据 `参考的结果计划指南.md` 批次 B1（发现 F1/F2/F3/F4）。证据：`evidence/G80-B1.json`、`docs/验证记录-2026-10-24-G80-B1.md`。
+
+| 发现 | 状态 | 证据 |
+|---|---|---|
+| F1 MCP「只读」工具写库（每次请求 executescript+commit） | **已修** | `mcp_server._open_db` 三路径（`_EmptyDB` / `readonly=True` / 旧库迁移一次）；E2E：空目录跑完 4 个 tools/call 后**未生成 repos.db** |
+| F2 `message`/`detail` 未打码（API/CSV/xlsx/MCP/CLI stderr） | **已修** | 新增 `util.redact.redact_row`（唯一出站实现）+ `engine._redact_result`（落库前单点）；E2E：真起 `--serve`，`/api/report`、`/api/repos`、`/api/repos/search` 三出口 0 明文 |
+| F3 退出码 conflict/cancelled 返回 0 | **已修** | `cli._exit_code_of` + `_counts_of`；`--json` 的 `ok` 改为与退出码同源 |
+| F4 `--portable/--minimized` 被当 URLs 文件 → exit 2 | **已修** | `__main__._strip_global_flags`；三组命令实测与对照一致 |
+| 守卫 | **新增** | `tests/test_g80_contract.py`(12)：先 RED（failures=5/errors=4）后 GREEN |
+
+质量闸：`ruff` 0 error · `mypy` Success(87 files) · 定向回归 **91 例 OK**。
+**未做**：全量快集/覆盖率重算、版本 bump、打包重建（发布批次统一处理）。

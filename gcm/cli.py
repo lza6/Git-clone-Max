@@ -29,6 +29,26 @@ ECODE_INVALID = 2
 # MCP 显式启用失败（G56-2）：GCM_MCP_ENABLE 未开启时 python -m gcm.mcp_server 退出 3
 ECODE_MCP_DISABLED = 3
 
+# 契约 §2.2：「有失败」= 任一仓库 failed/conflict/cancelled。
+# G80-B1 修复：原实现只看 failed，conflict/cancelled 会返回 0 且 ok=true，
+# 下游自动化把「冲突保留」「被取消」当成成功 —— 与文档承诺不一致。
+_FAILURE_STATUSES = ("failed", "conflict", "cancelled")
+
+
+def _exit_code_of(counts: dict[str, int]) -> int:
+    """按 docs/agent-contract.md §2.2 计算退出码。
+
+    counts: 状态值 → 数量（如 {"success": 3, "conflict": 1}）。
+    任一 failed/conflict/cancelled > 0 → 1；否则 0。
+    """
+    for status in _FAILURE_STATUSES:
+        try:
+            if int(counts.get(status) or 0) > 0:
+                return ECODE_FAIL
+        except (TypeError, ValueError):
+            return ECODE_FAIL  # 脏计数按失败处理（保守）
+    return ECODE_OK
+
 
 def _redact(text: str) -> str:
     """打码 URL 内嵌凭据 / 授权头 / PRIVATE-TOKEN；gcm.util.redact 不存在时兜底。"""
@@ -114,16 +134,27 @@ def _error(code: int, message: str) -> dict:
     return {"code": code, "message": message, "redacted": _redact(message)}
 
 
+def _counts_of(results) -> dict[str, int]:
+    """状态值 → 数量（退出码与 JSON `ok` 字段共用同一口径）。"""
+    counts: dict[str, int] = {}
+    for r in results:
+        key = r.status.value
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
 def _run_json(app, engine, specs, results) -> dict:
     """收集并行同步结果并组装顶层 JSON 文档。"""
-    ok = sum(1 for r in results if r.status.value == "success")
-    fail = sum(1 for r in results if r.status.value == "failed")
+    counts = _counts_of(results)
+    ok = counts.get("success", 0)
+    fail = counts.get("failed", 0)
     other = len(results) - ok - fail
     return {
         # G66-2：契约 version 必须与 gcm.__version__ 同源，禁止硬编码（历史上写死 8.0.2 导致
         # 所有 agent 消费者读到的版本落后 4 个大版本）。
         "version": CONTRACT_VERSION,
-        "ok": fail == 0 and len(results) > 0,
+        # G80-B1：`ok` 与退出码必须同源，否则会出现「exit 1 但 ok=true」的自相矛盾
+        "ok": len(results) > 0 and _exit_code_of(counts) == ECODE_OK,
         "counts": {
             "success": ok,
             "failed": fail,
@@ -160,7 +191,7 @@ def run_clone(app, specs, invalid: list[str], root: Path, json_mode: bool,
     def _on_result(_i: int, r) -> None:
         results.append(r)
         line = (f"  [{'OK' if r.status.value == 'success' else r.status.value.upper()}] "
-                f"{r.spec.folder_name} :: {r.message or r.detail or ''}")
+                f"{r.spec.folder_name} :: {_redact(r.message or r.detail or '')}")
         _eprint(line) if json_mode else print(line)
 
     def _on_line(_i: int, text: str, _lvl: str) -> None:
@@ -184,8 +215,9 @@ def run_clone(app, specs, invalid: list[str], root: Path, json_mode: bool,
         app.processEvents()
         _time.sleep(0.02)
     app.processEvents()
-    ok = sum(1 for r in results if r.status.value == "success")
-    fail = sum(1 for r in results if r.status.value == "failed")
+    counts = _counts_of(results)
+    ok = counts.get("success", 0)
+    fail = counts.get("failed", 0)
     other = len(results) - ok - fail
     if json_mode:
         doc = _run_json(app, engine, specs, results)
@@ -193,7 +225,7 @@ def run_clone(app, specs, invalid: list[str], root: Path, json_mode: bool,
         print(json.dumps(doc, ensure_ascii=False, indent=2))
     else:
         print(f"[CLI] 完成：成功 {ok} · 失败 {fail} · 其它 {other}（共 {len(results)}）")
-    return ECODE_FAIL if fail else ECODE_OK
+    return _exit_code_of(counts)
 
 
 def _serve_main(root: Path, bind: str, allow_mutate: bool, json_mode: bool) -> int:

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,7 +30,7 @@ from typing import Any
 
 from gcm import __version__ as CONTRACT_VERSION
 
-from .util.redact import redact
+from .util.redact import redact, redact_row
 
 _MCP_DISABLED_RC = 3  # 与 gcm/cli.py ECODE_MCP_DISABLED 一致
 _SENSITIVE_COLS = ("token", "host_tokens", "ssh_key", "url")
@@ -129,11 +130,11 @@ def _error(msg_id: Any, code: int, message: str) -> dict[str, Any]:
 
 
 def _sanitize_row(row: dict[str, Any]) -> dict[str, Any]:
-    """剔除敏感列并打码 URL；非 dict 原样返回。"""
+    """剔除敏感列，并对**所有文本值**打码（G80-B1：message/detail 也要打码）。"""
     if not isinstance(row, dict):
         return row
-    return {k: (redact(str(v)) if k == "url" else v) for k, v in row.items()
-            if k not in _SENSITIVE_COLS or k == "url"}
+    kept = {k: v for k, v in row.items() if k not in _SENSITIVE_COLS or k == "url"}
+    return redact_row(kept)
 
 
 def _list_repos(db, host: str | None = None) -> list[dict[str, Any]]:
@@ -158,10 +159,45 @@ def _search_repos(db, query: str) -> list[dict[str, Any]]:
             hits.append(_sanitize_row(r))
     return hits
 
+class _EmptyDB:
+    """空数据目录的只读替身：四个工具都能正常工作，且**不会创建任何文件**。
+
+    G80-B1：原先 `_open_db` 直接建可写连接 —— 对空数据目录等于「列一下仓库」
+    顺手创建 repos.db（把只读契约变成写操作）；对旧库则每次请求都跑
+    `executescript(_SCHEMA)+_migrate()+commit()`，与 GUI 抢写锁。
+    """
+
+    def list_repos(self, host: str | None = None) -> list[dict[str, Any]]:
+        return []
+
+    def stats_overview(self) -> dict[str, Any]:
+        return {"total_repos": 0, "total_syncs": 0, "success": 0, "failed": 0}
+
+    def close(self) -> None:
+        return None
+
+
 def _open_db(data_dir: Path):
-    """惰性打开仓库数据库（只读用途；注意其线程锁与 WAL）。"""
+    """打开仓库库，**只读**（G80-B1）。
+
+    三条路径：
+    1. 库文件不存在 → `_EmptyDB`（不创建文件，保持只读契约）；
+    2. 库存在且 schema 可用 → `Database(readonly=True)`（mode=ro，无写锁、无建表）；
+    3. 库存在但缺表/缺列（v1 旧库）→ 用可写连接做**一次**幂等建表/迁移，
+       关闭后立刻回到只读连接（否则每次请求都跑写事务，G70 实测 p50≈7s）。
+    """
     from .db.repo_db import Database
-    return Database(data_dir / "repos.db")
+
+    path = data_dir / "repos.db"
+    if not path.exists():
+        return _EmptyDB()
+    try:
+        return Database(path, readonly=True)
+    except sqlite3.OperationalError:
+        # 只读快路径的 `SELECT favorite` 失败 = 旧库/半成品库 → 迁移一次
+        writable = Database(path)
+        writable.close()
+        return Database(path, readonly=True)
 
 
 def _export_report(db, fmt: str, out_dir: str | None) -> str:

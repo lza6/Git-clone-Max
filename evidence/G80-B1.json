@@ -1,0 +1,90 @@
+{
+  "task_id": "G80-B1",
+  "title": "agent 契约与安全边界收口（MCP 只读 / 出站打码 / CLI 退出码 / 全局标志）",
+  "status": "passed",
+  "timestamp": "2026-10-25T00:10:00+08:00",
+  "scope": "参考的结果计划指南.md 的批次 B1（发现 F1/F2/F3/F4）",
+  "commands_executed": [
+    {
+      "cmd": "python -m unittest tests.test_g80_contract -v  （改代码前，RED）",
+      "exit_code": 1,
+      "raw_output_tail": "Ran 11 tests in 0.237s\n\nFAILED (failures=5, errors=4)"
+    },
+    {
+      "cmd": "python -m ruff check gcm",
+      "exit_code": 0,
+      "raw_output_tail": "All checks passed!"
+    },
+    {
+      "cmd": "python -m mypy gcm",
+      "exit_code": 0,
+      "raw_output_tail": "Success: no issues found in 87 source files"
+    },
+    {
+      "cmd": "python -m unittest tests.test_g80_contract -v  （改代码后，GREEN）",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 12 tests in 0.182s\n\nOK"
+    },
+    {
+      "cmd": "python -m unittest tests.test_g49_cli tests.test_g56_mcp tests.test_g56_mcp_extra tests.test_g44_secure tests.test_g44_secure_mainside tests.test_g71_event_stream",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 91 tests in 9.712s\n\nOK"
+    },
+    {
+      "cmd": "python -m gcm --cli --portable <empty.txt>  （修复前→修复后对照）",
+      "exit_code": 2,
+      "raw_output_tail": "修复前: [CLI] 读取失败：[Errno 2] No such file or directory: '--portable'  exit=2\n修复后: [CLI] 未提供仓库地址（文件为空或 stdin 无输入）  exit=2\n（--portable --cli 与 --cli --minimized 同样已与对照一致）"
+    },
+    {
+      "cmd": "printf '<initialize>/<tools/list>/<list_repos>/<status>' | GCM_MCP_ENABLE=1 GCM_DATA_DIR=<tmp> python -m gcm.mcp_server",
+      "exit_code": 0,
+      "raw_output_tail": "{\"id\":3,\"result\":{\"repos\":[],\"count\":0}}\n{\"id\":4,\"result\":{\"status\":{\"total_repos\":0,...}}}\n[数据目录] ls -la → 只有 . 与 ..（未创建 repos.db）"
+    },
+    {
+      "cmd": "python <temp>/gcm_e2e_http.py  （真起 --serve，GET 三个只读端点）",
+      "exit_code": 0,
+      "raw_output_tail": "[http] 服务就绪: True\n[200] /api/report?format=json 长度=354 含凭据明文=False\n[200] /api/repos 长度=499 含凭据明文=False\n[200] /api/repos/search?q=a 长度=440 含凭据明文=False\n结论: PASS 三个出口均无明文凭据"
+    }
+  ],
+  "files_changed": [
+    "gcm/util/redact.py",
+    "gcm/http_api.py",
+    "gcm/mcp_server.py",
+    "gcm/app/engine.py",
+    "gcm/cli.py",
+    "gcm/__main__.py",
+    "tests/test_g80_contract.py",
+    "docs/验证记录-2026-10-24-G80-B1.md",
+    "evidence/G80-B1.json"
+  ],
+  "changes": {
+    "F1_mcp_readonly": "mcp_server._open_db 三条路径：库不存在→_EmptyDB（不创建文件）；正常→Database(readonly=True)；旧库缺表/列→可写连接迁移一次后立刻回到只读。",
+    "F2_outbound_redact": "新增 util.redact.redact_row（唯一出站打码实现，递归处理 dict/list，只改文本值）；http_api._sanitize_row 与 mcp_server._sanitize_row 改用它；engine 新增 _redact_result 并在 _on_result 入口调用（落库/上屏/CSV/API/MCP 全部下游受益）；cli stderr 行打码。",
+    "F3_exit_code": "cli 新增 _exit_code_of(counts) 与 _counts_of(results)：failed/conflict/cancelled 任一 >0 → 1；--json 的 ok 字段改成与退出码同源（避免 ok=true 但 exit 1）。",
+    "F4_global_flags": "__main__ 新增 _strip_global_flags，在交给 cli.main 前剥掉 --portable/--minimized（两种顺序都覆盖）。"
+  },
+  "tests": [
+    {"name": "tests.test_g80_contract (12)", "type": "unit+integration", "status": "passed", "evidence": "Ran 12 tests OK（RED 时 failures=5/errors=4）"},
+    {"name": "tests.test_g49_cli 等 6 个定向模块 (91)", "type": "regression", "status": "passed", "evidence": "Ran 91 tests OK"},
+    {"name": "ruff check gcm", "type": "lint", "status": "passed", "evidence": "All checks passed"},
+    {"name": "mypy gcm", "type": "typecheck", "status": "passed", "evidence": "Success: no issues in 87 source files"},
+    {"name": "MCP stdio 真机（initialize/tools/list/call）", "type": "e2e", "status": "passed", "evidence": "见 commands_executed[6]，且数据目录未生成 repos.db"},
+    {"name": "本地 HTTP API 出站打码（真起服务）", "type": "e2e", "status": "passed", "evidence": "见 commands_executed[7]，三出口 0 明文"}
+  ],
+  "coverage_summary": {"lines": null, "branches": null, "functions": null, "statements": null},
+  "seams_touched": [
+    "CLI 进程入口 → cli.main（argv 契约）",
+    "engine._on_result → DB/UI/事件（结果文本唯一打码点）",
+    "MCP tools/call → repo_db（只读连接）",
+    "HTTP /api/* → repo_db（行打码）"
+  ],
+  "mock_scenarios_covered": [],
+  "browser_validation": {"performed": false, "paths": [], "screenshots": []},
+  "limitations": [
+    "全量快集（约 8.8 分钟）未跑：本轮只跑定向回归 91 例 + 新守卫 12 例；发布前需补快集。",
+    "覆盖率未重算（coverage_summary 填 null）。",
+    "版本号未 bump（9.10.2）；changelog 与打包产物在发布批次统一处理。",
+    "POST /api/clone 在打包 exe 下用 sys.executable -m gcm 的疑似失效未验证（属 B4/后续）。",
+    "MCP 旧库迁移路径只覆盖「缺 favorite 列」一种形态（真实 v1 库结构未逐一构造）。"
+  ]
+}
