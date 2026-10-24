@@ -5,7 +5,7 @@
 > 这边是**跑了证明什么**（接缝 ↔ 用例 ↔ 最后结果）。
 > 只记录本轮真实运行过的结果；引用历史结果必须标日期。
 
-**最后更新**：2026-10-23（G75 视觉系统 + G76 接线收口）· 版本见 `gcm/__init__.py:__version__`（本文件不写死版本号）
+**最后更新**：2026-10-24（v9.10.0 G79 工程治理与配置真实性收口）· 版本见 `gcm/__init__.py:__version__`（本文件不写死版本号）
 
 ---
 
@@ -47,6 +47,7 @@
 | S30 | DLQ → 重新入队 | `app/retry_queue.requeue_dropped` | `ui/retry_panel` | dropped 记录保留 spec 字段；重新入队 attempts=0、立即到期、不丢 @tag/folder | `test_g73_dlq` |
 | S32 | 设置写侧 → 字段（G76 收口） | `ui/settings_groups` + `ui/settings_actions` | `db/settings.SettingsStore` → 引擎/调度器/关窗行为 | 控件 → 保存回调 → **落盘** → 消费方四段都要通；需要执行命令的字段（克隆后钩子）必须二次确认且默认 No；不可逆操作（数据目录迁移）在任务运行中必须拒绝；设置模块行数 ≤800 | `test_g76_wiring`（23）· `test_g68_settings_ui`（含 `EXPECTED_WIDGETS`） |
 | S33 | 视觉系统 token → 渲染（G75 收口） | `ui/palettes` + `ui/typography` + `ui/qss_build` + `ui/status_pill` + `progress_delegate` | QSS 字符串 / QPainter 自绘 / 托盘图标 / 日志高亮 | 颜色只有一个来源（`current_palette()` 含强调色预设）；字号阶梯严格递减；四主题对比度达标；状态形状互不相同且能真画出像素；进度刻度坐标可断言 | `test_g75_visual_system`（46）· `test_g46_theme` · `test_themes` · `test_g70_ui_upgrade` |
+| S34 | **可重建产物 → git 索引**（G79 收口） | `scripts/ui_screenshot_audit.py <dir>` · `PyInstaller` · 本地运行时目录 | `.gitignore` · `git ls-files` | ①截图/构建产物一律不入库（白名单 `docs/screenshots/`）；②根目录顶层条目必须登记（新增即红）；③超 800 行模块集合必须**等于**登记集合（拦「悄悄多出第 4 个」）；④README/CLAUDE.md 声称的测试文件数必须等于实测 | `test_g79_repo_hygiene`（9 项，含白名单未空/无反查空转的变体断言） |
 
 ---
 
@@ -81,6 +82,11 @@
 | G75 基准 | `scripts/bench_g70_ui.py` | 500 行 add 27.85ms/update 2.87ms/0 子控件；QSS 1.989→0.016ms；启动 101.93ms | 2026-10-23 |
 | 契约实测 | CLI 4 种输入 + `--help` + MCP 未启用 | 退出码 0/1/2/2 · 0 · 3（与 `docs/agent-contract.md` 一致） | 2026-10-23 |
 | flake 复核 | `test_g67_closure.TestShutdownClearsInProgress` ×10 | 10/10 OK | 2026-10-23 |
+| 9.9.4 那轮快集 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 1429 · failures=0 · errors=0 · skipped=4 · 覆盖 82%` | 2026-10-23 |
+| **CI（已恢复）** | GitHub Actions run `39922315053` on `7097209` | **7/7 job success**（slow/e2e-smoke/perf-baseline/test×3 OS/fast-smoke） | 2026-10-23T11:35:03Z |
+| **G79 卫生守卫（红→绿）** | `unittest tests.test_g79_repo_hygiene` | 首跑 **FAILED (failures=4)**（38 PNG 入库 / cli.py+z.png / README 135≠137 / CLAUDE 113≠137）→ 修复后 **Ran 9 · OK** | 2026-10-24 |
+| **G79 僵尸字段（红→绿）** | `unittest tests.test_g69_regressions.TestG69_18NoZombieSettingsFields` | 收紧口径后 **FAILED** 并精确点名 `['depth']` → 删除字段后 **Ran 2 · OK** | 2026-10-24 |
+| G79 版本单源 + 打包同步 | `unittest tests.test_g66_patch.TestContractVersionSingleSource TestPackagingVersionSync` | `Ran 11 · OK`（9.10.0 已同步 spec filevers/prodvers/installer.iss/pyproject/agent-contract/README） | 2026-10-24 |
 
 ### 2.2 按接缝的覆盖状态
 

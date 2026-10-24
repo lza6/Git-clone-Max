@@ -1,0 +1,129 @@
+{
+  "task_id": "G79",
+  "goal": "工程治理与配置真实性收口：删除零读取的僵尸配置字段 Settings.depth；修复僵尸字段守卫的同名局部变量盲区；截图与根目录死文件出库；新增仓库卫生守卫；同步一阶文档事实。",
+  "status": "done",
+  "timestamp": "2026-10-24T16:00:00+08:00",
+  "baseline": {
+    "version_before": "9.9.4",
+    "version_after": "9.10.0",
+    "head_before": "7097209",
+    "worktree_before": "clean（除上一轮未提交的计划文档）"
+  },
+  "commands": [
+    {
+      "cmd": "./.venv/Scripts/python.exe -m ruff check gcm",
+      "exit_code": 0,
+      "output_tail": "All checks passed!"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe -m mypy gcm",
+      "exit_code": 0,
+      "output_tail": "Success: no issues found in 87 source files"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_g79_repo_hygiene",
+      "exit_code": 1,
+      "output_tail": "FAIL: test_claude_md_test_file_count_matches -> AssertionError: 113 != 137\nFAIL: test_readme_test_file_count_matches -> AssertionError: 135 != 137\nFAIL: test_no_png_under_reports_in_index -> 38 个 reports/ui-audit-final/*.png 在索引\nFAIL: test_top_level_entries_are_whitelisted -> ['cli.py', 'z.png']\nRan 9 tests in 0.085s\nFAILED (failures=4)",
+      "note": "TDD 的『红』：新守卫先证明它能抓到真实缺陷"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_g79_repo_hygiene",
+      "exit_code": 0,
+      "output_tail": "Ran 9 tests in 0.092s\nOK",
+      "note": "清理与文档对齐之后的『绿』"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_g69_regressions.TestG69_18NoZombieSettingsFields",
+      "exit_code": 1,
+      "output_tail": "AssertionError: Lists differ: ['depth'] != [] : 这些 Settings 字段在 gcm/ 里没有任何代码引用（僵尸字段）：['depth']。要么接线（UI 写入 + 业务读取），要么删掉。\nRan 2 tests in 0.463s\nFAILED (failures=1)",
+      "note": "收紧口径后的『红』—— 精确点名 depth，证明旧守卫的盲区真实存在（旧实现同口径下为绿）"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_g69_regressions.TestG69_18NoZombieSettingsFields",
+      "exit_code": 0,
+      "output_tail": "Ran 2 tests in 0.470s\nOK",
+      "note": "删除 Settings.depth 之后的『绿』；同一口径，红→绿只因为字段被真正移除"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe -c \"加载含 depth 键的旧 settings.json\"",
+      "exit_code": 0,
+      "output_tail": "loaded concurrency: 4\nhas depth attr: False\ndepth in fields: False",
+      "note": "旧配置兼容：含 'depth': 9 与未知键的文件仍能正常加载（_DEFAULTS 过滤），未知键被静默忽略"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_g66_patch.TestContractVersionSingleSource tests.test_g66_patch.TestPackagingVersionSync",
+      "exit_code": 0,
+      "output_tail": "Ran 11 tests in 0.020s\nOK",
+      "note": "版本单源：spec filevers/prodvers、installer.iss、pyproject、agent-contract、README 全部同步到 9.10.0"
+    },
+    {
+      "cmd": "git rm --cached -- 'reports/ui-audit-final/*.png'  ;  git rm z.png cli.py",
+      "exit_code": 0,
+      "output_tail": "出库前 git ls-files reports/ui-audit-final/ = 38\n出库后 git ls-files reports/ = 8（仅剩 8 个 change-report HTML）\n本地 reports/ui-audit-final/ 仍有 38 个文件（未删磁盘，可作对照）",
+      "note": "截图只出索引、保留本地；z.png 与顶层 cli.py 彻底删除（全仓 grep 确认零引用）"
+    }
+  ],
+  "files_changed": [
+    "gcm/db/settings.py (删除 depth 字段)",
+    "gcm/__init__.py (__version__ 9.10.0 + changelog 一行)",
+    ".gitignore (补 reports/ui-audit-final/)",
+    "Git-clone-Max.spec (filevers/prodvers/FileVersion/ProductVersion → 9.10.0)",
+    "packaging/installer.iss (MyAppVersion → 9.10.0)",
+    "pyproject.toml (version → 9.10.0)",
+    "README.md (当前版本行 / 测试文件数 135→137 / tag 示例)",
+    "CLAUDE.md (测试文件数 113→137 / 主窗 2658→2665 / 31→42 个测试文件)",
+    ".agent/memory/known-issues.md (PyQt6 未锁→已锁 6.11.0；#15 depth 项闭环)",
+    "test_ledger.md (新增 S34；§2.1 回填 9.9.4/9.10.0 轮次)",
+    "workflow_status.md (§27 阻塞更正为已闭环)",
+    "docs/agent-contract.md (适用版本与 JSON/MCP 示例 → 9.10.0)",
+    "tests/test_g69_regressions.py (收紧 _referenced_names 口径)",
+    "tests/test_g79_repo_hygiene.py (新增，9 项)"
+  ],
+  "files_created": [
+    "tests/test_g79_repo_hygiene.py"
+  ],
+  "files_deleted": [
+    "z.png（误放截图，曾被撤销过一次又被带回索引）",
+    "cli.py（根目录 1 行占位；真入口是 gcm/cli.py）"
+  ],
+  "tests": {
+    "g79_repo_hygiene": { "ran": 9, "failures_initial": 4, "failures_after_fix": 0 },
+    "g69_zombie_settings": { "ran": 2, "failures_initial": 1, "failures_after_fix": 0 },
+    "version_single_source": { "ran": 11, "failures_after_fix": 0 }
+  },
+  "coverage": null,
+  "seams_touched": ["S05", "S06", "S12", "S34"],
+  "mock_scenarios": [],
+  "findings_fixed": [
+    {
+      "id": "P1-1",
+      "summary": "Settings.depth 是僵尸字段：随 asdict 落盘进用户 settings.json，但全库零读取",
+      "evidence": "gcm/db/settings.py:247（已删）；data/settings.json 确有 \"depth\": 1；全库 .depth 属性访问=0、getattr(s,\"depth\")=0；仅 tests/test_extra.py 断言默认值",
+      "fix": "删除字段；UI 的 depth_spin 行为不变（仍按 mode 启停、仍传给 engine.launch(fetch_depth=...)）"
+    },
+    {
+      "id": "P1-2",
+      "summary": "TestG69_18NoZombieSettingsFields 有同名局部变量盲区：任意 ast.Name 都被当作字段引用",
+      "evidence": "旧实现 tests/test_g69_regressions.py:1216-1220 收集 ast.Name.id；depth 被 gcm/app/diag_bundle.py:47 参数名 depth（其函数体 if depth > 4 是 ast.Name）放行",
+      "fix": "收紧为『从 settings 对象取的属性 + getattr/setattr/_save_field 的字符串键』；收紧后守卫先红点名 depth，删字段后转绿"
+    },
+    {
+      "id": "P2-1",
+      "summary": "reports/ui-audit-final/ 的 38 张 PNG（约 3.6MB）在 git 索引里，.gitignore 只忽略了另外三批截图目录",
+      "evidence": "git ls-files reports/ = 46（38 PNG + 8 HTML）；.gitignore 现有 ui-baseline-*/ui-g75*/ui-g78*",
+      "fix": "git rm --cached（保留本地）+ .gitignore 补 reports/ui-audit-final/ + 新守卫拦复发"
+    },
+    {
+      "id": "P2-2",
+      "summary": "根目录 z.png（误放截图）与 cli.py（1 行占位）在索引里",
+      "evidence": "git log -- z.png：00c8b36 加 → 7a7f6c6 删 → 4728693 又加；cli.py 自 e62039a 起 1 行，全仓零引用",
+      "fix": "两者彻底删除（先全仓 grep 确认零引用）；新守卫用根目录白名单拦复发"
+    }
+  ],
+  "limitations": [
+    "本文件的 coverage 字段为 null：快集覆盖率在另一条命令中单独产出并记入 test_ledger.md（本节点不重复搬数）。",
+    "Actions 分钟额度仍未核实（外部限制，需登录 GitHub 账单页）。",
+    "本节点未做真实 GUI 交互验证与真机 DPI 目检（改动不触及 UI 渲染，风险为 L1）。",
+    "settings_groups.py 现为 783 行，距 800 红线 17 行 —— 本轮不动（避免在治理轮夹带重构），已登记为下一轮 T-43。"
+  ]
+}

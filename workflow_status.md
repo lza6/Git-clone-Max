@@ -1041,7 +1041,20 @@ B4 仓库知识索引 / B5 MCP annotations / B6 真机点击仍属后续范围�
 | 环境注记 | 本机此刻**直连 github.com 的 git 全部失败**（`git ls-remote` 3/3 `TLS connect error: unexpected eof`），E2E 首跑因此 failed；重试由**内置镜像回退**成功 —— 顺带验证了 G58-2/G69-21 的镜像链路与「克隆后回源站」规则 |
 | CI | **仍在 GitHub 队列（queued）**，见 §27；本表不把未跑的 run 计为通过 |
 
-## 27. 阻塞登记：GitHub Actions 不派发（2026-10-23 16:05 实测）
+## 27. ~~阻塞登记：GitHub Actions 不派发（2026-10-23 16:05 实测）~~ **已闭环（2026-10-24 复核）**
+
+> **本节结论已作废，保留原始记录用于追溯。** 2026-10-24 通过 GitHub Actions API 只读查询确认：
+> 最新 HEAD `7097209` 的 run **`39922315053`** 状态 `completed / success`，**7/7 job 全绿**
+> （slow 55s · e2e-smoke 6s · perf-baseline 32s · test(ubuntu) 135s · test(windows) 306s ·
+> test(macos) 171s · fast-smoke 25s），完成时间 `2026-10-23T11:35:03Z` —— **晚于本节登记阻塞的时刻**。
+> 即：runner 恢复后，按本节自订的「恢复后要做的唯一一件事」执行，结论为**绿**。
+>
+> 仍未闭合的只有一件事：**Actions 分钟额度从未核实过**（`evidence/G78-ci-concurrency.json` 的
+> `not_verified` 项），需要浏览器打开 `/user/settings/billing/actions` 才能看到。这不影响代码结论。
+>
+> **教训（写进 memory）**：在 runner 异常期间反复推送既解决不了问题，又会因
+> `cancel-in-progress` 把正在跑的 run 全部取消 —— 最终连「最后一次真实结论」都不敢引用。
+> 正确做法是**先停推、只在本地留证据、等恢复后看最新 HEAD 的那一个 run**。
 
 | 项 | 事实 |
 |----|------|
@@ -1052,3 +1065,62 @@ B4 仓库知识索引 / B5 MCP annotations / B6 真机点击仍属后续范围�
 | 最后一次真实 CI 结论 | `d69d229` / `e5ab085` / `ff1c3f0` / `57b31a9` 各 **7/7 success**（run 39905267408 等）|
 | 恢复后要做的唯一一件事 | 看**最新 HEAD 的那一个 run**：它包含当前全部代码（G75 + G76 + G77 + 九.9.4 修复）；绿即可把本段改为"已闭环" |
 | 不要再做的事 | 每推一次都会因 `cancel-in-progress` 取消正在等/在跑的 run —— **runner 恢复前不要为了登记而反复推送** |
+
+## 28. G79 工程治理与配置真实性收口（2026-10-24，v9.10.0）
+
+> 来源：`docs/计划书/下一步改进指南.md`（Rev 5）方案 A，用户 2026-10-24 拍板。
+> 纪律：只做治理，不做功能、不做大幅重构；每条改动都先有「能失败」的守卫。
+
+### 28.1 边界与目标
+
+| 项 | 内容 |
+|---|---|
+| 起点 | `main` @ `7097209`（9.9.4）+ 上一轮未提交的计划文档（Rev 5） |
+| 目标 | ①删掉唯一零读取的僵尸配置字段 ②修好「本该抓它却没抓到」的守卫 ③截图与根目录死文件出库 ④一阶文档事实对齐 |
+| 不做 | 主窗拆分（T-41/T-42）、`settings_groups` 拆分（T-43）、测试确定性根治（T-44）—— 属后续独立轮次 |
+
+### 28.2 节点
+
+| ID | 任务 | 状态 | 验收（真实输出） |
+|---|---|---|---|
+| G79-36a | `reports/ui-audit-final/` 38 张 PNG 出库 + `.gitignore` 补规则 | Done | `git ls-files reports/` 46→**8**；本地 38 张仍在（可重建） |
+| G79-36b | 根目录 `z.png` / `cli.py` 删除 | Done | 先全仓 grep 确认零引用（`cli.py` 仅命中 `gcm/cli.py`） |
+| G79-36c | 新增 `tests/test_g79_repo_hygiene`（9 项） | Done | **首跑 FAILED (failures=4)** → 修复后 `Ran 9 · OK` |
+| G79-37a | 一阶文档对齐 | Done | 测试文件数 113/135→**137**；主窗 2658→**2665**；31→**42** 个测试文件；PyQt6「未锁」→已锁 `6.11.0` |
+| G79-38 | `test_ledger` 回填 + 新增 S34 | Done | §2.1 追加 5 行真实数字；S34「可重建产物 → git 索引」 |
+| G79-39 | `workflow_status` §27 阻塞结论更正 | Done | 改为「已闭环」+ run `39922315053` 7/7 全绿 |
+| G79-45 | 删除僵尸字段 `Settings.depth` | Done | 旧配置含 `depth` 仍能加载（`has depth attr: False`，未知键忽略） |
+| G79-46 | 收紧 `TestG69_18NoZombieSettingsFields` 口径 | Done | 收紧后 **FAILED 并精确点名 `['depth']`** → 删字段后 `Ran 2 · OK` |
+| G79-40 | `evidence/G79-hygiene.json` | Done | JSON 可解析（15 键），含红/绿两段真实输出 |
+
+### 28.3 这一轮最有价值的东西：一个「绿着的守卫」
+
+`Settings.depth` 是僵尸字段（随 `asdict` 落盘进用户 `settings.json`，全库零读取），
+而 `TestG69_18NoZombieSettingsFields` **一直是绿的**。根因：它把**任意 `ast.Name`**
+都算作「字段引用」，于是 `gcm/app/diag_bundle.py` 的 `_redact_obj(value, depth=0)`
+参数名（函数体里 `if depth > 4` 是 `ast.Name`）把 `depth` 放行了。
+
+收紧口径后守卫立刻红并指名 `depth` —— **这才是「守卫存在」的证据**。
+顺序被固定为「先让守卫红、再改代码让它绿」，否则永远无法证明守卫有效。
+
+### 28.4 验证（本轮真实运行）
+
+| 项 | 命令 | 结果 |
+|---|---|---|
+| 静态门禁 | `ruff check gcm` / `mypy gcm` | **All checks passed** / **Success（87 文件）** |
+| 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | **Ran 1438 · failures=0 · errors=0 · skipped=4** |
+| 覆盖率 | `coverage report --include="gcm/*"` | **TOTAL 82%**（门禁 Windows 81 / POSIX 80） |
+| 卫生守卫红→绿 | `unittest tests.test_g79_repo_hygiene` | 首跑 **4 fail**（38 PNG / cli.py+z.png / 135≠137 / 113≠137）→ **9 OK** |
+| 僵尸字段红→绿 | `unittest ...TestG69_18NoZombieSettingsFields` | 首跑 **1 fail**（点名 `['depth']`）→ **2 OK** |
+| 版本单源 | `TestContractVersionSingleSource` + `TestPackagingVersionSync` | **Ran 11 · OK** |
+| 旧配置兼容 | 加载含 `depth`+未知键的 settings.json | `loaded concurrency: 4` / `has depth attr: False` |
+
+### 28.5 本轮暴露并修掉的一个真实测试缺陷
+
+改版本号 9.9.4→9.10.0 后，`tests/test_g44_url_updater.py` 立刻红：
+它把 `v9.9.9` 写死当成「比当前更新」的版本 → 语义变成 9.9.9 < 9.10.0。
+这是**版本时间炸弹**（与项目已禁的「绝对日期表达相对语义」同类）。
+修法：`_newer_tag()` 按当前主版本 +1 动态构造，断言强度不变（仍要求 `has_new=True`）。
+
+> 这条值得单独记：**发版本身是一次回归测试**。凡是把版本号写死进断言的地方，
+> 都会在下一个 minor 版本上炸一次。

@@ -22,3 +22,5 @@ _archive_v1/
 reports/ui-baseline-*/
 reports/ui-g75*/
 reports/ui-g78*/
+# G79 补漏：ui-audit-final 是 G74 轮产物，同样可重建，此前漏在这条规则之外
+reports/ui-audit-final/

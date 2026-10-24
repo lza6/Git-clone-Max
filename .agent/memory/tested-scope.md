@@ -214,3 +214,17 @@ QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe scripts/bench_g70_ui.py
 - **不必重复跑**（本轮已证）：上述全部；改 UI/主题/字号/色板时只需跑
   `test_g75_visual_system + test_g74_ui_layout + test_g46_theme + test_themes + test_g70_ui_upgrade`（约 5s）。
 - 仍需真机/CI：真机 DPI 视觉点检、CI 全矩阵、慢集、perf-baseline（本轮未触发）。
+
+## G79 工程治理与配置真实性（2026-10-24 · v9.10.0）
+
+- 已跑：`ruff check gcm`(0) · `mypy gcm`(Success/87) · `scripts/ci_run_fast.py`
+  （**Ran 1438 · failures=0 · errors=0 · skipped=4 · 覆盖 82%**）
+  · `tests.test_g79_repo_hygiene`（9 OK；首跑 4 fail）· `TestG69_18NoZombieSettingsFields`（2 OK；收紧后先红点名 depth）
+  · 版本单源 11 OK · 旧 settings.json 兼容实测。
+- **不必重复跑**：以上。改 `gcm/db/settings.py` 的字段集合时，只跑
+  `tests.test_g69_regressions.TestG69_18NoZombieSettingsFields` + `tests.test_g79_repo_hygiene` + `tests.test_extra`（秒级）。
+- **新纪律（写进守则）**：**新增/删除 Settings 字段后必须跑僵尸字段守卫**。它现在只认
+  「从 `settings`/`s`/`owner.settings` 取的属性」与 `getattr`/`setattr`/`_save_field` 的字符串键 —— 
+  同名局部变量不再能让字段蒙混过关。
+- **发版即回归**：把版本写死进断言的地方会在下一个 minor 版炸一次（本轮 `test_g44_url_updater` 实证）。
+  写「更新版本」类断言请用 `_newer_tag()` 这类动态推导。

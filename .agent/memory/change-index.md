@@ -4,6 +4,10 @@
 
 | 模块 | 最近变更 | 版本 | 连带影响 |
 |------|---------|------|---------|
+| `gcm/db/settings.py` | **删除 `depth` 字段**（唯一零读取的僵尸配置） | v9.10.0 | 落盘少一键；旧 `settings.json` 含 `depth` 由 `_DEFAULTS` 过滤静默忽略（有单测）。**新增字段必须同时有读取侧**，否则僵尸守卫红 |
+| `tests/test_g69_regressions.py` | **收紧 `TestG69_18NoZombieSettingsFields` 口径**：只认「settings 对象属性 + getattr/setattr/_save_field 字符串键」 | v9.10.0 | 同名局部变量不再能让字段蒙混过关；以后加字段若只用局部变量名「引用」会红 |
+| `tests/test_g79_repo_hygiene.py` | **新增（9 项）**：截图不许入库 / 根目录白名单 / 超 800 行集合相等 / 文档测试文件数 | v9.10.0 | 新增根目录文件或新增超限模块会红，需先登记理由 |
+| `.gitignore` | 补 `reports/ui-audit-final/` | v9.10.0 | 三批截图目录现已一致忽略；截图只用 `ui_screenshot_audit.py` 重建 |
 | `gcm/ui/main_window.py` | 引用环修复（绑定方法替代 lambda）、输入区实时校验条、审计/清单入口、**Star 导入按钮/信号/槽、crypto_warning 启动日志** | v9.4.2–v9.4.7 | 若再加 `lambda` 捕获 self，会重新成环（有守卫）；Star 拉取必须走 worker 线程 |
 | `gcm/ui/manage_model.py` | **`is_visible` / `stale_days` / 过期颜色角色 / 可见性缓存** | v9.4.7 | `data()` 会为过期行返回 Background/ForegroundRole |
 | `gcm/ui/manage_panel.py` | **搜索框 + `setRowHidden` + 收藏/黑名单右键菜单** | v9.4.7 | 过滤用源行号（未接排序代理）；刷新后自动重放过滤 |

@@ -13,6 +13,9 @@
 | 并发 / 锁 / 幂等 | 对应并发测试**连跑 30 次** | 压测脚本 |
 | 打包 / 版本 | `health_check.py` + 版本守卫 | 快集 |
 | CI / 测试运行器 | 快集全量 + 干净检出对照 | 推 CI 验证 |
+| **增删 `Settings` 字段** | `TestG69_18NoZombieSettingsFields` + `tests.test_extra`（旧配置兼容） | 快集 |
+| **改版本号 / 发版** | 版本单源 11 项 + `tests.test_g44_url_updater` + `tests.test_extra`（版本时间炸弹高发区） | 快集 + 打包 |
+| **往仓库加文件 / 改 .gitignore** | `tests.test_g79_repo_hygiene`（9 项） | — |
 
 ## 判定标签（结论必须带其一）
 - **已验证**：实际运行并观察到结果

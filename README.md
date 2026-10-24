@@ -1,7 +1,7 @@
 # Git-clone-Max
 
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
-> **当前版本：v9.9.4**（G75 视觉系统 + 收口：墨/纸双主题重制、三字族排版、状态形状编码、贴顶仪表齿条、进度刻度）
+> **当前版本：v9.10.0**（工程治理与配置真实性收口：删除无效配置字段、修复守卫盲区、截图与死文件出库、新增仓库卫生守卫）
 > **v5.0：多平台直克隆** — GitLab / Gitee / Codeberg / Bitbucket / 自建主机（HTTPS/SSH/短格式/子组）同样支持。
 > 克隆目录一律 `host__作者__仓库`（GitHub 为 `作者__仓库`），本地改动永不覆盖。
 
@@ -140,7 +140,7 @@ Git-clone-Max/
 ├── skills/                  agent 技能包（gcm-clone/archive/report/diag/resume，各含 SKILL.md）
 ├── scripts/                 启动器（bat/ps1）+ E2E 冒烟 / 健康检查 / 发布 / 基准 / CI 快集
 ├── docs/                    架构 / ADR / 数据模型 / agent 契约 / SOP / 发布清单
-├── tests/                   单元 + 集成 + 真实 git E2E（135 个测试文件）
+├── tests/                   单元 + 集成 + 真实 git E2E（137 个测试文件）
 ├── requirements.txt         运行时依赖（PyQt6）
 └── pyproject.toml           项目元数据 + ruff / mypy 配置
 ```
@@ -259,9 +259,9 @@ python -m coverage run --source=gcm -m unittest discover -s tests
 ## 发布
 
 ```bash
-git tag v9.9.4
+git tag v9.10.0
 git push origin main --tags
-python scripts/publish_release.py --tag v9.9.4   # 自动上传 exe 到 GitHub Release
+python scripts/publish_release.py --tag v9.10.0   # 自动上传 exe 到 GitHub Release
 ```
 
 ## License

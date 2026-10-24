@@ -82,7 +82,7 @@ gcm/util/    跨层工具：redact（脱敏）/ filelock（跨进程文件锁）
 gcm/i18n/    文案字典 zh/en（key 即中文，缺失回退中文）
 skills/      agent 技能包（SKILL.md + scripts/），每个必须自包含验收步骤
 scripts/     运维/CI/基准脚本（不参与打包）
-tests/       测试（113 文件）；**新增测试文件默认落在 CI 快集**（scripts/ci_run_fast.py 用黑名单，不是白名单）
+tests/       测试（137 文件）；**新增测试文件默认落在 CI 快集**（scripts/ci_run_fast.py 用黑名单，不是白名单）
 docs/reports/ 历次审计报告（HTML，只读快照）
 docs/        工程/产品/契约文档
 ```
@@ -215,14 +215,14 @@ docs/        工程/产品/契约文档
   **处置**：`scripts/ci_run_fast.py` 整轮关闭自动循环 GC，只在全部模块跑完后回收一次。
   对照实验（禁用循环 GC 跑快集）实测 0 崩溃。
   **仍未根治**：正解是让每个用例确定性收尾（close → deleteLater → 泵空事件队列），
-  但那要逐个改造 31 个构造 MainWindow 的测试文件；已登记为后续工作。
+  但那要逐个改造 **42 个**构造 MainWindow 的测试文件（2026-10-24 G79 实测：`grep -rln "MainWindow(" tests/` = 42，且这 42 个文件都已具备模块级 `QApplication.instance() or QApplication([])` 守卫）；已登记为后续工作。
   **不得**用 `skip`/重试把它「弄绿」。
 - **CI 已锁定 PyQt6 版本**：`.github/workflows/ci.yml` 在 4 处 `pip install PyQt6==6.11.0`；
   `requirements-build.txt` 另锁 ruff/mypy/coverage/pyinstaller。**旧版本文档曾称「未锁定」，已过期**。
-- **代码规模现状（2026-10-23 G76 收口后实测）**：仍为 **3 个**文件超 800 行 —— `main_window.py` **2658**、
+- **代码规模现状（2026-10-24 G79 后实测）**：仍为 **3 个**文件超 800 行 —— `main_window.py` **2665**、
   `service.py` **1768**、`engine.py` **1169**（`progress_table.py` **799**、`repo_db.py` **799**、
   `settings_panel.py` **779**、`settings_groups.py` **783** 均在 800 线内；
-  G76 新增 `settings_actions.py`（216，设置页动作型回调）就是为了让这两个设置模块不越线；G77 把更新检查三段抽到 `update_flow.py`，主窗从 2750 降到 2658。
+  G76 新增 `settings_actions.py`（216，设置页动作型回调）就是为了让这两个设置模块不越线；G77 把更新检查三段抽到 `update_flow.py`，主窗从 2750 降到 2658；G78 修 chip 裁切时 +7 行 → 现值 **2665**。**超 800 行集合现在有守卫**（`tests/test_g79_repo_hygiene::TestNoNewOversizedModules` 用集合相等断言），新增第 4 个超限文件会直接红。
   G75 把 `theme.py` 从 598 拆到 **314**（色板→`palettes`、字排→`typography`、QSS→`qss_build`），
   并把批次总览/结果文案/齿条/pill 各自成模块；
   14 个函数超 100 行（最大 `MainWindow.__init__` 233 行）。

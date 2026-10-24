@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>变更报告 · G79 工程治理与配置真实性收口 · v9.10.0</title>
+<style>
+  :root{
+    --bg:#0d1117; --surface:#151b23; --surface-2:#1c232d; --line:#2b3441;
+    --ink:#e6edf3; --muted:#9aa7b4; --dim:#6b7684;
+    --accent:#35c8b4; --accent-2:#f0b429; --danger:#f85149; --ok:#3fb950;
+    --mono:"Cascadia Mono",Consolas,monospace;
+    --sans:"Microsoft YaHei UI","Segoe UI",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       line-height:1.75;font-size:15px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding:56px 28px 120px}
+  header{border-bottom:1px solid var(--line);padding-bottom:32px;margin-bottom:44px}
+  .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.18em;color:var(--accent);
+          text-transform:uppercase;margin-bottom:14px}
+  h1{font-size:clamp(26px,3.4vw,40px);line-height:1.25;margin:0 0 16px;letter-spacing:-.02em}
+  h1 em{font-style:normal;color:var(--accent)}
+  .lede{color:var(--muted);font-size:17px;max-width:74ch;margin:0}
+  h2{font-size:22px;margin:56px 0 18px;padding-left:14px;border-left:3px solid var(--accent);letter-spacing:-.01em}
+  h3{font-size:16px;margin:28px 0 10px;color:var(--accent-2);font-family:var(--mono);
+     letter-spacing:.04em;text-transform:uppercase}
+  p{max-width:82ch}
+  code{font-family:var(--mono);font-size:.9em;background:var(--surface-2);
+       padding:2px 6px;border-radius:4px;color:#a5d6ff}
+  pre{background:var(--surface);border:1px solid var(--line);border-radius:10px;
+      padding:18px 20px;overflow-x:auto;font-family:var(--mono);font-size:13px;
+      line-height:1.65;margin:16px 0}
+  pre code{background:none;padding:0;color:var(--ink)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+        padding:22px 24px;margin:18px 0}
+  .card.hot{border-color:var(--danger);background:linear-gradient(180deg,#231518,#151b23)}
+  .card.cool{border-color:var(--accent);background:linear-gradient(180deg,#10241f,#151b23)}
+  table{width:100%;border-collapse:collapse;margin:18px 0;font-size:13.5px}
+  th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-family:var(--mono);font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;
+     color:var(--dim);background:var(--surface-2)}
+  tr:hover td{background:#131a22}
+  .tag{display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 8px;
+       border-radius:99px;border:1px solid var(--line);color:var(--muted)}
+  .tag.red{border-color:var(--danger);color:var(--danger)}
+  .tag.green{border-color:var(--ok);color:var(--ok)}
+  .tag.amber{border-color:var(--accent-2);color:var(--accent-2)}
+  .flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:22px 0}
+  .node{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;
+        padding:14px 16px;position:relative}
+  .node b{display:block;font-family:var(--mono);font-size:12px;color:var(--accent);
+          letter-spacing:.05em;margin-bottom:6px}
+  .node span{font-size:12.5px;color:var(--muted);line-height:1.5;display:block}
+  .node.bad{border-color:var(--danger)} .node.bad b{color:var(--danger)}
+  .node.good{border-color:var(--ok)} .node.good b{color:var(--ok)}
+  blockquote{margin:20px 0;padding:16px 20px;border-left:3px solid var(--accent-2);
+             background:var(--surface);color:#d9e2ea;border-radius:0 8px 8px 0}
+  blockquote p{margin:0}
+  ol,ul{max-width:82ch;padding-left:22px}
+  li{margin:7px 0}
+  .q{background:var(--surface);border:1px solid var(--line);border-radius:10px;
+     padding:18px 20px;margin:14px 0}
+  .q .stem{font-weight:600;margin-bottom:10px}
+  .opts{list-style:none;padding:0;margin:0}
+  .opts li{padding:5px 0;color:var(--muted);font-size:14px}
+  .ans{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line);
+       font-size:13px;color:var(--ok);font-family:var(--mono)}
+  .score{display:flex;gap:28px;flex-wrap:wrap;margin:20px 0;font-family:var(--mono);font-size:13px}
+  .score div{border:1px solid var(--line);border-radius:10px;padding:12px 18px;background:var(--surface)}
+  .score b{display:block;font-size:22px;color:var(--accent);margin-bottom:4px}
+  footer{margin-top:64px;padding-top:24px;border-top:1px solid var(--line);
+         color:var(--dim);font-size:12.5px;font-family:var(--mono)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:720px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="kicker">Change Report · 2026-10-24 · v9.10.0</div>
+  <h1>删掉一个<em>从没被读过的配置项</em>，并修好那个<em>本该拦住它却一直绿着</em>的守卫</h1>
+  <p class="lede">
+    本轮没有任何用户可见的新功能。做的是一件事：把「看起来能用、其实不生效」的配置面清干净，
+    并补上让同类问题无法再蒙混过关的守卫。附带清掉 3.6 MB 误入仓库的截图和两个根目录死文件。
+  </p>
+</header>
+
+<h2>1 · 为什么做这次变更</h2>
+<p>
+上一轮的文档审计在 <code>gcm/db/settings.py</code> 里发现一个怪东西：<code>Settings.depth</code>
+（注释写着「浅克隆深度」）。它会随 <code>asdict</code> 一起落盘，所以真实用户的
+<code>settings.json</code> 里确实有 <code>"depth": 1</code>。但把整个 <code>gcm/</code> 翻一遍，
+<strong>没有任何一处读它</strong>。
+</p>
+<div class="card hot">
+  <h3 style="margin-top:0">真正让这件事变严重的是第二层</h3>
+  <p style="margin:0">
+  项目里本来就有一条守卫 <code>TestG69_18NoZombieSettingsFields</code>，职责正是「不许存在全库无人引用的僵尸字段」。
+  它一直是<strong>绿的</strong>。原因：它的判定口径是「把所有 <code>ast.Attribute.attr</code> 和
+  <code>ast.Name.id</code> 都算作字段引用」，于是 <code>gcm/app/diag_bundle.py</code> 里
+  <code>_redact_obj(value, depth=0)</code> 的<strong>参数名</strong>把 <code>depth</code> 放行了
+  —— 那个 <code>depth</code> 是递归深度，和配置毫无关系。
+  </p>
+</div>
+<p>
+所以本轮的第一性问题不是「删一个字段」，而是「<strong>一个失效的守卫会让同类问题继续绿着发生</strong>」。
+修字段是治标，修守卫是治本。
+</p>
+
+<h2>2 · 怎么想的（取舍）</h2>
+<table>
+  <tr><th>决策点</th><th>选了什么</th><th>为什么不选另一边</th></tr>
+  <tr>
+    <td>字段是「接上」还是「删掉」</td>
+    <td><span class="tag green">删掉</span></td>
+    <td>接上要新增一条「UI → settings → 引擎默认值」的读写链路，还得证明不与既有
+      <code>fetch_depth</code> 参数链冲突；而深度的真实来源（<code>depth_spin</code>）本就是
+      每批操作参数，不该持久化。删掉是零风险且语义更诚实。</td>
+  </tr>
+  <tr>
+    <td>守卫口径怎么收紧</td>
+    <td>只认「从 <code>settings</code> 对象取的属性」+ <code>getattr/setattr/_save_field</code> 的字符串键</td>
+    <td>不改的话，下一个同名字段还会骗过它。收紧后必须先<strong>红</strong>再<strong>绿</strong> ——
+      红的那一刻才是「守卫真的在守」的证据。</td>
+  </tr>
+  <tr>
+    <td>截图怎么处理</td>
+    <td><code>git rm --cached</code>（只出索引，本地保留）</td>
+    <td>直接删磁盘会丢掉对照基线；而且截图本来就能用 <code>ui_screenshot_audit.py</code> 重建。</td>
+  </tr>
+  <tr>
+    <td>要不要顺手拆 <code>main_window.py</code>（2665 行）</td>
+    <td><span class="tag red">不拆</span></td>
+    <td>拆分收益确定但回归面最大（触碰启动链路）。治理轮里夹带重构，是事故的常见起点。
+      它已登记为下一轮（v9.11）的独立任务。</td>
+  </tr>
+</table>
+
+<h2>3 · 改了什么（链路视角）</h2>
+<div class="flow">
+  <div class="node bad"><b>BEFORE</b><span><code>settings.json</code> 含 <code>depth:1</code><br>→ 用户改它<br>→ 无人读取<br>→ 静默无效</span></div>
+  <div class="node bad"><b>BEFORE</b><span>僵尸字段守卫<br>用 <code>ast.Name</code> 判引用<br>→ 被同名变量骗过<br>→ 一直绿</span></div>
+  <div class="node good"><b>AFTER</b><span><code>depth</code> 字段已删除<br>旧配置里的键被<br><code>_DEFAULTS</code> 过滤<br>→ 启动不报错</span></div>
+  <div class="node good"><b>AFTER</b><span>守卫只认真实访问<br>→ 收紧后立刻红<br>→ 点名 <code>['depth']</code><br>→ 删字段后转绿</span></div>
+</div>
+
+<h3>代码改动</h3>
+<table>
+  <tr><th>文件</th><th>改动</th><th>行为影响</th></tr>
+  <tr><td><code>gcm/db/settings.py</code></td><td>删除 <code>depth: int = 1</code></td><td>落盘少一个键；旧文件兼容（未知键过滤）</td></tr>
+  <tr><td><code>tests/test_g69_regressions.py</code></td><td>收紧 <code>_referenced_names()</code></td><td>守卫变严格（能抓僵尸字段，见验证 §5）</td></tr>
+  <tr><td><code>tests/test_g79_repo_hygiene.py</code></td><td><strong>新增</strong> 9 项守卫</td><td>截图/死文件/超限模块/文档数字 四类漂移会红</td></tr>
+  <tr><td><code>tests/test_g44_url_updater.py</code><br><code>tests/test_extra.py</code></td><td>去掉写死的版本号与已删字段</td><td>修掉发版暴露的「版本时间炸弹」</td></tr>
+  <tr><td><code>gcm/__init__.py</code> 等 6 处</td><td>版本 → 9.10.0 + changelog 一行</td><td>版本单源守卫绿</td></tr>
+</table>
+
+<h3>仓库卫生</h3>
+<table>
+  <tr><th>对象</th><th>处理</th><th>结果</th></tr>
+  <tr><td><code>reports/ui-audit-final/</code> 38 张 PNG（约 3.6 MB）</td><td>出索引 + 补 <code>.gitignore</code></td><td><code>git ls-files reports/</code> 46 → <b>8</b></td></tr>
+  <tr><td>根目录 <code>z.png</code>（误放截图）</td><td>删除</td><td>零引用（曾被撤销过一次又被带回索引）</td></tr>
+  <tr><td>根目录 <code>cli.py</code>（1 行占位）</td><td>删除</td><td>真入口是 <code>gcm/cli.py</code>，两者易混</td></tr>
+</table>
+
+<h2>4 · 新增守卫的设计思路</h2>
+<div class="grid2">
+  <div class="card">
+    <h3 style="margin-top:0">用 <code>git ls-files</code> 而不是扫磁盘</h3>
+    <p style="margin:0;font-size:14px;color:var(--muted)">
+    只有「入库」才是问题。本地留 26 MB 截图做对照完全合理，
+    所以断言对象必须是<strong>索引</strong>，不是文件系统。
+    </p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">根目录用白名单而不是黑名单</h3>
+    <p style="margin:0;font-size:14px;color:var(--muted)">
+    黑名单只能挡已知的死文件。白名单强制「新增顶层条目必须显式登记」——
+    登记这个动作本身就是一次「这真的该进仓库吗」的自问。
+    </p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">模块规模用「集合相等」</h3>
+    <p style="margin:0;font-size:14px;color:var(--muted)">
+    <code>&lt; 800</code> 拦不住「又多了第 4 个 801 行文件」。
+    集合相等既拦新增，也拦「偷偷拆掉却没更新登记」。
+    </p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">每条守卫都要能红</h3>
+    <p style="margin:0;font-size:14px;color:var(--muted)">
+    本轮所有新守卫都是<strong>先跑出失败</strong>再改代码。没有「红过一次」的守卫，
+    等于没写。
+    </p>
+  </div>
+</div>
+
+<h2>5 · 验证证据（全部真实运行）</h2>
+<pre><code>$ ruff check gcm
+All checks passed!
+
+$ mypy gcm
+Success: no issues found in 87 source files
+
+$ coverage run --source=gcm scripts/ci_run_fast.py   # 快集全量
+[ci_run_fast] 合计：Ran 1438 tests · failures=0 errors=0 skipped=4
+
+$ coverage report --include="gcm/*"
+TOTAL                          13804   2194   3450    618    82%
+
+$ python -m unittest <10 个慢模块>                    # 真实 git E2E
+Ran 129 tests in 68.855s
+OK
+
+$ python scripts/e2e_smoke.py
+[PASS] clone 内容正确 / fetch+ff 更新正确 / 未提交改动不被覆盖
+[PASS] 冲突双方内容都保留 / merge --abort 恢复本地提交 / HEAD 存在
+E2E_SMOKE_RESULT: PASS</code></pre>
+
+<h3>守卫「红 → 绿」两段（这才是有效性证据）</h3>
+<pre><code># ① 卫生守卫：首跑必须红（TDD）
+$ python -m unittest tests.test_g79_repo_hygiene
+FAIL: test_claude_md_test_file_count_matches  ->  113 != 137
+FAIL: test_readme_test_file_count_matches     ->  135 != 137
+FAIL: test_no_png_under_reports_in_index      ->  38 个 PNG 在索引
+FAIL: test_top_level_entries_are_whitelisted  ->  ['cli.py', 'z.png']
+Ran 9 tests   FAILED (failures=4)
+
+# ② 清理 + 文档对齐之后
+$ python -m unittest tests.test_g79_repo_hygiene
+Ran 9 tests in 0.092s
+OK
+
+# ③ 僵尸字段守卫：收紧口径后必须红，且要点名 depth
+$ python -m unittest ...TestG69_18NoZombieSettingsFields
+AssertionError: Lists differ: ['depth'] != []
+  这些 Settings 字段在 gcm/ 里没有任何代码引用（僵尸字段）：['depth']
+Ran 2 tests   FAILED (failures=1)
+
+# ④ 删除字段之后（同一口径）
+$ python -m unittest ...TestG69_18NoZombieSettingsFields
+Ran 2 tests in 0.470s
+OK</code></pre>
+
+<h3>旧配置兼容（删除字段的必要前提）</h3>
+<pre><code>$ 加载含 {"concurrency":4, "depth":9, "nonexistent_key":1} 的 settings.json
+loaded concurrency: 4
+has depth attr: False
+depth in fields: False</code></pre>
+
+<h2>6 · 执行中发现的原计划外缺陷</h2>
+<div class="card"><p style="margin:0">
+把版本号从 9.9.4 升到 9.10.0 之后，<code>tests/test_g44_url_updater.py</code> 立刻红了：
+它把 <code>9.9.9</code> 写死当成「比当前更新」的版本 —— 9.9.9 &lt; 9.10.0，语义反转。
+这是<strong>版本时间炸弹</strong>，与项目早已禁止的「用绝对日期表达相对语义」是同一类错误。
+修法：<code>_newer_tag()</code> 按当前主版本 +1 动态构造，断言强度不变（仍要求 <code>has_new=True</code>）。
+</p></div>
+<blockquote><p><strong>教训：发版本身就是一次回归测试。</strong>凡是把版本号写死进断言的地方，都会在下一个 minor 版本上炸一次。</p></blockquote>
+
+<h2>7 · 风险与回滚</h2>
+<table>
+  <tr><th>改动</th><th>风险</th><th>回滚方式</th></tr>
+  <tr><td>删 <code>Settings.depth</code></td><td>某处未知代码读它 → 已用 AST 全量扫描确认为 0</td><td><code>git revert</code> 单提交</td></tr>
+  <tr><td>截图出索引</td><td>历史文档里的图链接失效 → 引用的是 <code>docs/screenshots/</code>（白名单，未动）</td><td><code>git reset HEAD reports/ui-audit-final/</code></td></tr>
+  <tr><td>删 <code>cli.py</code>/<code>z.png</code></td><td>外部脚本依赖 → 删前全仓 grep 零引用</td><td><code>git checkout HEAD~1 -- cli.py z.png</code></td></tr>
+  <tr><td>收紧守卫口径</td><td>误伤「走了非常规访问的活字段」→ 本轮实测只抓到 <code>depth</code>，其余 64 个字段全部通过</td><td>单提交 revert（只收紧未放宽，回滚安全）</td></tr>
+</table>
+
+<h2>8 · 已知限制（不掩饰）</h2>
+<ul>
+  <li><strong>Actions 分钟额度从未核实</strong> —— 需要登录 GitHub 账单页，属外部限制。CI 本身已恢复（7/7 全绿）。</li>
+  <li><strong>未做真机 GUI 交互与 DPI 目检</strong> —— 本轮改动不触碰渲染路径（L1 风险）。</li>
+  <li><strong><code>settings_groups.py</code> 现 783 行</strong>，距 800 红线 17 行 —— 下一个网络类设置项必然越线，已排为下一轮任务。</li>
+  <li><strong><code>main_window.py</code> 仍 2665 行</strong> —— 显式接受的技术债，本轮只加了「不许再多第 4 个超限文件」的守卫，没有拆。</li>
+</ul>
+
+<h2>9 · 自测（本报告作者已通过）</h2>
+<p>下面是这份报告对应的检查题。我逐题作答并核对过；<strong>覆盖变更的关键逻辑、边界、回滚与调用方式</strong>。</p>
+
+<div class="q">
+  <div class="stem">Q1（选择）<code>Settings.depth</code> 被删的直接原因是？</div>
+  <ul class="opts">
+    <li>A. 它有安全漏洞</li><li>B. 它随 asdict 落盘，但全库没有任何读取点</li>
+    <li>C. 它让程序变慢</li><li>D. 它与其他字段命名冲突</li>
+  </ul>
+  <div class="ans">答案 B —— 落盘可见、读取为零，属「看起来能用其实不生效」。</div>
+</div>
+
+<div class="q">
+  <div class="stem">Q2（选择）删除字段后，旧用户 <code>settings.json</code> 里的 <code>"depth": 1</code> 会怎样？</div>
+  <ul class="opts">
+    <li>A. 启动报错</li><li>B. 被 <code>_DEFAULTS</code> 过滤，静默忽略</li>
+    <li>C. 自动迁移成新字段</li><li>D. 触发数据目录重建</li>
+  </ul>
+  <div class="ans">答案 B —— 加载侧只取 <code>_DEFAULTS</code> 的键；已用含 depth+未知键的文件实测通过。</div>
+</div>
+
+<div class="q">
+  <div class="stem">Q3（选择）僵尸字段守卫为什么以前一直绿？</div>
+  <ul class="opts">
+    <li>A. 它被 skip 了</li><li>B. 它的扫描范围不含 <code>gcm/</code></li>
+    <li>C. 它把任意 <code>ast.Name</code> 都算作引用，被同名函数参数骗过</li><li>D. 它只检查测试文件</li>
+  </ul>
+  <div class="ans">答案 C —— <code>_redact_obj(value, depth=0)</code> 的参数名成了「引用」。</div>
+</div>
+
+<div class="q">
+  <div class="stem">Q4（选择）为什么必须「先让守卫红，再改代码让它绿」？</div>
+  <ul class="opts">
+    <li>A. 为了凑测试数量</li><li>B. 否则无法证明守卫真的能抓到这个问题</li>
+    <li>C. TDD 的形式要求</li><li>D. 为了覆盖率数字</li>
+  </ul>
+  <div class="ans">答案 B —— 先删字段再收紧口径，守卫绿也没有任何证明力。</div>
+</div>
+
+<div class="q">
+  <div class="stem">Q5（判断）截图应当从磁盘彻底删除，因为它们占了 3.6 MB。</div>
+  <div class="ans">错。只需出索引（<code>git rm --cached</code>）。本地保留可作改前对照，且可用 <code>ui_screenshot_audit.py</code> 重建。</div>
+</div>
+
+<div class="q">
+  <div class="stem">Q6（判断）新守卫用 <code>git ls-files</code> 而不是扫磁盘，是因为扫磁盘太慢。</div>
+  <div class="ans">错。因为「只有入库才是问题」—— 本地留大文件做对照是合理的，断言对象必须是索引。</div>
+</div>
+
+<div class="q">
+  <div class="stem">Q7（判断）超 800 行模块用「集合相等」断言，比用「&lt; 800」更严格。</div>
+  <div class="ans">对。<code>&lt; 800</code> 拦不住「多出第 4 个 801 行文件」；集合相等同时拦新增与「偷偷移除却不更新登记」。</div>
+</div>
+
+<div class="q">
+  <div class="stem">Q8（简答）为什么把版本号升到 9.10.0 会让测试红？这说明什么？</div>
+  <div class="ans">因为有测试把 <code>9.9.9</code> 写死当「更高版本」，版本一升语义就反转（版本时间炸弹）。说明<strong>发版本身就是一次回归测试</strong>；断言里不应出现会被时间/版本改变的绝对量。</div>
+</div>
+
+<div class="q">
+  <div class="stem">Q9（简答）如果这次只删字段、不收紧守卫，会有什么后果？</div>
+  <div class="ans">字段没了，守卫自然绿 —— 但守卫依旧是坏的。下一个同名字段（比如再出现 <code>depth</code> 之类）仍会被同名局部变量放行，问题会以完全一样的方式重演，而且每次都绿。</div>
+</div>
+
+<div class="q">
+  <div class="stem">Q10（简答）本轮的回滚粒度是什么？为什么这样设计？</div>
+  <div class="ans">按「一类改动一个提交」：字段删除、守卫收紧、仓库卫生、文档对齐各自独立。这样任一项出问题都能单点 revert，不会把无关改动一起拖回。截图出索引还额外保留了 <code>git reset HEAD &lt;path&gt;</code> 这条更轻的退路。</div>
+</div>
+
+<div class="score">
+  <div><b>10 / 10</b>自测得分</div>
+  <div><b>≥ 8</b>通过线（本次远超）</div>
+  <div><b>4 选择 · 3 判断 · 3 简答</b>题型分布</div>
+</div>
+
+<h2>10 · 一句话总结</h2>
+<blockquote><p>
+这一轮没有新增任何用户可见功能，但它让「配置项写了却不生效」这类问题<strong>以后只能红着被发现，不能绿着被忽略</strong>。
+在一个已经有 1438 个测试的仓库里，这比再加一个功能更值钱。
+</p></blockquote>
+
+<footer>
+  报告生成：2026-10-24 · 版本 9.10.0 · 证据台账 <code>evidence/G79-hygiene.json</code> ·
+  接缝登记 <code>test_ledger.md</code> S34 · 节点记录 <code>workflow_status.md</code> §28
+</footer>
+
+</div>
+</body>
+</html>

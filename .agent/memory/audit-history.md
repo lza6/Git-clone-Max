@@ -151,3 +151,21 @@
   `concurrency{cancel-in-progress:true}` 已把旧 run（含 afb92e2/d2ec841）**全部取消**，
   因此 v9.9.3/v9.9.4 两个发布提交**没有 CI 结论**。不得声称 CI 通过。
   最后一次真实 CI：d69d229 / e5ab085 / ff1c3f0 / 57b31a9 各 7/7。
+
+- **2026-10-24 · G79 工程治理与配置真实性收口（v9.10.0）**：用户拍板走「治理优先」。
+  本轮现测新事实：`Settings` **65 个字段里 `depth` 是唯一零读取者**（随 `asdict` 落盘、
+  真实 `data/settings.json` 里确有 `"depth": 1`，但全库 `.depth` / `getattr(s,"depth")` 均为 0）。
+  更严重的是**守卫一直绿**：`TestG69_18NoZombieSettingsFields` 把任意 `ast.Name` 当引用，
+  被 `gcm/app/diag_bundle.py::_redact_obj(value, depth=0)` 的参数名放行。已收紧口径并
+  **先红（精确点名 `depth`）后绿（删字段）**。同时：`reports/ui-audit-final/` 38 张 PNG
+  （3.6 MB）出索引（`git ls-files reports/` 46→8）+ 补 `.gitignore`；删根目录 `z.png` 与
+  占位 `cli.py`；新增 `tests/test_g79_repo_hygiene`(9)。验证：ruff 0 / mypy Success(87) /
+  快集 **1438·0fail·4skip·82%** / 慢集 **129 OK 68.9s** / `e2e_smoke PASS` /
+  打包 E2E `cloned→fetched`（HEAD `7fd1a60`，origin 回源站）/ 无效输入 exit=2 /
+  健康检查 version_match 9.10.0 · started_ok。
+- **更正（同日）**：上一条「阻塞（外部）：GitHub Actions 不派发」**已解除** ——
+  最新 HEAD `7097209` 的 run **39922315053 为 7/7 success**（completed 2026-10-23T11:35:03Z）。
+  仍未核实的只剩 Actions 分钟额度（需登录账单页）。
+- **教训（新）**：**发版就是一次回归测试**。把 `9.9.9` 写死当「更高版本」的断言
+  （`tests/test_g44_url_updater.py`、`tests/test_extra.py`）在升到 9.10.0 后立刻红 ——
+  与「绝对日期表达相对语义」同类。已改为按当前主版本 +1 动态推导。

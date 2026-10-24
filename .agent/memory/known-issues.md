@@ -1,7 +1,7 @@
 # 已知问题与边界（known-issues）
 
 > 只记录**真实存在**且尚未解决的问题。修掉一个就删一条。
-> 最后更新：2026-10-18（G69-22 第三轮审查整改后）
+> 最后更新：2026-10-24（v9.10.0 G79 工程治理与配置真实性收口）
 
 ## 未闭环功能
 
@@ -85,7 +85,7 @@
 | 12 | `check_latest_with_sha` 无调用 | 更新提示不展示 sha256 | 低价值，可删 |
 | 13 | `is_data_dir_private` / `migrate_data_dir` 无调用 | 目录隐私提示与迁移不可达 | 需产品决策 |
 | 14 | 只读不写字段：`clone_timeout` / `minimize_to_tray` / `watchdog_silent` / `sched_report_format` / `retry_backoff_base_sec` | 只能手改 settings.json | 逐项补 UI 或删字段 |
-| 15 | `quick_repos` 无编辑入口；`depth` 字段完全无引用 | 只能手改 settings.json | 补编辑对话框 / 删 `depth` |
+| 15 | ~~`quick_repos` 无编辑入口；`depth` 字段完全无引用~~ **已闭环（v9.10.0）** | — | `quick_repos` 已由 G76 接写入侧；`depth` **已删除**（G79：它是唯一零读取的僵尸字段，随 `asdict` 落盘但永不生效）；顺带修掉 `TestG69_18NoZombieSettingsFields` 的同名局部变量盲区 |
 
 其余仅测试引用的内部函数（`token.py`、`slow_remote_hint`、`backup_to`、`TaskLists.delete` 等）
 记录在 `workflow_status.md` §11，未删除 —— 删代码前需确认没有外部脚本依赖。
@@ -100,7 +100,7 @@
 
 ## 环境边界
 
-- **CI 主矩阵用 `pip install PyQt6`（未锁版本）**；`requirements-build.txt` 锁了 ruff/mypy/coverage/pyinstaller。上游发新版会让 CI 行为漂移。
+- ~~**CI 主矩阵用 `pip install PyQt6`（未锁版本）**~~ **已过期（2026-10-24 G79 更正）**：`.github/workflows/ci.yml` 4 处均为 `PyQt6==6.11.0`，覆盖率工具为 `coverage==7.16.0`；`requirements-build.txt` 另锁 ruff/mypy/coverage/pyinstaller。CI 依赖已完全锁定。
 - **CI 只在 Linux 跑慢集**；Windows 特有的编码/路径问题必须本机验证。
 - **打包构建未纳入 CI**：exe 需人工重建 + `health_check.py` 验证。
 
