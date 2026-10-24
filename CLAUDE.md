@@ -277,6 +277,9 @@ docs/        工程/产品/契约文档
 - **覆盖率门禁是快集口径**（Windows 81 / POSIX 80），不是全量口径；POSIX 低 1 个点源于 `msvcrt`/`schtasks`/`winreg` 分支不可执行。
 - **`gcm/ui/*.py` 有 E501 豁免**（纯中文文案长行，East-Asian 宽度计数）；`gcm/i18n/*.py` 为生成文件同样豁免；`gcm/db/settings.py` 也有 E501 豁免（字段注释长行）。
 - **CI 只在 Linux 上跑慢集**：Windows 特有的编码/路径问题必须本机验证，别只信 CI 绿灯。
-- **打包构建未纳入 CI**：`Git-clone-Max.spec` 的版本常量由静态测试守卫，但 exe 需人工重建验证。
+- **打包构建已进 CI（G80-B3，仅 tag / 手动触发）**：`.github/workflows/ci.yml` 的 `packaging` job 在
+  windows-latest 上跑 `PyInstaller → build_portable_zip.py → health_check.py --json`，产物 JSON + zip 作为 artifact。
+  **但它不进每次 push**（打包+冒烟 5~10 分钟，会拖垮反馈），所以「本地发版前必须自己跑一遍 health_check.py」这条不变；
+  **CI 绿 ≠ 你手上这个 exe 能起来**（杀软/代理/路径差异是本项目历史最常见的假绿来源）。
 - **技能包脚本用 `sys.executable` 找解释器**：在打包 exe 环境下需改为打包路径（见 `skills/G56-1-验收说明.md` 遗留风险）。
 - **`report.export_xlsx` 依赖可选包 openpyxl**：缺失时抛带安装提示的 RuntimeError（不静默降级）。

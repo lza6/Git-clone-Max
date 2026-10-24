@@ -1274,3 +1274,15 @@ Release `v9.10.2`（id=422788581）产物从 Release 独立下载后重算 sha25
 | **`docs/计划书/` 归档删除（U-3）** | **未执行（阻塞）** | 项目 `policy.md` §5 + `docs/计划书/README.md` §1.2「存在任一未闭环项不得删除」，而该文档 Rev5.2 自述 **T-41/T-42/T-43 未开始 + P2-5/P2-8 未闭环** → 需用户确认是否放弃这些项 |
 
 校验：ruff 0 · mypy Success(87) · 新守卫 10 例 · 定向回归 **228 例 OK(skip 1)** · 文档守卫 21 例 OK。
+
+
+### G80-B3 + 全量验证（2026-10-25）
+
+| 项 | 结果 |
+|---|---|
+| 全量快集 | **Ran 1461 · failures=0 · errors=0 · skipped=4** |
+| 覆盖率 | **82%**（快集口径，门禁达标） |
+| packaging job | `ci.yml` 新增（tag/手动触发）；`yaml.safe_load` 结构验证通过 |
+| health_check 本地实跑 | 7 项全 [OK]，1661ms，exe sha256=43127bd9… |
+| 第一轮红灯 | `test_repo_detail` 补丁点失效 → 741706f 修（断言强度未变） |
+| **未验证** | GitHub Actions 上 packaging job 的真实构建耗时与 60s 存活阈值（本地无法跑 Actions） |

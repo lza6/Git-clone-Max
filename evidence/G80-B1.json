@@ -44,6 +44,11 @@
       "cmd": "python <temp>/gcm_e2e_http.py  （真起 --serve，GET 三个只读端点）",
       "exit_code": 0,
       "raw_output_tail": "[http] 服务就绪: True\n[200] /api/report?format=json 长度=354 含凭据明文=False\n[200] /api/repos 长度=499 含凭据明文=False\n[200] /api/repos/search?q=a 长度=440 含凭据明文=False\n结论: PASS 三个出口均无明文凭据"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen python -m coverage run --source=gcm scripts/ci_run_fast.py  然后 coverage report --include=\"gcm/*\"",
+      "exit_code": 0,
+      "raw_output_tail": "[ci_run_fast] 合计：Ran 1461 tests · failures=0 errors=0 skipped=4\nTOTAL 13857 2185 3458 620 82%"
     }
   ],
   "files_changed": [
@@ -64,14 +69,55 @@
     "F4_global_flags": "__main__ 新增 _strip_global_flags，在交给 cli.main 前剥掉 --portable/--minimized（两种顺序都覆盖）。"
   },
   "tests": [
-    {"name": "tests.test_g80_contract (12)", "type": "unit+integration", "status": "passed", "evidence": "Ran 12 tests OK（RED 时 failures=5/errors=4）"},
-    {"name": "tests.test_g49_cli 等 6 个定向模块 (91)", "type": "regression", "status": "passed", "evidence": "Ran 91 tests OK"},
-    {"name": "ruff check gcm", "type": "lint", "status": "passed", "evidence": "All checks passed"},
-    {"name": "mypy gcm", "type": "typecheck", "status": "passed", "evidence": "Success: no issues in 87 source files"},
-    {"name": "MCP stdio 真机（initialize/tools/list/call）", "type": "e2e", "status": "passed", "evidence": "见 commands_executed[6]，且数据目录未生成 repos.db"},
-    {"name": "本地 HTTP API 出站打码（真起服务）", "type": "e2e", "status": "passed", "evidence": "见 commands_executed[7]，三出口 0 明文"}
+    {
+      "name": "tests.test_g80_contract (12)",
+      "type": "unit+integration",
+      "status": "passed",
+      "evidence": "Ran 12 tests OK（RED 时 failures=5/errors=4）"
+    },
+    {
+      "name": "tests.test_g49_cli 等 6 个定向模块 (91)",
+      "type": "regression",
+      "status": "passed",
+      "evidence": "Ran 91 tests OK"
+    },
+    {
+      "name": "ruff check gcm",
+      "type": "lint",
+      "status": "passed",
+      "evidence": "All checks passed"
+    },
+    {
+      "name": "mypy gcm",
+      "type": "typecheck",
+      "status": "passed",
+      "evidence": "Success: no issues in 87 source files"
+    },
+    {
+      "name": "MCP stdio 真机（initialize/tools/list/call）",
+      "type": "e2e",
+      "status": "passed",
+      "evidence": "见 commands_executed[6]，且数据目录未生成 repos.db"
+    },
+    {
+      "name": "本地 HTTP API 出站打码（真起服务）",
+      "type": "e2e",
+      "status": "passed",
+      "evidence": "见 commands_executed[7]，三出口 0 明文"
+    },
+    {
+      "name": "全量快集 + 覆盖率",
+      "type": "integration",
+      "status": "passed",
+      "evidence": "Ran 1461 · failures=0 · errors=0 · skipped=4 · 覆盖率 82%（门禁 Windows 81 / POSIX 80）"
+    }
   ],
-  "coverage_summary": {"lines": null, "branches": null, "functions": null, "statements": null},
+  "coverage_summary": {
+    "lines": 82.0,
+    "branches": null,
+    "functions": null,
+    "statements": null
+  },
   "seams_touched": [
     "CLI 进程入口 → cli.main（argv 契约）",
     "engine._on_result → DB/UI/事件（结果文本唯一打码点）",
@@ -79,9 +125,12 @@
     "HTTP /api/* → repo_db（行打码）"
   ],
   "mock_scenarios_covered": [],
-  "browser_validation": {"performed": false, "paths": [], "screenshots": []},
+  "browser_validation": {
+    "performed": false,
+    "paths": [],
+    "screenshots": []
+  },
   "limitations": [
-    "全量快集（约 8.8 分钟）未跑：本轮只跑定向回归 91 例 + 新守卫 12 例；发布前需补快集。",
     "覆盖率未重算（coverage_summary 填 null）。",
     "版本号未 bump（9.10.2）；changelog 与打包产物在发布批次统一处理。",
     "POST /api/clone 在打包 exe 下用 sys.executable -m gcm 的疑似失效未验证（属 B4/后续）。",

@@ -260,3 +260,17 @@ QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe scripts/bench_g70_ui.py
 | CLI 全局标志（3 组 + 对照） | `--cli FILE` / `--cli --portable FILE` / `--portable --cli FILE` / `--cli --minimized -` 全部「未提供仓库地址」exit 2 |
 
 **改这块必跑**：`tests.test_g80_contract`、`tests.test_g49_cli`、`tests.test_g56_mcp*`、`tests.test_g44_secure*`、`tests.test_g71_event_stream`。
+
+
+## 2026-10-25 · G80-B2/B3 全量快集（**已跑过，勿重复**）
+
+| 命令 | 结果 |
+|---|---|
+| `coverage run --source=gcm scripts/ci_run_fast.py` | **Ran 1461 · failures=0 · errors=0 · skipped=4** |
+| `coverage report --include="gcm/*"` | **TOTAL 82%**（门禁 Windows 81 / POSIX 80 → 达标） |
+| `python scripts/health_check.py` | 7 项全 `[OK]`，elapsed 1661ms（exe/zip sha256、版本一致、离屏存活、建库） |
+| `unittest tests.test_g80_hygiene` / `test_g80_contract` | 10 / 12 例 OK |
+
+**注意**：快集第一轮曾红（`test_repo_detail.test_open_dir_posix_opener_via_mock`），
+根因是「打开目录」实现收敛后补丁点失效（不是行为回归），已在 `741706f` 修掉；
+若你看到旧日志里的 failures=1，那是修复前那一轮。
