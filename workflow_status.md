@@ -1286,3 +1286,13 @@ Release `v9.10.2`（id=422788581）产物从 Release 独立下载后重算 sha25
 | health_check 本地实跑 | 7 项全 [OK]，1661ms，exe sha256=43127bd9… |
 | 第一轮红灯 | `test_repo_detail` 补丁点失效 → 741706f 修（断言强度未变） |
 | **未验证** | GitHub Actions 上 packaging job 的真实构建耗时与 60s 存活阈值（本地无法跑 Actions） |
+
+
+### G80-B4 部分交付（2026-10-25）
+
+| 子项 | 状态 | 证据 |
+|---|---|---|
+| B4-1 检出校验（"取回了但没检出"不再是成功） | **已完成** | `evidence/G80-B4a.json` · 守卫 `test_g80_checkout_visible`(6) 真 git 造 4 种仓库 |
+| B4-3 HTTP 硬化（体积上限 / format 白名单 / 搜索下推） | **已完成** | `evidence/G80-B4c.json` · 守卫 `test_g80_http_hardening`(9) |
+| B4-1b 右键删除半成品 / 扫描 needs_attention | **未开始** | — |
+| B4-2 exe 下载校验 | **未开始** | — |
