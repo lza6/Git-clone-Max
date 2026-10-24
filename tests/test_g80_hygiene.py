@@ -23,7 +23,9 @@ GCM = ROOT / "gcm"
 #   所以 except 基线抬到 574；pass-only 仍是 280（这条才是真正的红线）。
 # - B4-1 再加 2 个（service._git_out 探针失败返回 -1、_probe_checkout 的 OSError），
 #   都是「探针失败按未知处理」而非静默吞错误，pass-only 依然没涨。
-BASELINE_EXCEPT = 576
+# - B4-1b 又加 2 个（scanner._looks_halfcloned 与 halfclone_actions.looks_halfcloned
+#   的 OSError 兜底）——这是同一类「探测失败返回 False」的防御分支，也不是裸吞。
+BASELINE_EXCEPT = 578
 BASELINE_PASS_ONLY = 280
 
 

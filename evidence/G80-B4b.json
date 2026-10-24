@@ -1,0 +1,33 @@
+{
+  "task_id": "G80-B4b",
+  "title": "半成品目录可见性：扫描标记 + 导入默认不勾 + 右键二次确认删除（B4-1b）",
+  "status": "passed",
+  "timestamp": "2026-10-25T02:50:00+08:00",
+  "scope": "批次 B4 的 B4-1b 子项（差距 G-01 的 UI 部分）",
+  "commands_executed": [
+    {"cmd": "QT_QPA_PLATFORM=offscreen python -m unittest tests.test_g80_halfclone_ui -v", "exit_code": 0, "raw_output_tail": "Ran 8 tests in 0.171s\n\nOK"},
+    {"cmd": "python -m ruff check gcm", "exit_code": 0, "raw_output_tail": "All checks passed!"},
+    {"cmd": "python -m unittest tests.test_g80_halfclone_ui tests.test_scanner tests.test_g80_checkout_visible tests.test_g52_progress_table_extra tests.test_g52_mainwindow_extra tests.test_g74_ui_layout tests.test_g75_visual_system tests.test_repo_detail tests.test_g79_repo_hygiene tests.test_g80_hygiene", "exit_code": 0, "raw_output_tail": "36 + 103 例 OK（含 UI 回归）"}
+  ],
+  "files_changed": [
+    "gcm/app/scanner.py", "gcm/ui/local_repos_dialog.py",
+    "gcm/ui/halfclone_actions.py (new)", "gcm/ui/progress_menu.py (new)",
+    "gcm/ui/progress_table.py", "tests/test_g80_halfclone_ui.py (new)"
+  ],
+  "design": {
+    "scanner": "RepoInfo.needs_attention（有 .git 但工作树除 .git 外零条目）；刻意保守，不猜「文件太少」",
+    "import_dialog": "疑似半成品默认不勾选 + 文案标注「疑似半成品：已取回未检出」；用户仍可手动勾选（不武断禁止）",
+    "row_menu": "只在疑似半成品行显示「删除半成品目录…」，且**必须二次确认**（No 不删有测试）",
+    "why_two_new_modules": "progress_table.py 超 800 行 → halfclone_actions.py（判定/删除/行目录解析）+ progress_menu.py（菜单构建），回到 790 行",
+    "dedup": "row_repo_dir 成为「打开目录/判半成品/删除」三处的同一解析（先经 _row_engine_index，排序后仍精确）"
+  },
+  "tests": [
+    {"name": "扫描标记 4 例（半成品/健康/非仓库/端到端扫描）", "type": "unit+e2e", "status": "passed"},
+    {"name": "导入对话框：半成品默认不勾、健康仓库仍默认勾、文案标注", "type": "integration", "status": "passed"},
+    {"name": "右键菜单：只在半成品行出现删除入口；No 不删、Yes 才删", "type": "integration", "status": "passed"}
+  ],
+  "limitations": [
+    "全量快集未在本改动后重跑（按惯例将在下一批前跑）。",
+    "半成品删除后未自动刷新进度表状态（用户再点同步即可；不做自动重调度）。"
+  ]
+}

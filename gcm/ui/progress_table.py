@@ -26,7 +26,9 @@ from ..i18n import tr
 from ..models import RepoSpec, SyncResult, SyncStatus
 from ..util.openfolder import open_folder
 from . import main_window as _mw  # 兼容测试对 main_window.QMessageBox 等模块级 patch
+from .halfclone_actions import delete_halfcloned, looks_halfcloned, row_repo_dir
 from .progress_delegate import DETAIL_ROLE, ProgressDelegate
+from .progress_menu import build_progress_menu
 from .theme import LogLevel, current_palette
 
 
@@ -356,20 +358,39 @@ class ProgressTable(QWidget):
         self.owner.statusBar().showMessage("错误详情已复制")
 
     def _open_row_dir(self, row: int):
-        """打开该行仓库所在目录（Windows startfile / POSIX 打开器）。"""
-        idx = self._row_engine_index(row)
-        spec = self.owner.row_specs.get(idx)
-        if spec is None:
-            return
-        if spec.local_path:
-            p = Path(spec.local_path)
-        else:
-            p = Path(self.owner.target_edit.text().strip() or self.owner.data_dir / "clones") / spec.folder_name
-        if not p.is_dir():
+        """打开该行仓库所在目录（统一走 util/openfolder）。"""
+        p = row_repo_dir(self, row)
+        if p is None or not p.is_dir():
             _mw.QMessageBox.warning(self.owner, tr("目录不存在"), str(p))
             return
         if not open_folder(p):
             _mw.QMessageBox.warning(self.owner, tr("无法打开目录"), str(p))
+
+    def _row_is_halfcloned(self, row: int) -> bool:
+        return looks_halfcloned(self._row_dir(row))
+
+    def _row_dir(self, row: int):
+        return row_repo_dir(self, row)
+
+    def _delete_halfcloned_row(self, row: int) -> None:
+        """删除半成品目录（**二次确认**；判定不过则不动手）。
+
+        判定与删除都在 `halfclone_actions` 里，UI 只负责「让用户点两次确认」。
+        """
+        p = self._row_dir(row)
+        if not self._row_is_halfcloned(row):
+            _mw.QMessageBox.information(self.owner, "无需清理", "该目录不是半成品（有工作树内容）。")
+            return
+        sure = _mw.QMessageBox.question(
+            self.owner, "删除半成品目录",
+            f"将删除该仓库的整个目录（其中只有 .git，没有工作树内容）：\n{p}\n\n继续？",
+            _mw.QMessageBox.StandardButton.Yes | _mw.QMessageBox.StandardButton.No)
+        if sure != _mw.QMessageBox.StandardButton.Yes:
+            return
+        delete_halfcloned(p)
+        self.owner.statusBar().showMessage(f"已删除半成品目录：{p.name}")
+        self.owner._emit_log(_mw._fmt_dt(), LogLevel.WARN,
+                             f"用户确认删除半成品目录：{p}")
 
     def _row_engine_index(self, row: int) -> int:
         """从表格行读回 engine index（UserRole+1；排序/过滤后仍精确）。"""
@@ -756,31 +777,8 @@ class ProgressTable(QWidget):
     # ------------------------------------------------------------ G46-4 批次总览
     # ------------------------------------------------------------ G46-12 进度右键菜单统一
     def _build_progress_menu(self, row: int):
-        """构造进度表右键菜单（不 exec，便于离屏测试）。
-
-        重试项始终显示：不可用时置灰 + tooltip 说明（G46-12 统一语义）。
-        """
-        from PyQt6.QtWidgets import QMenu
-        name_item = self.table.item(row, 0)
-        status_item = self.table.item(row, 2)
-        menu = QMenu(self)
-        if name_item is None or status_item is None:
-            return menu
-        status_key = status_item.data(Qt.ItemDataRole.UserRole) or ""
-        act_retry = menu.addAction("⟳ 重试此仓库")
-        retryable = status_key in ("failed", "cancelled")
-        act_retry.setEnabled(retryable)
-        act_retry.setToolTip("仅失败/已取消行可重试" if not retryable else "重新调度该仓库")
-        act_retry.triggered.connect(
-            lambda _=False, r=row: self._retry_table_row(r))
-        menu.addSeparator()
-        act_copy = menu.addAction("复制错误详情")
-        act_copy.triggered.connect(
-            lambda _=False, r=row: self._copy_row_detail(r))
-        act_open = menu.addAction("打开所在目录")
-        act_open.triggered.connect(
-            lambda _=False, r=row: self._open_row_dir(r))
-        return menu
+        """进度表右键菜单（构建移入 `progress_menu.py`，行为不变）。"""
+        return build_progress_menu(self, row)
 
     def _on_worker_result_motion_guard(self) -> bool:
         """G46-8：prefers_reduced_motion 开启时禁用完成动效。"""

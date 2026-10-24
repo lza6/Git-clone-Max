@@ -252,12 +252,17 @@ class LocalReposDialog(QDialog):
             if imported:
                 chk_flags &= ~Qt.ItemFlag.ItemIsEnabled
             chk.setFlags(chk_flags)
+            # G80-B4-1b：疑似半成品目录默认**不勾选**（与已入库同级处理），
+            # 用户仍可手动勾选导入 —— 我们不武断禁止，只是不替他做决定。
+            half = getattr(info, "needs_attention", False)
             chk.setCheckState(
-                Qt.CheckState.Unchecked if imported else Qt.CheckState.Checked)
+                Qt.CheckState.Unchecked if (imported or half) else Qt.CheckState.Checked)
             self.table.setItem(i, 0, chk)
             display = info.display
             if imported:
                 display = f"{display}（已入库）"
+            elif half:
+                display = f"{display}（疑似半成品：已取回未检出）"
             item = QTableWidgetItem(display)
             item.setData(Qt.ItemDataRole.UserRole, info.display)
             self.table.setItem(i, 1, item)
