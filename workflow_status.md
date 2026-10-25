@@ -1319,3 +1319,17 @@ Release `v9.10.2`（id=422788581）产物从 Release 独立下载后重算 sha25
 | **CI `docs(memory)` run（errno 无关断言后首跑）** | **全 job 绿**（含 macOS）——三连修收敛 |
 | 引用环守卫 | 当场抓到内嵌闭包捕 self → weakref 包装修复 |
 | 生命周期守卫 | 当场抓到局部函数/docstring 抢走 `def _launch(` 锚点 → 改名+脱敏 |
+
+
+## 2026-10-25 · G80 终局收敛（DONE）
+
+| 项 | 结果 |
+|---|---|
+| 最终全量快集 | **Ran 1576 · failures=0 · errors=0 · skipped=4** |
+| 覆盖率 | **82%** |
+| CI（S4 push） | **全 job 绿（含 macOS）** |
+| 批次 | B1/B2/B3/B8/B4-1/1b/2/3/B5/B6/B7-1/B7-2/**B7-3 S1-S4**/B7-4 全部 DONE |
+| 发布 | Release v9.10.3（API 确认）；后续 commit 已推送（未再 bump——它们是 S3/S4 增量，下次发版并入） |
+| 压测 | QueueRunner tick 50 队列×20 specs：p50 1.44ms / p95 1.97ms；mark_run 数据链路断言 OK |
+
+**剩余（登记）**：B7-3 队列创建 UI、CI packaging 首跑、慢集、B7-2 回收开关。
