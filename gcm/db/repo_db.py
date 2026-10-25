@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ..models import RepoSpec, SyncAction, SyncStatus
+from .queue_db import QueueStore, migrate_to_v4
 from .repo_search import SearchMixin
 from .repo_ssh import SshKeyMixin
 
@@ -51,7 +52,7 @@ CREATE INDEX IF NOT EXISTS idx_sync_history_repo ON sync_history(repo_id, starte
 _BUSY_TIMEOUT_MS = 30000  # SQLite 写锁竞争等待上限，避免高并发直接抛 database is locked
 
 # 数据库 schema 版本（PRAGMA user_version）。每次结构变更，递增此值并补一段迁移。
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
 
 
 def _migrate(conn):
@@ -82,6 +83,9 @@ def _migrate(conn):
         cols = [r[1] for r in conn.execute("PRAGMA table_info(repos)")]
         if "ssh_key" not in cols:
             conn.execute("ALTER TABLE repos ADD COLUMN ssh_key TEXT DEFAULT ''")
+    if v < 4:
+        # v4：同步队列（G80-B7-3 / S1）—— 只新增表，旧数据零影响
+        migrate_to_v4(conn)
     conn.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
     conn.commit()
 
@@ -119,6 +123,8 @@ class Database(SshKeyMixin, SearchMixin):
                 self._conn.executescript(_SCHEMA)
                 _migrate(self._conn)
                 self._conn.commit()
+        # G80-B7-3：同步队列读写（S1）
+        self.queue = QueueStore(self._conn, self._lock)
         # G33-5：sync_history 容量治理计数器（每 100 次 add_sync_history 自动清理一次）
         self._prune_counter = 0
         self._history_retention_days = 90  # G53-4 历史保留天数（默认 90，可配）

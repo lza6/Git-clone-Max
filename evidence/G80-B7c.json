@@ -1,0 +1,27 @@
+{
+  "task_id": "G80-B7c",
+  "title": "B7-3 持久队列 S1+S2：sync_queue 表（schema v4）+ 调度判定纯函数",
+  "status": "partial",
+  "timestamp": "2026-10-25T18:30:00+08:00",
+  "scope": "设计 docs/B7-3-持久队列设计.md 的 S1（迁移）与 S2（纯函数）；**S3（引擎接线/UI）/S4（面板）未实施**",
+  "commands_executed": [
+    {"cmd": "QT_QPA_PLATFORM=offscreen python -m unittest tests.test_g80_queue -v", "exit_code": 0, "raw_output_tail": "Ran 14 tests in 0.242s\n\nOK"},
+    {"cmd": "python -m ruff check gcm / python -m mypy gcm", "exit_code": 0, "raw_output_tail": "All checks passed! / Success: no issues found in 99 source files"},
+    {"cmd": "python -c（真库冒烟：user_version=4 / add_queue / days_set=[1,2,3] / mark_run）", "exit_code": 0, "raw_output_tail": "user_version: 4\nqueues: 1 days_set: [1, 2, 3] enabled: 1\nlast_status: success"}
+  ],
+  "files_changed": [
+    "gcm/db/queue_db.py (new)", "gcm/db/repo_db.py（_SCHEMA_VERSION 3→4 + 独立 `if v < 4` 迁移块 + queue 属性）",
+    "gcm/app/queue_scheduler.py (new)", "tests/test_g80_queue.py (new)"
+  ],
+  "design_notes": {
+    "migration_is_additive": "只 CREATE TABLE IF NOT EXISTS sync_queue，不动既有列；v3→v4 旧数据零影响（有专门测试）",
+    "bug_caught_by_test": "首轮把 v4 迁移嵌进了 `if v < 3` 块 → v3 旧库永远不会跑 v4 迁移；改成独立 `if v < 4` 并加了 v3→v4 升级测试",
+    "pure_functions": "is_due / missed_run_allowed 不碰引擎与时钟（注入 now），跨零点窗/半开区间/脏时间串都有断言",
+    "dirty_time_policy": "parse 失败的时间串按「无界」处理：宁可多跑一次，不可整队列失效"
+  },
+  "limitations": [
+    "S3 未做：队列还不会真的启动引擎批次（is_due/missed_run_allowed 只有判定，没有调用点）—— 在接线前不得宣称「定时同步可用」。",
+    "S4 未做：background_jobs 面板还没有第 5 行。",
+    "全量快集与覆盖率未在本改动后重跑。"
+  ]
+}

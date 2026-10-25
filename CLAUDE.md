@@ -82,7 +82,7 @@ gcm/util/    跨层工具：redact（脱敏）/ filelock（跨进程文件锁）
 gcm/i18n/    文案字典 zh/en（key 即中文，缺失回退中文）
 skills/      agent 技能包（SKILL.md + scripts/），每个必须自包含验收步骤
 scripts/     运维/CI/基准脚本（不参与打包）
-tests/       测试（149 文件）；**新增测试文件默认落在 CI 快集**（scripts/ci_run_fast.py 用黑名单，不是白名单）。G80 起新增 `test_g80_contract` / `test_g80_hygiene` 两个守卫，改契约或删符号前先看它们。
+tests/       测试（150 文件）；**新增测试文件默认落在 CI 快集**（scripts/ci_run_fast.py 用黑名单，不是白名单）。G80 起新增 `test_g80_contract` / `test_g80_hygiene` 两个守卫，改契约或删符号前先看它们。
 docs/reports/ 历次审计报告（HTML，只读快照）
 docs/        工程/产品/契约文档
 ```
