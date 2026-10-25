@@ -228,10 +228,10 @@ docs/        工程/产品/契约文档
   **不得**用 `skip`/重试把崩溃「弄绿」。
 - **CI 已锁定 PyQt6 版本**：`.github/workflows/ci.yml` 在 4 处 `pip install PyQt6==6.11.0`；
   `requirements-build.txt` 里也锁了 ruff/mypy/coverage/pyinstaller 的精确版本，但 **CI 的 Lint/Type 步骤是裸 `pip install ruff` / `pip install mypy`（不读该文件）→ CI 上的 ruff/mypy 版本仍不锁**。G80 实测登记，别再把「文件里有锁」当成「CI 已锁」。
-- **代码规模现状（2026-10-24 G79 后实测）**：仍为 **3 个**文件超 800 行 —— `main_window.py` **2705**、
+- **代码规模现状（2026-10-24 G79 后实测）**：仍为 **3 个**文件超 800 行 —— `main_window.py` **2765**、
   `service.py` **1768**、`engine.py` **1169**（`progress_table.py` **799**、`repo_db.py` **799**、
   `settings_panel.py` **779**、`settings_groups.py` **783** 均在 800 线内；
-  G76 新增 `settings_actions.py`（216，设置页动作型回调）就是为了让这两个设置模块不越线；G77 把更新检查三段抽到 `update_flow.py`，主窗从 2750 降到 2658；G78 修 chip 裁切时 +7 行 → 2665；G79b 给紧凑布局补注释 +5 行 → 2670；G80 新增回调后现值 **2705**。**超 800 行集合现在有守卫**（`tests/test_g79_repo_hygiene::TestNoNewOversizedModules` 用集合相等断言），新增第 4 个超限文件会直接红。
+  G76 新增 `settings_actions.py`（216，设置页动作型回调）就是为了让这两个设置模块不越线；G77 把更新检查三段抽到 `update_flow.py`，主窗从 2750 降到 2658；G78 修 chip 裁切时 +7 行 → 2665；G79b 给紧凑布局补注释 +5 行 → 2670；G80 新增回调+后台任务接线后现值 **2765**。**超 800 行集合现在有守卫**（`tests/test_g79_repo_hygiene::TestNoNewOversizedModules` 用集合相等断言），新增第 4 个超限文件会直接红。
   G75 把 `theme.py` 从 598 拆到 **314**（色板→`palettes`、字排→`typography`、QSS→`qss_build`），
   并把批次总览/结果文案/齿条/pill 各自成模块；
   14 个函数超 100 行（最大 `MainWindow.__init__` 233 行）。

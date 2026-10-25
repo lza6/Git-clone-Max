@@ -5,11 +5,38 @@
   "timestamp": "2026-10-25T19:20:00+08:00",
   "scope": "设计稿 S3：is_due/missed_run_allowed 有了生产调用点，定时同步真正可用",
   "commands_executed": [
-    {"cmd": "python -m ruff check gcm", "exit_code": 0, "raw_output_tail": "All checks passed!"},
-    {"cmd": "python -m mypy gcm", "exit_code": 0, "raw_output_tail": "Success: no issues found in 100 source files"},
-    {"cmd": "python -m unittest tests.test_g69_regressions tests.test_g52_mainwindow_extra tests.test_g80_queue tests.test_g80_background_jobs", "exit_code": 0, "raw_output_tail": "Ran 95 tests in 11.509s\n\nOK"}
+    {
+      "cmd": "python -m ruff check gcm",
+      "exit_code": 0,
+      "raw_output_tail": "All checks passed!"
+    },
+    {
+      "cmd": "python -m mypy gcm",
+      "exit_code": 0,
+      "raw_output_tail": "Success: no issues found in 100 source files"
+    },
+    {
+      "cmd": "python -m unittest tests.test_g69_regressions tests.test_g52_mainwindow_extra tests.test_g80_queue tests.test_g80_background_jobs",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 95 tests in 11.509s\n\nOK"
+    },
+    {
+      "cmd": "CI run 40190987595 抓到两处漏同步（三平台一致）",
+      "exit_code": 1,
+      "raw_output_tail": "AssertionError: 60 not less than or equal to 5 : CLAUDE.md 声明主窗 2705 行，实测 2765 行（容差 ±5）\nAssertionError: 595 not less than or equal to 591 : except 总数从 591 涨到 595"
+    },
+    {
+      "cmd": "python -m unittest tests.test_g79_repo_hygiene tests.test_g80_hygiene tests.test_g67_docs_freshness（同步后）",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 31 tests in 0.583s\n\nOK"
+    }
   ],
-  "files_changed": ["gcm/app/queue_runner.py (new)", "gcm/ui/main_window.py"],
+  "files_changed": [
+    "gcm/app/queue_runner.py (new)",
+    "gcm/ui/main_window.py",
+    "CLAUDE.md（主窗 2765）",
+    "tests/test_g80_hygiene.py（except 基线 591→595）"
+  ],
   "design": {
     "orchestration_only": "QueueRunner 只做判定与调度；批次复用 MainWindow 的既有 _launch 链（并发/镜像/凭据/进度表/事件流同一条路），引擎零改动",
     "mutex": "engine.busy 时整轮让路（手动批次优先），不排队不堆积",
@@ -21,7 +48,8 @@
   "bugs_caught_by_guards": [
     "引用环：内嵌闭包捕 self → test_mainwindow_released_without_cyclic_gc 红 → 改 weakref 包装",
     "锚点抢占：局部函数与 docstring 里出现主窗方法名前缀 → 生命周期守卫的 src.index 锚点被抢走 → 改名 + 措辞脱敏",
-    "getattr(self) 弱引用判忙：初始实现 getattr(self,'busy') 强引用 → is_busy 也改经 self_ref()"
+    "getattr(self) 弱引用判忙：初始实现 getattr(self,'busy') 强引用 → is_busy 也改经 self_ref()",
+    "CI（而非本地）：S3 接线后主窗 2705→2765、except 591→595，我本地只跑了定向回归没跑这两条守卫 → push 前必须跑仓库卫生守卫族"
   ],
   "limitations": [
     "S4 未做：面板第 5 行由 set_enabled 自动登记（已有测试覆盖 register），但 UI 上还没有队列**编辑**入口（建队列需手改 DB 或后续 UI）。",

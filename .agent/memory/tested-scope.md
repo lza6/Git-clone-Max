@@ -314,3 +314,12 @@ tag v9.10.3 push 后 CI 全平台跑，Windows/Linux/macOS 唯独 macOS 红在
 教训：**跨平台网络测试不要锁具体 errno/文案** —— 服务器关闭连接时客户端收到
 EPIPE 还是 ECONNRESET 是 OS 内核时序决定的，同一平台都会变。断言应该锁定
 **行为**（服务端没有吞下超大 body），不是**表象**（哪个 errno）。
+
+
+### push 前必跑守卫族（2026-10-25 补，S3 轮 CI 红两次后立规）
+
+改 `gcm/ui/main_window.py` 或新增 handler 后，push 前必须本地跑：
+`tests.test_g79_repo_hygiene`（行数/文件数/超限集合）+ `tests.test_g80_hygiene`
+（except 预算）+ `tests.test_g67_docs_freshness`（版本漂移）——这三族是
+「文档/基线与代码同步」的守卫，本地绿 CI 才可能绿。
+（S3 轮两次 CI 红：一次版本残留、一次行数+except 基线漏同步。）
