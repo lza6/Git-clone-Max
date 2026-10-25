@@ -297,3 +297,20 @@ QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe scripts/bench_g70_ui.py
 | 第 5 轮（B4-2 后） | 安装包校验 | **Ran 1507 · failures=0 · errors=0 · skipped=4** · 82% |
 
 累计教训不变：改代码别和跑测并行；守卫红先查是不是自己这轮的机械副作用。
+
+
+## 2026-10-25 · CI 三连修（413 用例的平台差异）
+
+tag v9.10.3 push 后 CI 全平台跑，Windows/Linux/macOS 唯独 macOS 红在
+`test_oversized_body_is_413_and_not_read`。三轮实测（每轮 errno 都不同）：
+
+| 轮 | 断言 | macOS 实际 | 结果 |
+|---|---|---|---|
+| 1 | 只收 HTTPError(413) | URLError(Errno 32 Broken pipe) | 红 |
+| 2 | 收 32 但文案 "Broken pipe" | URLError(Errno 54 Connection reset by peer) | 红 |
+| 3 | 只收 54 文案 | URLError(Errno 32 Broken pipe) | 红 |
+| 4 | **errno 无关**：broken pipe 或 reset by peer 皆可 | — | 待验证 |
+
+教训：**跨平台网络测试不要锁具体 errno/文案** —— 服务器关闭连接时客户端收到
+EPIPE 还是 ECONNRESET 是 OS 内核时序决定的，同一平台都会变。断言应该锁定
+**行为**（服务端没有吞下超大 body），不是**表象**（哪个 errno）。
