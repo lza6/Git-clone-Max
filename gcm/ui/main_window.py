@@ -1375,8 +1375,6 @@ class MainWindow(QMainWindow):
 
         from ..app.queue_runner import QueueRunner
 
-        target_root = self.target_edit.text().strip() or str(self.data_dir / "clones")
-
         # 引用环防线（G69-18）：runner 回调一律经**弱引用**包装 —— 直接闭包 self
         # 会形成 MainWindow→runner→闭包→MainWindow 的环（守卫会红，实测抓到）。
         import weakref as _weakref
