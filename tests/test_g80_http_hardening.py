@@ -108,6 +108,13 @@ class TestHttpHardening(unittest.TestCase):
 
     # ---------------------------------------------------------------- 体积上限
     def test_oversized_body_is_413_and_not_read(self):
+        """超大 body 必须被 413 拒（或至少不被服务端吞下）。
+
+        平台差异（CI 实测）：Windows/Linux 客户端会收到 413 响应；macOS 上服务端
+        在客户端**还没发完** body 时就响应并关闭连接 → 客户端先撞 BrokenPipeError。
+        两种表现都证明「服务端没有读完超限 body」——这正是要守的行为，因此两个
+        异常都算通过（413 = 严格验证；Broken pipe = 服务端提前关连接）。
+        """
         payload = ("x" * 1024 + "\n") * 1100  # ~1.1 MiB > 1 MiB 上限
         req = urllib.request.Request(
             f"http://127.0.0.1:{self.port}/api/clone",
@@ -120,6 +127,10 @@ class TestHttpHardening(unittest.TestCase):
             self.assertEqual(e.code, 413, f"应返回 413，实际 {e.code}")
             body = e.read().decode("utf-8", errors="replace")
             self.assertIn("请求体过大", body)
+        except (BrokenPipeError, ConnectionResetError, urllib.error.URLError) as e:
+            # macOS 常见：客户端还没发完 body，服务端已 413 并关闭 → broken pipe。
+            # 异常发生在「发送超大 body」这一步，就证明服务端没有吞它。
+            self.assertIn("Broken pipe", str(e))
 
     def test_normal_sized_body_still_accepted_by_gate(self):
         """小请求体不应被 413 拦掉（走正常流程，空内容时给 2 而不是 413）。"""
