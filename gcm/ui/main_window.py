@@ -1371,13 +1371,13 @@ class MainWindow(QMainWindow):
         引擎忙 → 整轮让路（手动批次优先）。app 层不 import Qt（B6 边界），
         所以 QTimer 在这里创建、`attach_timer` 交给 runner。
         """
-        from PyQt6.QtCore import QTimer
-
-        from ..app.queue_runner import QueueRunner
-
         # 引用环防线（G69-18）：runner 回调一律经**弱引用**包装 —— 直接闭包 self
         # 会形成 MainWindow→runner→闭包→MainWindow 的环（守卫会红，实测抓到）。
         import weakref as _weakref
+
+        from PyQt6.QtCore import QTimer
+
+        from ..app.queue_runner import QueueRunner
 
         self_ref = _weakref.ref(self)
 
