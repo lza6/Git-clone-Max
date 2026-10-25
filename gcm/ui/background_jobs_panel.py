@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -78,12 +79,45 @@ class BackgroundJobsDialog(QDialog):
         self.btn_refresh = QPushButton(tr("刷新"))
         self.btn_refresh.clicked.connect(self.refresh)
         row.addWidget(self.btn_refresh)
+        # G80-B7-3 / S4：选中「定时同步队列」行时可启停（写 sync_queue.enabled，
+        # 立即生效——queue_runner 每 tick 都重读 store）。创建队列仍需后续编辑 UI。
+        self.btn_toggle_queue = QPushButton(tr("启用/停用所选队列"))
+        self.btn_toggle_queue.setToolTip(tr("仅对「定时同步队列」行生效；立即写入数据库"))
+        self.btn_toggle_queue.clicked.connect(self._toggle_selected_queue)
+        row.addWidget(self.btn_toggle_queue)
         row.addStretch(1)
         self.btn_close = QPushButton(tr("关闭"))
         self.btn_close.clicked.connect(self.accept)
         row.addWidget(self.btn_close)
         v.addLayout(row)
 
+        self.refresh()
+
+    def _toggle_selected_queue(self) -> None:
+        """启停选中的定时同步队列（写库立即生效；非队列行给出提示）。"""
+        row = self.table.currentRow()
+        if row < 0:
+            QMessageBox.information(self, tr("提示"), tr("请先在表中选中一行"))
+            return
+        jobs = registry().snapshot()
+        if row >= len(jobs) or jobs[row].key != "sync_queue":
+            QMessageBox.information(self, tr("提示"), tr("请选中「定时同步队列」这一行"))
+            return
+        owner = self._owner_ref() if callable(self._owner_ref) else self._owner_ref
+        db = getattr(owner, "db", None) if owner is not None else None
+        if db is None or not hasattr(db, "queue"):
+            QMessageBox.warning(self, tr("无法操作"), tr("当前没有数据库连接"))
+            return
+        queues = db.queue.list_queues()
+        if not queues:
+            QMessageBox.information(self, tr("提示"),
+                                   tr("还没有创建任何同步队列（可通过数据库 sync_queue 表添加）"))
+            return
+        # 多个队列时操作全部取反过于激进：只切换第一个未处理的（与面板单行选中一致，
+        # 这里选择「把所有队列统一翻转到与当前状态相反」——对单队列用户即直觉行为）。
+        any_enabled = any(q.get("enabled") for q in queues)
+        for q in queues:
+            db.queue.set_enabled(int(q["id"]), not any_enabled)
         self.refresh()
 
     def refresh(self) -> None:

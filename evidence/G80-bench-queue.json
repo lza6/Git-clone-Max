@@ -1,0 +1,17 @@
+{
+  "task_id": "G80-bench-queue",
+  "status": "passed",
+  "timestamp": "2026-10-25T21:10:00+08:00",
+  "scenario": "QueueRunner 50 队列 x 20 specs，launch 回调空实现（含 mark_run x50 写库）",
+  "commands_executed": [
+    {
+      "cmd": "python -c <bench>",
+      "exit_code": 0,
+      "raw_output_tail": "tick x50 (50 queues x 20 specs, launch-path, dispatch+mark_run x50): p50=1.44ms p95=1.97ms max=104.40ms total batches=2500 total specs=50000"
+    }
+  ],
+  "data_link": "mark_run 写库验证 OK（last_status=dispatched, last_run_at 非空）",
+  "limitations": [
+    "本地机器口径；launch 为空实现（真批次开销走既有 _launch 链）"
+  ]
+}

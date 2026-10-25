@@ -1,6 +1,6 @@
 {
-  "task_id": "G80-B7c2",
-  "title": "B7-3 S3：队列编排接线（QueueRunner + QTimer，复用既有批次链）",
+  "task_id": "G80-B7c2-S4",
+  "title": "B7-3 S3+S4：队列编排接线 + 面板启停按钮（编辑 UI 最小闭环）",
   "status": "passed",
   "timestamp": "2026-10-25T19:20:00+08:00",
   "scope": "设计稿 S3：is_due/missed_run_allowed 有了生产调用点，定时同步真正可用",
@@ -29,13 +29,20 @@
       "cmd": "python -m unittest tests.test_g79_repo_hygiene tests.test_g80_hygiene tests.test_g67_docs_freshness（同步后）",
       "exit_code": 0,
       "raw_output_tail": "Ran 31 tests in 0.583s\n\nOK"
+    },
+    {
+      "cmd": "python -m unittest tests.test_g80_background_jobs（S4 后）",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 15 tests in 0.078s\n\nOK"
     }
   ],
   "files_changed": [
     "gcm/app/queue_runner.py (new)",
     "gcm/ui/main_window.py",
     "CLAUDE.md（主窗 2765）",
-    "tests/test_g80_hygiene.py（except 基线 591→595）"
+    "tests/test_g80_hygiene.py（except 基线 591→595）",
+    "gcm/ui/background_jobs_panel.py（S4 启停按钮）",
+    "tests/test_g80_background_jobs.py（+2 例）"
   ],
   "design": {
     "orchestration_only": "QueueRunner 只做判定与调度；批次复用 MainWindow 的既有 _launch 链（并发/镜像/凭据/进度表/事件流同一条路），引擎零改动",
@@ -52,7 +59,14 @@
     "CI（而非本地）：S3 接线后主窗 2705→2765、except 591→595，我本地只跑了定向回归没跑这两条守卫 → push 前必须跑仓库卫生守卫族"
   ],
   "limitations": [
-    "S4 未做：面板第 5 行由 set_enabled 自动登记（已有测试覆盖 register），但 UI 上还没有队列**编辑**入口（建队列需手改 DB 或后续 UI）。",
-    "全量快集未在本改动后重跑。"
+    "全量快集未在本改动后重跑。",
+    "队列创建仍无 UI（S4 只做启停开关）；完整创建对话框可后续加。"
+  ],
+  "tests": [
+    {
+      "name": "S4 队列启停往返 / 内置行提示",
+      "type": "integration",
+      "status": "passed"
+    }
   ]
 }

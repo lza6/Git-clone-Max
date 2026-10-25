@@ -16,7 +16,7 @@ from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication  # noqa: E402
+from PyQt6.QtWidgets import QApplication, QWidget  # noqa: E402
 
 _APP = QApplication.instance() or QApplication([])  # noqa: E402
 
@@ -186,6 +186,58 @@ class TestPanelAndWiring(unittest.TestCase):
             self.assertIn("还没有登记", dlg.table.item(0, 0).text())
         finally:
             dlg.close()
+
+    def test_queue_toggle_button_round_trip(self):
+        """S4：选中「定时同步队列」行 → 启停按钮真实写库并翻转 enabled。"""
+        from PyQt6.QtWidgets import QMessageBox
+
+        from gcm.db.repo_db import Database
+        from gcm.ui.background_jobs_panel import BackgroundJobsDialog
+
+        self.bj.registry().reset()
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db = Database(Path(td) / "repos.db")
+            qid = db.queue.add_queue("夜间", [{"owner": "a", "repo": "b"}])
+            self.bj.registry().register("sync_queue", "定时同步队列",
+                                        enabled=True, interval_sec=60)
+
+            parent = QWidget()
+            parent.db = db
+            dlg = BackgroundJobsDialog(parent)
+            # 选中队列行
+            for r in range(dlg.table.rowCount()):
+                if dlg.table.item(r, 0).text() == "定时同步队列":
+                    dlg.table.selectRow(r)
+                    break
+            with mock.patch.object(QMessageBox, "information", return_value=None),                     mock.patch.object(QMessageBox, "warning", return_value=None):
+                enabled_before = {q["id"]: q["enabled"] for q in db.queue.list_queues()}
+                dlg._toggle_selected_queue()
+                enabled_after = {q["id"]: q["enabled"] for q in db.queue.list_queues()}
+            self.assertNotEqual(enabled_before, enabled_after, "点击启停按钮后 enabled 应翻转")
+            # 再点一次翻回来（幂等往返）
+            dlg._toggle_selected_queue()
+            self.assertEqual({q["id"]: q["enabled"] for q in db.queue.list_queues()},
+                             enabled_before)
+            dlg.close()
+            parent.close()
+            db.close()
+
+    def test_queue_toggle_guarded_for_builtin_rows(self):
+        """选中内置任务行 → 给提示且不写库（无 db 也不崩）。"""
+        from PyQt6.QtWidgets import QMessageBox
+
+        from gcm.ui.background_jobs_panel import BackgroundJobsDialog
+
+        self.bj.registry().reset()
+        self.bj.registry().register("watchdog", "看门狗续跑", enabled=True, interval_sec=300)
+        dlg = BackgroundJobsDialog()
+        dlg.table.selectRow(0)
+        shown = []
+        with mock.patch.object(QMessageBox, "information",
+                               side_effect=lambda *a, **k: shown.append(a[2] if len(a) > 2 else "")):
+            dlg._toggle_selected_queue()
+        self.assertTrue(shown, "内置行应给出「请选中队列行」的提示")
+        dlg.close()
 
     def test_settings_button_and_forwarder_exist(self):
         src = Path("gcm/ui/settings_groups.py").read_text(encoding="utf-8")
