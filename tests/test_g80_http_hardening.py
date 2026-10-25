@@ -129,9 +129,14 @@ class TestHttpHardening(unittest.TestCase):
             self.assertIn("请求体过大", body)
         except (BrokenPipeError, ConnectionResetError, urllib.error.URLError) as e:
             # macOS：服务端在客户端发完 body 前就 413 并关连接 → 客户端看到
-            # broken pipe / connection reset（同一件事的两种 errno：32 / 54）。
-            # 只要不是「正常 200」就证明服务端没有吞超大 body —— 这才是要守的行为。
-            self.assertIn("reset by peer", str(e))
+            # broken pipe（Errno 32）或 connection reset（Errno 54），**每次运行
+            # 两者随机出现**（CI 三轮实测各出现一次：32 → 54 → 32）。
+            # 断言只要求「异常发生在发送超大 body 这一步」且错误文案可识别，
+            # 不锁具体 errno —— 行为（服务端没吞 body）才是要守的。
+            text = str(e).lower()
+            self.assertTrue(
+                ("broken pipe" in text) or ("reset by peer" in text),
+                f"意外的传输错误（既非 broken pipe 也非 reset）：{e}")
 
     def test_normal_sized_body_still_accepted_by_gate(self):
         """小请求体不应被 413 拦掉（走正常流程，空内容时给 2 而不是 413）。"""
