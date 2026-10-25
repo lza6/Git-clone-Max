@@ -1,0 +1,29 @@
+{
+  "task_id": "G80-release",
+  "title": "v9.10.3 构建 + 产物健康检查 + 打包 exe 真实 E2E + winget 清单",
+  "status": "passed",
+  "timestamp": "2026-10-25T17:12:00+08:00",
+  "commands_executed": [
+    {"cmd": "python -m PyInstaller --noconfirm Git-clone-Max.spec", "exit_code": 0, "raw_output_tail": "35560 INFO: Build complete! The results are available in: ...\Git-clone-Max\dist"},
+    {"cmd": "python scripts/build_portable_zip.py", "exit_code": 0, "raw_output_tail": "[OK] 已生成 dist\Git-clone-Max-portable.zip（353 条目，80012644 字节）"},
+    {"cmd": "python scripts/health_check.py --json dist/health_check.json", "exit_code": 0, "raw_output_tail": "[OK] artifacts_exist: exe=True zip=True\n[OK] exe sha256=931a28dba9624a10... zip sha256=d8d52768cb49b2a6...\n[OK] source_version: __version__='9.10.3'\n[OK] artifact_version: from onedir-fallback __version__='9.10.3'\n[OK] version_match: src='9.10.3' artifact='9.10.3'\n[OK] started_ok: alive after 60s; repos.db=True\n[OK] repos_db_created: 已生成于 GCM_DATA_DIR\nelapsed_ms=2110"},
+    {"cmd": "python scripts/gen_winget_manifest.py", "exit_code": 0, "raw_output_tail": "[OK] 已生成 3 份清单到 packaging\winget（版本 9.10.3 · sha256 931a28dba962…）"},
+    {"cmd": "python <tmp>/gcm_exe_e2e.py  （打包产物真机 E2E）", "exit_code": 0, "raw_output_tail": "[PASS] 首次 cloned：exit=0 version=9.10.3 status=success\n[PASS] 工作树已检出：['a.txt']\n[PASS] 二次运行 fetched/up-to-date：exit=0 status=success\n[PASS] 非法输入 exit 2：exit=2\n[PASS] --portable 与 --cli 组合：exit=2\nRESULT: PASS"}
+  ],
+  "artifacts": {
+    "exe": "dist/Git-clone-Max.exe",
+    "exe_sha256": "931a28dba9624a10…（完整值见 dist/health_check.json）",
+    "zip": "dist/Git-clone-Max-portable.zip",
+    "zip_bytes": 80012644,
+    "version": "9.10.3",
+    "winget_manifests": "packaging/winget/*.yaml（3 份，sha256 与产物一致）"
+  },
+  "notes": [
+    "file:// URI 不被 parse_urls 接受（实测 total=0），本地仓要用原生 Windows 路径 —— 这是既有行为，不是本轮回归；已在 E2E driver 里注明。",
+    "health_check 的 started_ok 是 60s 存活断言；elapsed_ms=2110 指检查本身耗时（onedir 已解包）。"
+  ],
+  "limitations": [
+    "GitHub Actions 上的 packaging job 仍未真实跑过（本地无法执行 Actions）。",
+    "未 push、未打 tag、未发布 Release（等用户确认外部写入）。"
+  ]
+}
