@@ -27,6 +27,17 @@
 from __future__ import annotations
 
 import argparse
+import sys as _sys
+
+# G80-CI 实测：GitHub Actions windows-latest 的 stdout 是 cp1252 —— 中文提示
+# （「repos.db/settings.json 已生成于 GCM_DATA_DIR」）在 report() 里 print 会
+# UnicodeEncodeError，导致 7 项全 OK 却以异常退出。显式重配为 UTF-8 +
+# backslashreplace（与 gcm/cli.py 的 G50-3 兜底同一思路）。
+if hasattr(_sys.stdout, "reconfigure"):
+    _sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
+
+import argparse
 import hashlib
 import json
 import os
