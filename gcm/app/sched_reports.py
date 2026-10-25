@@ -36,9 +36,14 @@ class ReportScheduler:
             dest = self._out_dir / f"Git-clone-Max-报表-{ts}.{ext}"
             n = self._report_fn(dest, self._fmt)
             logger.info("定时报表已生成：%s（%s 行）", dest, n)
+            # G80-B7-1：报表生成结果进后台任务面板
+            from . import background_jobs as _bj
+            _bj.notify_run(_bj.JOB_REPORTS, result=f"{dest.name}（{n} 行）")
             return dest
         except Exception as e:  # noqa: BLE001
             logger.warning("定时报表生成失败：%s", e)
+            from . import background_jobs as _bj
+            _bj.notify_run(_bj.JOB_REPORTS, error=str(e))
             return None
 
     def start(self) -> None:

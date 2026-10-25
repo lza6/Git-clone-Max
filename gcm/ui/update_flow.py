@@ -169,9 +169,12 @@ def check_silent(win) -> None:
     def _worker():
         try:
             from .. import __version__
+            from ..app import background_jobs as _bj
             from ..app.updater import check_latest
             has_new, ver, url, err = check_latest()
             if err:
+                # G80-B7-1：失败也要在后台任务面板里可见（否则用户只看到"从没检查过"）
+                _bj.notify_run(_bj.JOB_AUTO_UPDATE, error=err)
                 # G21-3：静默检查失败必须留痕（结构化 app.log），不再无痕
                 try:
                     from ..app.applog import warn as _log_warn
@@ -180,6 +183,8 @@ def check_silent(win) -> None:
                 except Exception:  # noqa: BLE001 —— 日志不可用不该影响启动
                     pass
                 return
+            _bj.notify_run(_bj.JOB_AUTO_UPDATE,
+                           result=(f"发现新版本 {ver}" if has_new else "已是最新"))
             if has_new:
                 # G67-9：**工作线程内只能走 emit 桥**，不得直接调 _emit_log
                 win.emit_log_from_worker(

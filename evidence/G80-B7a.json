@@ -1,0 +1,37 @@
+{
+  "task_id": "G80-B7a",
+  "title": "后台任务面板：4 个隐形定时器变成可见状态（B7-1）",
+  "status": "passed",
+  "timestamp": "2026-10-25T04:15:00+08:00",
+  "scope": "批次 B7-1（差距 G-22 / G-24）",
+  "commands_executed": [
+    {"cmd": "QT_QPA_PLATFORM=offscreen python -m unittest tests.test_g80_background_jobs -v", "exit_code": 0, "raw_output_tail": "Ran 13 tests in 0.051s\n\nOK"},
+    {"cmd": "python -m ruff check gcm", "exit_code": 0, "raw_output_tail": "All checks passed!"},
+    {"cmd": "python -m mypy gcm", "exit_code": 0, "raw_output_tail": "Success: no issues found in 97 source files"},
+    {"cmd": "python -m unittest tests.test_g80_background_jobs tests.test_g79_repo_hygiene tests.test_g80_hygiene tests.test_g80_boundaries tests.test_g67_docs_freshness tests.test_g68_settings_ui", "exit_code": 0, "raw_output_tail": "Ran 62 tests in 2.528s\n\nOK"}
+  ],
+  "files_changed": [
+    "gcm/app/background_jobs.py (new)", "gcm/ui/background_jobs_panel.py (new)",
+    "gcm/app/watchdog.py", "gcm/app/alerts.py", "gcm/app/sched_reports.py",
+    "gcm/ui/update_flow.py", "gcm/ui/main_window.py", "gcm/ui/settings_actions.py",
+    "gcm/ui/settings_groups.py", "gcm/i18n/zh.py", "gcm/i18n/en.py",
+    "tests/test_g80_background_jobs.py (new)"
+  ],
+  "design": {
+    "sidecar_registry": "旁挂登记表（不改调度逻辑）：调度器在真的跑完一轮时调一次 notify_run，登记表按 interval 推算 next-run",
+    "no_fake_time": "未启用或本进程还没跑过 → next_run 返回 0，UI 显示「已关闭」/「已启用（启动后首轮）」，不猜时间",
+    "registration_points": "启动时 + 每次设置保存（settings_actions._save_field）各登记一次",
+    "panel": "只读表 + 手动刷新（**不加新定时器**，避免又多一个隐形任务）"
+  },
+  "tests": [
+    {"name": "登记表 5 例（next-run 不编造 / disabled / 未登记不造条目 / 改间隔保留 last_run / 设置映射）", "type": "unit", "status": "passed"},
+    {"name": "三个调度器 + 自动更新真的登记 4 例（报表成功/报表失败/告警/看门狗）", "type": "integration", "status": "passed"},
+    {"name": "面板渲染 3 种状态 + 空态 + 三段接线 + 启动登记 4 例", "type": "integration+guard", "status": "passed"}
+  ],
+  "limitations": [
+    "登记表是**进程内非持久**：重启后 last_run 归零（与 EventBus 同一取舍），跨重启审计请看 app.log / 报表文件。",
+    "面板不含「为什么走了镜像/为什么降级」—— 那部分需要把 mirror_probe 的结果并入事件，属后续增强（已记入计划）。",
+    "B7-2（卡死 worker 识别）/ B7-3（持久队列设计）/ B7-4（winget）未开始。",
+    "全量快集未在本改动后重跑。"
+  ]
+}

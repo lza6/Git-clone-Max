@@ -337,6 +337,14 @@ class MainWindow(QMainWindow):
         # 勾了等于没勾。现按设置真实启动，并在 closeEvent 里随窗口收敛。
         self.report_scheduler = None
         self._start_report_scheduler()
+        # G80-B7-1：登记 4 个后台任务（自动更新/看门狗/告警/报表）的开关与间隔，
+        # 供「后台任务」面板展示 —— 它们此前在 UI 上完全不可见。
+        try:
+            from ..app.background_jobs import register_default_jobs
+            register_default_jobs(self.settings)
+        except Exception as e:  # noqa: BLE001 - 登记失败不该影响启动
+            from ..app import applog as _bj_applog
+            _bj_applog.warn(f"后台任务登记失败：{e}")
 
         # 凭据存储强度：`crypto_warning()` 会说明当前环境是否只做了「可逆混淆」。
         # 该函数早已实现却从未被调用 —— 而 README 无条件宣称「token 加密落盘」。
@@ -1348,6 +1356,12 @@ class MainWindow(QMainWindow):
         """手动检查更新（实现在 `update_flow.check_now`，本方法只转调）。"""
         from .update_flow import check_now
         return check_now(self)
+
+    def show_background_jobs(self):
+        """G80-B7-1：打开「后台任务」面板（4 个定时器的 next-run / 上次结果）。"""
+        from .background_jobs_panel import BackgroundJobsDialog
+        dlg = BackgroundJobsDialog(self, parent=self)
+        dlg.exec()
 
     def verify_downloaded_file(self):
         """G80-B4-2：校验下载到的安装包（实现在 `update_flow.verify_downloaded_file`）。"""

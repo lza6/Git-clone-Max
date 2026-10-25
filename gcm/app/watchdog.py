@@ -109,8 +109,13 @@ class Watchdog(QObject):
                 return False
             self._dispatching = True
             self.resume_requested.emit(specs)
+            # G80-B7-1：把"真的派发了一次"登记下来（UI 后台任务面板读它）
+            from . import background_jobs as _bj
+            _bj.notify_run(_bj.JOB_WATCHDOG, result=f"续跑 {len(specs)} 个仓库")
             return True
-        except Exception:
+        except Exception as e:  # noqa: BLE001 - 派发失败不能抛给定时器，但要留痕
+            from . import background_jobs as _bj
+            _bj.notify_run(_bj.JOB_WATCHDOG, error=str(e))
             return False
 
     def reset(self) -> None:

@@ -56,6 +56,13 @@ class SettingsWiring(QObject):
             return False
         setattr(owner.settings, name, value)
         owner.settings_store.save(owner.settings)
+        # G80-B7-1：设置改了之后刷新后台任务登记（间隔/开关要立刻反映到面板）
+        try:
+            from ..app.background_jobs import register_default_jobs
+            register_default_jobs(owner.settings)
+        except Exception as e:  # noqa: BLE001 - 登记失败不该让保存失败
+            from ..app.applog import warn as _warn
+            _warn(f"刷新后台任务登记失败：{e}")
         return True
 
     # ---------------------------------------------------------------- 简单字段

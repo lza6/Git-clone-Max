@@ -26,7 +26,8 @@ GCM = ROOT / "gcm"
 # - B5 再加 3 个（设置校验/退避保存回调的提示性 handler，无裸吞）；
 # - B4-1b 又加 2 个（scanner._looks_halfcloned 与 halfclone_actions.looks_halfcloned
 #   的 OSError 兜底）——这是同一类「探测失败返回 False」的防御分支，也不是裸吞。
-BASELINE_EXCEPT = 581
+# - B7-1 再增加若干（后台任务登记的 try 包裹），同样全部带日志/降级，pass-only 不变。
+BASELINE_EXCEPT = 584
 BASELINE_PASS_ONLY = 280
 
 

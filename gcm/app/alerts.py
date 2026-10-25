@@ -305,6 +305,13 @@ class AlertScanner:
                     continue  # 24h 内已触发过 → 去重
                 self._last_fired[key] = now
             fired.append(alert)
+        # G80-B7-1：告警扫描"跑过一轮"必须可见（否则用户不知道它是没到点还是坏了）
+        try:
+            from . import background_jobs as _bj
+            _bj.notify_run(_bj.JOB_ALERTS, result=f"命中 {len(fired)} 条")
+        except Exception as e:  # noqa: BLE001 - 登记失败不影响告警链路
+            from .applog import warn as _warn
+            _warn(f"后台任务状态登记失败（告警）：{e}")
         if fired and self._on_alerts:
             try:
                 self._on_alerts(fired)

@@ -481,6 +481,12 @@ def _build_group_about(owner: MainWindow):
     owner.btn_verify_file.setToolTip(tr("用发布方公布的 SHA256 校验下载到的安装包/zip"))
     owner.btn_verify_file.clicked.connect(owner.verify_downloaded_file)
     h4.addWidget(owner.btn_verify_file)
+    # G80-B7-1：后台任务面板（自动更新/看门狗/告警/报表 的 next-run 与上次结果）
+    owner.btn_background_jobs = QPushButton(tr("后台任务…"))
+    owner.btn_background_jobs.setToolTip(
+        tr("查看自动更新检查 / 看门狗续跑 / 阈值告警扫描 / 定时报表 的状态与下次运行时间"))
+    owner.btn_background_jobs.clicked.connect(owner.show_background_jobs)
+    h4.addWidget(owner.btn_background_jobs)
     owner.btn_selftest = QPushButton(tr("自检环境"))
     owner.btn_selftest.setToolTip(tr("检测 git / PyQt6 / 数据目录 / 当前并发 是否正常可用"))
     owner.btn_selftest.clicked.connect(owner._run_selftest)
