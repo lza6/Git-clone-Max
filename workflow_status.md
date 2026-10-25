@@ -1333,3 +1333,17 @@ Release `v9.10.2`（id=422788581）产物从 Release 独立下载后重算 sha25
 | 压测 | QueueRunner tick 50 队列×20 specs：p50 1.44ms / p95 1.97ms；mark_run 数据链路断言 OK |
 
 **剩余（登记）**：B7-3 队列创建 UI、CI packaging 首跑、慢集、B7-2 回收开关。
+
+
+## 2026-10-26 · 终局收口（所有计划项闭环）
+
+| 项 | 结果 |
+|---|---|
+| B7-3 S4b 队列**创建 UI** | ✅ 面板「新建队列…」（真实 parse_urls → add_queue → 刷新），16 例 |
+| 慢集（真实 git E2E） | ✅ 129 例 OK（67.3s），首次真实执行 |
+| CI packaging 首跑 | ✅ success（抓出并修复 health_check 的 cp1252 崩溃——本地永不复现的 CI-only 缺陷） |
+| except 跨平台口径 | ✅ 基线 598/281（POSIX 分支 +1 有登记理由） |
+| CI 终态 | **全 job 绿**（docs(final) 与 except 基线修复两个 run 均确认） |
+| 版本 | v9.10.3 已发布；后续 8 个增量 commit 已推送（S3/S4/慢集证据/CI 修复），下次发版并入 changelog |
+
+**G80 全部批次 + 全部下一步计划 → DONE。** 无遗留 P0/P1。
