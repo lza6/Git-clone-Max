@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>G80 变更报告 · v9.10.3（2026-10-25）</title>
+<style>
+body{font-family:"Microsoft YaHei UI",system-ui,sans-serif;margin:2rem auto;max-width:56rem;line-height:1.6;color:#1a1a1a}
+h1{border-bottom:3px solid #2a6;padding-bottom:.4rem}
+h2{margin-top:2rem;color:#225}
+table{border-collapse:collapse;width:100%;margin:.8rem 0}
+td,th{border:1px solid #bbb;padding:.35rem .6rem;text-align:left;vertical-align:top}
+th{background:#eef}
+code{background:#f4f4f4;padding:.05rem .3rem}
+.warn{background:#fff6e6;border-left:4px solid #d90;padding:.6rem 1rem}
+.ok{background:#eefaf0;border-left:4px solid #2a6;padding:.6rem 1rem}
+.q{background:#f8f8f8;border:1px solid #ddd;padding:.6rem .9rem;margin:.6rem 0}
+details{margin-top:.4rem}summary{cursor:pointer;color:#26a}
+</style></head><body>
+<h1>G80 变更报告 · v9.10.3（2026-10-25）</h1>
+<p><b>一句话</b>：把对标审计发现的 17 项差距中的 13 项<b>真实修掉</b>（11 个批次、12 个新守卫文件、8 个新模块），发布 v9.10.3；CI 三连修收敛至全 job 绿。</p>
+
+<h2>1. 为什么做（上下文）</h2>
+<p>用户要求把项目当作即将交付的产品做终局审计并<b>真实修复</b>。对标库（1748 个项目）审计产出差距台账 G-01..G-28，其中 4 项 P0（MCP 假只读、message 未打码、退出码违约、全局标志必失败）全部在本轮清零。</p>
+
+<h2>2. 关键决策与取舍</h2>
+<ul>
+<li><b>不推翻重构</b>：Qt 解耦只加"禁新增"守卫；repo_db/progress_table 贴 800 线时抽混入模块而非登记第 4 个技术债。</li>
+<li><b>契约优先</b>：检出校验不改 SyncStatus 枚举（7 值是 CLI/MCP/HTTP 三方契约），加可选字段 checkout_state。</li>
+<li><b>只存路径不存内容</b>：仓库级 SSH 私钥拒绝粘贴私钥本体（校验器+测试双向守）。</li>
+<li><b>计划书删除的依据</b>：不是"全部闭环"，是用户明确放弃 5 项（T-41/42/43/P2-5/P2-8），manifest 如实登记。</li>
+</ul>
+
+<h2>3. 做了什么（按批次）</h2>
+<table><tr><th>批次</th><th>内容</th><th>验证</th></tr><tr><td>B1</td><td>MCP 只读三路径 / 出站统一打码 / 退出码对齐契约 / 全局标志剥离</td><td>12 例先红后绿；MCP 真机不建库；--serve 三出口 0 明文</td></tr><tr><td>B2</td><td>删 7 死符号 / 打开目录归一 / 裸吞 287→280 / 凭据助手不交互 / 文档漂移 / 计划书归档删除</td><td>定向 228 例；文档守卫 21 例；manifest 记明放弃 5 项</td></tr><tr><td>B3</td><td>打包门禁进 CI（tag/手动）</td><td>health_check 7 项 [OK]；CI packaging job 首跑 skipped（tag 先于提交）</td></tr><tr><td>B8</td><td>仓库级 SSH 私钥（死列接线）</td><td>19 例含 UI 三段接线；同步不冲掉；出站剔除</td></tr><tr><td>B4-1/1b</td><td>检出校验 + 半成品可见/可清理</td><td>真 git 造 4 种仓库；No 不删有断言</td></tr><tr><td>B4-2</td><td>安装包校验（发布方 SHA256）</td><td>12 例；无基准不谎报成功</td></tr><tr><td>B4-3</td><td>HTTP 硬化（413/format 400/搜索下推）</td><td>真 server 9 例；MCP 复用同一实现</td></tr><tr><td>B5</td><td>设置声明期校验 + 退避基数两侧接线</td><td>13 例；UI/后端同源断言</td></tr><tr><td>B6</td><td>Qt/subprocess/SQL 三条边界守卫</td><td>5 例白名单 + 反向自检</td></tr><tr><td>B7-1</td><td>后台任务面板（4 定时器可见）</td><td>13 例；不编造 next-run</td></tr><tr><td>B7-2</td><td>卡死任务识别（只报告不回收）</td><td>7 例；源码断言禁悄悄改并发</td></tr><tr><td>B7-4</td><td>winget 清单生成</td><td>7 例；check 模式防漏同步</td></tr><tr><td>B7-3</td><td>持久队列 S1/S2/S3（schema v4 + 纯函数 + 编排接线）</td><td>14 例；v3 旧库升级保数据；引用环/锚点抢占被守卫抓到</td></tr></table>
+
+<h2>4. 验证证据（真实执行）</h2>
+<table><tr><th>项</th><th>结果</th></tr><tr><td>全量快集（8 轮）</td><td>Ran 1546 · 0 fail · errors=0 · skipped=4（最终轮）</td></tr><tr><td>覆盖率</td><td>82%（门禁 Windows 81 / POSIX 80）</td></tr><tr><td>ruff / mypy</td><td>0 error / Success (100 files)</td></tr><tr><td>打包产物</td><td>exe 41,495,848 B · zip 80,012,644 B · health_check 7 项 [OK]</td></tr><tr><td>打包 exe E2E</td><td>cloned→工作树有 a.txt→fetched→非法 exit 2→--portable 组合正常</td></tr><tr><td>发布</td><td>Release v9.10.3 上线（API 确认两 asset）</td></tr></table>
+<div class="ok">发布：<a href="https://github.com/lza6/Git-clone-Max/releases/tag/v9.10.3">Release v9.10.3</a>（API 确认 exe+zip 两 asset）</div>
+
+<h2>5. 风险、回滚与已知限制</h2>
+<div class="warn">
+<ul>
+<li>CI <code>packaging</code> job 在 v9.10.3 的 tag run 上是 skipped（tag 先于该提交打），下次发版才生效。</li>
+<li>B7-3 队列<b>编辑 UI</b> 未做——建队列需手改 DB；面板展示已可用。</li>
+<li>后台任务 last_run 是进程内非持久（与 EventBus 同取舍）。</li>
+<li>覆盖率只跑快集口径；慢集本轮未跑。</li>
+</ul></div>
+<p><b>回滚</b>：schema v4 只新增表 → 删代码即回滚；Release 可删；dist 保留本地。</p>
+
+<h2>6. 本轮教训（都被守卫或 CI 抓到过）</h2>
+<table><tr><th>教训</th><th>说明</th></tr><tr><td>跨平台 errno</td><td>413 用例三连修：Errno 32/54 随机出现，断言锁行为不锁表象</td></tr><tr><td>跑测期间不改码</td><td>第 2 轮快集的 test_g66_patch error 是编辑窗口造成的假象</td></tr><tr><td>push 前守卫族</td><td>S3 轮两次 CI 红：版本残留 + 行数/except 基线漏同步 → 三族守卫必跑</td></tr><tr><td>引用环</td><td>S3 内嵌闭包捕 self 被守卫当场抓 → weakref 包装</td></tr><tr><td>锚点抢占</td><td>docstring 里的方法名前缀会抢走生命周期守卫的 src.index 锚点</td></tr><tr><td>v4 迁移嵌错块</td><td>首轮把 v4 嵌进 if v&lt;3 → v3 旧库永不升级；守卫/测试抓到改独立块</td></tr></table>
+
+<h2>7. 测验（先自答再看答案）</h2>
+<div class="q"><b>Q1.</b> MCP「只读」修复后，对**空数据目录**调 list_repos 的正确行为是？
+<ul class="opts"><li>A. 创建 repos.db 再返回空列表</li><li>B. 返回空列表且不创建任何文件</li><li>C. 报错退出</li></ul>
+<details><summary>答案</summary><p><b>B</b></p><p>_EmptyDB 替身的存在意义就是保住「只读不写」契约；测试断言目录里没有 repos.db。</p></details></div><div class="q"><b>Q2.</b> 检出校验里，裸仓库（--bare）会被判为什么？
+<ul class="opts"><li>A. missing（失败）</li><li>B. ok</li><li>C. skip（跳过校验，不误报）</li></ul>
+<details><summary>答案</summary><p><b>C</b></p><p>裸仓库本就没有工作树；_probe_checkout 先 rev-parse --is-bare-repository 再决定。</p></details></div><div class="q"><b>Q3.</b> HTTP /api/report?format=xlsx 的返回是？
+<ul class="opts"><li>A. 静默回落 JSON</li><li>B. 400 并列出合法值</li><li>C. 200 但空内容</li></ul>
+<details><summary>答案</summary><p><b>B</b></p><p>G80-B4-3：非法 format 静默回落是调用方踩坑点，已改白名单 400。</p></details></div><div class="q"><b>Q4.</b> 「B7-3 持久队列已交付」这句话对吗？（对/错）
+<ul class="opts"><li><i>（简答/判断）</i></li></ul>
+<details><summary>答案</summary><p><b>错（部分）</b></p><p>只交付 S1（表）S2（纯函数）S3（编排接线）；S4 队列编辑 UI 未做——建队列目前需手改 DB。</p></details></div><div class="q"><b>Q5.</b> except 预算守卫里，真正禁止上涨的是 pass-only 数量还是 except 总数？
+<ul class="opts"><li><i>（简答/判断）</i></li></ul>
+<details><summary>答案</summary><p><b>pass-only 数量</b></p><p>except 总数允许随「带日志的防御分支」增长（基线有登记理由），裸吞（pass-only）才是红线，冻结在 280。</p></details></div><div class="q"><b>Q6.</b> S3 的 runner 回调为什么必须用 weakref 包装？
+<ul class="opts"><li><i>（简答/判断）</i></li></ul>
+<details><summary>答案</summary><p><b>直接闭包捕 self 会形成 MainWindow→runner→闭包→MainWindow 引用环，只能靠循环 GC 回收 → Qt 事件分发中途销毁对象 → 原生崩溃（G69-18 历史事故同类）；守卫 test_mainwindow_released_without_cyclic_gc 当场抓到。</b></p><p>答案核心：引用环 → 循环 GC 不可控 → 原生崩溃。</p></details></div><div class="q"><b>Q7.</b> v9.10.3 发布后 CI 三连红的根因是什么？
+<ul class="opts"><li><i>（简答/判断）</i></li></ul>
+<details><summary>答案</summary><p><b>跨平台网络测试锁了具体 errno/文案：服务端提前关连接时客户端收到 EPIPE(32) 还是 ECONNRESET(54) 由内核时序决定且随机；正确做法是断言行为（服务端没吞 body）而非表象。</b></p><p>答案核心：锁表象不锁行为。</p></details></div>
+<p><b>通过标准</b>：≥80%（7 题答对 ≥6）。本测验由实现者完成：Q1-B ✓ Q2-C ✓ Q3-B ✓ Q4-错 ✓ Q5-pass-only ✓ Q6 ✓ Q7 ✓ —— 7/7，通过（依据：各题答案均有上表对应证据行）。</p>
+<p><i>生成：2026-10-25 · 证据目录 evidence/G80-*.json ×12 · 验证记录 docs/验证记录-2026-10-25-G80-B2B3.md（17 节）</i></p>
+</body></html>
