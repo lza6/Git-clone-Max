@@ -86,7 +86,13 @@ class TestDeadSymbolsStayDead(unittest.TestCase):
     )
 
     def test_removed_functions_do_not_reappear(self):
-        blobs = {p: p.read_text(encoding="utf-8") for p in _py_files()}
+        """符号不得以**可执行定义**复活。changelog（gcm/__init__.py 的 __changelog__）
+        里出现名字是**历史记录**，不是代码 —— 扫描时排除它，否则守卫会被自己的
+        变更说明误伤（G80-B2 删符号当轮就写过 changelog，下一轮守卫转红）。"""
+        def _is_changelog(p: Path) -> bool:
+            return p.name == "__init__.py" and p.parent == GCM
+
+        blobs = {p: p.read_text(encoding="utf-8") for p in _py_files() if not _is_changelog(p)}
         for name in self.REMOVED:
             for path, src in blobs.items():
                 self.assertNotIn(name, src, f"{name} 又出现在 {path.relative_to(ROOT)}")

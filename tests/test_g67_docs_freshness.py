@@ -66,6 +66,10 @@ _ALLOWED_HISTORICAL_VERSIONS: dict[str, dict[str, str]] = {
         "1.2.0": "`owner/repo@v1.2.0` 是 git 引用语法示例（指定 tag），不是产品版本",
         "4.0.0": "`git tag v4.0.0` 是发布命令示例，逐字来自历史操作",
         "7.6.0": "「v7.6.0（G45-6）起 main_window 已拆分」是沿革说明",
+        "9.10.2": "§发布示例命令 `git tag v9.10.2`（逐字历史操作；v9.10.3 起示例更新为 9.10.3）",
+    },
+    "test_ledger.md": {
+        "9.10.2": "「上一版是谁」的沿革说明（G80 起多版本共存于同一文件），非当前版本声明",
     },
     "docs/data-model.md": {
         "8.0.2": "说明「被删的旧 db_structure.md 停在 v8.0.2」这一事实，是考古语境",
