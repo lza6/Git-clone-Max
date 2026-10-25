@@ -1309,3 +1309,13 @@ Release `v9.10.2`（id=422788581）产物从 Release 独立下载后重算 sha25
 | 回滚 | revert 提交 / 删 Release；本地 dist 保留 |
 
 发布后验证：API 确认 Release 存在、两个 asset、body 含 9.10.3。
+
+
+## 2026-10-25 · B7-3 S3 完成 + CI 绿灯回归
+
+| 项 | 结果 |
+|---|---|
+| QueueRunner（S3 编排） | ruff 0 · mypy Success(100) · 95 例回归 OK（引用环/生命周期/队列/面板） |
+| **CI `docs(memory)` run（errno 无关断言后首跑）** | **全 job 绿**（含 macOS）——三连修收敛 |
+| 引用环守卫 | 当场抓到内嵌闭包捕 self → weakref 包装修复 |
+| 生命周期守卫 | 当场抓到局部函数/docstring 抢走 `def _launch(` 锚点 → 改名+脱敏 |
