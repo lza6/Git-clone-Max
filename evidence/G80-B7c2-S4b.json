@@ -1,0 +1,38 @@
+{
+  "task_id": "G80-B7c2-S4b",
+  "status": "passed",
+  "timestamp": "2026-10-26T00:30:00+08:00",
+  "title": "B7-3 S4 完整闭环：队列创建 UI（不再需要手改数据库）",
+  "commands_executed": [
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen python -m unittest tests.test_g80_background_jobs",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 16 tests in 0.117s\n\nOK"
+    },
+    {
+      "cmd": "python -m ruff check gcm / python -m mypy gcm",
+      "exit_code": 0,
+      "raw_output_tail": "All checks passed! / Success: no issues found in 100 source files"
+    }
+  ],
+  "files_changed": [
+    "gcm/ui/background_jobs_panel.py",
+    "tests/test_g80_background_jobs.py"
+  ],
+  "tests": [
+    {
+      "name": "S4 创建队列往返（真实 parse_urls → add_queue → 面板刷新）",
+      "type": "integration",
+      "status": "passed"
+    },
+    {
+      "name": "S4 队列启停往返 / 内置行提示",
+      "type": "integration",
+      "status": "passed"
+    }
+  ],
+  "design": "创建对话框：名称（QInputDialog）+ 仓库地址多行文本（复用 parse_urls，无效行计数提示）→ add_queue（ValueError 转 UI 警告）→ refresh。无时间窗编辑器（设计稿允许后续）。",
+  "limitations": [
+    "时间窗（周几/起止）编辑仍需手改 DB（默认全周随时）；完整编辑器可后续版本。"
+  ]
+}

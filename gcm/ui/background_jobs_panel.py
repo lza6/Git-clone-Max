@@ -81,6 +81,10 @@ class BackgroundJobsDialog(QDialog):
         row.addWidget(self.btn_refresh)
         # G80-B7-3 / S4：选中「定时同步队列」行时可启停（写 sync_queue.enabled，
         # 立即生效——queue_runner 每 tick 都重读 store）。创建队列仍需后续编辑 UI。
+        self.btn_new_queue = QPushButton(tr("新建队列…"))
+        self.btn_new_queue.setToolTip(tr("创建定时同步队列：名称 + 每行一个仓库地址"))
+        self.btn_new_queue.clicked.connect(self._create_queue)
+        row.addWidget(self.btn_new_queue)
         self.btn_toggle_queue = QPushButton(tr("启用/停用所选队列"))
         self.btn_toggle_queue.setToolTip(tr("仅对「定时同步队列」行生效；立即写入数据库"))
         self.btn_toggle_queue.clicked.connect(self._toggle_selected_queue)
@@ -92,6 +96,66 @@ class BackgroundJobsDialog(QDialog):
         v.addLayout(row)
 
         self.refresh()
+
+    def _create_queue(self) -> None:
+        """创建定时同步队列（S4 收尾：最小可用编辑——名称 + 仓库地址每行一个）。
+
+        刻意保持简单：不做复杂的时间窗编辑器（周几/起止时刻可后续在 DB 里调，
+        或加设置页分组）；本对话框解决「不用手改数据库就能建队列」。
+        """
+        from PyQt6.QtWidgets import QInputDialog, QPlainTextEdit
+
+        owner = self._owner_ref() if callable(self._owner_ref) else self._owner_ref
+        db = getattr(owner, "db", None) if owner is not None else None
+        if db is None or not hasattr(db, "queue"):
+            QMessageBox.warning(self, tr("无法操作"), tr("当前没有数据库连接"))
+            return
+        name, ok = QInputDialog.getText(self, tr("新建定时队列"), tr("队列名称："))
+        if not ok or not str(name).strip():
+            return
+        dlg = QDialog(self)
+        dlg.setWindowTitle(tr("输入仓库地址"))
+        v = QVBoxLayout(dlg)
+        tip = QLabel(tr("每行一个仓库地址（同下载页格式）："))
+        tip.setObjectName("muted")
+        v.addWidget(tip)
+        edit = QPlainTextEdit()
+        edit.setPlaceholderText("https://github.com/owner/repo")
+        edit.setMinimumSize(480, 200)
+        v.addWidget(edit)
+        btns = QHBoxLayout()
+        ok_btn = QPushButton(tr("确定"))
+        cancel_btn = QPushButton(tr("取消"))
+        cancel_btn.clicked.connect(dlg.reject)
+        ok_btn.clicked.connect(dlg.accept)
+        btns.addStretch(1)
+        btns.addWidget(cancel_btn)
+        btns.addWidget(ok_btn)
+        v.addLayout(btns)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        text = edit.toPlainText()
+        if not text.strip():
+            QMessageBox.warning(self, tr("创建失败"), tr("没有输入任何仓库地址"))
+            return
+        from ..app.url_lib import parse_urls
+        specs, invalid = parse_urls(text)
+        if not specs:
+            QMessageBox.warning(self, tr("创建失败"),
+                                tr("没有可识别的仓库地址（{} 行无效）").format(len(invalid)))
+            return
+        try:
+            db.queue.add_queue(str(name).strip(),
+                               [{"owner": sp.owner, "repo": sp.repo,
+                                 "url_https": sp.url_https,
+                                 "folder_name": sp.folder_name} for sp in specs])
+        except ValueError as e:
+            QMessageBox.warning(self, tr("创建失败"), str(e))
+            return
+        self.refresh()
+        QMessageBox.information(self, tr("已创建"),
+                                tr("队列「{}」已创建（{} 个仓库，默认每天随时可跑；"
+                                   "时间窗可在数据库调整）").format(name, len(specs)))
 
     def _toggle_selected_queue(self) -> None:
         """启停选中的定时同步队列（写库立即生效；非队列行给出提示）。"""

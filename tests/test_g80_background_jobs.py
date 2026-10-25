@@ -16,7 +16,7 @@ from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QWidget  # noqa: E402
+from PyQt6.QtWidgets import QApplication, QDialog, QInputDialog, QWidget  # noqa: E402
 
 _APP = QApplication.instance() or QApplication([])  # noqa: E402
 
@@ -218,6 +218,35 @@ class TestPanelAndWiring(unittest.TestCase):
             dlg._toggle_selected_queue()
             self.assertEqual({q["id"]: q["enabled"] for q in db.queue.list_queues()},
                              enabled_before)
+            dlg.close()
+            parent.close()
+            db.close()
+
+    def test_create_queue_round_trip(self):
+        """S4 创建队列：真实 parse_urls → add_queue → 面板刷新可见。"""
+        from PyQt6.QtWidgets import QInputDialog, QMessageBox
+
+        from gcm.db.repo_db import Database
+        from gcm.ui.background_jobs_panel import BackgroundJobsDialog
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db = Database(Path(td) / "repos.db")
+            parent = QWidget()
+            parent.db = db
+            dlg = BackgroundJobsDialog(parent)
+            shown = []
+            urls = "https://github.com/aa/bb\n"
+            with mock.patch.object(QInputDialog, "getText",
+                                   return_value=("我的队列", True)),                     mock.patch.object(QDialog, "exec",
+                                      return_value=QDialog.DialogCode.Accepted),                     mock.patch("PyQt6.QtWidgets.QPlainTextEdit.toPlainText",
+                               return_value=urls),                     mock.patch.object(QMessageBox, "information",
+                                      side_effect=lambda *a, **k: shown.append(1)):
+                dlg._create_queue()
+            rows = db.queue.list_queues()
+            self.assertEqual(len(rows), 1, "队列应被创建")
+            self.assertEqual(rows[0]["name"], "我的队列")
+            self.assertEqual(rows[0]["specs"][0]["owner"], "aa")
+            self.assertTrue(shown, "成功后应给确认提示")
             dlg.close()
             parent.close()
             db.close()
