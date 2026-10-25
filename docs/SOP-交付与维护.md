@@ -67,6 +67,6 @@
 
 - [ ] 新增能力已在 `docs/验证记录-*.md` 留下证据行；`__changelog__` 已追加
 - [ ] docs/agent-contract.md 与 CLI/MCP/HTTP 实际行为一致
-- [ ] workflow_status.md 登记最新里程碑
+- [ ] docs/archive/working/ 下的 workflow_status 归档登记最新里程碑（2026-10-25 起不再常驻根目录）
 - [ ] 无未提交工作区改动（git status 干净）
 - [ ] 全量测试绿 + 快集覆盖率达门禁（Windows 81 / POSIX 80，见 `docs/RELEASE_CHECKLIST.md`）+ ruff 0 + mypy 0

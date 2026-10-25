@@ -38,17 +38,16 @@ _SCREENSHOT_WHITELIST = ("docs/screenshots/",)
 
 # 根目录允许出现的顶层条目（目录 + 文件）。新增任何一条都必须先在这里登记理由。
 _ROOT_WHITELIST = {
-    # 目录
+    # 目录（2026-10-25：tasks/ 的 riper5 计划文档归档至 docs/archive/working/，目录移除）
     ".agent", ".github", "docs", "evidence", "gcm", "packaging",
-    "reports", "scripts", "skills", "tasks", "tests",
+    "reports", "scripts", "skills", "tests",
     # 文件
     ".coveragerc", ".gitattributes", ".gitignore", ".ignore",
     "CLAUDE.md", "Git-clone-Max.spec", "LICENSE", "README.md",
     "policy.md", "pyproject.toml", "requirements-build.txt", "requirements.txt",
-    "test_ledger.md", "workflow_status.md",
-    # 2026-10-24 登记：参考项目对标审计的**工作流状态文件**（用户明确要求落盘在本仓根，
-    # 是那次任务的单一状态源：1748 条参考项目清单 + 差距台账 + 批次计划）。
-    "参考的结果计划指南.md",
+    "test_ledger.md",
+    # 2026-10-25 归档：workflow_status.md 与 参考的结果计划指南.md 移入
+    # docs/archive/working/2026-10/（原 2026-10-24 的根目录登记随之失效）。
 }
 
 # 被显式接受的超 800 行模块（`CLAUDE.md` §6 登记的技术债）。

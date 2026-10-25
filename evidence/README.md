@@ -12,7 +12,7 @@
 
 | 字段 | 含义 |
 |------|------|
-| `task_id` | 节点 ID（与 `workflow_status.md` 对应） |
+| `task_id` | 节点 ID（与 `docs/archive/working/` 下的 workflow_status 归档对应） |
 | `goal` | 该节点的验收目标 |
 | `status` | `done` / `partial` / `blocked` / `failed` |
 | `commands[]` | `cmd` + `exit_code` + `output_tail`（真实输出尾部） |
