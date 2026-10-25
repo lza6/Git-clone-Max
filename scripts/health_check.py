@@ -37,7 +37,6 @@ if hasattr(_sys.stdout, "reconfigure"):
     _sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
     _sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
 
-import argparse
 import hashlib
 import json
 import os
