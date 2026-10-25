@@ -346,6 +346,13 @@ class MainWindow(QMainWindow):
             from ..app import applog as _bj_applog
             _bj_applog.warn(f"后台任务登记失败：{e}")
 
+        # G80-B7-3 / S3：定时同步队列编排（有启用的队列才会真正 tick 起来）
+        try:
+            self._setup_queue_runner()
+        except Exception as e:  # noqa: BLE001 - 队列接线失败不该影响启动
+            from ..app import applog as _qr_applog
+            _qr_applog.warn(f"定时同步队列接线失败：{e}")
+
         # 凭据存储强度：`crypto_warning()` 会说明当前环境是否只做了「可逆混淆」。
         # 该函数早已实现却从未被调用 —— 而 README 无条件宣称「token 加密落盘」。
         # 兜底后端（xorfixed）下必须让用户在日志里看得见。
@@ -1356,6 +1363,61 @@ class MainWindow(QMainWindow):
         """手动检查更新（实现在 `update_flow.check_now`，本方法只转调）。"""
         from .update_flow import check_now
         return check_now(self)
+
+    def _setup_queue_runner(self) -> None:
+        """G80-B7-3 / S3：定时同步队列的编排接线（复用 _launch，不改引擎）。
+
+        QTimer 每 60s tick 一次：到点且引擎空闲 → 按队列 specs 启动批次并 mark_run。
+        引擎忙 → 整轮让路（手动批次优先）。app 层不 import Qt（B6 边界），
+        所以 QTimer 在这里创建、`attach_timer` 交给 runner。
+        """
+        from PyQt6.QtCore import QTimer
+
+        from ..app.queue_runner import QueueRunner
+
+        target_root = self.target_edit.text().strip() or str(self.data_dir / "clones")
+
+        # 引用环防线（G69-18）：runner 回调一律经**弱引用**包装 —— 直接闭包 self
+        # 会形成 MainWindow→runner→闭包→MainWindow 的环（守卫会红，实测抓到）。
+        import weakref as _weakref
+
+        self_ref = _weakref.ref(self)
+
+        def _launch_specs(specs) -> int:
+            """把队列 specs 启动成一批（复用主窗体的既有批次链）。
+
+            命名说明：方法名刻意避开主窗体同名方法 —— 生命周期守卫用字符串锚点
+            定位那个方法体做顺序断言，局部函数/注释里出现同样的前缀会把
+            扫描锚点抢走（G80 实测踩到，docstring 里的反引号也算）。
+            """
+            win = self_ref()
+            if win is None:
+                return 0
+            from gcm.models import RepoSpec
+            parsed = [RepoSpec(**dict(x)) for x in specs]
+            return win._launch(parsed, target_root=win.target_edit.text().strip()
+                               or str(win.data_dir / "clones"), shallow=False,
+                               depth=win.depth_spin.value(), clear_input=False)
+
+        self._queue_runner = QueueRunner(
+            store=self.db.queue,
+            get_settings=lambda: (self_ref() or type("S", (), {"settings": None})()).settings,
+            launch=_launch_specs,
+            is_busy=lambda: bool(getattr(self_ref() or object(), "busy", True)),
+        )
+        timer = QTimer(self)
+        timer.setInterval(60_000)
+        timer.timeout.connect(self._queue_runner_tick)
+        self._queue_runner.attach_timer(timer)
+        self._queue_runner.set_enabled(True)
+
+    def _queue_runner_tick(self) -> None:
+        """QTimer 槽：一次队列检查（异常不外泄，定时器不能死）。"""
+        try:
+            self._queue_runner.tick()
+        except Exception as e:  # noqa: BLE001 - 定时器槽不能把线程带崩
+            from ..app.applog import warn as _warn
+            _warn(f"定时队列 tick 失败：{e}")
 
     def show_background_jobs(self):
         """G80-B7-1：打开「后台任务」面板（4 个定时器的 next-run / 上次结果）。"""
