@@ -29,9 +29,10 @@ GCM = ROOT / "gcm"
 # - **跨平台口径说明**：POSIX 下 msvcrt/fcntl 平台分支多 1 个 pass-only
 #   （本机 Windows 数不到，CI macos/ubuntu 才可见）→ 基线以 281 为准。
 # - B7-1 再增加若干（后台任务登记的 try 包裹），同样全部带日志/降级，pass-only 不变。
+# - B7-3 S4b 再增加 1 个（创建队列 UI 的 except ValueError → UI 警告，带日志语义）
 # - B7-3 S3 再增加 4 个（队列登记/推送失败/引擎忙闲查询失败/tick 槽兜底），
 #   全部带日志或降级路径，pass-only 仍是 280 没动。
-BASELINE_EXCEPT = 597
+BASELINE_EXCEPT = 598
 BASELINE_PASS_ONLY = 281
 
 
