@@ -1296,3 +1296,16 @@ Release `v9.10.2`（id=422788581）产物从 Release 独立下载后重算 sha25
 | B4-3 HTTP 硬化（体积上限 / format 白名单 / 搜索下推） | **已完成** | `evidence/G80-B4c.json` · 守卫 `test_g80_http_hardening`(9) |
 | B4-1b 右键删除半成品 / 扫描 needs_attention | **未开始** | — |
 | B4-2 exe 下载校验 | **未开始** | — |
+
+
+## 2026-10-25 · 发布记录（v9.10.3，真实执行）
+
+| 步 | 结果 |
+|---|---|
+| `git push origin main` | `2a7b8ba..271eaf5 main -> main`（26 commit） |
+| tag | `v9.10.3` 创建并推送 |
+| Release | https://github.com/lza6/Git-clone-Max/releases/tag/v9.10.3（publish_release 幂等完成） |
+| 产物 | onefile exe 41,495,848 B + portable zip 80,012,644 B（远端已存在一致附件，幂等跳过重传） |
+| 回滚 | revert 提交 / 删 Release；本地 dist 保留 |
+
+发布后验证：API 确认 Release 存在、两个 asset、body 含 9.10.3。
