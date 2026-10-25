@@ -80,6 +80,34 @@ class TestStuckDetection(unittest.TestCase):
 
         self.assertIn("task_stuck", EventType.ALL, "新事件类型必须登记进 ALL（否则 SSE 过滤会漏）")
 
+    def test_cancel_stuck_tasks_marks_flags_and_counts(self):
+        """用户显式动作：取消已上报的卡死任务 → CancelFlag 置位 + 返回数量。
+
+        这是"只报告"与"能处理"之间的桥：不回收槽位（不超发并发），
+        只是把取消标记交给 worker，让它在下一个检查点尽快收敛。
+        """
+        from gcm.app.worker import CancelFlag
+
+        self.engine.clone_timeout = 0  # 阈值 = 120s，方便构造"已上报"
+        flag_a, flag_b = CancelFlag(), CancelFlag()
+        spec_a = mock.Mock()
+        spec_a.folder_name = "a__x"
+        spec_b = mock.Mock()
+        spec_b.folder_name = "b__y"
+        self.engine.specs = {0: spec_a, 1: spec_b}
+        self.engine.flags = {0: flag_a, 1: flag_b}
+        with mock.patch.object(self.engine, "_publish"):
+            self.engine._inflight_at["a__x"] = time.time() - 200
+            self.engine._check_stuck_tasks()
+            self.assertEqual(self.engine.stuck_task_keys(), ["a__x"])
+            n = self.engine.cancel_stuck_tasks()
+        self.assertEqual(n, 1)
+        self.assertTrue(flag_a._cancelled, "a__x 的 CancelFlag 应被置位")
+        self.assertFalse(flag_b._cancelled, "未上报的 b__y 不该被波及")
+
+    def test_cancel_without_reported_returns_zero(self):
+        self.assertEqual(self.engine.cancel_stuck_tasks(), 0)
+
     def test_no_slot_reclaim_in_this_version(self):
         """明确守住「本版不回收槽位」：源码里不得出现改 MaxThreadCount 的回收逻辑。"""
         src = Path("gcm/app/engine.py").read_text(encoding="utf-8")

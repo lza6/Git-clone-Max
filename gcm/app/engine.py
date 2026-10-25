@@ -975,6 +975,38 @@ class SyncEngine(QObject):
             from . import applog
             applog.warn(f"疑似卡死任务：{key}（已 {int(age)}s，阈值 {int(threshold)}s）")
 
+    def cancel_stuck_tasks(self) -> int:
+        """用户显式动作：取消所有**已上报的**疑似卡死任务（G80-B7-2 补全）。
+
+        与回收槽位的区别：不绕过 `maxThreadCount` —— 槽位要等 worker 真正退出
+        （QThreadPool 语义）才释放；这里只是把 CancelFlag 置位 + 发事件，
+        让 worker 在下一个检查点尽快收敛。**不静默超发**。
+        返回：实际标记取消的任务数。
+        """
+        if not self._stuck_reported:
+            return 0
+        cancelled = 0
+        for idx, spec in list(self.specs.items()):
+            key = spec.folder_name
+            if key not in self._stuck_reported:
+                continue
+            flag = self.flags.get(idx)
+            if flag is not None:
+                try:
+                    flag.cancel()
+                    cancelled += 1
+                except Exception as e:  # noqa: BLE001 - 单个取消失败不拖垮其它
+                    from . import applog
+                    applog.warn(f"取消卡死任务失败（{key}）：{e}")
+        if cancelled:
+            from . import applog
+            applog.warn(f"用户确认取消 {cancelled} 个疑似卡死任务（等待 worker 收敛后释放槽位）")
+            try:
+                self._publish(EventType.SYSTEM, message=f"已请求取消 {cancelled} 个卡死任务")
+            except Exception:
+                pass
+        return cancelled
+
     def forget_inflight(self, key: str) -> None:
         """任务结束（任何终态）时清理记账。"""
         self._inflight_at.pop(key, None)

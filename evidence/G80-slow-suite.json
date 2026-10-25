@@ -1,0 +1,23 @@
+{
+  "task_id": "G80-slow-suite",
+  "status": "passed",
+  "timestamp": "2026-10-25T22:30:00+08:00",
+  "title": "慢集（真实 git E2E，129 例）——本轮首次真实执行",
+  "commands_executed": [
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen python -m unittest tests.test_engine tests.test_v7_fixes tests.test_core tests.test_extra tests.test_v3_p0 tests.test_submodule tests.test_publish tests.test_scanner tests.test_tag_branch tests.test_progress_search",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 129 tests in 67.316s\n\nOK"
+    }
+  ],
+  "tests": [
+    {
+      "name": "慢集 129 例（真实 git clone/push/submodule/publish 等）",
+      "type": "integration",
+      "status": "passed"
+    }
+  ],
+  "limitations": [
+    "macOS/POSIX 口径由 CI slow job 覆盖（历轮全绿）"
+  ]
+}
