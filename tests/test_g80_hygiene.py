@@ -26,11 +26,13 @@ GCM = ROOT / "gcm"
 # - B5 再加 3 个（设置校验/退避保存回调的提示性 handler，无裸吞）；
 # - B4-1b 又加 2 个（scanner._looks_halfcloned 与 halfclone_actions.looks_halfcloned
 #   的 OSError 兜底）——这是同一类「探测失败返回 False」的防御分支，也不是裸吞。
+# - **跨平台口径说明**：POSIX 下 msvcrt/fcntl 平台分支多 1 个 pass-only
+#   （本机 Windows 数不到，CI macos/ubuntu 才可见）→ 基线以 281 为准。
 # - B7-1 再增加若干（后台任务登记的 try 包裹），同样全部带日志/降级，pass-only 不变。
 # - B7-3 S3 再增加 4 个（队列登记/推送失败/引擎忙闲查询失败/tick 槽兜底），
 #   全部带日志或降级路径，pass-only 仍是 280 没动。
-BASELINE_EXCEPT = 595
-BASELINE_PASS_ONLY = 280
+BASELINE_EXCEPT = 597
+BASELINE_PASS_ONLY = 281
 
 
 def _py_files() -> list[Path]:
