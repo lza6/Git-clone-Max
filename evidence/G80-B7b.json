@@ -1,0 +1,24 @@
+{
+  "task_id": "G80-B7b",
+  "title": "卡死任务识别（只报告，不回收槽位）",
+  "status": "passed",
+  "timestamp": "2026-10-25T04:45:00+08:00",
+  "scope": "批次 B7-2（发现 F15）",
+  "commands_executed": [
+    {"cmd": "QT_QPA_PLATFORM=offscreen python -m unittest tests.test_g80_stuck_task -v", "exit_code": 0, "raw_output_tail": "Ran 7 tests in 0.051s\n\nOK"},
+    {"cmd": "python -m ruff check gcm", "exit_code": 0, "raw_output_tail": "All checks passed!"},
+    {"cmd": "python -m unittest tests.test_g80_stuck_task tests.test_g80_winget_manifest tests.test_engine tests.test_g71_event_stream tests.test_g79_repo_hygiene tests.test_g80_hygiene tests.test_g80_boundaries", "exit_code": 0, "raw_output_tail": "Ran 102 tests in 22.410s\n\nOK"}
+  ],
+  "files_changed": ["gcm/app/engine.py", "gcm/app/event_bus.py", "tests/test_g80_stuck_task.py (new)"],
+  "design": {
+    "detection": "engine 记 _inflight_at[folder_name]=ts（_start_worker 记、_on_result 清）；30s 巡检，超过 clone_timeout+120s → 发一次 task_stuck + app.log warn",
+    "once_per_task": "_stuck_reported 保证同一任务只报一次（不会每 30s 刷屏）",
+    "no_slot_reclaim": "本版**不回收槽位**：回收会让实际并发临时超 maxThreadCount，是否接受该风险应由用户显式选择（参考 river 的 AddWorkerSlot 也把这点标为 dangerous）。有源码级断言守着不许悄悄改 setMaxThreadCount",
+    "lifecycle": "launch 启动巡检；pending==0 停止巡检并清 _inflight_at，但保留 _stuck_reported（供人回看这批卡过）"
+  },
+  "limitations": [
+    "只报告不回收 → 真正卡死的 worker 仍占槽位（这正是"报告"而不是"修复"的边界，已在 UI/日志文案里说清"可取消整批后重试"）。",
+    "未做实机"卡死 worker"复现（历史事故是 _pump 线程泄漏，已在 G69-18 修掉）；本批验证止于单元/集成层。",
+    "全量快集未在本改动后重跑。"
+  ]
+}

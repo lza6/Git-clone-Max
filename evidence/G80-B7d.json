@@ -1,0 +1,27 @@
+{
+  "task_id": "G80-B7d",
+  "title": "winget 清单生成（从真实产物读版本与 sha256）",
+  "status": "passed",
+  "timestamp": "2026-10-25T04:50:00+08:00",
+  "scope": "批次 B7-4",
+  "commands_executed": [
+    {"cmd": "python scripts/gen_winget_manifest.py --check", "exit_code": 1, "raw_output_tail": "[FAIL] 缺少 lza6.Git-clone-Max.yaml；缺少 …locale.zh-CN.yaml；缺少 …installer.yaml"},
+    {"cmd": "python scripts/gen_winget_manifest.py", "exit_code": 0, "raw_output_tail": "[OK] 已生成 3 份清单到 …\packaging\winget（版本 9.10.2 · sha256 43127bd97e12…）"},
+    {"cmd": "QT_QPA_PLATFORM=offscreen python -m unittest tests.test_g80_winget_manifest -v", "exit_code": 0, "raw_output_tail": "Ran 7 tests in 0.059s\n\nOK"}
+  ],
+  "files_changed": ["scripts/gen_winget_manifest.py (new)", "packaging/winget/*.yaml (new)", "tests/test_g80_winget_manifest.py (new)"],
+  "design": {
+    "single_source": "版本来自 gcm.__version__，sha256 来自 dist 产物——都不手写（本项目已因「版本/secrets 写死」吃过两次教训）",
+    "check_mode": "--check 比对已入库清单与当前产物，不一致退出码 1（发版前跑一次即可发现忘了重新生成）",
+    "no_network": "脚本不联网、不提审；提交 winget-pkgs 仍是人工动作"
+  },
+  "tests": [
+    {"name": "三份清单结构/版本前缀/非法版本/非法 sha", "type": "unit", "status": "passed"},
+    {"name": "check 模式：一致 0 / 产物变更后 1 / 缺产物 2", "type": "e2e", "status": "passed"},
+    {"name": "已入库清单必须与 dist 产物 sha256 一致", "type": "guard", "status": "passed"}
+  ],
+  "limitations": [
+    "未向 winget-pkgs 实际提审（需人工 PR 与署名流程）。",
+    "InstallerType 选的是 portable（本工具是单 exe），若将来出安装器需换 inno/nsis。"
+  ]
+}

@@ -52,6 +52,9 @@ class EventType:
     TASK_PROGRESS = "task_progress"
     TASK_RESULT = "task_result"
     TASK_ERROR = "task_error"
+    # G80-B7-2：单任务疑似卡死（超过 clone_timeout + 余量仍未收敛）。
+    # 只报告不回收槽位 —— 回收会临时超过并发上限，必须用户显式选择，本版不做。
+    TASK_STUCK = "task_stuck"
     RETRY_QUEUED = "retry_queued"
     RETRY_STARTED = "retry_started"
     RETRY_DROPPED = "retry_dropped"
@@ -60,7 +63,7 @@ class EventType:
 
     ALL: frozenset[str] = frozenset({
         BATCH_STARTED, TASK_QUEUED, TASK_STARTED, TASK_PROGRESS,
-        TASK_RESULT, TASK_ERROR, RETRY_QUEUED, RETRY_STARTED,
+        TASK_RESULT, TASK_ERROR, TASK_STUCK, RETRY_QUEUED, RETRY_STARTED,
         RETRY_DROPPED, BATCH_FINISHED, SYSTEM,
     })
 

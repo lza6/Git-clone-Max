@@ -161,9 +161,19 @@ class SyncEngine(QObject):
         self._recent_batch_rates: list[float] = []
         self._batch_total = 0
         self._batch_net_fail = 0
+        # G80-B7-2：在跑任务的开始时间（folder_name → ts）。用于识别"卡了远超超时"的任务。
+        # 为什么需要：QThreadPool 的槽位只在 runnable 返回后才释放 —— 若 worker 卡在
+        # 某个不会返回的调用里（历史上真出现过：`_pump` 读线程泄漏），槽位会被永久占住，
+        # 表现为"并发数越跑越小、新任务一直排队"，但界面上看不出任何异常。
+        self._inflight_at: dict[str, float] = {}
+        self._stuck_reported: set[str] = set()
         self._retry_timer = QTimer(self)
         self._retry_timer.setInterval(15000)
         self._retry_timer.timeout.connect(self._retry_tick)
+        # 卡死巡检：30s 一次，只做检测与上报，不改并发
+        self._stuck_timer = QTimer(self)
+        self._stuck_timer.setInterval(30_000)
+        self._stuck_timer.timeout.connect(self._check_stuck_tasks)
         if self._retry_queue is not None:
             self._restore_concurrency_state()
             self._retry_timer.start()
@@ -820,6 +830,14 @@ class SyncEngine(QObject):
             return 0
 
         self.busy = True
+        # G80-B7-2：批次开始 → 启动卡死巡检（30s 一次，只上报不回收槽位）
+        self._inflight_at.clear()
+        self._stuck_reported.clear()
+        try:
+            self._stuck_timer.start()
+        except Exception as e:  # noqa: BLE001 - 定时器不可用不该阻断克隆
+            from . import applog
+            applog.warn(f"卡死巡检定时器启动失败：{e}")
         self.tasks = []
         self.flags = {}
         self.specs = {}
@@ -903,6 +921,8 @@ class SyncEngine(QObject):
                       folder_name=spec.folder_name, display=spec.display,
                       url=spec.url_https, host=host)
         payload = TaskPayload(spec=spec, flag=flag, host=host)
+        # G80-B7-2：记开始时间（key 用 folder_name，与 batch_state 一致）
+        self._inflight_at[spec.folder_name] = time.time()
         # G80-B8：仓库级 SSH 私钥（只存路径）。查不到 → 空串 → 走全局设置。
         repo_ssh_key = self._repo_ssh_key(spec, host)
         # G02-3: 每个 worker 独占一个 service（带自身 flag 的取消回调），
@@ -923,6 +943,47 @@ class SyncEngine(QObject):
         self.tasks.append(worker)
         self.pool.start(worker)
 
+    def stuck_threshold_sec(self) -> float:
+        """判定"疑似卡死"的阈值：clone 超时 + 120s 余量（可被测试覆盖）。"""
+        return float(self.clone_timeout) + 120.0
+
+    def _check_stuck_tasks(self) -> None:
+        """巡检在跑任务：超过阈值仍未结束 → 发一次 task_stuck 事件 + 记日志。
+
+        **只报告，不回收槽位**：回收会让实际并发临时超过 `maxThreadCount`，
+        而"是否接受这个风险"应当由用户显式决定（参考 river 的 `AddWorkerSlot`，
+        它同样把这一点标注为 dangerous）。本版不做回收，避免用静默超发换"看起来没卡"。
+        """
+        now = time.time()
+        threshold = self.stuck_threshold_sec()
+        for key, started in list(self._inflight_at.items()):
+            if key in self._stuck_reported:
+                continue
+            age = now - float(started or now)
+            if age < threshold:
+                continue
+            self._stuck_reported.add(key)
+            try:
+                self._publish(EventType.TASK_STUCK, key=key,
+                              elapsed_ms=int(age * 1000),
+                              threshold_ms=int(threshold * 1000),
+                              message=(f"任务超过 {int(threshold)}s 未结束，疑似卡死"
+                                       "（槽位仍被占用；可取消整批后重试）"))
+            except Exception as e:  # noqa: BLE001 - 巡检不能把引擎带崩
+                from . import applog
+                applog.warn(f"task_stuck 事件发布失败：{e}")
+            from . import applog
+            applog.warn(f"疑似卡死任务：{key}（已 {int(age)}s，阈值 {int(threshold)}s）")
+
+    def forget_inflight(self, key: str) -> None:
+        """任务结束（任何终态）时清理记账。"""
+        self._inflight_at.pop(key, None)
+        self._stuck_reported.discard(key)
+
+    def stuck_task_keys(self) -> list[str]:
+        """当前已上报的疑似卡死任务（UI/诊断可用；测试也用它断言）。"""
+        return sorted(self._stuck_reported)
+
     def _replenish(self):
         """G43-2：完成一个任务 → 从待发队列惰性补投一个（取消/无排队时不做）。"""
         if self._cancelled or not self._pending_queue:
@@ -934,6 +995,8 @@ class SyncEngine(QObject):
     def _on_result(self, index: int, res: SyncResult):
         # G80-B1：先打码再落库/上屏（唯一打码点）
         res = _redact_result(res)
+        # G80-B7-2：任务到终态 → 清掉 in-flight 记账（不再参与卡死判定）
+        self.forget_inflight(res.spec.folder_name)
         # 引擎统一落库（worker 不再写 DB，避免并发写同一 SQLite 连接）
         if self.db is not None:
             try:
@@ -1039,6 +1102,13 @@ class SyncEngine(QObject):
             self.flush_all_buffers()
             self.flush_progress()
             self.busy = False
+            # G80-B7-2：批次结束 → 停巡检（不清 _stuck_reported：留给人看"这批有卡过"）
+            try:
+                self._stuck_timer.stop()
+            except Exception as e:  # noqa: BLE001 - 停表失败不影响收尾
+                from . import applog
+                applog.warn(f"卡死巡检定时器停止失败：{e}")
+            self._inflight_at.clear()
             # G52-2：非取消的整批完成 → 会话标记正常完成（不再续跑）
             if not self._cancelled:
                 self._session_mark_completed()
