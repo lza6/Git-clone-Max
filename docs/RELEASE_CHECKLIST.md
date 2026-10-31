@@ -30,8 +30,11 @@
 > progress.json，可用 G52-2 续跑找回）。
 
 
-- [ ] `gcm/__init__.py`：`__version__` bump；`__changelog__` 追加一行（版本号 + 一句话能力 + 全量测试/覆盖率）
-- [ ] `gcm/__init__.py`：`__changelog__` 追加本版本一行
+- [ ] `gcm/__init__.py`：`__version__` bump（**changelog 不要再手改这个文件**）
+- [ ] `python scripts/changelog.py check` → `[OK]`（碎片格式与版本一致性）
+- [ ] `python scripts/changelog.py build --version <X.Y.Z>` → 把 `changelog.d/` 里的碎片
+      聚合成一条写入 `gcm/_changelog_data.py`，并把碎片归档到 `changelog.d/_archive/<版本>/`
+- [ ] `gcm/_changelog_data.py`：确认顶部新增条目的版本号与 `__version__` 一致
 - [ ] `docs/验证记录-<日期>.md`：新增版本节登记（条目 | 实现要点 | 验证命令与输出摘要 | 覆盖率证据）
 - [ ] `python -m PyInstaller Git-clone-Max.spec`（onefile 主产物）
 - [ ] `python scripts/build_portable_zip.py`（生成/刷新便携版 zip；**必须在 PyInstaller 之后跑**）

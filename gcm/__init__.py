@@ -1,163 +1,21 @@
-"""Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。"""
+"""Git-clone-Max — GitHub 仓库批量并行下载与增量更新工具。
+
+版本契约（红线，见 CLAUDE.md §5）：
+- `__version__` 是**全项目唯一事实源**。pyproject / installer.iss / spec /
+  plugin.json / README / docs 的版本都必须与它一致，有守卫测试强制。
+
+changelog 从 v9.10.3 起拆到 `gcm/_changelog_data.py`（G81 / N-4）：
+本文件曾同时承载「版本号 + 76 条 changelog」，163 行里 150 行是 changelog 文本、
+最长单条 1,347 字符、被 88/320 次提交触碰 —— 任何改动都容易在同一处冲突。
+拆分后本文件只保留版本契约；changelog 由 `changelog.d/` 碎片驱动、
+由 `scripts/changelog.py build` 聚合。**对外 API 不变**：
+`from gcm import __changelog__` 拿到的仍是 `tuple[str, ...]`（最新在前）。
+"""
+from __future__ import annotations
+
+from ._changelog_data import ENTRIES as __changelog__
+
 __version__ = "9.10.3"
 __app_name__ = "Git-clone-Max"
-__changelog__ = (
-    "9.10.3: G80 契约与安全边界收口 + 用户可见正确性（审计驱动，7 批） - ①**MCP「只读」工具实际写库**（每次 list_repos 都建表+迁移+commit，与 GUI 抢写锁）：改为「库不存在→空替身不建文件 / 正常→mode=ro / 旧库缺列→迁移一次后回只读」。②**message/detail 全链路未打码**（API/CSV/xlsx/MCP/CLI stderr）：新增 util.redact.redact_row 作唯一出站实现 + engine._redact_result 落库前单点。③**CLI 退出码** conflict/cancelled 由 0 改 1 （契约 §2.2），--json 的 ok 同源。④**--portable/--minimized 与 --cli 组合必失败**（实测 exit 2，两种顺序都中招）→ 入口前剥离。⑤**检出校验**：「取回了但没检出」不再算成功（保留 .git 供增量重试，detail 三段式），裸仓库 skip 不误报；扫描标记半成品 + 导入默认不勾 + 右键二次确认删除。⑥**安装包校验**：设置页「校验我下载的文件…」比对发布方 SHA256（四结论，无基准不谎报）。⑦**HTTP 硬化**：body>1MiB→413、format 白名单→400、搜索下推 SQL 且转义 %/_ 并 LIMIT。⑧**设置项声明期校验**（concurrency/clone_timeout/retry_backoff_base_sec，UI 上下限同源）+ 退避基数补写入侧与消费侧（known-issues #14 最后一个只读字段关闭）。⑨**仓库级 SSH 私钥**（repos.ssh_key 死列接线：只存路径、引擎按任务解析、同步不冲掉、出站剔除）。⑩**后台任务面板**（4 个隐形定时器可见：开关/间隔/上次运行/下次预计/上次结果）+ **卡死任务识别**（超 clone_timeout+120s 发 task_stuck，本版只报告不回收槽位）+ **winget 清单生成**（从真实产物读版本与 sha256）。⑪工程卫生：删 7 个死符号（含整文件 app/token.py 与第二重试判据 is_retryable_message）、打开目录三份实现归一、「打开目录/判半成品/删除」共用同一行目录解析、裸吞异常 287→**280**（预算冻结）。⑫**打包门禁进 CI**（tag/手动触发）。守卫新增 test_g80_contract(12)/hygiene(10)/repo_ssh_key(19)/checkout_visible(6)/halfclone_ui(8)/http_hardening(9)/verify_file(12)/settings_validation(13)/boundaries(5)/background_jobs(13)/stuck_task(7)/winget_manifest(7)；验证：快集 Ran 1546 · 0 fail · 覆盖 82% · ruff 0 · mypy Success(97)。",  # noqa: E501
-    "9.10.2: G79b 终局审计（独立复验 + 3 处真实缺陷修复，无用户可见新功能） - ①**紧凑布局（窗口高 <820px，如 1024×768 / 1366×768）下「快捷填充」行退化成孤立按钮**：`_apply_layout_mode` 只隐藏了 chip 滚动区与标签，而 G76 加的「编辑」按钮在滚动区之外不会隐藏，收起滚动区后它的伸缩空间又轮到该按钮 → 实测被拉成 652/609/481px 通栏，既不是 G74 注释所称的「整行隐藏」，也让人不知道在编辑什么。改法：紧凑模式保留标签（该行读作「快捷填充：［编辑］」）并给按钮 `QSizePolicy.Fixed`；守卫从「只断言滚动区隐藏」扩为 4 条不变量（滚动区收起 + 标签可见 + 编辑入口可见 + 按钮宽度 ≤ sizeHint+4）并纳入 1024×768，两次变异实验均先红（`孤儿` / `652 not less than or equal to 64`）后绿。②**修掉一处已经退化的断言**：`test_check_latest_no_exe_asset` 把 `v3.0.0` 写死并注释「= 当前 `__version__`」，版本越过 3.0.0 后该用例实际只测「更旧版本不算更新」，**同版本分支再无人覆盖而断言仍绿** → 改为按真实 `__version__` 动态构造。③**更正 `CLAUDE.md` §6 与代码矛盾的过期处置**：文档仍写「`ci_run_fast.py` 整轮关闭自动循环 GC…**仍未根治**…要改造 **42 个**测试文件」，而 `scripts/ci_run_fast.py:130-136` 明写「根因已消除，本运行器不做任何 GC 特殊处理」，引用环在 v9.4.2–v9.4.5 已打断（守卫 `TestG69_18NoMainWindowRefCycle` 实测 `del w` 后不调 `gc.collect()` 即释放）→ 计划文档的 **v9.13/T-44 与 P2-9 一并降级为「已过时（前提不成立）」**。④补齐 G79 缺失的交付物 `docs/验证记录-2026-10-24-G79b终局审计.md`，并在本轮真实重跑全部验收：ruff/mypy 绿 · 快集 `Ran 1439 · 0 fail · 0 error · skip 4 · 覆盖 82%` · **慢集 `Ran 129 in 63.586s OK`（G79 当时只有修复前那次 FAILED 的留档）** · `e2e_smoke` PASS · 打包 exe 真实 `cloned→fetched→无效输入 exit 2` · 本地 API/SSE 长连接（`retry:` 帧 + 事件送达 + token/URL 凭据打码 + 非回环绑定被拒）· 截图 38/38（100% 与 125% 两轮）+ 目检 · 基准 500 行 15.56ms。",  # noqa: E501
-    "9.10.1: 修正 9.10.0 的仓库卫生改动被一次 `git reset` 撤销（38 张截图仍留在索引） - 9.10.0 发布前为拆原子提交执行了 `git reset`（mixed，把索引重置回 HEAD），**静默回滚了先前 `git rm --cached` 的成果** —— 38 张 `reports/ui-audit-final/*.png` 因此又被 `git add -A` 带进了提交。CI 三平台 test job 立刻红（新增的 `test_g79_repo_hygiene` 精确报出这 38 个路径），而本地在提交前跑过守卫、于是**误以为绿**。本版真正移除：`git ls-files | grep ui-audit-final` = 0，本地文件保留（可用 `ui_screenshot_audit.py <dir>` 重建），`.gitignore` 规则不变。教训两条：①**拆分提交时不要用 `git reset` 撤销已做的索引手术** —— 它会静默回滚 `git rm --cached`；要重新挑文件请用 `git restore --staged <path>` 逐条、或先提交再 amend 本轮提交；②**CI 不是形式，它是最后一道独立关卡** —— 本地「我跑过守卫了」不能替代「干净检出上的结果」，因为 `git ls-files` 断言的正是索引状态，而索引在本地会被临时的 git 操作污染。",  # noqa: E501
-    "9.10.0: G79 工程治理与配置真实性收口（无用户可见新增功能） - ①**删除僵尸配置字段 `Settings.depth`**：该字段随 `asdict` 落盘进用户 settings.json（`data/settings.json` 里确实有 `\"depth\": 1`），却**全库没有任何读取点** —— 用户改了永远无效。真正的浅克隆深度来自 UI `depth_spin` → `engine.launch(fetch_depth=...)` 参数链，本就不持久化。旧配置文件里的 `depth` 键由既有 `_DEFAULTS` 过滤机制静默忽略（已加单测覆盖旧文件兼容）。②**修复 G69-18 僵尸字段守卫的同名局部变量盲区**：原实现把任意 `ast.Attribute.attr` 与 `ast.Name.id` 都算作「引用」，于是 `depth` 被 `gcm/app/diag_bundle.py` 的 `_redact_obj(value, depth=0)` 参数名（其函数体的 `if depth > 4` 是 `ast.Name`）放行 —— 守卫绿着放过了一个从没人读的字段。收紧为「从设置对象取的属性（`settings`/`s`/`owner.settings` 等）+ `getattr`/`setattr`/`_save_field` 的字符串键」，收紧后守卫**精确点名 `depth`**（红 → 删字段 → 绿，两段输出均留档 `evidence/G79-hygiene.json`）。③**仓库卫生**：`reports/ui-audit-final/` 的 38 张 PNG（约 3.6 MB）出库并补 `.gitignore`（此前只忽略了 `ui-baseline-*`/`ui-g75*`/`ui-g78*` 三批，这一批被漏掉）；删除根目录 1 行占位的 `cli.py`（真入口是 `gcm/cli.py`，两者易混）与误放截图 `z.png`（曾被撤销过一次又被带回索引）。本地截图文件保留，可用 `scripts/ui_screenshot_audit.py <dir>` 重建。④**新增 `tests/test_g79_repo_hygiene`（9 项）**：截图不得入库（白名单 `docs/screenshots/`，并反查白名单未空）、根目录顶层条目白名单 + 无死豁免、超 800 行模块集合必须**等于**已登记集合（拦「悄悄多出第 4 个 801 行文件」）、README/CLAUDE.md 声称的测试文件数必须等于实测。⑤**文档一阶事实对齐**：测试文件数 113/135→**137**、主窗行数 2658→**2665**、`known-issues` 的「PyQt6 未锁版本」更正为已锁 `6.11.0`、`workflow_status.md` §27 的「Actions 不派发」阻塞结论更正为已恢复（run 39922315053 7/7）。",  # noqa: E501
-    "9.9.4: 修复快捷填充 chip 被裁切（真实视觉缺陷，与缩放无关） - ①`download_layout.quick_scroll` 原写死 `setFixedHeight(38)`，而 chip 按钮实测 `sizeHint().height() == 42` → **每颗 chip 底部 4px 被裁**（圆角下沿与文字基线以下整段消失），1440×900 标准模式就能看到；早先被误登记为「仅小屏+125% 缩放」，本次更正病因。②改为 `sync_quick_scroll_height()`：按最高的 chip `sizeHint` 推导高度（+2 余量），并在两处重新同步 —— `rebuild_quick_fill()`（编辑快捷填充后 chip 增减）与 `_apply_layout_mode()`（窗口尺寸/缩放变化后，构建期父级会把滚动区压扁）。③新增 `tests/test_g78_quick_scroll`（3 项几何守卫：标准模式不裁切 / 紧凑模式按设计隐藏 / 编辑后高度跟随重建 / 重复同步幂等且无 scroll 时不抛），不再依赖肉眼发现这类缺陷。",  # noqa: E501
-    "9.9.3: 独立审查 Required Changes 全关闭（无功能新增） - ①`update_flow.on_checked` 把 `_update_checking = False` 提到延迟导入**之前**：该标志一旦漏复位，「检查更新」按钮永久失效且用户零提示（原实现里它是函数第一条语句，抽取时被排到了 import 之后）；②`mb = _msgbox()` 移进 `try`：万一 `main_window.QMessageBox` 被改动，异常走降级提示而不是从槽里冒出去；③`check_silent` docstring 补回 G67-9 的历史理由（原实现 `QTimer.singleShot(2500,...)` 在 GUI 线程查网 → 弱网冻结窗口），防止后人挪回主线程；④`progress_delegate` 未知进度（pct<0，文本 `…`）不再画 25/50/75% 刻度——空轨道上的刻度会让人误以为有进度；`tick_positions` docstring 写明 steps 会被 int 截断；⑤**删掉测试里的死分支**：曾以为要给 `update_flow` 单独打桩，实则该模块无模块级 `QMessageBox`（靠 `_msgbox()` 运行期取 `main_window.QMessageBox`），单点打桩即覆盖，注释同步改正；⑥把两条「全文子串」弱断言（`assertIn('threading.Thread', 源码)`）换成 **AST 作用域断言**：必须位于 `check_now` 自身语句里，已用变异实验验证（改同步 / 把线程挪到别的函数 都会红）。",  # noqa: E501
-    "9.9.2: G75 收口（进度刻度 + 全链路实测证据） - ①进度条叠 25/50/75% 刻度：新增纯函数 `progress_delegate.tick_positions()`（端点不算刻度、退化输入返回空），delegate 用半透明 dim 色画在填充之上、不遮百分比文本；新增 3 项单测（坐标/退化/真跑 paint 不抛）。②收口轮实测（全部真实运行）：慢集 129 tests/65.9s OK（Windows 真实 git E2E）；UI 基准 500 行 add 27.85ms · update 2.87ms · **0 个 QProgressBar 子控件**；QSS 缓存 1.989ms→0.016ms（identical）；空库启动 101.93ms；`scripts/启动Git-clone-Max.bat` 实跑（检出 Python 3.14.3、启动后常驻 >12s、进程树可回收）；CLI 契约退出码实测 0（全成功）/1（有失败）/2（无有效输入/读取失败）与 MCP 未启用 3；更新检查对**真实 Release** 三分支验证（当前 9.9.0→has_new=True 带 url+sha、9.9.1→False、9.10.0→False），且 body 内 sha256 与发布产物一致；`TestShutdownClearsInProgress` 连跑 10/10 无 flake。③SQL/索引审计：f-string 仅用于 PRAGMA 常量、`sync_history(repo_id,started_at)` 有索引、`SELECT * FROM repos` 无限量属本地桌面规模（已评估，不适用分页）。④G77 主窗再拆一块（行为零变化）：更新检查三段（`check_update_now` / `_on_update_checked` / `_check_update_silent`）合并到新模块 `gcm/ui/update_flow.py`，main_window **2750→2658** 行；`update_flow._msgbox()` 在运行期从 `gcm.ui.main_window` 取 `QMessageBox`，**保住既有单一补丁点**（否则 `mock.patch('gcm.ui.main_window.QMessageBox')` 会静默失效 → 测试卡真模态挂死，本轮实测过）；「检查更新不得在 GUI 线程跑网络」的 AST 守卫**跟着代码走**（同扫两个文件 + 断言真的起线程，否则拆完就退化成对空函数体的假断言）；`test_g76_wiring` 增 2 条**真实文件搬移**用例（真 sqlite + 真 shutil.move，验不覆盖/源保留/内容完好）。",  # noqa: E501
-    "9.9.1: G76 接线收口 + POSIX 迁移修复 - ①6 个「只读不写」设置字段补写入侧（关窗托盘 / clone 超时 / 克隆后钩子 / 看门狗静默 / 报表格式 / 快捷填充），克隆后钩子二次确认且默认 No；②扫描进度从「永远转圈」改为 done/total 确定态；③更新提示附发布方 SHA256 + certutil 校验法（check_latest_with_sha 首次有生产调用）；④数据目录私密性显示 + 迁移入口（拒绝在跑任务、不覆盖、复用既有 migrate_data_dir），**目标目录跨平台**（Windows %APPDATA% → POSIX $XDG_DATA_HOME → ~/.local/share），修 CI macos/ubuntu 各 1 例红；⑤manage_model 死信号接统计行；⑥状态文案「跳过」与向导按钮共用 key → 拆独立键「已跳过」(EN Skipped)，修 ruff F601；⑦新增 tests/test_g76_wiring(24)；bench_g70_ui 跟随 _QSS_CACHE 迁移修正；ci.yml 删除 job 级覆盖率死值 84",  # noqa: E501
-    "9.9.0: G75 视觉系统重构（截图驱动，基线 reports/ui-baseline-983 → 改后 reports/ui-g75，38 张对照） - ①拆 theme.py（598→314 行）为 typography/palettes/qss_build 三模块 + 薄壳再导出 22 个兼容符号。②排版七级阶梯（28/20/18/15/13/12/11）+ 三字族（Bahnschrift 显示 / 微软雅黑 UI 正文 / Cascadia Mono 数据），字距经 QFont 落地（QSS 无 letter-spacing）；apply_type/type_font 均有生产调用点（铭牌、进度 delegate、pill delegate）。③色板重制：deep→墨黑 Ink(#0b0e10 + 骨白 #e8e3da + 示波器青 #35c8b4)，light→暖纸 Paper，主操作改 cta 反相块；四主题同步加 cta/on_cta/glow token 并逐对验算 WCAG（顺带修复 nord success 4.23:1→4.70:1 的历史 AA 失败）。④强调色预设改深/浅成对 + 按底色亮度选取；新增 apply_accent_preset，让自绘 delegate、日志高亮、托盘图标与 QSS 共用同一色板（修掉「QSS 一套、自绘另一套」双真相：批次条曾是旧蓝、行内条是新青）。⑤状态形状编码（圆/叉/半圆/环/横线/弧/方框，QPainter 绘制，与字形无关；G74 的 tofu 教训）+ StatusPillDelegate 只绘制不改文本。⑥新增贴顶仪表齿条 StatusStrip（并发/活跃/成功/失败/用时；空态 —；跨批次累计、整批结束停表；零引擎契约变更）。⑦批次总览抽成 BatchOverview、结果文案抽成 result_labels（唯一真相 + tr）；设置导航 01–07 编号并去掉「G53」工程代号；失败汇总操作列按内容自适应（不再把「重试该类别」裁成「重试该类」）；progress_table 848→799 行。⑧新增 tests/test_g75_visual_system(43) 与 4 条反 AI 通用美学守卫（默认主题不得退回 Primer 蓝）。",  # noqa: E501
-    "9.8.3: G74 UI 布局与可读性修复 - ①下载页主操作区移出顶部滚动区（任何分辨率可见「开始/取消」）；快捷填充改横向滚动，任务清单/Star 独立一行；紧凑模式隐藏快捷填充并把高度还给进度表。②仓库管理页工具栏拆为统计行/主操作行/次操作行，1024 宽搜索框不再被压成省略号。③设置页 6 个复选框改 2 列网格、SpinBox 限宽、导航短标题+tooltip，消除右侧裁切与横向滚动。④进度表详情列改 Stretch+省略（长错误不再撑破表格）；状态/健康列去掉缺字形符号（✓/✕/⚠/⭐），改用文字/分数。⑤对话框显式继承主窗 QSS（诊断白底修复）；统计中心内容可滚动、雷达图不再被按钮裁掉；失败汇总/重试队列换行可读；诊断关闭按钮中文化。⑥新增 scripts/ui_screenshot_audit.py 与 tests/test_g74_ui_layout(14) 截图/布局回归。⑦二轮截图审查：设置页标签/复选框不再在分组底色上画深色补丁、数字框隐藏不可见的原生箭头；管理页「上次同步」定宽不再中间省略成乱码；重试队列原因列只放「发生了什么/怎么办」；统计中心雷达图首屏完整可见；关闭按钮统一中文；分割条抓手改为分隔线；仓库详情长路径中间省略 + tooltip；首启向导空面板补提示。",  # noqa: E501
-    "9.8.2: G73 DLQ 可视化 - 重试面板新增「显示已放弃」视图（超过最大重试次数的任务），展示类别/原因/时间；支持单条「重新入队选中」（attempts 重置、立即到期），供用户修正网络/凭据后 redrive；dropped 记录补全 spec 字段（url/folder/ref/local_path），避免重新入队丢 @tag。新增 tests/test_g73_dlq(3)",  # noqa: E501
-    "9.8.1: G72 加固 - ①app.log 落盘统一 redact（Formatter 层，含高置信 token 前缀与 Windows 路径变体）②原子写改 mkstemp O_EXCL + Windows winerror 32/33/1224 退避 + 诊断包复用 replace_with_retry ③诊断包 report 2MB 上限/时区/redaction_version/并发导出安全 ④重试退避加 50%-100% jitter + 单 tick 重投上限 50 ⑤SSE 支持 Last-Event-ID 精确续传 + 并发订阅上限（超限 503 + Retry-After）+ 30s 写超时 ⑥EventBus 按订阅者暴露 dropped/qsize/received 指标。新增 tests/test_g72_hardening(16)",  # noqa: E501
-    "9.8.0: G71 队列可观测性与事件流 - ①新增 EventBus（有界环形缓冲/回放/类型过滤/出站打码，发布永不阻塞或抛出），引擎在 launch/started/progress/result/error/retry/batch_finished 全链路发布事件。②本地 HTTP API 新增 GET /api/events（SSE 长连接，heartbeat/replay/types 参数，客户端断开自动清理订阅）与 GET /api/events/snapshot（JSON 快照），且不占用数据库连接。③三段式错误模型 gcm/app/errors.py（发生了什么/为什么/怎么办 + 可重试判定）：429/5xx 可重试，401/403/404/磁盘满/平台限制不自动重试；失败汇总面板与重试队列统一使用同一判据。④重试队列可见化：新增「重试队列」面板（次数/下次重试/类别/原因/建议，支持立即重试、移除、全部重试、清空）；RetryQueue 新增 record_failure_ex/retry_now/remove/snapshot/stats，并修复 path=None 纯内存模式「记什么丢什么」。⑤批次状态机 gcm/app/batch_state.py（queued→running→终态转换校验 + 幂等计数 + invalid_transitions 观测）。⑥原子写统一：新增 write_text_atomic（唯一 tmp + fsync + 目录 fsync + 替换退避），progress/history/lists/concurrency_state 全部接入。⑦一键诊断包 gcm/app/diag_bundle.py（报告+最近事件+日志尾部，全部打码，zip 原子落盘），主窗口新增「诊断包」按钮与对话框导出入口。⑧首次向导/帮助页文案全部走 tr()，模式改为 full/shallow 语义值（不再依赖中文前缀判断）；B7 长函数治理：service._update 337→105 行（拆出 _update_bare_mirror/_fetch_remote/_merge_remote）、MainWindow._launch 153→124 行（拆出 ui/engine_factory.py）、_build_download_tab 191→约 35 行（拆出 ui/download_layout.py）。⑨本地只读 API 可由 GUI 进程内托管（设置页「本地 API / 事件流」，默认关、仅回环），解决独立 --serve 进程看不到引擎事件的问题；新增事件流查看器（黑匣子执行轨迹：类型过滤/自动刷新/复制 JSON）。新增 tests/test_g71_event_stream(54)",  # noqa: E501
-    "9.7.0: G70 UI/UX 全面升级 - ①设计系统：语义 token（on_accent/border_strong/success）、4pt 间距、字号全链路派生；修正 `_luminance` 绿蓝权重写反导致的历史对比度失真；深色主按钮白字 2.53:1 → 7.49:1、Nord 弱文本 2.82→4.80、Nord 错误色 3.05→4.65；QSS 选择器拼写错误 QTabs→QTabWidget，校验器新增控件类名白名单。②响应式：窗口下限 1020×700→按屏幕工作区推导（1366×768@125% 可用），输入区与进度表加纵向分隔器，8 个对话框按屏幕 90%×85% 夹取，Compact 模式隐藏快捷填充，Ctrl+1/2/3 切页并记忆页签。③性能：进度列改用 delegate 自绘（500 行 0 个 QProgressBar 子控件），进度更新 250ms 合批 + 内存字典（500 次更新 5.4s→5ms），批量插行关排序，QSS 结果缓存（29ms→0.2ms），完成动效限 8 并发/600ms，管理页 500 仓延迟加载。④无障碍：关键控件 accessibleName、表格/页签焦点环、过滤到 0 行与服务搜索无结果的空态、自绘图表文本替代。⑤修复：进度过滤只认首段文本（lambda 捕获旧值 + 引用环）、统计对话框存储/评分文本字面量 `\\n`、对话框套静态深色 QSS 导致切主题失效。⑥本地 API：/api/repos 增加 limit/offset（默认 500/最大 5000）与 total。新增 tests/test_g70_ui_upgrade(24) + scripts/bench_g70_ui.py",  # noqa: E501
-    "4.0.0: 统一调度引擎(SyncEngine) · progress.json 进程级锁+周期落盘 · SQLite busy_timeout · "
-    "同一仓库自动去重 · 平台限制失败识别(Windows 非法文件名/目录占用) · 并发上限 32",
-    "4.1.0: 仓库详情对话框 / GitHub Actions CI / 多平台文档 / UI 管理页测试补覆盖",
-    "4.2.0: 仓库详情接入管理页 · 私有仓库 Token 认证落地 · 本地导入/扫描测试补覆盖",
-    "4.3.0: 发布脚本幂等修复 · 本地导入/扫描测试补覆盖 · UI 打磨(进度初始态/下载位置记忆/并发文案)",
-    "4.4.0: 进度列实时速率/对象数 · 设置页优化(auto_clear/提示) · 并发文案",
-    "4.5.0: 设置页可滚动分组改版 · 启动静默检查更新 · Release body 动态版本 · 环境自检",
-    "4.5.1: 高并发(32)卡死/OOM 内存护栏",
-    "5.0.0: 多平台直克隆（GitLab/Gitee/Codeberg/Bitbucket/自建主机 HTTPS+SSH+短格式+子组）· "
-    "通用 Git URL 解析器 · 跨 host 规范命名 host__owner__repo · 本地扫描多平台覆盖 · "
-    "28 项新解析单测 · 全量 227 测试全绿 · 核心覆盖率 85%",
-    "5.1.0: 可靠性加固 G06 - token 加密落盘(DPAPI/Keyring/XOR 降级) · "
-    "single-instance 进程锁+崩溃残留清理 · 全局异常兜底 error.log · "
-    "settings .bak 备份+损坏恢复 · 跨进程单实例 E2E · 全量 249 测试全绿 · 覆盖 83%",
-    "5.2.0: G06-6 DB 迁移机制(PRAGMA user_version + 幂等加列 tags/favorite/excluded) · "
-    "G02-4 URL 历史持久化(去重/上限/右键回填/清空) · 全量 259 测试全绿 · 覆盖 82%",
-    "5.3.0: G02-1/2 进度表搜索过滤+表头排序(状态优先级) · G02-3 单仓库暂停(pause_task) · "
-    "全量 261 测试全绿 · 覆盖 81%",
-    "5.4.0: G03 仓库管理进阶 - 标签(tags)设置/按标签过滤 · 收藏(favorite)置顶 · "
-    "黑名单(excluded)一键更新排除 · ManageModel 过滤+过期高亮 · 全量 268 测试全绿 · 覆盖 81%",
-    "5.5.0: M5 网络与同步 - G04-3 代理自动检测(环境变量/Windows 注册表+一键填入) · "
-    "G08-1 子模块克隆(--recurse-submodules+update --init, 设置开关) · 全量 273 测试全绿 · 覆盖 81%",
-    "5.6.0: M4 数据能力 - G03-8 详情页统计(次数/成功/失败/冲突/平均耗时) · "
-    "G07-1 统计中心对话框(全局聚合+host 分布, 设置页入口) · 全量 278 测试全绿 · 覆盖 81%",
-    "5.7.0: M6 体验 - G05-1 多主题(Deep/Light/Nord 色板+apply_theme+设置页下拉即时生效) · "
-    "theme 纳入覆盖率计量(56%→83%) · 全量 287 测试全绿 · 覆盖 81%",
-    "5.8.0: M6 自动化 - G09-1 剪贴板监听(ClipboardWatcher 轮询+正则提取+去重+静态资源过滤, "
-    "设置开关, 检测到地址自动填入输入框) · 全量 297 测试全绿 · 覆盖 80%",
-    "5.9.0: M4 数据能力 - G07-3 报表导出(CSV utf-8-sig Excel 友好 + Markdown, "
-    "repos JOIN sync_history 全量) · 设置页「导出报表」入口 · 全量 300 测试全绿 · 覆盖 80%",
-    "6.0.0: M5 网络与同步 - G08-2 @tag 语法(owner/repo@v1.2.0 → clone -b, HTTPS/SSH/短格式/子组) · "
-    "G04-1 弱网降级(网络失败自动 treeless --filter=blob:none 部分克隆) · "
-    "全量 306 测试全绿 · 覆盖 80% · 含安全回归(凭据前置 @ 仍拒绝)",
-    "6.1.0: M6 - G10-1 字号缩放(qss_for_scale 0.8~1.6 钳制 + Ctrl+=/-/0 快捷键) · "
-    "全量 310 测试全绿 · 覆盖 80%",
-    "6.2.0: 安全加固(独立 security-reviewer F1/F2/F3) - host 白名单强制(token 仅发 github.com) · "
-    "所有 path 段 @ 拒绝 · ref 合法性校验(git check-ref-format 语义) · "
-    "全量 320 测试全绿 · 覆盖 80%",
-    "6.3.0: F5/F6 修复(独立审查) - @tag 目录隔离(owner__repo@v1 vs @v2) + 去重键含 ref · "
-    "detached HEAD(tag 检出)二次同步不误报冲突 · 全量 320 测试全绿 · 覆盖 80%",
-    "6.4.0: G04-4 下载限速(settings.rate_limit_kbps → git http.lowSpeedLimit/lowSpeedTime, "
-    "设置页 SpinBox 0=不限速) · 全量 324 测试全绿 · 覆盖 80%",
-    "6.5.0: 数据安全加固 - _safe_rmtree_partial 只清理半成品(含 .git 或空目录), "
-    "非空非 git 目录保留不误删 · already exists 归入平台限制不重试 · 全量 328 测试全绿 · 覆盖 80%",
-    "6.6.0: G03-7 管理页行内「查看」按钮委托(QStyledItemDelegate, 每行独立可点击, "
-    "不再依赖先选中行) · 保留 _on_hist_btn 多选兼容入口 · 全量 331 测试全绿 · 覆盖 80%",
-    "6.7.0: M1/M2 缺陷清零+可靠性 - G21-1 暂停排序错行修复(index↔行映射) · "
-    "G21-2 进度落盘双路径统一(mark_finished) · G21-3 更新检查单次重试+静默失败留痕 · "
-    "G21-4 启动器退出码透传+托盘优雅退出 · G22-1 关窗优雅收敛(drain≤8s) · "
-    "G22-2 in_progress 全生命周期+崩溃恢复预填 · G22-3 BEGIN IMMEDIATE 并发写 · "
-    "G22-4 托盘进度tooltip · G22-5 结构化app.log · G22-6 failed 重试清单 · "
-    "G22-7 重试文案 · G28-1 日志/UI 全链路 redact · 工程化：CI 覆盖率门禁82/ruff/mypy/发布清单 · "
-    "全量 360 测试全绿 · 覆盖 81%",
-    "7.0.0: M1 可靠性补全 - G33-1 导入灰标+仅显示未入库过滤 · G33-2 二次导入不覆盖 · "
-    "G33-3 DB WAL checkpoint 一致性备份 backup_to · G33-4 取消/超时读线程退出保障+警告 · "
-    "G33-5 sync_history 容量治理(每仓200+90天窗口/100次自动清理) · G33-6 启动耗时自检+留痕 · "
-    "G33-7 注释漂移修正 · 全量 379 测试全绿 · 覆盖 81%",
-    "7.1.0: G35 核心交互进阶 - 进度表右键重试/复制详情/打开目录 · 完成提示音开关 · "
-    "输入区拖拽导入(txt/目录) · 任务清单持久化(data/lists) · 详情页复制克隆命令(@tag) · "
-    "管理页 host 分布统计 · 快捷填充可配置(quick_repos) · 状态格 tooltip 拼接 · "
-    "批量打标签+导出所选 CSV · GitHub Star 列表导入(gh_api) · 全量 440 测试全绿 · 覆盖 81%",
-    "7.2.0: G36 UI/UX 升维 - 首次运行三步向导(onboarding) · 状态列符号双通道(✓✕⚠⊘→) · "
-    "统一图标体系(QStyle.StandardPixmap) · 窗口尺寸记忆(geometry) · 空态引导 overlay · "
-    "完成动效(背景淡出) · 设置页搜索过滤 · 全局热键(Ctrl+Alt+S/U/M) · 跟随系统深浅色(auto) · "
-    "全量 486 测试全绿 · 覆盖 81%",
-    "7.3.0: G37 数据能力纵深 - 30 天同步趋势(QPainter 柱状) · 详情页检查远端(ls-remote 对比) · "
-    "报表筛选导出(日期/host/状态) · 自动更新间隔定时 · 用量统计(克隆/更新/提交) · "
-    "每仓库备注(note 迁移 0002+可编辑) · 全量 522 测试全绿 · 覆盖 81%",
-    "7.3.1: G38 网络前沿收官 + 工程收尾 - 按 host 凭据注入(host_tokens 逐条目加密) · "
-    "镜像前缀 · 远端可达性预检(10s) · 单分支浅克隆 · depth1 保命降级 · 强制 HTTP/1.1 · "
-    "自定义主机白名单 · G50-1 测试隔离修复(QApplication 先行) · G50-4 spec 入库 · "
-    "G50-5 README 能力矩阵同步 · G50-7 覆盖率补齐(stat_dialog 100%/single_inst 96%) · "
-    "G50-3 慢测定位 · G50-8 根目录收敛 · G50-9 RELEASE_BODY 模板 · 全量 590 绿 · 覆盖 82%+",
-    "7.4.0: G43 性能与资源治理 - 日志 250ms 合并窗口(信号风暴↓) · 批次流控(>64 惰性补投) · "
-    "进度 100ms 心跳批量 emit · LogModel deque O(1) 裁剪 · 统计中心慢仓 Top10(stats_slow_repos) · "
-    "WAL checkpoint/autocheckpoint 维护 · 打包瘦身(exe 37.9MB/zip 74.5MB, 排除未用 Qt 模块) · "
-    "URL 解析 5000 行 240ms 达标 · 新增 G43 专项测试 17 用例 · 全量 600+ 绿",
-    "7.5.0: G44 安全纵深 - token 掩码/导出剔凭据 · USERPROFILE 打码 · sha256 校验 · "
-    "URL 内嵌凭据剥离 · 敏感目录警告 · 数据目录私有性检查+迁移 · G44 专项 30+ · 全量 652 绿",
-    "7.6.0: M3 工程与结构 G45 - main_window 拆分(manage_panel/progress_table/settings_panel, "
-    "1791→1214 行) · G45-2 引擎并发压力测试(固定种子 x 2-32 并发 x 20% 失败注入/120s 防死锁) · "
-    "G45-3 test_main/single_instance 覆盖率补齐(96%/80%) · "
-    "G45-4 发布 body 模板化(RELEASE_BODY.md) · "
-    "G45-5 build 依赖锁精确版本 · G45-7 CI 三平台矩阵+真实 git E2E 冒烟 job · "
-    "G45-8 发布版本一致性校验(tag==__version__/changelog) · G45-9 产物健康检查脚本(JSON 台账) · "
-    "全量绿 · 覆盖 84%（门禁 82→84）",
-    "7.7.0: M4 UI/UX 设计系统 G46 - 设计 token 层(TOKENS/qss_for_theme) · "
-    "控件状态 QSS(hover/focus/disabled/pressed) · 字体栈+字号下限(FONT_SCALE_MIN_UI 0.9) · "
-    "HC 高对比主题(WCAG AAA ≥7:1 断言) · 强调色 3 档预设(即时生效) · reduced-motion 开关 · "
-    "页签图标 · 批次总览条(已完成/成功率) · 表格键盘 Enter 开详情 · 右键菜单统一(置灰+tooltip) · "
-    "托盘菜单丰富(统计/更新/自启) · 使用说明对话框 · 设置卡片+恢复默认(token 保留) · "
-    "全量 702 绿 · 覆盖 85%(门禁 84→85)",
-    "7.8.0: M5 数据洞察 + Git/网络深化 - G47 健康度评分(0-5, 空历史=3) · 详情页历史空态 · "
-    "xlsx 导出(openpyxl 可选, 冻结首行/自动列宽) · 趋势 hover/7-30-90 周期/导出 PNG · "
-    "管理表健康/大小列(懒加载 du) · 多标签 AND/OR 过滤 · 元数据 JSON 导入导出 · "
-    "G48 并发自适应(网络失败降级/恢复回升) · Git LFS 开关 · 指定 SSH key(DB v3+env) · "
-    "多账号 host=token 解析 · 克隆后钩子(%PATH%) · 镜像克隆(--mirror+remote update) · "
-    "归档下载(zip, 免入库) · 网络诊断(分级报告) · 慢速预提示 · "
-    "全量 722 绿 · 覆盖 84%(门禁 85→84 对齐实测, ≥82 底盘)",
-    "7.9.0: M6 长期演进 + 生态 - G49-1 轻量 i18n(zh/en 字典 + tr() + 设置页语言下拉重启生效) · "
-    "G49-2 数据目录策略(--portable 同级 data / 默认 %APPDATA% / 旧 data 沿用) · "
-    "G49-3 CLI 批量克隆(uv run python -m gcm --cli, 复用引擎离屏, URL/本地裸仓) · "
-    "G49-4 README uv 现代环境 + pyproject 元数据(readme/urls/classifiers) · "
-    "G49-5 Inno 安装器脚本(packaging/installer.iss) · "
-    "G49-6 开机自启真实写入(任务计划) + 启动时最小化到托盘(--minimized) · "
-    "G49-7 完成通知 Webhook(显式开启+URL, payload redact, 后台线程) · "
-    "G49-8 打开数据目录入口 · 全量 760 绿 · 覆盖 84%(门禁 84 保持)",
-    "8.0.0: M7 收官 - CLI --dir 克隆输出根目录 · CI 三平台矩阵新增 mypy 类型门禁(0 error) · "
-    "Inno 安装器中文语言包集成说明 · G46-1..12 计划状态回填[已落地](M4 交付核对) · "
-    "全量 761 绿 · 覆盖 84% · Release 双产物 + health 台账",
-    "8.0.1: 维护版 - publish_release 远端 tag 缺失幂等补建(404→create/422 竞态视为成功, "
-    "含 4 单测) · 计划文档全表清账(G45-G49 状态回填[已落地], 规划总览 M 系列对齐实际交付) · "
-    "全量 761 绿 · 覆盖 84%",
-    "9.0.0: M16 收官验收 - G53 设置面板 UI 入口（告警/历史保留/定时报表）+ CI fast-smoke job + 全模块回归 + 双产物发布 · 全量测试全绿/覆盖84/ruff0/mypy0",  # noqa: E501
-    "9.1.0: G59 第三轮收官 - 评分卡 per_repo_size 接入真实 dir_size · 企业 IM 告警推送(钉钉/飞书/企微)接入主窗口 + token 加密落盘 · CI 主矩阵 fast/slow 拆分 · 文档资产(architecture/ADR/code-gems/product-brief/perf-observability)",  # noqa: E501
-    "9.1.1: 补缺 - G58-5 认证头类型 UI(Bearer/PRIVATE-TOKEN/Basic 下拉 + service 头映射 + 真实 git 头注入 E2E) · G57-5 无障碍声明 · G66-1 Windows 版本资源 8.0.2→9.1.1 修复",  # noqa: E501
-    "9.1.2: 文档治理收官 - G51-3 扫描证据 478KB 归档 zip · G51-4 根目录收敛(参考结果计划指南移入计划书/16 个构建日志清理) · G51-5 v8 历史段抽为独立只读归档 · G51-6 workflow_status 里程碑仪表盘 · G52-G56 章节表全量回填[已落地]",  # noqa: E501
-    "9.6.1: G69-22 第三轮审查整改 - ①**同类残留泄漏面**：treeless/depth1 降级克隆与子模块更新此前未清空 http.extraHeader，且 origin 恢复发生在子模块更新之后；现在所有镜像命令统一 `-c http.extraHeader=` + 镜像环境，origin 在拉子模块前就恢复源站。②环境清理收窄：只删 GIT_CONFIG_COUNT/KEY_n/VALUE_n，保留 GIT_CONFIG_GLOBAL/SYSTEM/NOSYSTEM（企业代理/CA 不会被误删）。③认证头作用域不再使用 netloc（避免 user:pass 进入环境变量名），改用 hostname[:port]。④镜像健康缓存区分失败类型：仓库 404 不再把整个前缀拉黑 120s（只有网络/超时才拉黑）。⑤预检失败且镜像不可用时快速失败，不再等 retries×600s。⑥关窗不再双重 drain（最坏 20s → ~12s）；discard/shutdown 共用信号断开。⑦全局认证头探测加 single-flight（避免批任务同时起几十个 git 子进程）；测速守卫移入 worker 线程。⑧单分支模式跳过镜像快速 fetch（避免拉全部分支）；测速只有预设可达时不再删除用户自定义镜像。⑨雷达图文案走 tr()，六维全 0 不再显示成「暂无数据」。新增 3 条 bare 回退测试 + 环境清理/作用域/预检/健康分类测试，镜像用例 56",  # noqa: E501
-    "9.6.0: G69-21 独立审查整改 + G53-1 雷达图 - ①**凭据泄漏修复（CRITICAL）**：认证头改为 URL 作用域（http.https://<host>/.extraHeader），并让镜像克隆成功后立即把 origin 恢复为源站、旧仓库在更新时自动规范化；镜像只作为取数通道，绝不让第三方拿到 Authorization。②**「测速并排序」按钮修复**：QPushButton.clicked 会传 checked=False，槽签名不匹配导致 TypeError（按钮完全不可用）；顺带修复写回时覆盖其它 host 配置、把内置预设固化成用户配置（导致关开关也关不掉）、探测不走应用内代理。③镜像安全/健壮性：全局 git 配置里的 http.extraHeader（global+system）存在时整体禁用镜像；URL 内嵌凭据不拼接；镜像克隆 retries=0（避免 3×600s 才回源）；更新回退先短超时探测、retries=0、成功后 origin 回源站、unshallow 意图重新执行、origin 与目标仓库不一致时跳过回退；源站预检失败时改走镜像而非直接失败。④--mirror（bare）仓库补更新回退。⑤CloneWorker 重建 GitService 时补全 token/凭据/LFS/子模块/钩子/限速等参数。⑥新增 mirror_probe_timeout 设置项 + 探测超时 SpinBox；reset defaults 同步镜像控件。⑦G53-1 多维评分卡雷达图（gcm/ui/radar_chart.py，纯 Qt 绘制，6 维；统计中心挂载；三主题可读）。⑧CLI 等待改为轮询 processEvents（宿主进程重建过 QApplication 时 QEventLoop.exec 会立即返回导致误报成功）；新增 --no-mirror。⑨engine.shutdown 断开 worker 信号 + waitForDone(8000)，修复子进程退出 0xC0000409（实测原约 2/5 概率）；两个跨进程 flaky 测试改为事件/注入延迟而非 sleep 猜时序。新增 test_g53_radar(9) + 镜像测试扩到 43",  # noqa: E501
-    "9.5.0: G58-2 镜像多备援（国内网络加速）- ①新增 gcm/app/mirrors.py：镜像前缀归一（兼容旧的单值 + 新的多值列表）、用户配置优先 + 内置 4 个**实测可代理 git** 的国内镜像（gh.llkk.cc / gh-proxy.com / ghfast.top / ghproxy.net，2026-10-18 用 git ls-remote 逐个验证并按延迟排序）；②新增 gcm/app/mirror_probe.py：用 `git ls-remote --exit-code` 做短超时探测（实测 HTTP HEAD 不可信：ghfast/ghproxy.net 对 HEAD 返 403 但 git 正常，ghproxy.com HEAD 200 但 git 因 302 失败），10 分钟缓存；③克隆前逐个探测候选，镜像**没有该仓库时立刻跳下一个**（避免卡满 600s clone 超时），全部不可用回退源站；克隆阶段失败再回退源站重试一次；④更新（fetch）失败时自动在镜像/源站之间切换，成功则把 origin 留在可用地址；⑤**有令牌/主机凭据时绝不走镜像**（第三方镜像能看到 Authorization 头）；SSH/本地路径永不拼接；⑥设置页：一个主机可配多个镜像（逗号分隔）+「使用内置国内镜像」「镜像失败自动回退源站」开关 + 「测速并排序」按钮（worker 线程探测后按延迟回写）。真实 E2E：镜像克隆 6.3s 成功、镜像挂掉回退源站 6.7s 成功、更新时镜像失效自动切换 8.7s 成功。新增 tests/test_g58_mirror_failover.py(34)",  # noqa: E501
-    "9.4.7: G69-20 盲点扫描接线 - 独立只读代理做 AST+grep 全量扫描，抓出 15 项「定义了但用户不可达」，本轮修 8 项并各配守卫（tests/test_g69_wiring_gaps.py，13 用例）：①管理页搜索框（filter_rows 原无控件、_vis 也从未被视图消费 → 现在 setRowHidden 并保持过滤）；②过期高亮（is_stale 原无颜色角色 → Background/ForegroundRole + tooltip，阈值跟随设置）；③日志关键字高亮（make_highlighter 原零调用 → 安装到 log_view）；④crypto_warning 启动写 WARN（xorfixed 兜底时用户终于能知情）；⑤收藏/黑名单右键菜单（set_favorite/set_excluded 原无 UI 写入点）；⑥GitHub Star 导入入口（fetch_starred 原无 UI → worker 线程 + 去重回填）；⑦CloneWorker.on_line 原只存不用（所有 git 输出记到 index=0 → 现按仓库归属）；⑧AlertScanner 间隔/IM 改 reconfigure 即时生效（原构造期固化，改完要重启）。另：计划文档二次审计（计划书/ 墓碑归档至 docs/archive/plans/20261017/ 后删除）、新增 policy.md / test_ledger.md / evidence/ / .agent/skills/plan-doc-audit.md",  # noqa: E501
-    "9.4.6: 复验线程整改（5 项阻塞全部 PASS，另修 7 项新发现）- ①审计写盘加独立写锁：40 线程并发 append 在 Windows 上非原子，实测会丢行/写空行，导致新加的并发回归测试**自身 flaky**（25 次挂 3 次）；加锁后 30/30 稳定。②`_dim_color` 键名写错（调色板实际是 `text_dim`，猜的 dim/muted/fg2/sub 全不存在）→ 永远返回 #888888，「改用主题色」是空操作；已修。③**补 `show()` 版引用环守卫** —— 上一轮守卫不 show()，正是被判假绿的同一种失效模式；新增 `TestG69_18NoCycleAfterShow`。④清单标记改为**弹窗成功后**再落盘（原先是先写标记，弹窗失败就永不提示）。⑤清单提示移到「老用户提前 return」之前，升级后也能看一次。⑥删除误入库的一次性脚本",  # noqa: E501
-    "9.4.5: G69-18 审查整改（独立对抗式审查 Request Changes 全部关闭）- ①引用环真正的最后一环：_layout_timer 用 lambda 捕获 self，一旦 show() 由 resizeEvent 重新成环；此前「根因已消除」对生产路径不成立、守卫只覆盖从不 show() 的窗口（假绿）。改绑定方法后 show() 之后仍按引用计数释放；并据此移除 runner 的 gc.disable 安全网（恢复正常 GC 后全量连跑 3 次全绿）。②引导清单只在首次提示（settings.checklist_prompted），改在向导返回后触发。③修 count_repos 不存在导致「已导入仓库」项永远不完成。④僵尸字段守卫改 AST 扫描（原文本匹配被自己的 changelog 喂成假绿）。⑤parse_urls 跳过 # 注释，与校验条语义统一。⑥校验条/清单说明改用主题语义色并强制 PlainText。⑦notify 兜底记 event=error 审计、幂等指纹纳入 URL。⑧schtasks 用例改与语言无关的判据",  # noqa: E501
-    "9.4.4: G54-1 输入区实时校验落地 - 粘贴/输入后显示「有效 N / 无效 M」并指出具体无效行（输入防抖 300ms、注释行不计、解析用与克隆链路同一个 parse_any_repo_url）。顺带修掉 maybe_validate_url 的**平台缺陷**：原用 is_github_url() 只认 GitHub，会把 GitLab/Gitee/Codeberg/Bitbucket 的合法地址判成非法 —— 此前它只在 tests 里被引用，所以这个错误从未暴露。另删除 3 个僵尸设置字段（shallow_default/auto_init_empty/mirror_default，全库无读无写）并新增守卫",  # noqa: E501
-    "9.4.3: G54-4 引导清单落地 - 新增 gcm/ui/checklist.py：首启向导后与设置页均可打开「开始使用清单」，列出 5 项（下载目录/令牌/网络体检/导入清单/帮助）并显示完成进度。设计上**不重复存状态**：download_dir/token/import 由现有设置与数据库实时推导，只有 network/help 记在 settings.checklist_done；不可见窗口时退化为写日志（不弹模态阻塞）。新增 tests/test_g69_checklist.py(8)",  # noqa: E501
-    "9.4.2: G67-6/G69-18 收口 - ①**打断 MainWindow 引用环**（4 个 Panel 的 owner 改弱引用、信号连接不再用 lambda 捕获 self、扫描闭包/剪贴板回调/拖拽 handler 全改弱引用）：实测 `del w` 后**未跑 gc.collect 即按引用计数释放**，新增守卫 TestG69_18NoMainWindowRefCycle；②**完成通知 Webhook 补全**（原实现只会发一次）：同 payload 600s 幂等去重、每次尝试写 <data>/notify.log 审计台账（**只记 scheme://host**，杜绝 Server酱/TG bot token 等路径凭据外泄）、失败重试 1 次、设置页「查看通知审计」入口（含不可见窗口的模态阻塞守卫）。新增 test_g69_notify_hardening(14)，覆盖重试/去重/审计/滚动/防泄漏/落盘失败不影响主流程",  # noqa: E501
-    "9.4.1: G69-18 收口 - 接线两处「只在 tests 里被引用」的诊断能力：设置页「网络诊断」现在真跑 run_env_diagnostics(环境体检:数据目录/磁盘/git/Python-Qt) + run_diagnostics(网络)，结果进新增 gcm/ui/diag_dialog.py 对话框；该对话框带「复制诊断文本」按钮，用的正是 copy_paste_report 生成的 redact 可外发文本(diag_finished 信号由 2 参扩为 3 参)。新增守卫 TestG69_18DiagnosticsWiring(4)",  # noqa: E501
-    "9.4.0: G69-18 终局闭环审计 - **CI 连续红灯根因定位并修复**：test_git_thread_exit 用例C 用 time.sleep(3600) 模拟卡死 stdout 且断言「线程仍存活」→ _pump 读线程被故意泄漏，在整套测试剩余时间里存活并触发原生崩溃（实测 access violation，进程 exit 139/0xC0000409，unittest 来不及打印失败清单）—— 这就是 CI test job 连续 80+ 次红灯无人能定位的成因；改为 Event 放行 + 收尾断言线程真能退出 + 新增「零泄漏线程」行为守卫。ci_run_fast 加固为逐模块落痕 + 失败逐条点名 + faulthandler（崩溃也能定位到模块）。独立复验推翻「计划书台账全部闭环」的删除理由：定时报表零生产调用点、AlertScanner 未接 on_alerts、retry/watchdog/IM告警等 9 个设置字段只读不写 → 全部接线并补 12 个设置控件；GitService._env 改为追加而非从 0 覆盖调用方已有的 GIT_CONFIG_*（此前静默吃掉别人的 git 配置）；告警线程→GUI 的 emit 改弱引用包装（防对已销毁 QObject emit 崩溃）；硬件敏感用例移出正确性门禁（断言未削弱）；HTTP 测试 addCleanup LIFO 顺序修正（WinError 10038 噪声消除，模块 36.6s→18.4s）；测试进程环境隔离 mixin（GIT_CONFIG_* 污染致「本机绿 CI 红」）。另修 agent 接入面两处：MCP export_report 的 out_dir 越界异常逃逸出 stdio 循环致通道中断(traceback/rc=1) → 转 JSON-RPC -32602；MCP/HTTP 自拼数据目录违反「数据目录单源」红线(安装版读到 _internal/data 或克隆输出目录的空库) → 复用 get_data_dir()。 新增永久守卫 TestG69_18WiringClosure(6) + TestG69_18VerifierFindings(5) + 零泄漏线程(1) + 环境自洽(1) + ScanWorker 收敛(3) + agent 接入面(2) + LogBuffer 定时器(3)",  # noqa: E501
-    "9.3.2: G69-17 窗口几何修复 - 用户实测「双击打不开」：恢复的窗口矩形为 (-21298,-21183)，与任何显示器都无交集（进程活着、任务栏有它，屏幕上看不见）。根因是 QWidget.move() 不会矫正离屏坐标（实测 move(-21298) 就真停在那），而 _restore_geometry 把 settings.geometry 原样 move、不检查该位置是否还有屏幕 —— 换显示器/改分辨率/拔外接屏后必现。修复：恢复前逐屏校验坐标，不合法 → 主屏工作区居中；合法坐标仍原样恢复（不丢用户选择）。伴生修复：最大化时序列化连位置一起存（原来只写 M:WxH 两个数字，恢复按 4 个解包 → ValueError 被 except 吞掉 → 最大化永远恢复不了）。新增守卫 TestWindowNeverRestoresOffscreen(7)",  # noqa: E501
-    "9.3.1: 高并发压测轮补丁 - 自建压测（多进程争用 / 300 行进度表 / 60 并发 HTTP）抓出并修掉 3 处并发缺陷：G69-14 本地 HTTP API 的 listen backlog 仍是 socketserver 默认的 5 → 50 并发时报 WinError 10061「目标积极拒绝」（客户端只看到连不上）→ 抬到 128，复验 60 并发全部 200 · G69-15 RetryQueue.load / RuntimeSessionStore.load 只持线程锁、没有跨进程锁 → Windows 上读者持有目标句柄时写方的 os.replace 直接失败 → 读也持 cross_process_lock · G69-16 **真因**：msvcrt.LK_LOCK 内建「重试 10 次后抛错」上限，争用下抛错即触发「静默降级为仅线程锁」（实测 DEGRADED=1），该进程从此完全失去跨进程保护、两个写方同时进临界区 —— 表面上像是「退避不够」，加大退避无效 → 改用 LK_NBLCK + 自行轮询（预算 30s 由我们掌握），复验降级 0 次、并发写错误 0 次 · 另修本轮自身引入的回归：给 load 加锁时漏了 path=None 的纯内存模式（快集 ERROR 抓到）。新增守卫 test_g69_regressions 4 例 + 压测台账记入 docs/验证记录-2026-10-14.md",  # noqa: E501
-    "9.3.0: G69 独立审计修复 - 独立审计线程报出并逐条复现的 8 项缺陷。【安全】Kestrel-1 同步流程用裸 shutil.rmtree 删 DB 派生的任意目录(导入别人分享的元数据 → 一键更新 → 任意非空目录被整棵删除；改用同文件既有 _safe_rmtree_partial 并显式报失败) · 本地扫描把 .git/config 内嵌凭据带进 DB/元数据导出/剪贴板/上屏(改为在入库口统一剥凭据 + 两处展示打码) · token「加密」实为**源码内硬编码密钥的 XOR**(打包产物无 win32crypt/keyring，实测可离线还原明文) → 改用 ctypes 直调 crypt32 DPAPI(零新依赖、与历史密文格式兼容) · 本地 HTTP API 不校验 Host/Origin(伪造 Host 实测 200，DNS rebinding 可读数据) → 非回环一律 403 · MCP export_report 的 out_dir 可写任意绝对路径 → 限定在数据目录内 · 报表公式注入(仓库名可被 Excel 当公式求值) → 以 =+-@ 开头的单元格加前缀 · 【挂死/死锁/丢数据】放弃读线程后仍 close stdout 致永久阻塞 · 替换引擎不 drain 旧引擎致 Python 析构与 worker 抢 GIL 死锁 · retry_queue/session_runtime/progress_gc 固定 tmp 名且无锁(实测 300→16 条静默丢失) → 统一抽 gcm/util/atomic_io.write_json_atomic · 【错行】排序开启时进度/结果按 index 直取行号(实测 300/300 错位、「重试此仓库」重试错仓库) → 一律按行内 engine index 反查 · 【正确性】/api/report 的列取自 sync_history 而行取自 repos 致恒空 · 升级状态无法恢复(最大化写出 2 个数字却按 4 个解包) · 新增守卫 test_g69_regressions(11) + test_g69_security_fixes(21)",  # noqa: E501
-    "9.2.1: G68 硬化 - G68-2 cross_process_lock 重入改为**按路径**判定(原按深度计数，导致不同路径嵌套时内层文件锁被完全跳过；两进程区间重叠判定实测修复前重叠 1.08s) · G68-3 sanitize_name 处理 Windows 保留设备名(归档 CON/COM1/NUL 等名字必失败 rc=128 且报错误导；须改**点前段**而非尾部追加——实测 CON.txt_.zip 仍失败、CON_.txt.zip 才成功) · G68-4 窗口不可见时不再弹模态(headless 下 QMessageBox.exec 永久阻塞，faulthandler 抓到 _on_update_checked ← processEvents 挂死 7 分钟+) · G68-1 设置页 432 行单函数拆为 settings_groups.py 的 7 个构建器(settings_panel 899→454 行) · 新增守卫 test_g68_settings_ui(13) + test_g68_filename_safety(6) + 锁嵌套 2 用例",  # noqa: E501
-    "9.2.0: G67 终局收尾 - 接线三处「虚伪实现」(host_probe 纳入网络诊断 / xlsx 导出补 UI 入口且空结果集不再崩 / 全局 SSH key 补设置项+引擎即时生效) · 删除零生产引用的 rate_limit.py · G67-3 重投复用批次上下文(host/fetch_depth/mirror)与进度表越界补行 · G67-4 常用主机白名单改读真实数据目录(安装版永久失效) · G67-8 告警/报表线程 stop 不再清引用致重复起线程 · G67-9 检查更新移出 GUI 线程(内部有 2s 重试) · G67-10 settings.json 加跨进程写锁(新 gcm/util/filelock.py，含无锁对照组反向自检) · G67-11 无法判定落后数时不再假报「已是最新」 · G67-13 progress 锁失败不再泄漏 fd + mark_finished 读改写原子化 · G67-14 repo_db 拆出 progress_file.py · G67-18 _fetch_rows 报错上抛不再吞成空报表 · G67-22 engine.shutdown 不等 worker 收敛致 in_progress 残留 · G67-23 settings 并发保存 tmp 名冲突且 Windows 目标被占用会 PermissionError(改 pid/tid 唯一 tmp 名 + 退避重试) · G67-24 文档守卫扩到 CLAUDE.md/skills 后抓出 6 个技能包脚本路径死链并修正 · 删除已闭环的 计划书/ 迭代台账(现状迁入 docs/data-model.md) · 守卫 test_g67_closure(16) + test_g67_docs_freshness(13)",  # noqa: E501
-    "9.1.5: 独立复验线程抓到的两项 P1 回归修复 - 浅仓增量更新永久失败(G66-10 让 --depth 独立生效后，_update 在浅仓上重复 fetch --depth 导致新 tip 成为无父 shallow 边界、merge-base 无解、被误判为冲突，仓库从第二次同步起永久无法更新；改为 plain fetch 尊重既有浅边界) · 钩子路径引号绕过(模板 placeholder 带后缀时生成相邻双引号使引号状态翻转、实测注入成功；改为按引号上下文决定是否加引号，安全与可用性同时成立) · _console_encoding 改用 GetACP(不受 PYTHONUTF8 影响) · IPv6 绑定不再崩溃且文案不再误导 · redact 不再吞掉收尾引号 · 守卫 53→60 用例",  # noqa: E501
-    "9.1.4: G67 安全与线程安全补丁 - G67-1 克隆后钩子命令注入修复(路径强制双引号包裹, A/B 实测: 目录名 x&mkdir PWNED&y 修复前真的执行了 mkdir) · G67-2 三处跨线程直接操作 Qt 控件改为 pyqtSignal 桥接(main_window/progress_table/settings_panel) · 附带修复归档取光标行与文件名清洗 · 守卫 40→51 用例(含反向自检: 取基线 commit 断言守卫能抓到修复前的违规)",  # noqa: E501
-    "9.1.3: G66 第四轮终局审计补丁 - G66-2 契约版本单源(CLI --json/--diag + MCP serverInfo + 2 个技能脚本共 5 处硬编码 8.0.2 → gcm.__version__；pyproject/installer.iss 同步) · G66-3 时间炸弹用例修复(test_repo_tags 写死日期致主矩阵 2026-10-12 实测红灯) · G66-4 中文 Windows(cp936) 子进程解码崩溃修复(26 处 text=True 补 encoding=utf-8) · G66-6 本地 HTTP API 强制回环绑定(拒绝 0.0.0.0 无鉴权暴露) · G66-5/G66-7 CI artifact 与 step 名修复 · 新增 test_g66_patch.py 19 项永久守卫",  # noqa: E501
 
-    # ⚠️ 历史残片（G80-B2 登记）：下面这条的版本前缀在早期被截断，原文从「0 子进程」开始，
-    # 无法从 git 历史可靠还原它属于哪个版本的完整说明。保留原文并显式标注，
-    # 避免它被误读成某条完整的版本记录（原先它没有版本前缀，与相邻条目格式不一致）。
-    "[版本前缀已丢失·历史残片] 子进程+线程池并发+scandir 跳 junction) · 裸仓/worktree 完整性 · "
-    "local_repos_dialog O(1) 预载+item checkState+批量写库 · 实测 300 仓 149.4s→1.6s(约95x) · "
-    "全量 770 绿 · 覆盖 84%",
-)
-
+__all__ = ["__version__", "__app_name__", "__changelog__"]

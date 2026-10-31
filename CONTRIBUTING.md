@@ -71,6 +71,21 @@ uses a blacklist, not a whitelist). Name the file `tests/test_<area>.py` and
 register the new seam in `test_ledger.md` if two modules start talking through
 a new contract.
 
+## Changelog
+
+Do **not** edit `gcm/__init__.py` to record a change — it holds only the version
+contract. Add a fragment instead:
+
+```bash
+python scripts/changelog.py new --category fixed --slug <short-name> \
+    --title "<one-line capability>" --verify "<what you ran>"
+```
+
+One fragment per change, under `changelog.d/`. At release time
+`python scripts/changelog.py build --version <X.Y.Z>` folds them into a single
+entry in `gcm/_changelog_data.py` and archives the fragments. See
+[`changelog.d/README.md`](changelog.d/README.md).
+
 ## Commits
 
 One batch per commit. Do not mix unrelated refactors into a functional change.

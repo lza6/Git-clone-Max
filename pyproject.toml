@@ -65,6 +65,10 @@ ignore = [
 # G49-1 生成文案字典：长行豁免（自动生成，非手写）
 "gcm/i18n/zh.py" = ["E501"]
 "gcm/i18n/en.py" = ["E501"]
+# G81（N-4）：changelog 条目是**逐条一行**的历史记录（最长 1,347 字符），
+# 由 scripts/changelog.py build 生成；换行会破坏「一条 = 一个版本」的结构，
+# 而且这些文本原本就在 gcm/__init__.py 里带行内 noqa。与 i18n 同一豁免理由。
+"gcm/_changelog_data.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.10"

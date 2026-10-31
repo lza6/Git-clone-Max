@@ -65,7 +65,7 @@
 
 ## 6. 交接清单（给下一位开发者）
 
-- [ ] 新增能力已在 `docs/验证记录-*.md` 留下证据行；`__changelog__` 已追加
+- [ ] 新增能力已在 `docs/验证记录-*.md` 留下证据行；`changelog.d/` 碎片已建、发版时已 `scripts/changelog.py build` 聚合
 - [ ] docs/agent-contract.md 与 CLI/MCP/HTTP 实际行为一致
 - [ ] docs/archive/working/ 下的 workflow_status 归档登记最新里程碑（2026-10-25 起不再常驻根目录）
 - [ ] 无未提交工作区改动（git status 干净）
