@@ -122,6 +122,57 @@ class RepoDetailDialog(QDialog):
         self.lbl_stats.setObjectName("muted")
         return self.lbl_stats
 
+    def _load_profile(self):
+        """G81（N-6）：读本仓库的确定性画像；无 db / 无记录返回空画像，异常返回 None。"""
+        try:
+            from ..app.knowledge import RepoProfile
+
+            db = self._db_or_none()
+            if db is None:
+                return RepoProfile()   # 无 db（离屏/独立使用）按"未探测"渲染
+            return db.get_repo_profile(
+                str(self.repo.get("owner") or ""),
+                str(self.repo.get("repo") or ""),
+                str(self.repo.get("host") or "github.com"))
+        except Exception:  # noqa: BLE001 - 详情页缺一块画像不该整窗打不开
+            return None
+
+    def _profile_rows(self) -> list:
+        """G81（N-6）：画像行（语言 / 形态 / 工程信号 / 简介 / 语言构成）。
+
+        抽成独立方法而不是塞进 `_build_meta`：后者已经承担路径省略、备注、
+        SSH 私钥三块，再长就跌破可读性下限。
+        """
+        prof = self._load_profile()
+        if prof is None:
+            return []
+        if not (prof.lang or prof.summary or prof.kind != "unknown"):
+            return [(tr("仓库画像"),
+                     tr("（尚未探测：下一次同步完成后自动生成）"))]
+        kind_labels = {
+            "cli": tr("命令行工具"), "library": tr("库/包"),
+            "service": tr("服务/可部署"), "skill": tr("Agent 技能包"),
+            "docs": tr("文档仓"), "unknown": tr("未识别"),
+        }
+        rows = [(tr("主语言"), prof.lang or tr("（未检出源码）")),
+                (tr("项目形态"), kind_labels.get(prof.kind, prof.kind))]
+        signals = []
+        if prof.has_ci:
+            signals.append(tr("持续集成"))
+        if prof.has_tests:
+            signals.append(tr("测试"))
+        if prof.has_docs:
+            signals.append(tr("文档"))
+        rows.append((tr("工程信号"),
+                     " · ".join(signals) if signals else tr("（无）")))
+        if prof.langs:
+            top = list(prof.langs.items())[:4]
+            rows.append((tr("语言构成"),
+                         " · ".join(f"{k} {v}" for k, v in top)))
+        if prof.summary:
+            rows.append((tr("简介"), prof.summary))
+        return rows
+
     def _build_meta(self) -> QGridLayout:
         grid = QGridLayout()
         grid.setSpacing(6)
@@ -132,6 +183,7 @@ class RepoDetailDialog(QDialog):
             ("最近同步", str(self.repo.get("last_sync_at") or "") or "（从未）"),
             ("默认分支", str(self.repo.get("default_branch") or "") or "（未知）"),
         ]
+        rows.extend(self._profile_rows())
         for i, (label, value) in enumerate(rows):
             key = QLabel(label)
             key.setObjectName("muted")

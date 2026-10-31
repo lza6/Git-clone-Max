@@ -11,6 +11,7 @@ from typing import Any, Optional
 
 from ..models import RepoSpec, SyncAction, SyncStatus
 from .queue_db import QueueStore, migrate_to_v4
+from .repo_profile import RepoProfileMixin, migrate_to_v5
 from .repo_search import SearchMixin
 from .repo_ssh import SshKeyMixin
 
@@ -52,7 +53,7 @@ CREATE INDEX IF NOT EXISTS idx_sync_history_repo ON sync_history(repo_id, starte
 _BUSY_TIMEOUT_MS = 30000  # SQLite 写锁竞争等待上限，避免高并发直接抛 database is locked
 
 # 数据库 schema 版本（PRAGMA user_version）。每次结构变更，递增此值并补一段迁移。
-_SCHEMA_VERSION = 4
+_SCHEMA_VERSION = 5
 
 
 def _migrate(conn):
@@ -64,33 +65,27 @@ def _migrate(conn):
     v = conn.execute("PRAGMA user_version").fetchone()[0]
     if v >= _SCHEMA_VERSION:
         return
-    if v < 1:
-        # v1：repos 增加 标签/收藏/排除 三类扩展列（G06-6 迁移基线）
-        cols = [r[1] for r in conn.execute("PRAGMA table_info(repos)")]
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(repos)")]  # 幂等判断用，取一次复用
+    if v < 1:  # v1：标签/收藏/排除（G06-6 迁移基线）
         if "tags" not in cols:
             conn.execute("ALTER TABLE repos ADD COLUMN tags TEXT DEFAULT ''")
         if "favorite" not in cols:
             conn.execute("ALTER TABLE repos ADD COLUMN favorite INTEGER DEFAULT 0")
         if "excluded" not in cols:
             conn.execute("ALTER TABLE repos ADD COLUMN excluded INTEGER DEFAULT 0")
-    if v < 2:
-        # v2：repos 增加 备注列（G37-6 每仓库备注）
-        cols = [r[1] for r in conn.execute("PRAGMA table_info(repos)")]
-        if "note" not in cols:
-            conn.execute("ALTER TABLE repos ADD COLUMN note TEXT DEFAULT ''")
-    if v < 3:
-        # v3：repos 增加 ssh_key 列（G48-3 指定 SSH key）
-        cols = [r[1] for r in conn.execute("PRAGMA table_info(repos)")]
-        if "ssh_key" not in cols:
-            conn.execute("ALTER TABLE repos ADD COLUMN ssh_key TEXT DEFAULT ''")
-    if v < 4:
-        # v4：同步队列（G80-B7-3 / S1）—— 只新增表，旧数据零影响
+    if v < 2 and "note" not in cols:  # v2：备注列（G37-6）
+        conn.execute("ALTER TABLE repos ADD COLUMN note TEXT DEFAULT ''")
+    if v < 3 and "ssh_key" not in cols:  # v3：ssh_key 列（G48-3）
+        conn.execute("ALTER TABLE repos ADD COLUMN ssh_key TEXT DEFAULT ''")
+    if v < 4:  # v4：同步队列（G80-B7-3 / S1），只新增表
         migrate_to_v4(conn)
+    if v < 5:  # v5：仓库画像（G81），实现抽到 repo_profile.py（本文件贴 800 红线）
+        migrate_to_v5(conn)
     conn.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
     conn.commit()
 
 
-class Database(SshKeyMixin, SearchMixin):
+class Database(SshKeyMixin, SearchMixin, RepoProfileMixin):
     """线程安全 SQLite 封装。"""
 
     def __init__(self, db_path: str | Path, readonly: bool = False):

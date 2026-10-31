@@ -1042,6 +1042,15 @@ class SyncEngine(QObject):
                     repo_id, res.status, res.action, res.message, res.detail,
                     commits=res.commits, head_before="", head_after=res.head_sha,
                     remote_head=res.remote_sha, duration_ms=res.duration_ms)
+                # G81（N-6）：仓库画像落库。失败只记日志，不影响这条结果
+                # （画像是展示用派生数据，绝不能让它把成功的同步变成失败）。
+                if getattr(res, "profile", None) is not None:
+                    try:
+                        self.db.set_repo_profile(repo_id, res.profile)
+                    except Exception as e:  # noqa: BLE001 - 画像写失败不该打断批次
+                        from . import applog
+                        applog.warn(
+                            f"仓库画像落库失败（{res.spec.folder_name}）：{e}")
             except Exception as e:  # noqa: BLE001 - 落库失败不能打断整批，但必须留痕
                 # G80-B2：原注释称「通过日志暴露」，实际什么都没记（app.log 里查不到）。
                 # 落库失败 = 这条结果不会进历史/报表/统计，事后无法追溯，必须记下来。

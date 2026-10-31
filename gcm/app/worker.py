@@ -122,6 +122,20 @@ class CloneWorker(QRunnable):
                 )
                 svc.send_progress_detail = self._emit_progress_detail
             res = svc.sync(spec)
+            # G81（N-6）：同步成功后顺手做确定性画像（纯本地读、零网络、零 LLM）。
+            # 实测 ≈1.1ms/仓（1,726 目录 1.95s），因此放在 worker 线程里同步做，
+            # 不需要后台任务。失败/取消/裸仓库不探测（裸仓没有工作树可画像）。
+            if (res.status == SyncStatus.SUCCESS and res.path
+                    and getattr(res, "checkout_state", "ok") != "skip"):
+                try:
+                    from .knowledge import probe_repo_profile
+                    res.profile = probe_repo_profile(res.path)
+                except Exception as e:  # noqa: BLE001
+                    # 画像失败绝不能把一次成功的同步变成失败 —— 放弃画像，但必须留痕
+                    # （走 applog 而不是 _emit：不想让每个仓库都往 UI 日志刷一行）。
+                    res.profile = None
+                    from . import applog
+                    applog.warn(f"仓库画像探测失败（{spec.folder_name}）：{e}")
             # DB 记录由引擎统一处理（engine.py 传入 db=None 时此处跳过，
             # 避免多 worker 并发写同一 SQLite 连接）；独立使用时仍写库
             if self.db is not None:
@@ -132,6 +146,15 @@ class CloneWorker(QRunnable):
                     commits=res.commits, head_before="", head_after=res.head_sha,
                     remote_head=res.remote_sha, duration_ms=res.duration_ms,
                 )
+                # G81：独立使用路径也要落画像（引擎路径在 engine._on_result 落）
+                if res.profile is not None:
+                    try:
+                        self.db.set_repo_profile(repo_id, res.profile)
+                    except Exception as e:  # noqa: BLE001
+                        # 画像是展示用派生数据：写失败不影响同步结果，但必须留痕
+                        from . import applog
+                        applog.warn(
+                            f"仓库画像落库失败（{spec.folder_name}）：{e}")
             self.signals.result.emit(self.index, res)
         except Exception as e:
             res.status = SyncStatus.FAILED

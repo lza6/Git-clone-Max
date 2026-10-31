@@ -32,7 +32,17 @@ GCM = ROOT / "gcm"
 # - B7-3 S4b 再增加 1 个（创建队列 UI 的 except ValueError → UI 警告，带日志语义）
 # - B7-3 S3 再增加 4 个（队列登记/推送失败/引擎忙闲查询失败/tick 槽兜底），
 #   全部带日志或降级路径，pass-only 仍是 280 没动。
-BASELINE_EXCEPT = 598
+# - G81（N-6 仓库画像 + N-5 可解释字段）再增加 11 个，**全部是带日志或降级路径的
+#   handler，pass-only 未涨（281 不变）**：
+#     knowledge.py +4（探测边界 OSError / README 读取 / package.json 解析 / Cargo.toml 解析）
+#     db/repo_profile.py +2（坏 profile_json 退化 / 聚合时跳坏行）
+#     app/engine.py +1（画像落库失败 → applog.warn）
+#     app/worker.py +2（探测失败 → applog.warn；独立落库失败 → applog.warn）
+#     ui/repo_detail_dialog.py +1（无 db/坏数据 → 返回空画像，详情页照常打开）
+#     ui/statistics_dialog.py +1（非 list 返回值 → 当无数据处理）
+#   依据：新增能力不可能零异常处理；红线是「不许静默吞」，不是「不许写 except」。
+#   本次所有 handler 都有可观测出口，因此只上调总数、不上调 pass-only。
+BASELINE_EXCEPT = 609
 BASELINE_PASS_ONLY = 281
 
 
@@ -95,7 +105,10 @@ class TestDeadSymbolsStayDead(unittest.TestCase):
         里出现名字是**历史记录**，不是代码 —— 扫描时排除它，否则守卫会被自己的
         变更说明误伤（G80-B2 删符号当轮就写过 changelog，下一轮守卫转红）。"""
         def _is_changelog(p: Path) -> bool:
-            return p.name == "__init__.py" and p.parent == GCM
+            # G81：changelog 已从 gcm/__init__.py 拆到 gcm/_changelog_data.py
+            # （纯数据模块，由 scripts/changelog.py build 生成）。两处都要排除 ——
+            # 判据是「这个文件只承载历史文本，不可能是活代码」，而不是文件名。
+            return p.parent == GCM and p.name in ("__init__.py", "_changelog_data.py")
 
         blobs = {p: p.read_text(encoding="utf-8") for p in _py_files() if not _is_changelog(p)}
         for name in self.REMOVED:

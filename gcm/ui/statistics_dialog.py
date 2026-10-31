@@ -202,6 +202,13 @@ class StatisticsDialog(QDialog):
         self.lbl_slow.setWordWrap(True)
         v.addWidget(self.lbl_slow)
 
+        # G81（N-6）：语言构成（来自仓库画像；未探测的仓库不计入）
+        v.addWidget(QLabel(tr("语言构成")))
+        self.lbl_langs = QLabel("")
+        self.lbl_langs.setObjectName("muted")
+        self.lbl_langs.setWordWrap(True)
+        v.addWidget(self.lbl_langs)
+
         # G53-3 存储看板（数据目录占用 / 磁盘剩余 / 建议）
         v.addWidget(QLabel("存储看板"))
         self.lbl_storage = QLabel("")
@@ -241,6 +248,23 @@ class StatisticsDialog(QDialog):
                 "平台分布：" + " · ".join(f"{h}: {c}" for h, c in by_host.items()))
         else:
             self.lbl_hosts.setText("平台分布：（暂无仓库）")
+
+        # G81（N-6）：语言构成（来自仓库画像；未探测的仓库不计入）
+        try:
+            raw_langs = (self.db.list_repo_langs(limit=8)
+                         if hasattr(self.db, "list_repo_langs") else [])
+        except Exception:
+            raw_langs = []
+        # 防御：db 可能是 Mock（测试）或旧版对象，非 list/tuple 一律当"无数据"，
+        # 不让一次统计刷新把整个对话框打挂。
+        langs = ([(str(n), int(c)) for n, c in raw_langs]
+                 if isinstance(raw_langs, (list, tuple)) else [])
+        if langs:
+            self.lbl_langs.setText(
+                " · ".join(f"{name} {cnt}" for name, cnt in langs))
+        else:
+            self.lbl_langs.setText(
+                tr("（尚未探测：下一次同步完成后自动生成）"))
 
         # G37-5 用量统计：累计克隆/更新（按 action 聚合）
         try:

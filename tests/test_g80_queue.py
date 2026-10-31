@@ -1,6 +1,6 @@
 """G80-B7-3 / S1+S2 守卫：sync_queue 持久化 + 调度判定纯函数。
 
-S1 不变量（schema v4）：
+S1 不变量（schema **v4 起**；v5 追加 repos.profile_json，不影响本组断言）：
 - 迁移幂等（重复打开同一库不炸、旧库升级后旧数据完好）；
 - QueueStore 的 CRUD + 校验（空名/空 specs/非法 on_missed/非法时间 → ValueError）；
 - mark_run 记「跑过」。
@@ -23,13 +23,16 @@ os_kw = {}
 
 class TestSchemaV4(unittest.TestCase):
     def test_fresh_db_gets_v4_and_queue_table(self):
-        from gcm.db.repo_db import Database
+        from gcm.db.repo_db import Database, _SCHEMA_VERSION
 
         with tempfile.TemporaryDirectory() as td:
             db = Database(Path(td) / "repos.db")
             try:
+                # 断言"当前 schema"，而不是写死某个数字：v5（G81 加 profile_json）
+                # 之后本用例依然成立，且新增列由 test_g81_knowledge 单独覆盖。
                 self.assertEqual(
-                    db._conn.execute("PRAGMA user_version").fetchone()[0], 4)
+                    db._conn.execute("PRAGMA user_version").fetchone()[0],
+                    _SCHEMA_VERSION)
                 tables = {r[0] for r in db._conn.execute(
                     "SELECT name FROM sqlite_master WHERE type='table'")}
                 self.assertIn("sync_queue", tables)
@@ -37,7 +40,7 @@ class TestSchemaV4(unittest.TestCase):
                 db.close()
 
     def test_v3_db_upgrade_keeps_old_rows(self):
-        """造一个 v3 库（无 sync_queue）→ 打开后升级到 v4，旧数据完好。"""
+        """造一个 v3 库（无 sync_queue）→ 打开后升级到当前 schema，旧数据完好。"""
         from gcm.db.repo_db import Database
 
         with tempfile.TemporaryDirectory() as td:
@@ -62,7 +65,8 @@ class TestSchemaV4(unittest.TestCase):
 
             db = Database(path)
             try:
-                self.assertEqual(db._conn.execute("PRAGMA user_version").fetchone()[0], 4)
+                self.assertGreaterEqual(
+                    db._conn.execute("PRAGMA user_version").fetchone()[0], 4)
                 rows = db.list_repos()
                 self.assertEqual(len(rows), 1)
                 self.assertEqual(rows[0]["owner"], "old", "旧数据不得在迁移中丢失")
@@ -79,7 +83,8 @@ class TestSchemaV4(unittest.TestCase):
             db.close()
             db2 = Database(path)  # 第二次打开走迁移 early-return
             try:
-                self.assertEqual(db2._conn.execute("PRAGMA user_version").fetchone()[0], 4)
+                self.assertGreaterEqual(
+                    db2._conn.execute("PRAGMA user_version").fetchone()[0], 4)
             finally:
                 db2.close()
 

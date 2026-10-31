@@ -1,6 +1,7 @@
 """共享数据模型与常量。"""
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
 
 class SyncStatus(str, Enum):
@@ -57,6 +58,11 @@ class SyncResult:
     remote_sha: str = ""      # 远端 HEAD（fetch 后 origin/HEAD）
     started: float = 0.0
     ended: float = 0.0
+    # G81：由 `git/service` 在收尾时赋值；此前是"动态挂上去"的隐式属性，
+    # 但 `engine._on_result` 落库时又直接 `res.duration_ms` 访问 —— 任何没走
+    # service 的构造路径（测试、重放、外部集成）都会在落库处抛 AttributeError。
+    # 显式声明后两种写法都安全。
+    duration_ms: int = 0
     # G80-B4：检出状态。"" / "ok" = 正常；"missing" = 已取回但工作树没检出；
     # "skip" = 裸仓库（本就没有工作树，不判失败）。**不改 SyncStatus 枚举**，
     # 因此对 agent 契约（status 取值集合）零影响。
@@ -69,6 +75,11 @@ class SyncResult:
     # 对应 service.py 既有两级降级；用于把"为什么历史不完整"从日志搬到结果行。
     mirror_used: str = ""
     degrade_path: str = ""
+    # G81（N-6）：确定性仓库画像（`app.knowledge.RepoProfile`）。由 worker 在
+    # 同步成功后探测、由引擎落库；**不参与任何判定**，只用于展示/导出。
+    # 类型标 Any 是刻意的：`models` 是底层，不能反向 import `app.knowledge`
+    # （那会让 app→models→app 成环）。空 None = 未探测。
+    profile: Any = None
 
 
 @dataclass
