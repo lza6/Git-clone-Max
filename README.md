@@ -106,7 +106,7 @@ uv run python -m gcm --portable
 - `.agent/memory/` —— 已测试范围、已知问题、关键决策、变更索引、审计历史
 - `.agent/skills/` —— 加 API / 加功能 / 发版 / 回滚 / 验证矩阵 / 审查 / 审计 / 并发检查 / 计划文档清理
 - `policy.md` —— 交付门禁：什么条件下允许宣称「完成」
-- `test_ledger.md` —— 接缝注册表（S01–S30）与每条链路由哪个测试证明
+- `test_ledger.md` —— 接缝注册表（S01–S34）与每条链路由哪个测试证明
 - `evidence/` —— 每个任务节点的真实命令与输出证据
 
 改动前请先读 `.agent/memory/tested-scope.md`，避免重复跑同一批验证；
@@ -143,7 +143,7 @@ Git-clone-Max/
 ├── skills/                  agent 技能包（gcm-clone/archive/report/diag/resume，各含 SKILL.md）
 ├── scripts/                 启动器（bat/ps1）+ E2E 冒烟 / 健康检查 / 发布 / 基准 / CI 快集
 ├── docs/                    架构 / ADR / 数据模型 / agent 契约 / SOP / 发布清单
-├── tests/                   单元 + 集成 + 真实 git E2E（150 个测试文件）
+├── tests/                   单元 + 集成 + 真实 git E2E（151 个测试文件）
 ├── requirements.txt         运行时依赖（PyQt6）
 └── pyproject.toml           项目元数据 + ruff / mypy 配置
 ```
