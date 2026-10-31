@@ -80,7 +80,7 @@ class BackgroundJobsDialog(QDialog):
         self.btn_refresh.clicked.connect(self.refresh)
         row.addWidget(self.btn_refresh)
         # G80-B7-3 / S4：选中「定时同步队列」行时可启停（写 sync_queue.enabled，
-        # 立即生效——queue_runner 每 tick 都重读 store）。创建队列仍需后续编辑 UI。
+        # 立即生效——queue_runner 每 tick 都重读 store）。创建队列 UI 已随 G80-B7-3-S4b 落地（A-2-3 修正原过时注释）。
         self.btn_new_queue = QPushButton(tr("新建队列…"))
         self.btn_new_queue.setToolTip(tr("创建定时同步队列：名称 + 每行一个仓库地址"))
         self.btn_new_queue.clicked.connect(self._create_queue)

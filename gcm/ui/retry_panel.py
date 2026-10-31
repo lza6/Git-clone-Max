@@ -154,14 +154,11 @@ class RetryQueuePanel(QWidget):
         self.btn_retry = QPushButton(tr("立即重试选中"))
         self.btn_retry.setObjectName("primary")
         self.btn_retry.clicked.connect(self.retry_selected)
-        row.addWidget(self.btn_retry)
         self.btn_requeue = QPushButton(tr("重新入队选中"))
         self.btn_requeue.setToolTip(tr("把已放弃任务放回重试队列（attempts 重置）"))
         self.btn_requeue.clicked.connect(self.requeue_selected)
-        row.addWidget(self.btn_requeue)
         self.btn_remove = QPushButton(tr("移除选中"))
         self.btn_remove.clicked.connect(self.remove_selected)
-        row.addWidget(self.btn_remove)
         self.btn_retry_all = QPushButton(tr("全部立即重试"))
         self.btn_retry_all.clicked.connect(self.retry_all)
         row.addWidget(self.btn_retry_all)
@@ -170,6 +167,14 @@ class RetryQueuePanel(QWidget):
         row.addWidget(self.btn_clear)
         row.addStretch(1)
         v.addLayout(row)
+        # G82 截图审计：7 控件单行在窄屏（offscreen 800 → 720 可用宽）会把
+        # 「立即重试选中」「重新入队选中」压到裁切。拆两行：刷新/开关/批量行 + 单条动作行。
+        row2 = QHBoxLayout()
+        row2.addWidget(self.btn_retry)
+        row2.addWidget(self.btn_requeue)
+        row2.addWidget(self.btn_remove)
+        row2.addStretch(1)
+        v.addLayout(row2)
 
     # ------------------------------------------------------------ 数据源
     def queue(self):
