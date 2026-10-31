@@ -1,3 +1,13 @@
+---
+name: gcm-resume
+description: >
+  Resume an interrupted batch clone or run routine incremental updates by
+  re-running the CLI over the same URL list — repositories already completed
+  and still present are skipped, failed or unfinished ones are retried. Use
+  after a batch that failed or was killed, or when periodically fetching
+  incremental changes into existing clones.
+---
+
 # gcm-resume：Git-clone-Max 断点续跑技能包（G56-1 生态 agent 化）
 
 为 agent 提供的**断点续跑/增量更新**入口。核心语义：对同一批 URL 再次调用

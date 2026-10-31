@@ -1,3 +1,14 @@
+---
+name: gcm-feature
+description: >
+  Standard operating procedure for adding a feature, command, API endpoint, UI
+  panel, or data field to Git-clone-Max, including the mandatory
+  read-before-write and staleness-check steps. Use when extending this
+  repository, when fixing a recurring class of defect (version drift, encoding,
+  time, security boundary, platform difference), or when taking over the repo
+  and unsure which document is authoritative.
+---
+
 # gcm-feature：Git-clone-Max 功能/API 扩展工作流技能
 
 为 agent 提供的**「往这个项目里加新功能/新 API」的标准作业流程**。

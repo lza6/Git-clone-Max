@@ -1,3 +1,12 @@
+---
+name: gcm-archive
+description: >
+  Produce zip snapshots of repository HEADs via shallow clone plus
+  `git archive`, without downloading full git history. Use when only the source
+  code snapshot of one or many repositories is needed (not their history), or
+  when archiving a batch of repositories to zip files.
+---
+
 # gcm-archive：Git-clone-Max 归档下载技能包（G56-1 生态 agent 化）
 
 为 agent 提供的**仓库归档（zip）下载**入口。脚本直接复用

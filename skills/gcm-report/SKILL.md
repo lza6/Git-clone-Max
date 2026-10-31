@@ -1,3 +1,12 @@
+---
+name: gcm-report
+description: >
+  Export repository and sync-history data to CSV (Excel-friendly, utf-8-sig)
+  or Markdown, reading the database in read-only mode. Use when an agent or a
+  downstream system needs structured statistics — repository counts,
+  success / failure breakdown, host distribution — rather than raw JSON events.
+---
+
 # gcm-report：Git-clone-Max 报表技能包（G56-1 生态 agent 化）
 
 为 agent 提供的**报表导出/统计**入口。脚本复用 `gcm/reports.py`

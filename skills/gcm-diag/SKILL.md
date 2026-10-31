@@ -1,3 +1,13 @@
+---
+name: gcm-diag
+description: >
+  Diagnose git / network / proxy readiness before cloning — git binary
+  presence, TCP 443 reachability, GitHub API responsiveness, proxy
+  configuration — and return a green / yellow / red graded report. Use before
+  starting a real batch clone when failures are suspected, so a red result can
+  abort early instead of waiting out per-repo timeouts.
+---
+
 # gcm-diag：Git-clone-Max 网络/环境诊断技能包（G56-1 生态 agent 化）
 
 为 agent 提供的**环境诊断**入口。脚本复用 `gcm/app/diag.py`

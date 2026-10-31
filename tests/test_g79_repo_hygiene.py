@@ -41,13 +41,25 @@ _ROOT_WHITELIST = {
     # 目录（2026-10-25：tasks/ 的 riper5 计划文档归档至 docs/archive/working/，目录移除）
     ".agent", ".github", "docs", "evidence", "gcm", "packaging",
     "reports", "scripts", "skills", "tests",
+    # 2026-10-31 G81：技能包发现层清单（Claude Code / agent-plugins.org 惯例，
+    # 参考库 1,726 个项目中 117 个有同名清单）。只有这一个目录，且只放 plugin.json。
+    ".claude-plugin",
     # 文件
     ".coveragerc", ".gitattributes", ".gitignore", ".ignore",
     "CLAUDE.md", "Git-clone-Max.spec", "LICENSE", "README.md",
     "policy.md", "pyproject.toml", "requirements-build.txt", "requirements.txt",
     "test_ledger.md",
+    # 2026-10-31 G81：开源治理与发现层（此前 9 项全缺；参考库普及率
+    # CONTRIBUTING 750 / CHANGELOG 521 / SECURITY 508 / llms.txt 35，分母 1,726）。
+    # CHANGELOG.md 刻意只是**指针**（指向 gcm.__changelog__），不复制正文 ——
+    # 复制会造出第二份真相，与版本单源红线冲突。
+    "CHANGELOG.md", "CONTRIBUTING.md", "SECURITY.md", "llms.txt",
     # 2026-10-25 归档：workflow_status.md 与 参考的结果计划指南.md 移入
     # docs/archive/working/2026-10/（原 2026-10-24 的根目录登记随之失效）。
+    # 2026-10-31 重新登记：新一轮参考对标任务的状态源回到根目录（工作流要求
+    # 「本任务是唯一状态源，只写 参考的结果计划指南.md」）。任务收尾时应按
+    # .agent/skills/plan-doc-audit.md 归档到 docs/archive/working/ 并删除本行。
+    "参考的结果计划指南.md",
 }
 
 # 被显式接受的超 800 行模块（`CLAUDE.md` §6 登记的技术债）。
@@ -61,7 +73,7 @@ _OVERSIZED_LIMIT = 800
 
 # 断言基线：测试文件数与主窗行数（`CLAUDE.md` / `README.md` 必须与实测一致）。
 # 这两个数字会随开发变化，改代码时**同步改这里和文档**，守卫才有意义。
-_EXPECTED_TEST_FILES = 150
+_EXPECTED_TEST_FILES = 151
 
 
 def _git_ls_files() -> list[str]:

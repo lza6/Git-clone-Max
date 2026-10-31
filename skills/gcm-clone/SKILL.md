@@ -1,3 +1,14 @@
+---
+name: gcm-clone
+description: >
+  Batch-clone GitHub / GitLab / Gitee / Codeberg / Bitbucket / self-hosted
+  repositories from a URL list or stdin into a target directory, emitting
+  machine-readable JSON. Use when cloning many repositories at once, when an
+  agent needs structured clone results (status / action / path / counts) to
+  decide its next step, or when testing the clone path against local bare
+  repositories without network access.
+---
+
 # gcm-clone：Git-clone-Max 批量克隆技能包（G56-1 生态 agent 化）
 
 为 agent（Claude Code / Codex）提供的**批量克隆**能力入口。所有命令都走项目
