@@ -5,7 +5,7 @@
 """
 from __future__ import annotations
 
-from PyQt6.QtCore import QRectF, Qt
+from PyQt6.QtCore import QRectF, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import (
     QComboBox,
@@ -301,50 +301,79 @@ class StatisticsDialog(QDialog):
             self.lbl_slow.setText("\n".join(lines))
 
         # G53-1 多维评分卡展示（最差在前 5 + 总览）
+        # A5-6/U-3：聚合含 per_repo_size（递归算每个仓库目录大小）+ 全部历史查询，
+        # 几百仓库时在 GUI 线程会整窗冻结。重活丢后台线程，先显示「统计中…」。
+        self.lbl_scorecard.setText(tr("统计中…（含目录大小计算，大库需数秒）"))
+        self._run_scorecard_async()
+
+    # ------------------------------------------------------------ A5-6/U-3 后台聚合
+    def _run_scorecard_async(self) -> None:
+        """评分卡 + 存储看板在后台线程计算，结果回 GUI 线程渲染。"""
+        db = self.db
+        data_dir = getattr(self, "data_dir", None) or getattr(db, "path", None)
+
+        class _Aggregator(QThread):
+            finished_with = pyqtSignal(object, object, object)  # summary_dict, avg_dict, storage_text
+
+            def run(self):
+                cards_payload = (None, None)
+                storage_text = None
+                try:
+                    from ..app.alerts import overall_summary, scorecards
+                    repos = db.list_repos(host=None) if hasattr(db, "list_repos") else []
+                    cards = scorecards(
+                        repos or [],
+                        lambda rid: db.history(rid, 20) if hasattr(db, "history") else [],
+                        per_repo_size=lambda p: db.dir_size(p) if p and hasattr(db, "dir_size") else None,
+                        now=None)
+                    summary = overall_summary(cards)
+                    cards_payload = (summary, dict(summary.get("avg") or {}) if cards else {})
+                except Exception:
+                    cards_payload = ("__error__", None)
+                try:
+                    from ..app.alerts import storage_overview
+                    info = storage_overview(data_dir, threshold_gb=5)
+                    files = info.get("files", {})
+                    fsize = " · ".join(f"{k} {v//1024}KB" for k, v in files.items() if v)
+                    storage_text = (
+                        f'占用 {info["total_bytes"]//1024}KB ｜ 磁盘剩余 {info["free_gb"]}GB\n'
+                        f'{fsize}\n{info["suggest"]}')
+                except Exception:
+                    storage_text = None
+                self.finished_with.emit(cards_payload[0], cards_payload[1], storage_text)
+
+        # 旧线程若还在跑（快速切换周期），让它自然结束；结果信号连到当次渲染
+        self._agg_thread = _Aggregator(self)
+        self._agg_thread.finished_with.connect(self._on_scorecard_ready)
+        self._agg_thread.start()
+
+    def _on_scorecard_ready(self, summary, avg, storage_text) -> None:
+        """后台聚合完成 → GUI 线程渲染（U-3：worker 只 emit，不碰控件）。"""
         try:
-            from ..app.alerts import overall_summary, scorecards
-            repos = self.db.list_repos(host=None) if hasattr(self.db, "list_repos") else []
-            cards = scorecards(repos or [],
-                                lambda rid: self.db.history(rid, 20) if hasattr(self.db, "history") else [],
-                                per_repo_size=lambda p: self.db.dir_size(p) if p and hasattr(self.db, "dir_size") else None,
-                                now=None)
-            summary = overall_summary(cards)
-            if cards:
-                avg = summary["avg"]
-                # G74：不再直接拼英文 key（success_rate 100 freshness 0 ...），
-                # 用中文维度名，和雷达图/README 保持一致。
+            if summary == "__error__" or summary is None:
+                self.lbl_scorecard.setText("评分卡：（不可用）")
+                self.radar.set_values({})
+            else:
                 labels = {
                     "success_rate": "成功率", "freshness": "新鲜度",
                     "conflicts": "冲突健康", "size_score": "仓库大小",
                     "tags_score": "标签完整", "recency": "最近同步",
                 }
-                parts = [f"{labels.get(k, k)} {v}" for k, v in avg.items()]
+                parts = [f"{labels.get(k, k)} {v}" for k, v in (avg or {}).items()]
                 lines = [f'总评 {summary["overall"]}/100 · ' + ' · '.join(parts)]
-                for c in summary["weakest"][:3]:
+                for c in summary.get("weakest", [])[:3]:
                     lines.append(f'  {c["key"]} {c["overall"]}分：{c["suggestions"][0]}')
                 self.lbl_scorecard.setText("\n".join(lines))
-                self.radar.set_values(avg)
-            else:
-                self.lbl_scorecard.setText("（暂无仓库数据）")
-                self.radar.set_values({})
+                self.radar.set_values(avg or {})
         except Exception:
             self.lbl_scorecard.setText("评分卡：（不可用）")
             try:
                 self.radar.set_values({})
             except Exception:
                 pass
-
-        # G53-3 存储看板
-        try:
-            from ..app.alerts import storage_overview
-            data_dir = getattr(self, "data_dir", None) or getattr(self.db, "path", None)
-            info = storage_overview(data_dir, threshold_gb=5)
-            files = info.get("files", {})
-            fsize = " · ".join(f"{k} {v//1024}KB" for k, v in files.items() if v)
-            self.lbl_storage.setText(
-                f'占用 {info["total_bytes"]//1024}KB ｜ 磁盘剩余 {info["free_gb"]}GB\n{fsize}\n{info["suggest"]}')
-        except Exception:
-            self.lbl_storage.setText("存储看板：（不可用）")
+        # 存储看板渲染
+        if storage_text:
+            self.lbl_storage.setText(storage_text)
 
     # ------------------------------------------------------------ G47-4 周期/PNG
     def _on_period_changed(self):

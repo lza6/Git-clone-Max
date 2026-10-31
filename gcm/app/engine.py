@@ -600,8 +600,23 @@ class SyncEngine(QObject):
         try:
             save_progress(self.progress_path, self._progress)
             self._dirty = False
+            self._last_flush_ts = time.time()
         except Exception:
             pass  # 落盘失败不致命，下次周期再试
+
+    _PROGRESS_FLUSH_MIN_INTERVAL = 2.0  # A5-6/C-15：任务级落盘节流间隔（秒）
+
+    def _progress_flush_maybe(self):
+        """任务结束时的节流落盘：距上次落盘不足 2s 只标记 dirty，交给心跳兜底。
+
+        心跳（_flush_progress_buf 每 100ms）在缓冲非空时会 flush_progress；
+        为覆盖「缓冲已空但进度仍 dirty」的窗口，这里到点时直接强制落盘。
+        """
+        if not self.progress_path or not self._dirty:
+            return
+        if time.time() - getattr(self, "_last_flush_ts", 0.0) >= \
+                self._PROGRESS_FLUSH_MIN_INTERVAL:
+            self.flush_progress()
 
     # ------------------------------------------------------------ G48-1 并发自适应
     def _adapt_result(self, status: SyncStatus, message: str) -> None:
@@ -1180,8 +1195,10 @@ class SyncEngine(QObject):
     def _on_worker_done(self):
         # 计数含取消：取消也是终态，若不计入会导致 finished 信号永不收敛
         self._pending = max(0, self._pending - 1)
-        # G22-2：每任务结束都周期落盘一次（进程被杀时 in_progress 尽量最新）
-        self.flush_progress()
+        # A5-6/C-15：每任务结束都全量 fsync 落盘 → 32 并发同帧完成时每帧 2 次
+        # fsync（5-20ms）阻塞 GUI。改为节流：距上次落盘 <2s 只标记 dirty，
+        # 由既有 100ms 心跳兜底落盘；批次收尾/launch 仍强制 flush。
+        self._progress_flush_maybe()
         if self._pending == 0:
             # 全部完成：先冲刷日志/进度缓冲（保证 finished 前送达），再强制落盘一次
             self.flush_all_buffers()

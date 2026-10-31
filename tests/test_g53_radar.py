@@ -102,6 +102,12 @@ class TestStatisticsDialogWiring(unittest.TestCase):
         self.addCleanup(dlg.close)
         self.assertTrue(hasattr(dlg, "radar"), "统计中心必须挂载雷达图")
         self.assertIsInstance(dlg.radar, RadarChart)
+        # A5-6/U-3：评分卡聚合已移入后台线程 —— 构造后值未就绪，需转事件循环等待
+        app = QApplication.instance()
+        deadline = __import__("time").time() + 5
+        while not dlg.radar.values() and __import__("time").time() < deadline:
+            app.processEvents()
+            __import__("time").sleep(0.05)
         values = dlg.radar.values()
         self.assertEqual(set(values), set(DEFAULT_LABELS))
         self.assertTrue(any(v > 0 for v in values.values()),
@@ -113,6 +119,12 @@ class TestStatisticsDialogWiring(unittest.TestCase):
         d = Path(tempfile.mkdtemp(prefix="gcm_radar_empty_"))
         dlg = StatisticsDialog(Database(d / "t.db"))
         self.addCleanup(dlg.close)
+        # A5-6/U-3：等待后台聚合线程完成（空库 → 全 0 但键齐全）
+        app = QApplication.instance()
+        deadline = __import__("time").time() + 5
+        while not dlg.radar.values() and __import__("time").time() < deadline:
+            app.processEvents()
+            __import__("time").sleep(0.05)
         self.assertEqual(set(dlg.radar.values()), set(DEFAULT_LABELS))
         self.assertEqual(sum(dlg.radar.values().values()), 0)
 
