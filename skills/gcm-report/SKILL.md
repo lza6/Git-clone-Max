@@ -5,6 +5,14 @@ description: >
   or Markdown, reading the database in read-only mode. Use when an agent or a
   downstream system needs structured statistics — repository counts,
   success / failure breakdown, host distribution — rather than raw JSON events.
+triggers:
+  - "export report"
+  - "csv export"
+  - "statistics"
+  - "报表"
+  - "导出"
+  - "统计"
+  - "生成报表"
 ---
 
 # gcm-report：Git-clone-Max 报表技能包（G56-1 生态 agent 化）

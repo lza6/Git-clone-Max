@@ -6,6 +6,14 @@ description: >
   configuration — and return a green / yellow / red graded report. Use before
   starting a real batch clone when failures are suspected, so a red result can
   abort early instead of waiting out per-repo timeouts.
+triggers:
+  - "diagnose network"
+  - "check proxy"
+  - "network diagnostics"
+  - "诊断"
+  - "网络检测"
+  - "代理检查"
+  - "排错"
 ---
 
 # gcm-diag：Git-clone-Max 网络/环境诊断技能包（G56-1 生态 agent 化）

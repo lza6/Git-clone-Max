@@ -6,6 +6,14 @@ description: >
   and still present are skipped, failed or unfinished ones are retried. Use
   after a batch that failed or was killed, or when periodically fetching
   incremental changes into existing clones.
+triggers:
+  - "resume clone"
+  - "incremental update"
+  - "retry failed"
+  - "续跑"
+  - "断点续传"
+  - "增量更新"
+  - "重新下载"
 ---
 
 # gcm-resume：Git-clone-Max 断点续跑技能包（G56-1 生态 agent 化）

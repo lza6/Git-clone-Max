@@ -7,6 +7,14 @@ description: >
   repository, when fixing a recurring class of defect (version drift, encoding,
   time, security boundary, platform difference), or when taking over the repo
   and unsure which document is authoritative.
+triggers:
+  - "add feature"
+  - "add api"
+  - "extend project"
+  - "加功能"
+  - "新增接口"
+  - "扩展功能"
+  - "写代码"
 ---
 
 # gcm-feature：Git-clone-Max 功能/API 扩展工作流技能

@@ -107,6 +107,36 @@ class TestSkillFrontmatter(unittest.TestCase):
                 f"{d.name}/SKILL.md 的 description 缺触发语"
                 "（'Use when/for/before …'）—— 参考库惯例是触发式描述")
 
+    def test_frontmatter_triggers_present_and_bilingual(self) -> None:
+        """`triggers` 决定中英文用户能不能把口语表述路由到这个包。
+
+        参考库抽样 200 个 SKILL.md 的字段普及率：`name` / `description` 100%、
+        `triggers` **50%**（`version` 只有 1%、`install`/`requires` 更低，因此
+        那几项刻意不加 —— 不引入参考库里的小众约定，version 还会撞版本单源红线）。
+
+        中文触发词不是锦上添花：本项目是中文优先产品，用户对 agent 说
+        「批量下载」「断点续跑」「导出报表」时，若 frontmatter 只有英文
+        description，路由就可能命中不到对应技能包。
+        """
+        cjk = re.compile(r"[\u4e00-\u9fff]")
+        block_re = re.compile(r"^triggers:\s*$\n((?:\s+-\s*.*\n)+)", re.M)
+        item_re = re.compile(r'-\s*"?([^"\n]+)"?')
+        for d in _skill_dirs():
+            text = (d / "SKILL.md").read_text(encoding="utf-8")
+            m = block_re.search(text)
+            self.assertIsNotNone(
+                m, f"{d.name}/SKILL.md 缺 triggers 块（50% 的同类项目都有）")
+            assert m is not None
+            items = [w.strip() for w in item_re.findall(m.group(1))]
+            self.assertGreaterEqual(
+                len(items), 4,
+                f"{d.name} 的 triggers 只有 {len(items)} 个，至少 4 个")
+            zh = [w for w in items if cjk.search(w)]
+            self.assertGreaterEqual(
+                len(zh), 2,
+                f"{d.name} 的 triggers 必须含 ≥2 个中文词（当前 {zh}），"
+                "否则中文用户的口语表述路由不到这个包")
+
     def test_skill_count_unchanged(self) -> None:
         """技能包数量冻结在 6 —— 新增/删除技能包时更新本常量并补对应验收。"""
         self.assertEqual(len(_skill_dirs()), 6)

@@ -7,6 +7,15 @@ description: >
   agent needs structured clone results (status / action / path / counts) to
   decide its next step, or when testing the clone path against local bare
   repositories without network access.
+triggers:
+  - "batch clone"
+  - "clone repos"
+  - "bulk download"
+  - "git clone many"
+  - "批量克隆"
+  - "批量下载"
+  - "克隆仓库"
+  - "下载仓库"
 ---
 
 # gcm-clone：Git-clone-Max 批量克隆技能包（G56-1 生态 agent 化）

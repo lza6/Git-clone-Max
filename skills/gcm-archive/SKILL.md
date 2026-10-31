@@ -5,6 +5,14 @@ description: >
   `git archive`, without downloading full git history. Use when only the source
   code snapshot of one or many repositories is needed (not their history), or
   when archiving a batch of repositories to zip files.
+triggers:
+  - "archive repo"
+  - "zip snapshot"
+  - "export source"
+  - "归档"
+  - "打包下载"
+  - "代码快照"
+  - "导出源码"
 ---
 
 # gcm-archive：Git-clone-Max 归档下载技能包（G56-1 生态 agent 化）
