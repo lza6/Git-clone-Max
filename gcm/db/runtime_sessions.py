@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -119,8 +120,27 @@ class RuntimeSessionStore:
             write_json_atomic(self.path, payload, label="session_runtime.json")
 
     # ------------------------------------------------------------ 业务操作
-    def replace(self, specs: list[RepoSpec], status: str = _STATUS_PENDING) -> None:
-        """以新批次整体替换清单（launch 时调用；不中断时保留旧失败项语义）。"""
+    def _rmw(self, mutator: Callable[[dict[str, Any]], Any]) -> Any:
+        """A5-2/C-5：跨进程读-改-写同一临界区（范式同 progress_guard / RetryQueue._rmw）。
+
+        原实现 `load()`（取跨进程锁读）→ 修改 → `_save()`（只取线程锁写）之间
+        可被其它进程插入 → 续跑清单条目凭空消失。mutator 就地修改 data，返回值透传。
+        """
+        from ..util.filelock import cross_process_lock
+        with self._lock, cross_process_lock(self.path, label="session_runtime.json"):
+            data = self._load_locked()
+            result = mutator(data)
+            self._save(data)
+            return result
+
+    def replace(self, specs: list[RepoSpec], status: str = _STATUS_PENDING,
+                merge: bool = False) -> None:
+        """以新批次整体替换清单（launch 时调用）。
+
+        A5-2/C-18：重投路径传 `merge=True` —— 只把新 key 合入（已存在的不动），
+        不整体替换，否则 `due_tasks(limit=50)` 只投 50 条时，其余 30 条失败项
+        会从续跑清单被抹掉，看门狗/启动续跑不再恢复。
+        """
         tasks = []
         for s in specs:
             tasks.append({
@@ -134,12 +154,39 @@ class RuntimeSessionStore:
                 "is_local": bool(s.is_local),
                 "message": "",
             })
-        self._save({
-            "schema": _SCHEMA,
-            "finished_ok": False,
-            "updated_at": _now(),
-            "tasks": tasks,
-        })
+        def _build(specs_list: list[RepoSpec]) -> list[dict[str, Any]]:
+            out = []
+            for s in specs_list:
+                out.append({
+                    "key": f"{s.owner}/{s.repo}",
+                    "status": status,
+                    "url_https": s.url_https,
+                    "display": s.display,
+                    "folder_name": s.folder_name,
+                    "local_path": s.local_path,
+                    "ref": s.ref,
+                    "is_local": bool(s.is_local),
+                    "message": "",
+                })
+            return out
+
+        if merge:
+            def _mutate(data: dict[str, Any]) -> None:
+                existing = {t.get("key") for t in data.get("tasks", [])}
+                for t in _build(specs):
+                    if t["key"] not in existing:
+                        data.setdefault("tasks", []).append(t)
+                data["finished_ok"] = False
+                data["updated_at"] = _now()
+
+            self._rmw(_mutate)
+        else:
+            self._save({
+                "schema": _SCHEMA,
+                "finished_ok": False,
+                "updated_at": _now(),
+                "tasks": _build(specs),
+            })
 
     def update_status(self, key: str, status: str, message: str = "") -> None:
         """更新单任务状态（结果回调）；成功/取消终态从清单移除（已完成无需续跑）。"""

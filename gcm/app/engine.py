@@ -331,11 +331,19 @@ class SyncEngine(QObject):
             pass
 
     def _clear_retry_success(self, res) -> None:
-        """成功/跳过/冲突 → 从重试队列移除（已解决）。"""
+        """成功/跳过/冲突 → 从重试队列移除（已解决）。
+
+        A5-2/C-17：key 需与入队时一致（含 @ref），否则带 ref 的失败条目成功后永不清除。
+        兼容旧条目：无 ref 形态也一并清理。
+        """
         if self._retry_queue is None:
             return
         try:
-            self._retry_queue.mark_success(f"{res.spec.owner}/{res.spec.repo}")
+            base = f"{res.spec.owner}/{res.spec.repo}"
+            self._retry_queue.mark_success(
+                base + (f"@{res.spec.ref}" if res.spec.ref else ""))
+            if res.spec.ref:
+                self._retry_queue.mark_success(base)  # 旧格式条目兜底清理
         except Exception:
             pass
 
@@ -404,7 +412,8 @@ class SyncEngine(QObject):
                             host_by_key=dict(ctx.get("host_by_key") or {}),
                             fetch_depth=int(ctx.get("fetch_depth") or 0),
                             unshallow=bool(ctx.get("unshallow")),
-                            mirror=bool(ctx.get("mirror")))
+                            mirror=bool(ctx.get("mirror")),
+                            session_merge=True)  # A5-2/C-18：不抹掉未投的失败项
             except Exception:
                 pass
 
@@ -429,11 +438,11 @@ class SyncEngine(QObject):
             pass
 
     # ------------------------------------------------------------ G52-2 会话
-    def _session_record_pending(self, specs) -> None:
+    def _session_record_pending(self, specs, merge: bool = False) -> None:
         if self.session_store is None or not specs:
             return
         try:
-            self.session_store.replace(specs)
+            self.session_store.replace(specs, merge=merge)
         except Exception:
             pass
 
@@ -774,7 +783,7 @@ class SyncEngine(QObject):
     def launch(self, specs: Iterable[RepoSpec], host_by_key: Optional[dict[str, str]] = None,
                fetch_depth: int = 0, unshallow: bool = False,
                clear_input: bool = False, check_existing: bool = True,
-               mirror: bool = False) -> int:
+               mirror: bool = False, session_merge: bool = False) -> int:
         """启动一组仓库的并行同步。返回实际调度数量（去重后）。
 
         - specs: 待同步仓库列表（可含重复，内部去重）
@@ -782,6 +791,8 @@ class SyncEngine(QObject):
         - fetch_depth/unshallow: 浅克隆语义
         - clear_input: 全部完成后是否需要 UI 清空输入框（engine 只透传标志，由 UI 处理）
         - check_existing: 断点续传预检（已完成且目录在 → 跳过）
+        - session_merge: A5-2/C-18 —— 重投路径传 True，会话清单只合入新 key
+          不整体替换（否则 due_tasks(limit) 截断的失败项从续跑清单被抹掉）
         """
         if self.busy:
             return 0
@@ -813,7 +824,10 @@ class SyncEngine(QObject):
                 pre = self._precheck_skip(first)
                 if pre is not None:
                     self._emit_line(len(unique_specs), f"{first.display}：{pre[1]}", "info")
-                    self._mark_done(pre[0] and first.display or key, pre[0], pre[1])
+                    # A5-2/C-16：key 统一 owner/repo —— 原实现 `pre[0] and first.display
+                    # or key` 恒传 display（pre[0] 恒真），与 _precheck_skip 的
+                    # f"{owner}/{repo}" 匹配键不一致 → 续跑预检永不命中
+                    self._mark_done(key, pre[0], pre[1])
                     continue
             unique_specs.append(first)
         for k in dup_keys:
@@ -882,8 +896,9 @@ class SyncEngine(QObject):
                 url=spec.url_https, host=self._host_by_key.get(
                     f"{spec.owner}/{spec.repo}", "github.com"),
             )
-        # G52-2：launch 时会话清单整体替换为 pending（供续跑/看门狗）
-        self._session_record_pending(unique_specs)
+        # G52-2：launch 时会话清单整体替换为 pending（供续跑/看门狗）；
+        # A5-2/C-18：重投路径 session_merge=True → 只合入新 key（见 replace 文档）
+        self._session_record_pending(unique_specs, merge=bool(session_merge))
         # G22-2：登记本轮待完成清单并立即落盘（进程被杀后可据此恢复）
         self._mark_in_progress([f"{s.owner}/{s.repo}" for s in unique_specs])
         self.flush_progress()

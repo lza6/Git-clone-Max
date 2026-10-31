@@ -64,6 +64,27 @@ class RetryQueue:
                 pass
 
     # ------------------------------------------------------------ 持久化
+    def _rmw(self, mutator: Callable[[dict[str, Any]], Any]) -> Any:
+        """A5-2/C-5：跨进程读-改-写同一临界区。
+
+        原实现 `load()`（取锁读）→ 修改 → `_save()`（再取锁写）是**两次独立临界区**，
+        读与写之间可被其它进程插入 → 丢失更新（重试条目凭空消失 / attempts 回退）。
+        对照 `progress_file.progress_guard` 的同临界区范式收口。
+        mutator 接收 load 后的 data（可就地修改），返回值透传给调用方。
+        """
+        if self.path is None:
+            with self._lock:
+                data = self._load_locked()
+                result = mutator(data)
+                self._save(data)
+                return result
+        from ..util.filelock import cross_process_lock
+        with self._lock, cross_process_lock(self.path, label="retry_queue.json"):
+            data = self._load_locked()
+            result = mutator(data)
+            self._save(data)
+            return result
+
     def load(self) -> dict[str, Any]:
         """读取队列；缺失 / 损坏 → 空结构（不抛异常）。
 
@@ -134,7 +155,9 @@ class RetryQueue:
         `category` / `code` / `title` / `retryable`。
         """
         info = classify_error(message, detail)
-        key = f"{spec.owner}/{spec.repo}"
+        # A5-2/C-17：key 含 @ref —— 同仓不同 tag（x/y@v1 vs x/y@v2）此前互相覆盖，
+        # attempts 串账导致其中一个永久丢失。无 ref 时保持原 key 形态（向后兼容旧 JSON）。
+        key = f"{spec.owner}/{spec.repo}" + (f"@{spec.ref}" if spec.ref else "")
         base = {
             "queued": False,
             "key": key,
@@ -151,43 +174,40 @@ class RetryQueue:
             # G71-11（审查 R1）：重投时若错误已变成永久失败（404/401/403/磁盘满/
             # 平台限制），必须**摘除旧条目**。否则 `due_tasks()` 仍把上次网络错误
             # 留下的条目判为到期，引擎每 15s 重投一次 → 无限循环 + 日志刷屏。
-            with self._lock:
-                data = self.load()
+            def _mutate_remove(data: dict[str, Any]) -> dict[str, Any]:
                 removed = key in data.get("entries", {})
                 if removed:
                     data["entries"].pop(key, None)
                     data["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-                    self._save(data)
-            return {**base, "reason": "non_retryable", "removed": removed}
-        with self._lock:
-            data = self.load()
-            rec = data["entries"].get(key)
-            attempts = int((rec or {}).get("attempts", 0)) + 1
-            if attempts > self.max_retries:
-                # 超限：从队列摘除并记 dropped（不再重投）
-                data["entries"].pop(key, None)
-                data["dropped"].append({
-                    "key": key,
-                    "attempts": attempts,
-                    "message": redact(str(message)),
-                    "detail": redact(str(detail)),
-                    "category": info.category,
-                    "code": info.code,
-                    "title": info.title,
-                    "retryable": info.retryable,
-                    # G73：DLQ 重新入队需要完整 spec 字段（只存 key 会丢 folder/@tag）
-                    "url_https": spec.url_https,
-                    "display": spec.display or f"{spec.owner}/{spec.repo}",
-                    "folder_name": spec.folder_name or f"{spec.owner}__{spec.repo}",
-                    "local_path": spec.local_path,
-                    "ref": spec.ref,
-                    "is_local": bool(spec.is_local),
-                    "time": time.strftime("%Y-%m-%d %H:%M:%S"),
-                })
-                if len(data["dropped"]) > 200:
-                    del data["dropped"][: len(data["dropped"]) - 200]
-                self._save(data)
-                return {**base, "reason": "exhausted", "attempts": attempts}
+                return {**base, "reason": "non_retryable", "removed": removed}
+
+            return self._rmw(_mutate_remove)
+        def _mutate_exhausted(data: dict[str, Any], attempts: int) -> dict[str, Any]:
+            # 超限：从队列摘除并记 dropped（不再重投）
+            data["entries"].pop(key, None)
+            data["dropped"].append({
+                "key": key,
+                "attempts": attempts,
+                "message": redact(str(message)),
+                "detail": redact(str(detail)),
+                "category": info.category,
+                "code": info.code,
+                "title": info.title,
+                "retryable": info.retryable,
+                # G73：DLQ 重新入队需要完整 spec 字段（只存 key 会丢 folder/@tag）
+                "url_https": spec.url_https,
+                "display": spec.display or f"{spec.owner}/{spec.repo}",
+                "folder_name": spec.folder_name or f"{spec.owner}__{spec.repo}",
+                "local_path": spec.local_path,
+                "ref": spec.ref,
+                "is_local": bool(spec.is_local),
+                "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+            })
+            if len(data["dropped"]) > 200:
+                del data["dropped"][: len(data["dropped"]) - 200]
+            return {**base, "reason": "exhausted", "attempts": attempts}
+
+        def _mutate_queue(data: dict[str, Any], attempts: int) -> dict[str, Any]:
             next_at = self._compute_next_retry_at(attempts)
             data["entries"][key] = {
                 "key": key,
@@ -215,9 +235,18 @@ class RetryQueue:
                 "queued_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             }
             data["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            self._save(data)
             return {**base, "queued": True, "reason": "queued",
                     "attempts": attempts, "next_retry_at": next_at}
+
+        # A5-2/C-5：读-改-写同一跨进程临界区（原 load 与 _save 是两次独立加锁）
+        def _enqueue(data: dict[str, Any]) -> dict[str, Any]:
+            rec = data["entries"].get(key)
+            attempts = int((rec or {}).get("attempts", 0)) + 1
+            if attempts > self.max_retries:
+                return _mutate_exhausted(data, attempts)
+            return _mutate_queue(data, attempts)
+
+        return self._rmw(_enqueue)
 
     def _compute_next_retry_at(self, attempts: int) -> float:
         """退避：delay = min(base * n, 1h)，再施加可注入 jitter。"""
@@ -248,7 +277,8 @@ class RetryQueue:
     def to_spec(self, rec: dict[str, Any]) -> RepoSpec:
         """把队列记录还原为 RepoSpec（url 已 redact，不含凭据）。"""
         key = str(rec.get("key") or "")
-        owner, _, repo = key.partition("/")
+        owner_repo = key.split("@", 1)[0]  # A5-2/C-17：key 可带 @ref 后缀
+        owner, _, repo = owner_repo.partition("/")
         if not owner or not repo:
             raise ValueError(f"队列记录缺少 owner/repo：{key}")
         return RepoSpec(
@@ -263,29 +293,31 @@ class RetryQueue:
         )
 
     def mark_success(self, key: str) -> None:
-        """同步成功 → 从队列摘除（幂等）。"""
-        with self._lock:
-            data = self.load()
+        """同步成功 → 从队列摘除（幂等）。A5-2：读改写同一跨进程临界区。"""
+
+        def _mutate(data: dict[str, Any]) -> None:
             if key in data.get("entries", {}):
                 del data["entries"][key]
                 data["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-                self._save(data)
+
+        self._rmw(_mutate)
 
     def remove(self, key: str) -> bool:
-        """手动移除一条重试记录（用户放弃）。返回是否真的移除。"""
-        with self._lock:
-            data = self.load()
+        """手动移除一条重试记录（用户放弃）。返回是否真的移除。A5-2：_rmw 收口。"""
+
+        def _mutate(data: dict[str, Any]) -> bool:
             if key not in data.get("entries", {}):
                 return False
             del data["entries"][key]
             data["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            self._save(data)
             return True
 
+        return bool(self._rmw(_mutate))
+
     def retry_now(self, key: str) -> bool:
-        """把某条记录的下次重试时间提前到「现在」（用户点「立即重试」）。"""
-        with self._lock:
-            data = self.load()
+        """把某条记录的下次重试时间提前到「现在」（用户点「立即重试」）。A5-2：_rmw。"""
+
+        def _mutate(data: dict[str, Any]) -> bool:
             rec = data.get("entries", {}).get(key)
             if not isinstance(rec, dict):
                 return False
@@ -293,13 +325,14 @@ class RetryQueue:
             rec["next_retry_at_iso"] = time.strftime("%Y-%m-%d %H:%M:%S")
             rec["state"] = "due"
             data["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            self._save(data)
             return True
 
+        return bool(self._rmw(_mutate))
+
     def retry_all_now(self) -> int:
-        """把所有记录提前到「现在」；返回改动的条数。"""
-        with self._lock:
-            data = self.load()
+        """把所有记录提前到「现在」；返回改动的条数。A5-2：_rmw。"""
+
+        def _mutate(data: dict[str, Any]) -> int:
             entries = data.get("entries", {})
             n = 0
             for rec in entries.values():
@@ -310,13 +343,17 @@ class RetryQueue:
                     n += 1
             if n:
                 data["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-                self._save(data)
             return n
 
+        return int(self._rmw(_mutate) or 0)
+
     def clear(self) -> None:
-        """清空队列（保留 dropped 审计）。"""
-        with self._lock:
-            self._save({"entries": {}, "dropped": self.load().get("dropped", [])})
+        """清空队列（保留 dropped 审计）。A5-2：_rmw（原 load 与 _save 两次加锁）。"""
+
+        def _mutate(data: dict[str, Any]) -> None:
+            data["entries"] = {}
+
+        self._rmw(_mutate)
 
     # ------------------------------------------------------------ 查询
     def count(self) -> int:
@@ -345,14 +382,23 @@ class RetryQueue:
         """
         if not key:
             return False
-        with self._lock:
-            data = self.load()
+
+        def _mutate(data: dict[str, Any]) -> bool:
             rows = data.get("dropped") or []
             idx = None
+            # A5-2/C-17：先精确匹配 key（含 @ref），再回退 owner/repo 前缀
+            # （UI/DLQ 调用方可能传不带 ref 的旧形态 key）
             for i in range(len(rows) - 1, -1, -1):
                 if isinstance(rows[i], dict) and rows[i].get("key") == key:
                     idx = i
                     break
+            if idx is None:
+                for i in range(len(rows) - 1, -1, -1):
+                    k = str((rows[i] or {}).get("key") or "")
+                    if k.split("@", 1)[0] == key.split("@", 1)[0] and \
+                            k.startswith(key.split("@", 1)[0]):
+                        idx = i
+                        break
             if idx is None:
                 return False
             rec = rows.pop(idx)
@@ -382,8 +428,9 @@ class RetryQueue:
             }
             data.setdefault("entries", {})[key] = entry
             data["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            self._save(data)
             return True
+
+        return bool(self._rmw(_mutate))
 
     def stats(self) -> dict[str, Any]:
         """队列健康度：总数 / 到期数 / 各类别计数。"""
