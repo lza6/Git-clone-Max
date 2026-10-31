@@ -61,6 +61,14 @@ class SyncResult:
     # "skip" = 裸仓库（本就没有工作树，不判失败）。**不改 SyncStatus 枚举**，
     # 因此对 agent 契约（status 取值集合）零影响。
     checkout_state: str = "ok"
+    # G81（N-5）：本仓库「为什么这次慢 / 走了哪条路」的可解释性字段。
+    # 加性字段，老消费者忽略即可（SSE/CLI --json 用同一份事件，只在这里暴露一次）。
+    # mirror_used: 实际取数用的镜像前缀（"" = 直连源站）。镜像克隆成功后
+    # origin 会恢复为源站（G69-21），所以不能从目录状态反推 —— 必须在取数时记录。
+    # degrade_path: 弱网降级链（"" = 全程常规克隆），取值 "treeless" / "depth1"，
+    # 对应 service.py 既有两级降级；用于把"为什么历史不完整"从日志搬到结果行。
+    mirror_used: str = ""
+    degrade_path: str = ""
 
 
 @dataclass

@@ -58,6 +58,8 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 | `results[].path` | string | 结果落盘绝对路径（相对时已 resolve） |
 | `results[].message` | string | 人类可读结果/失败说明（已打码） |
 | `results[].code` | int | 0=成功；非 0=失败（当前 1） |
+| `results[].mirror_used` | string | **G81 起新增（加性字段）**。实际取数用的镜像前缀，`""` = 直连源站。回答「这次为什么走了镜像」；打码输出。 |
+| `results[].degrade_path` | string | **G81 起新增（加性字段）**。弱网降级链：`""` = 常规克隆；`treeless` = `--filter=blob:none` 部分克隆；`depth1` = 单分支浅克隆（完整历史未拉取）。回答「为什么历史不完整」。 |
 | `invalid[]` | array | 无效输入行条目，见 §3 错误 schema |
 
 ### 2.2 退出码
@@ -179,7 +181,7 @@ data: {"type":"task_result","seq":42,"ts":1760000000.0,"batch_id":"20261019-..."
 | `task_queued` | `index,key,folder_name,display,url,host` | 任务进入调度（含 >64 的待发队列） |
 | `task_started` | 同上 | worker 真正开始 |
 | `task_progress` | `index,key,percent,detail` | 100ms 心跳批量发布（可能缺省 percent/detail） |
-| `task_result` | `index,key,status,action,message,detail,commits,duration_ms,path,head_sha,remote_sha` | 终态结果 |
+| `task_result` | `index,key,status,action,message,detail,commits,duration_ms,path,head_sha,remote_sha,mirror_used,degrade_path` | 终态结果（后两个为 **G81 新增加性字段**，`""` = 直连源站 / 常规克隆；老消费者按多余键忽略） |
 | `task_error` | `category,code,title,cause,action,retryable,http_status,raw` | 失败时的三段式结构化错误（§3 之外的新 schema） |
 | `retry_queued` | `key,folder_name,attempts,next_retry_at,category,code,title` | 进入自动重试队列 |
 | `retry_dropped` | 同上 + `reason` | 超过最大重试次数而放弃 |

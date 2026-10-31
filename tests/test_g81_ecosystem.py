@@ -32,6 +32,12 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 _TRIGGER_PAT = re.compile(r"\bUse (when|for|before|this|after)\b", re.IGNORECASE)
 
 
+def _spec(url_https: str = "https://github.com/a/b.git"):
+    from gcm.models import RepoSpec
+
+    return RepoSpec(owner="a", repo="b", url_https=url_https, folder_name="a__b")
+
+
 def _skill_dirs() -> list[pathlib.Path]:
     return sorted(p for p in (ROOT / "skills").iterdir() if p.is_dir())
 
@@ -167,6 +173,153 @@ class TestGovernanceFiles(unittest.TestCase):
         self.assertEqual(data.get("version"), 2)
         self.assertIsInstance(data.get("updates"), list)
         self.assertGreaterEqual(len(data["updates"]), 2)
+
+
+class TestMirrorDegradeExplainability(unittest.TestCase):
+    """P2-A（N-5）：`SyncResult.mirror_used` / `degrade_path` 可解释性字段。
+
+    背景：用户问"为什么这次慢 / 为什么历史不完整"时，答案只存在于日志里。
+    这两个字段把答案搬到结果行（事件 / CLI --json / UI 同源）。
+    加性字段（只加不减），老消费者按多余键忽略。
+    """
+
+    def _svc(self, tmp: pathlib.Path, **kw):
+        from gcm.git.service import GitService
+
+        svc = GitService(tmp, **kw)
+        svc._current_host = "github.com"
+        svc._emit = lambda *a, **k: None
+        svc._global_git_auth_configured = lambda: False
+        return svc
+
+    def _spec(self):
+        return _spec()
+
+    def test_fields_exist_and_default_empty(self) -> None:
+        from gcm.models import SyncResult, SyncStatus
+
+        r = SyncResult(spec=self._spec(), status=SyncStatus.RUNNING)
+        self.assertEqual(r.mirror_used, "")
+        self.assertEqual(r.degrade_path, "")
+
+    def test_clone_via_mirror_records_mirror_used(self) -> None:
+        import tempfile
+        from unittest import mock
+
+        from gcm.models import SyncResult, SyncStatus
+
+        d = pathlib.Path(tempfile.mkdtemp(prefix="gcm_g81_mu_"))
+        svc = self._svc(d, mirror_prefix={"github.com": ["https://m"]},
+                        mirror_use_presets=False)
+        spec = self._spec()
+        res = SyncResult(spec=spec, status=SyncStatus.RUNNING)
+        with mock.patch("gcm.git.service.probe_git_url",
+                        return_value=(True, 10, "")), \
+                mock.patch("gcm.git.service.run_git_ui",
+                           return_value=(0, None)), \
+                mock.patch.object(svc, "_head_sha", return_value="abc"), \
+                mock.patch.object(svc, "_safe_rmtree_partial",
+                                  return_value=None), \
+                mock.patch.object(svc, "_set_origin_url", return_value=True), \
+                mock.patch.object(svc, "_remember_mirror", return_value=None):
+            svc._clone(spec, res)
+        self.assertEqual(res.mirror_used, "https://m",
+                         "镜像克隆成功后 origin 会被改回源站（G69-21），"
+                         "因此必须在取数当时记录 mirror_used")
+        self.assertEqual(res.degrade_path, "")
+
+    def test_clone_fallback_to_source_clears_mirror_used(self) -> None:
+        import tempfile
+        from unittest import mock
+
+        from gcm.models import SyncResult, SyncStatus
+
+        d = pathlib.Path(tempfile.mkdtemp(prefix="gcm_g81_fb_"))
+        svc = self._svc(d, mirror_prefix={"github.com": ["https://m"]},
+                        mirror_use_presets=False, mirror_fallback=True)
+        spec = self._spec()
+        res = SyncResult(spec=spec, status=SyncStatus.RUNNING)
+
+        def fake_run(cmd, cwd, on_line, **kw):
+            return (0 if cmd[-2] == spec.url_https else 1), None
+
+        with mock.patch("gcm.git.service.probe_git_url",
+                        return_value=(True, 20, "")), \
+                mock.patch("gcm.git.service.run_git_ui", side_effect=fake_run), \
+                mock.patch.object(svc, "_head_sha", return_value="abc"), \
+                mock.patch.object(svc, "_safe_rmtree_partial",
+                                  return_value=None), \
+                mock.patch.object(svc, "_set_origin_url", return_value=True), \
+                mock.patch.object(svc, "_remember_mirror", return_value=None):
+            svc._clone(spec, res)
+        self.assertEqual(res.mirror_used, "",
+                         "镜像失败回退源站成功时，最终通道是源站 —— "
+                         "mirror_used 必须为空（不谎报镜像）")
+
+    def test_treeless_degrade_records_path(self) -> None:
+        import tempfile
+        from unittest import mock
+
+        from gcm.models import SyncResult, SyncStatus
+
+        d = pathlib.Path(tempfile.mkdtemp(prefix="gcm_g81_dl_"))
+        svc = self._svc(d)  # 无镜像：纯弱网降级场景
+        spec = self._spec()
+        res = SyncResult(spec=spec, status=SyncStatus.RUNNING)
+
+        def fake_run(cmd, cwd, on_line, **kw):
+            # 常规克隆失败；treeless 成功
+            return (0 if "--filter=blob:none" in cmd else 1), None
+
+        with mock.patch("gcm.git.service.probe_git_url",
+                        return_value=(True, 10, "")), \
+                mock.patch("gcm.git.service.run_git_ui", side_effect=fake_run), \
+                mock.patch.object(svc, "_head_sha", return_value="abc"), \
+                mock.patch.object(svc, "_safe_rmtree_partial",
+                                  return_value=None), \
+                mock.patch("gcm.git.service._is_networkish_error",
+                           return_value=True):
+            svc._clone(spec, res)
+        self.assertEqual(res.degrade_path, "treeless",
+                         "弱网 treeless 降级成功必须在结果行留痕")
+        self.assertEqual(res.mirror_used, "")
+
+    def test_engine_event_carries_new_fields(self) -> None:
+        """事件负载必须携带 mirror_used / degrade_path（SSE/CLI 同源）。"""
+        import inspect
+
+        from gcm.app.engine import SyncEngine
+
+        src = inspect.getsource(SyncEngine._on_result)
+        self.assertIn("mirror_used", src,
+                      "engine 的事件负载必须透传 mirror_used")
+        self.assertIn("degrade_path", src,
+                      "engine 的事件负载必须透传 degrade_path")
+
+    def test_cli_result_dict_carries_new_fields(self) -> None:
+        from gcm.cli import _result_dict
+        from gcm.models import SyncResult, SyncStatus
+
+        spec = _spec(url_https="https://user:pass@github.com/a/b.git")
+        r = SyncResult(spec=spec, status=SyncStatus.SUCCESS)
+        r.mirror_used = "https://user:secret@m.example"
+        r.degrade_path = "depth1"
+        d = _result_dict(r)
+        self.assertEqual(d["mirror_used"], "https://***@m.example",
+                         "mirror_used 里的镜像凭据必须被 redact 打码")
+        self.assertNotIn("secret", d["mirror_used"])
+        self.assertEqual(d["degrade_path"], "depth1")
+
+    def test_additive_only_contract(self) -> None:
+        """契约只加不减：既有 7 个键一个都不能少（老消费者不破）。"""
+        from gcm.cli import _result_dict
+        from gcm.models import SyncResult, SyncStatus
+
+        spec = self._spec()
+        r = SyncResult(spec=spec, status=SyncStatus.SUCCESS)
+        d = _result_dict(r)
+        for k in ("url", "status", "action", "path", "message", "code"):
+            self.assertIn(k, d, f"契约键 {k} 不得移除（只加不减）")
 
 
 if __name__ == "__main__":

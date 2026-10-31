@@ -1306,6 +1306,10 @@ class GitService:
                                   backoff=self._backoff,
                                   progress_detail=getattr(
                                       self, "send_progress_detail", None))
+        # G81（N-5）：记录实际取数通道（"" = 直连源站）。必须在 origin 恢复前
+        # 记录 —— 之后目录状态不再能反推（G69-21 会把 origin 改回源站）。
+        res.mirror_used = "" if clone_url == source_url else \
+            self._prefix_of(clone_url, source_url)
         if self.cancelled():
             res.status = SyncStatus.CANCELLED
             res.action = SyncAction.CANCELLED
@@ -1380,6 +1384,9 @@ class GitService:
                     if rc == 0:
                         self._emit("[提示] 已用 depth1 单分支克隆，完整历史未拉取；"
                                    "可用设置→浅克隆更新（unshallow）补全。", "warn")
+                        res.degrade_path = "depth1"  # G81（N-5）：降级链留痕
+                elif rc == 0:
+                    res.degrade_path = "treeless"  # G81（N-5）：降级链留痕
         if rc != 0:
             # 克隆失败：分类给出人类可读提示（平台限制 / 目录占用 / 通用）
             tail = "\n".join(self._last_clone_tail[-8:])
@@ -1624,6 +1631,7 @@ class GitService:
             )
             if rc == 0:
                 self._emit(f"{spec.display} 通过镜像增量同步")
+                res.mirror_used = prefix  # G81（N-5）：更新路径同样留痕
             else:
                 self._emit("[警告] 镜像 fetch 失败，回退源站重试 …", "warn")
         if not mirror_url or rc != 0:

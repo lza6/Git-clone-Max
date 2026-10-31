@@ -71,8 +71,11 @@ class TestCliJsonE2E(unittest.TestCase):
         self.assertEqual(len(doc["results"]), 2)
         self.assertEqual(doc["invalid"], [])
         for r in doc["results"]:
+            # G81（N-5）：results 条目新增 mirror_used / degrade_path（加性字段，
+            # 只加不减 —— 既有 6 个键一个都不能少）。契约见 docs/agent-contract.md §2。
             self.assertEqual(sorted(r.keys()),
-                             ["action", "code", "message", "path", "status", "url"])
+                             ["action", "code", "degrade_path", "message",
+                              "mirror_used", "path", "status", "url"])
             self.assertEqual(r["status"], "success")
             self.assertEqual(r["code"], 0)
             self.assertIn(r["action"], {"cloned", "updated", "fetched", "empty"})

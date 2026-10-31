@@ -1086,6 +1086,10 @@ class SyncEngine(QObject):
             # G80-B4：检出状态（ok / missing / skip）。加性字段，老消费者忽略即可；
             # SSE / CLI --json / 诊断包都用同一份事件，因此只需在这里暴露一次。
             checkout_state=getattr(res, "checkout_state", "ok") or "ok",
+            # G81（N-5）：取数通道与降级链（"" = 直连源站 / 全程常规克隆）。
+            # 加性字段，只加不减；agent 可用它回答"为什么这次慢 / 历史为什么不完整"。
+            mirror_used=getattr(res, "mirror_used", "") or "",
+            degrade_path=getattr(res, "degrade_path", "") or "",
         )
         if res.status == SyncStatus.FAILED:
             try:

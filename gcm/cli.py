@@ -126,6 +126,10 @@ def _result_dict(r) -> dict:
         "path": str(Path(r.path).resolve()) if r.path else "",
         "message": redact(message),
         "code": 0 if status == "success" else 1,
+        # G81（N-5）：取数通道与降级链（加性字段，只加不减）。
+        # "" = 直连源站 / 全程常规克隆。老消费者按多余键忽略即可。
+        "mirror_used": redact(getattr(r, "mirror_used", "") or ""),
+        "degrade_path": getattr(r, "degrade_path", "") or "",
     }
 
 
