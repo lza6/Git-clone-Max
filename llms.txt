@@ -1,0 +1,49 @@
+# Git-clone-Max
+
+> Batch clone, incrementally update, and track hundreds of Git repositories.
+> Desktop app (PyQt6) for people who keep a few hundred repos around, plus
+> CLI / MCP / local HTTP interfaces for agents.
+
+## What this is
+
+A Windows-first desktop tool that takes a list of repository URLs and clones them
+in parallel, keeps them updated incrementally, and records them in a local SQLite
+database with tags, statistics and health scoring. Also usable headlessly:
+
+- **CLI** — `python -m gcm --cli --json <urls.txt>` (exit 0 all-ok / 1 some failed / 2 no valid input)
+- **MCP stdio server** — read-only by default, opt in with `GCM_MCP_ENABLE=1`
+- **Local HTTP API + SSE** — loopback-only, read-only by default
+
+## Interfaces (authoritative contract)
+
+- [`docs/agent-contract.md`](docs/agent-contract.md) — CLI/MCP/HTTP schemas, exit codes, redaction rules
+- [`docs/architecture.md`](docs/architecture.md) — layering and data flow
+- [`docs/data-model.md`](docs/data-model.md) — SQLite schema and migrations
+
+## Skills
+
+Six self-contained agent skill packages live under [`skills/`](skills/):
+
+| Skill | Purpose |
+|-------|---------|
+| `gcm-clone` | Batch clone repositories, machine-readable JSON |
+| `gcm-archive` | Zip snapshots of repository HEADs (no full history) |
+| `gcm-diag` | Diagnose git / network / proxy readiness before cloning |
+| `gcm-report` | Export repositories and sync history to CSV / Markdown |
+| `gcm-resume` | Resume an interrupted batch or run incremental updates |
+| `gcm-feature` | How to add a feature / command / API to this repo |
+
+## Constraints agents must respect
+
+- Output is redacted at the boundary. Never re-log raw tokens, credentials, or
+  URLs containing userinfo — `gcm/util/redact.py` is the single implementation.
+- The local HTTP API and SSE stream bind to loopback only and have **no
+  authentication**. Do not expose them through a reverse proxy.
+- Paid external APIs are never called for real in tests; use mocks.
+- The version number has a single source: `gcm/__init__.py`'s `__version__`.
+
+## Source of truth for "is it done"
+
+- [`policy.md`](policy.md) — delivery gates, task grading, evidence labels
+- [`test_ledger.md`](test_ledger.md) — seam registry (S01–S34) and the test that proves each
+- [`evidence/`](evidence/) — real commands and outputs per task node
