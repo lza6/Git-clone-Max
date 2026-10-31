@@ -595,11 +595,8 @@ class SyncEngine(QObject):
         状态经 adapt_changed 信号通知 UI（状态栏提示当前并发）。
         """
         try:
-            msg = (message or "").lower()
-            nw_kw = ("timeout", "refused", "resolve", "peer", "connection",
-                     "network", "unable to access", "could not resolve",
-                     "timed out", "502", "503", "early eof", "remote end")
-            if status == SyncStatus.FAILED and any(k in msg for k in nw_kw):
+            if status == SyncStatus.FAILED and \
+                    classify_error(message or "").retryable:
                 self._net_fail_streak += 1
                 self._net_ok_streak = 0
                 if self._net_fail_streak >= 3:

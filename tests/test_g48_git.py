@@ -65,6 +65,34 @@ class TestConcurrencyAdapt(unittest.TestCase):
         finally:
             e.shutdown()
 
+    def test_chinese_failure_message_still_drops(self):
+        """A5-1(R2)：中文生产文案「网络连接失败（可自动重试）」必须也触发降并发。
+
+        旧实现 `_adapt_result` 只匹配英文关键字表，中文失败会被当成功 →
+        连续失败反而「回升」并发（越失败越激进）。改走 `classify_error` 后应红转绿。
+        """
+        e, tmp = self._engine()
+        try:
+            e._adapt_max = 8
+            e._adapt_current = 8
+            for i in range(3):
+                e._adapt_result(SyncStatus.FAILED, "网络连接失败（可自动重试）")
+            self.assertEqual(e._adapt_current, 4)
+        finally:
+            e.shutdown()
+
+    def test_non_network_failure_does_not_drop(self):
+        """A5-1 伴随守卫：非网络类失败（如 404/认证）不应误降并发。"""
+        e, tmp = self._engine()
+        try:
+            e._adapt_max = 8
+            e._adapt_current = 8
+            for i in range(3):
+                e._adapt_result(SyncStatus.FAILED, "Authentication failed for host")
+            self.assertEqual(e._adapt_current, 8)
+        finally:
+            e.shutdown()
+
     def test_recovery_restores(self):
         e, tmp = self._engine()
         try:
