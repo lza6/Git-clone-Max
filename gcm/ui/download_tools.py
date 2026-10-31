@@ -148,7 +148,9 @@ def choose_target(owner) -> None:
             ret = _msgbox().warning(
                 owner, tr("敏感目录"),
                 tr("你选择的是 Windows 系统目录（%SystemRoot%/Program Files），")
-                + tr("在此下载可能触发权限/杀软问题。\n\n仍要继续吗？"))
+                + tr("在此下载可能触发权限/杀软问题。\n\n仍要继续吗？"),
+                _msgbox().StandardButton.Yes | _msgbox().StandardButton.No,
+                _msgbox().StandardButton.No)
             if ret != _msgbox().StandardButton.Yes:
                 return
         owner.target_edit.setText(d)

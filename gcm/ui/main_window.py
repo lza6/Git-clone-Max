@@ -2539,11 +2539,37 @@ class MainWindow(QMainWindow):
         return self.progress_panel._reset_buttons()
 
     def cancel_all(self):
+        # A5-4/U-26：运行中取消整批不可恢复，二次确认（默认 No）；空闲时直接放行。
+        # busy 判定与 closeEvent/start_all 同口径（UI.busy 或 engine.busy 任一为真即运行中）
+        running = bool(getattr(self, "busy", False)
+                       or getattr(getattr(self, "engine", None), "busy", False))
+        if running:
+            ret = QMessageBox.question(
+                self, tr("取消全部任务"),
+                tr("正在运行的任务将被取消（已完成的仓库保留），未开始的仓库不再继续。\n\n"
+                   "确定取消全部吗？"),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No)
+            if ret != QMessageBox.StandardButton.Yes:
+                return
         if hasattr(self, "engine") and self.engine is not None:
             self.engine.cancel_all()
         self._emit_log(_fmt_dt(), LogLevel.WARN, "已请求取消全部任务…")
         self.statusBar().showMessage("正在取消…")
         # 由结果槽统一复位
+
+    def confirm_clear_input(self):
+        """A5-4/U-18：清空输入区；>20 行时先确认（默认 No）。"""
+        n = self.repo_input.blockCount() if hasattr(self.repo_input, "blockCount") else 0
+        if n > 20:
+            ret = QMessageBox.question(
+                self, tr("清空输入区"),
+                tr("输入区有 {n} 行仓库地址，清空后不可恢复。\n\n继续吗？").format(n=n),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No)
+            if ret != QMessageBox.StandardButton.Yes:
+                return
+        self.repo_input.clear()
 
     def _any_cancel(self):
         """G45-6 转发 progress_table.py（行为零变化）。"""

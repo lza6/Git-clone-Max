@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
@@ -199,15 +200,25 @@ class SettingsPanel(QWidget):
         self.owner.settings_store.save(self.owner.settings)
 
     def _clean_g53_history(self):
-        """G53-4 立即清理历史（按当前保留天数）。"""
+        """G53-4 立即清理历史（按当前保留天数）。A5-4/U-4：删前二次确认（默认 No）。"""
+        days = 90
         try:
             days = int(self.owner.settings.history_retention_days or 90)
+        except (TypeError, ValueError):
+            days = 90  # 配置值损坏时按默认保留期确认，不静默吞其它异常
+        ret = QMessageBox.question(
+            self.owner, tr("清理历史记录"),
+            tr("将立即删除 {days} 天之前的全部同步历史，且不可恢复。\n\n继续吗？")
+            .format(days=days),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if ret != QMessageBox.StandardButton.Yes:
+            return
+        try:
             n = self.owner.db.prune_history(days) if hasattr(self.owner.db, "prune_history") else 0
-            from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.information(self.owner, "清理完成", f"已清理 {n} 条历史记录（保留 {days} 天）")
+            QMessageBox.information(self.owner, tr("清理完成"), tr("已清理 {n} 条历史记录（保留 {days} 天）").format(n=n, days=days))
         except Exception as e:
-            from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.warning(self.owner, "清理失败", str(e))
+            QMessageBox.warning(self.owner, tr("清理失败"), str(e))
 
     def _save_g53_sched(self, checked):
         self.owner.settings.sched_report_enabled = bool(checked)
@@ -622,8 +633,16 @@ class SettingsPanel(QWidget):
             pass
 
     def _reset_defaults(self):
-        """G46-10：恢复默认设置（token/geometry 保留），同步可见控件。"""
+        """G46-10：恢复默认设置（token/geometry 保留）。A5-4/U-5：先确认（默认 No）。"""
         from ..db.settings import Settings as _Settings
+        ret = QMessageBox.question(
+            self.owner, tr("恢复默认设置"),
+            tr("将把除 token 与窗口位置外的全部设置恢复为默认值\n"
+               "（并发/超时/代理/镜像/host_tokens 等都会丢失），且不可撤销。\n\n继续吗？"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if ret != QMessageBox.StandardButton.Yes:
+            return
         old_token = getattr(self.owner.settings, "token", "")
         old_geometry = getattr(self.owner.settings, "geometry", "")
         fresh = _Settings()

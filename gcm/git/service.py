@@ -126,14 +126,25 @@ def _classify_failure(tail: str) -> tuple:
     仓库类、网络类之外的明确提示；不改变原有 retry 逻辑（由 _is_networkish_error 把关）。
     """
     t = (tail or "").lower()
-    if "invalid path" in t:
-        return ("仓库含 Windows 不允许的文件名，无法检出",
-                "该仓库存在 Windows 禁止的字符（如冒号 ':'）。git 无法在 Windows 上检出；"
-                "可尝试在 WSL / Linux / GitHub Codespaces 中克隆。")
-    if "file exists" in t or "already exists" in t:
-        return ("目标目录已存在（重复提交或残留）",
-                "同名仓库已被占用或上次克隆残留，已自动去重/清理后重新尝试。")
-    if "unable to checkout" in t or "unable to create file" in t:
+    # C-28：平台判定关键词以 errors._PLATFORM_KEYWORDS 为唯一事实源（此前两处各写一遍，
+    # 漏一处就出现"同一错误 A 处可重试、B 处当成功"——C-2/C-3 都因此产生）。
+    # 注意：此处是文案层的平台子集（invalid path/exists/checkout/create file/directory），
+    # 不能整表消费 —— `invalid argument`/`symlink`/`long path` 可能来自网络/系统调用，
+    # 整表会把可重试错误改判成平台类（审查 Required②，行为回归面）。
+    from ..app.errors import _PLATFORM_KEYWORDS
+    _FAILURE_PLATFORM = ("invalid path", "file exists", "already exists",
+                         "unable to checkout", "unable to create file",
+                         "unable to create directory")
+    assert set(_FAILURE_PLATFORM) <= set(_PLATFORM_KEYWORDS), \
+        "service 文案层平台子集必须与 errors._PLATFORM_KEYWORDS 保持包含关系（C-28 单源守卫）"
+    if any(k in t for k in _FAILURE_PLATFORM):
+        if "invalid path" in t or "不允许的文件名" in tail:
+            return ("仓库含 Windows 不允许的文件名，无法检出",
+                    "该仓库存在 Windows 禁止的字符（如冒号 ':'）。git 无法在 Windows 上检出；"
+                    "可尝试在 WSL / Linux / GitHub Codespaces 中克隆。")
+        if "exists" in t or "已存在" in tail:
+            return ("目标目录已存在（重复提交或残留）",
+                    "同名仓库已被占用或上次克隆残留，已自动去重/清理后重新尝试。")
         return ("检出工作区失败（平台/文件系统限制）",
                 "可能因长路径、文件系统限制或仓库内含非法文件名导致 checkout 失败。")
     # G71-3：网络类失败给出可解释文案（并让重试队列能识别为可重试）。

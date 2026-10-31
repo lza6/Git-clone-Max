@@ -41,8 +41,10 @@ GCM = ROOT / "gcm"
 #     ui/repo_detail_dialog.py +1（无 db/坏数据 → 返回空画像，详情页照常打开）
 #     ui/statistics_dialog.py +1（非 list 返回值 → 当无数据处理）
 #   依据：新增能力不可能零异常处理；红线是「不许静默吞」，不是「不许写 except」。
+# - G82（A5-4）+1：settings_panel._clean_g53_history 的 except (TypeError, ValueError)
+#   → days=90 降级路径（有出口非静默），pass-only 不变。
 #   本次所有 handler 都有可观测出口，因此只上调总数、不上调 pass-only。
-BASELINE_EXCEPT = 609
+BASELINE_EXCEPT = 610
 BASELINE_PASS_ONLY = 281
 
 

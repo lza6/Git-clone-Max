@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -383,6 +384,14 @@ class RetryQueuePanel(QWidget):
         except Exception:
             n = 0
         if n:
+            # A5-4/U-7：清空不可逆，二次确认（默认 No）
+            ret = QMessageBox.question(
+                self, tr("清空重试队列"),
+                tr("将清空全部 {n} 条失败任务记录，且不可恢复。\n\n继续吗？").format(n=n),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No)
+            if ret != QMessageBox.StandardButton.Yes:
+                return 0  # 用户取消：未清空任何条目（返回值契约=本次清空数）
             try:
                 q.clear()
             except Exception:

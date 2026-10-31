@@ -280,8 +280,8 @@ def build_download_actions(owner) -> QWidget:
     owner.btn_cancel.setAccessibleName(tr("取消全部任务"))
     owner.btn_cancel.clicked.connect(owner.cancel_all)
     owner.btn_cancel.setIcon(owner._std_icon("stop", owner.btn_cancel))
-    owner.btn_clear = QPushButton(tr("清空列表"))
-    owner.btn_clear.clicked.connect(owner.repo_input.clear)
+    owner.btn_clear = QPushButton(tr("清空输入区"))  # A5-4/U-18：原名「清空列表」与行为不符
+    owner.btn_clear.clicked.connect(owner.confirm_clear_input)
     # G75：主按钮给足权重但不拉满整行 —— 满宽横幅是模板相，不是"一个主操作"
     owner.btn_start.setMaximumWidth(420)
     row1.addWidget(owner.btn_start)

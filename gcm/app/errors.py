@@ -99,6 +99,9 @@ _PLATFORM_KEYWORDS = (
     "invalid path", "file exists", "already exists",
     "unable to checkout", "unable to create file", "unable to create directory",
     "invalid argument", "symlink", "long path",
+    # 中文生产文案（`git/service._classify_failure` 产出，C-3）：此前落 other，
+    # 三段式提示文不对题、失败面板统计失真。
+    "不允许的文件名", "已存在", "检出工作区失败",
 )
 _AUTH_KEYWORDS = (
     "authentication failed", "invalid username or password",
