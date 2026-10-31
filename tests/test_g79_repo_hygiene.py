@@ -59,10 +59,11 @@ _ROOT_WHITELIST = {
     "changelog.d",
     # 2026-10-25 归档：workflow_status.md 与 参考的结果计划指南.md 移入
     # docs/archive/working/2026-10/（原 2026-10-24 的根目录登记随之失效）。
-    # 2026-10-31 重新登记：新一轮参考对标任务的状态源回到根目录（工作流要求
-    # 「本任务是唯一状态源，只写 参考的结果计划指南.md」）。任务收尾时应按
-    # .agent/skills/plan-doc-audit.md 归档到 docs/archive/working/ 并删除本行。
-    "参考的结果计划指南.md",
+    # 2026-10-31 说明：新一轮参考对标任务的状态源回到根目录，但那份工作流明确
+    # 要求「未经允许不提交该文件」。它因此**不进索引、也不登记白名单** ——
+    # 本守卫读的是 `git ls-files`，未跟踪文件天然不在检查范围。
+    # 若将来决定把它作为交付物入库，再按 .agent/skills/plan-doc-audit.md 的
+    # 规矩归档到 docs/archive/working/ <日期>/ 并在此登记。
 }
 
 # 被显式接受的超 800 行模块（`CLAUDE.md` §6 登记的技术债）。
