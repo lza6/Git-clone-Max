@@ -1,0 +1,47 @@
+# Dependabot — dependency and supply-chain updates.
+#
+# Scope is deliberately narrow: this project has one runtime dependency
+# (PyQt6) and pins build tooling in requirements-build.txt. Opening a flood of
+# PRs would cost more review time than it saves, so intervals are monthly and
+# concurrency is capped.
+#
+# Guard: tests/test_g81_ecosystem.py asserts this file exists and is valid YAML.
+version: 2
+
+updates:
+  # Runtime + build requirements
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+    # PyQt6 is locked in CI on purpose (see CLAUDE.md §6). A major-version bump
+    # must be validated against the offscreen test suite before merging, so
+    # surface it as a separate PR rather than folding it into a group.
+    groups:
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      - dependency-name: "PyQt6"
+        update-types:
+          - "version-update:semver-major"
+
+  # CI workflow actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "chore(ci)"
+    labels:
+      - "dependencies"
+      - "ci"
