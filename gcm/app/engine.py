@@ -182,6 +182,12 @@ class SyncEngine(QObject):
         self.flags: dict[int, CancelFlag] = {}
         self.specs: dict[int, RepoSpec] = {}
         self._host_by_key: dict[str, str] = {}
+        # A5-5/R3：per-host 并发闸门。每 host 一个 Semaphore(4)——同一 host 的
+        # 在跑任务上限。300 仓全指 github.com × 全局并发 32 会成片触发 secondary
+        # rate limit；限流后「成片失败」变「整体减速」。host_concurrency 可注入
+        # （测试用），<=0 视为不限流。
+        self._host_concurrency = 4
+        self._host_gates: dict[str, threading.Semaphore] = {}
         # G67-3：上一批的启动上下文快照（host_by_key/fetch_depth/unshallow/mirror）。
         # 与 `_host_by_key` **分开保存** —— 后者会在 `_release_tasks()` 里被清空，
         # 而重投定时器可能在该批结束之后才到期，那时正是需要这份快照的时候。
@@ -921,10 +927,31 @@ class SyncEngine(QObject):
         self._progress_timer.start()
         return len(unique_specs)
 
+    def _host_gate(self, host: str) -> Optional[threading.Semaphore]:
+        """取（惰性建）某 host 的并发闸门。host_concurrency<=0 → None（不限流）。"""
+        if self._host_concurrency <= 0:
+            return None
+        gate = self._host_gates.get(host)
+        if gate is None:
+            gate = threading.Semaphore(self._host_concurrency)
+            self._host_gates[host] = gate
+        return gate
+
+    def set_host_concurrency(self, n: int) -> None:
+        """运行中调整 per-host 并发上限（新任务生效；已建闸门按 min 生效由 OS 调度）。"""
+        self._host_concurrency = max(0, int(n))
+        # 已存在的闸门容量不可调（Semaphore 无 set 容量 API），重建之
+        self._host_gates.clear()
+
     def _start_worker(self, index: int, spec: RepoSpec, flag: CancelFlag):
         """构造并启动单个 worker（launch 首批与 _replenish 补投共用）。"""
         key = f"{spec.owner}/{spec.repo}"
         host = self._host_by_key.get(key) or "github.com"
+        # A5-5/R3：per-host 并发闸门 —— 同一 host 的在跑任务数受 host_concurrency
+        # 限制（默认 4）。300 仓全指 github.com × 全局并发 32 会成片触发
+        # secondary rate limit；限流后成片失败变整体减速。acquire 在 worker
+        # 线程内完成（不占 GUI 线程），release 在 worker 结束时（finally）。
+        self._batch_state.transition(spec.folder_name, "running")
         # G71-8：queued → running（状态机对重复/迟到转换是幂等的）
         # G71-11：与登记 key 一致，使用 folder_name（含 @tag）
         self._batch_state.transition(spec.folder_name, "running")
@@ -945,7 +972,8 @@ class SyncEngine(QObject):
         worker = CloneWorker(index, payload, service, None, None,
                              on_line=lambda c, i=index: self._emit_line(i, c.text, c.level),
                              fetch_depth=self._depth if self._depth else 0,
-                             unshallow=self._unshallow)
+                             unshallow=self._unshallow,
+                             host_gate=self._host_gate(host))
         worker.signals.line.connect(self.line.emit)
         # G43-5：progress/progress_detail 聚合进缓冲，由 100ms 心跳批量 emit
         worker.signals.progress.connect(self._on_worker_progress)

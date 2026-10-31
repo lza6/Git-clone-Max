@@ -49,13 +49,16 @@ class CloneWorker(QRunnable):
     def __init__(self, index: int, payload: TaskPayload, service: GitService,
                  db: Database, progress_path: str, on_line=None,
                  fetch_depth: int = 0, unshallow: bool = False,
-                 engine=None, is_update: bool = False):
+                 engine=None, is_update: bool = False,
+                 host_gate=None):
         super().__init__()
         self.setAutoDelete(True)
         self.index = index
         self.payload = payload
         self.service = service
         self.db = db
+        # A5-5/R3：per-host 闸门（None=不限流）。run() 内 acquire/finally release。
+        self._host_gate = host_gate
         self.progress_path = progress_path
         self.signals = WorkerSignals()
         self._external_line = on_line
@@ -74,6 +77,13 @@ class CloneWorker(QRunnable):
     def run(self):
         spec = self.payload.spec
         res = SyncResult(spec=spec, status=SyncStatus.RUNNING)
+        # A5-5/R3：per-host 闸门 —— 在线程池线程内取票（不占 GUI 线程），
+        # 直到同 host 有空位才真正开始 git 操作
+        if self._host_gate is not None:
+            try:
+                self._host_gate.acquire()
+            except Exception:
+                pass  # 闸门失效时降级为不限流（绝不能因此卡死任务）
         try:
             # 更新模式下：状态先置“更新中”，避免启动瞬间显示“失败”
             if self._is_update:
@@ -163,6 +173,12 @@ class CloneWorker(QRunnable):
             res.detail = str(e)
             self.signals.result.emit(self.index, res)
         finally:
+            # A5-5/R3：释放 host 闸门（无论成败）
+            if self._host_gate is not None:
+                try:
+                    self._host_gate.release()
+                except Exception:
+                    pass
             # 进度落盘由引擎统一处理（engine.py 传 path=None 跳过）；
             # 独立使用时仍写 progress.json（G21-2：统一走 mark_finished，不再手工拼结构）
             if self.progress_path:
