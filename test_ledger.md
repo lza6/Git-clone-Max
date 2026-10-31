@@ -51,7 +51,7 @@
 | S35 | **已克隆目录 → 仓库画像 → DB → 详情页/统计页**（G81 / N-6） | `app/knowledge.probe_repo_profile`（纯函数，零 LLM）· `app/worker` 成功后探测 | `db/repo_profile`（`repos.profile_json`，schema **v5**）→ `cli._result_dict` / `event_bus` 事件 / `ui/repo_detail_dialog` / `ui/statistics_dialog` | ①探测**绝不抛**（失败只放弃画像，不能把成功的同步变失败）；②裸仓库（`checkout_state=="skip"`）不探测；③只读本机目录，不联网、不调 LLM；④`from_json` 对坏数据退化为空画像；⑤迁移 v4→v5 幂等（列不得重复添加）；⑥画像字段**不参与任何判定**，只用于展示/导出 | `test_g81_knowledge`（21：探测 9 + 持久化 5 + 接线/变异 7） |
 | S36 | **改动碎片 → changelog 聚合 → 版本单源**（G81 / N-4，构建期接缝） | `changelog.d/<slug>.<category>.md` | `scripts/changelog.py build` → `gcm/_changelog_data.ENTRIES` → `gcm.__changelog__` | ①`__changelog__` **必须就是** `ENTRIES`（同源，不得复制一份）；②首条必须以当前 `__version__` 开头；③`gcm/__init__.py` 只放版本契约（<40 行，回涨即红）；④碎片命名 `<slug>.<added|changed|fixed|internal>.md`；⑤`build` 同输入必产出同顺序（可重放）；⑥非法版本号退出码 2 且无副作用 | `test_g81_changelog`（9） |
 
-> **编号说明（避免与并行会话撞号）**：`docs/plans/下一步改进指南-2026-10-31.md` §9B 建议了 S35–S42（定时队列 / 引擎参数契约 / 忙态令牌 / 错误动作 / 全文索引 / 事件持久化 / 契约 schema 导出 / 自更新校验），**那些都是未落地的规划**。本轮 S35/S36 是**已落地**的真实接缝，先占号；那份文档落地时请从 **S37** 起顺延。
+> **编号说明（避免与并行会话撞号）**：并行会话产出的《下一步改进指南》（位于 `docs/plans/`，截至本轮**尚未入库**）在其 §9B 建议了 S35–S42（定时队列 / 引擎参数契约 / 忙态令牌 / 错误动作 / 全文索引 / 事件持久化 / 契约 schema 导出 / 自更新校验），**那些都是未落地的规划**。本轮 S35/S36 是**已落地**的真实接缝，先占号；那份计划落地时请从 **S37** 起顺延。
 
 ---
 

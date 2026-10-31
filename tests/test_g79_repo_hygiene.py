@@ -54,6 +54,9 @@ _ROOT_WHITELIST = {
     # CHANGELOG.md 刻意只是**指针**（指向 gcm.__changelog__），不复制正文 ——
     # 复制会造出第二份真相，与版本单源红线冲突。
     "CHANGELOG.md", "CONTRIBUTING.md", "SECURITY.md", "llms.txt",
+    # 2026-10-31 G81：changelog 碎片目录（发布前累积待发布条目，发版时归档到
+    # 其下的 _archive/<版本>/）。与 .claude-plugin 同理：只此一个目录、只放 .md。
+    "changelog.d",
     # 2026-10-25 归档：workflow_status.md 与 参考的结果计划指南.md 移入
     # docs/archive/working/2026-10/（原 2026-10-24 的根目录登记随之失效）。
     # 2026-10-31 重新登记：新一轮参考对标任务的状态源回到根目录（工作流要求

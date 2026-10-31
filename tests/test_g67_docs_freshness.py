@@ -34,12 +34,23 @@ SCAN_GLOBS = ("docs/**/*.md", "README.md", "CLAUDE.md", "skills/**/*.md",
               "policy.md", "test_ledger.md", "evidence/**/*.md")
 
 
+# G81：`docs/plans/` 是**待执行**的迭代计划（工作草稿），不是权威文档。
+# 计划按定义会引用「建议新增但尚未创建」的路径（如 `scripts/dev_metrics.py`）与
+# 「目标版本号」（v9.11.0 / v10.0.0），用权威文档的规则去要求它等于禁止写计划。
+# 因此整目录排除，而不是逐文件豁免 —— 逐文件豁免要求"必须命中真实文件"，
+# 而该目录在干净检出里可能压根不存在（草稿未入库），会导致 CI 假红。
+# 计划执行完成后，内容要么归档进 `docs/archive/`、要么升级为 `docs/` 下的
+# 权威文档，届时自动重新受本守卫约束。
+_EXCLUDED_DIRS = ("plans",)
+
+
 def iter_scan_files() -> list[pathlib.Path]:
-    """待扫描文档（docs/ 下全部 .md + 仓库根 README.md）。"""
+    """待扫描文档（docs/ 下全部 .md + 仓库根 README.md），排除工作草稿目录。"""
     out: list[pathlib.Path] = []
     for pattern in SCAN_GLOBS:
         out.extend(sorted(ROOT.glob(pattern)))
-    return [p for p in out if p.is_file()]
+    return [p for p in out if p.is_file()
+            and not (p.parent.name in _EXCLUDED_DIRS and p.parent.parent.name == "docs")]
 
 
 # --------------------------------------------------------------------------- 版本号规则
@@ -57,13 +68,6 @@ _HISTORICAL_GLOBS: tuple[tuple[str, str], ...] = (
     ("docs/audit-v*.md", "文件名即「审计时的版本」，是那次审计的快照报告"),
     ("docs/reports/*", "某轮审计/汇报的归档产物（HTML/md 快照）"),
     ("docs/archive/*", "归档的计划文档与审计快照，记录的是**归档当时**的版本，改数字等于篡改历史"),
-    # G81：`docs/plans/` 存放**待执行**的迭代计划（如 `下一步改进指南-*.md`）。
-    # 这类文档按定义会引用「建议新增但尚未创建」的路径（例如 `scripts/dev_metrics.py`）
-    # 与「目标版本号」（例如 v9.11.0 / v10.0.0）。要求它们引用真实路径/当前版本，
-    # 等于禁止写计划 —— 与守卫本意（权威文档不得对代码漂移）相反。
-    # 注意：一旦某份计划**执行完成**，其内容要么被归档进 `docs/archive/`，
-    # 要么升级成 `docs/` 下的权威文档 —— 那时它就不再享受本豁免。
-    ("docs/plans/*", "待执行的工作计划：必然引用尚未创建的路径与目标版本号"),
 )
 
 # 行内白名单：键 = 仓库相对路径（POSIX 风格），值 = {允许的历史版本: 理由}。
@@ -241,10 +245,7 @@ class TestDocsPathReferences(unittest.TestCase):
     # 归档快照不参与「路径必须存在」扫描：归档文档记录的**就是归档当时**的路径，
     # 原文件后来被删/被搬是正常的；把它们改成新路径 = 篡改历史（与版本号豁免同一道理）。
     # 这条豁免只针对 docs/archive/**，其余文档（含验证记录）仍必须引用真实存在的路径。
-    # G81 追加 docs/plans/**：待执行计划按定义会写「建议新增但尚未创建」的路径
-    # （如 `scripts/dev_metrics.py`）。要求它引用真实路径等于禁止写计划。
-    # 计划执行完成 → 归档进 docs/archive/ 或升级为权威文档 → 自动重新受本守卫约束。
-    _ARCHIVE_GLOBS = ("docs/archive/*", "docs/plans/*")
+    _ARCHIVE_GLOBS = ("docs/archive/*",)
 
     def test_no_missing_path_references(self):
         problems: list[str] = []
