@@ -229,16 +229,23 @@ def _is_networkish_error(text: str) -> bool:
 
 
 def _kill_tree(proc: subprocess.Popen) -> None:
-    """尽量终止 git 整棵进程树（Windows 用 taskkill /T /F）。"""
+    """尽量终止 git 整棵进程树（Windows 用 taskkill /T /F）。
+
+    A5-3/C-11：原实现 taskkill 后**无条件 return** —— 杀软拦截/权限不足时
+    返回码非 0 但被无视 → git 成孤儿进程继续写盘，下次同步撞「不完整目录」。
+    现补：返回码非 0 → proc.kill() 兜底；taskkill 调用补 CREATE_NO_WINDOW。
+    """
     if proc is None or proc.poll() is not None:
         return
     if os.name == "nt" and proc.pid:
         try:
-            subprocess.run(
+            r = subprocess.run(
                 ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
                 capture_output=True, timeout=15,
+                creationflags=_CREATE_FLAGS,
             )
-            return
+            if r.returncode == 0 and proc.poll() is not None:
+                return
         except Exception:
             pass
     try:
@@ -254,6 +261,7 @@ def run_git_ui(cmd: Iterable[str], cwd: str, on_line: LineCallback,
                retries: int = 0, backoff: tuple[float, ...] = (1.0, 3.0, 8.0),
                progress_detail: Optional[Callable[[str], None]] = None,
                thread_probe: Optional[Callable[[threading.Thread], None]] = None,
+               budget: float | None = None,
                ) -> tuple[int, str]:
     """运行 git 命令并实时转发输出，带超时与整树终止。
 
@@ -261,6 +269,8 @@ def run_git_ui(cmd: Iterable[str], cwd: str, on_line: LineCallback,
     `progress_detail`：可选回调，收到速率/对象数等附加进度文本（如 "7.03 MiB/s 7124"）。
     `thread_probe`：测试钩子（默认 None），join 判定前后各回调一次读线程引用；
     生产调用方不传，仅用于单测观察读线程生命周期，属向后兼容扩展。
+    `budget`：A5-3/C-10 每仓库总时间预算（秒）—— 降级链每档开始前检查剩余预算，
+    超预算如实报「已用尽时间预算」，不再让「600s×3 重试×4 候选」叠出 50-60 分钟。
 
     实现要点：
     - 读线程持续泵 stdout，主线程用 proc.wait(timeout) 兜底，静默挂死也能按时触发超时。
@@ -270,7 +280,17 @@ def run_git_ui(cmd: Iterable[str], cwd: str, on_line: LineCallback,
     attempts = 0
     max_attempts = max(1, retries + 1)
     rc = -1
+    # A5-3/C-10：批次级时间预算起点（降级链每档开始前检查）
+    budget_started = time.time()
+    budget_deadline = (budget_started + budget) if budget and budget > 0 else None
     while attempts < max_attempts:
+        if budget_deadline is not None and time.time() > budget_deadline:
+            on_line(StreamChunk(
+                index=0,
+                text=f"已用尽时间预算（{budget:.0f}s），跳过重试（{label}）",
+                level="warn"))
+            rc = -1
+            break
         proc = subprocess.Popen(
             cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding="utf-8", errors="replace", bufsize=1,
@@ -331,14 +351,32 @@ def run_git_ui(cmd: Iterable[str], cwd: str, on_line: LineCallback,
         import threading as _threading
         pump = _threading.Thread(target=_pump, daemon=True)
         pump.start()
-        # 主线程阻塞等待，超时则整树终止（读线程内也有超时检查，双保险）
-        wait_limit = (timeout or 0) + 5 if timeout else None
-        try:
-            proc.wait(timeout=wait_limit)
-        except Exception:
-            timed_out = True
-            _kill_tree(proc)
-            # 终止后必须再次 wait 回收子进程对象，避免 ResourceWarning 与僵尸
+        # A5-3/C-1：主线程 100ms 步进轮询 —— 原实现 `proc.wait(timeout+5)` 阻塞，
+        # git 静默（TLS 握手/等首包/大 pack 无输出行）时读线程的超时分支永远走不到
+        # （它只在读到行时判定），取消请求被完全吞掉。轮询每步查超时与取消 → 秒级生效。
+        # deadline 按 timeout 本身（+5 的缓冲只用于旧版阻塞 wait 的唤醒余量，
+        # 轮询版不再需要；进程终止后的回收见循环外 proc.wait(15)）。
+        deadline = (start + timeout) if timeout else None
+        while True:
+            try:
+                proc.wait(timeout=0.1)
+                break  # 进程已退出
+            except subprocess.TimeoutExpired:
+                pass
+            except Exception:
+                break
+            now_ts = time.time()
+            if cancelled_flag or cancelled():
+                if not cancelled_flag:
+                    cancelled_flag = True
+                    _kill_tree(proc)
+                break
+            if deadline is not None and now_ts > deadline:
+                timed_out = True
+                _kill_tree(proc)
+                break
+        # 终止后必须再次 wait 回收子进程对象，避免 ResourceWarning 与僵尸
+        if proc.poll() is None:
             try:
                 proc.wait(timeout=15)
             except Exception:
@@ -388,7 +426,16 @@ def run_git_ui(cmd: Iterable[str], cwd: str, on_line: LineCallback,
             break
 
         if timed_out:
-            if attempts < max_attempts - 1 and not cancelled():
+            budget_left_ok = not (
+                budget_deadline is not None
+                and time.time() + backoff[attempts if attempts < len(backoff) else -1]
+                > budget_deadline)
+            if budget_deadline is not None and not budget_left_ok:
+                on_line(StreamChunk(
+                    index=0,
+                    text=f"已用尽时间预算（{budget:.0f}s），不再重试（{label}）",
+                    level="warn"))
+            if attempts < max_attempts - 1 and not cancelled() and budget_left_ok:
                 delay = backoff[attempts] if attempts < len(backoff) else backoff[-1]
                 # G22-7：重试文案含剩余等待秒数与原因（用户可感知重试节奏）
                 on_line(StreamChunk(
