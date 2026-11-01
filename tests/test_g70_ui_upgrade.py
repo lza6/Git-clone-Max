@@ -254,6 +254,12 @@ class TestStatisticsDialogTheme(unittest.TestCase):
         self.assertFalse(hasattr(sd, "QSS"), "不得再导入静态 QSS")
         tmp = Path(tempfile.mkdtemp())
         dlg = sd.StatisticsDialog(_FakeDB(tmp))
+        # A5-6：存储看板异步填充 —— 转事件循环等聚合线程
+        app = QApplication.instance()
+        _t0 = __import__("time").time()
+        while not dlg.lbl_storage.text() and __import__("time").time() - _t0 < 5:
+            app.processEvents()
+            __import__("time").sleep(0.05)
         text = dlg.lbl_storage.text()
         self.assertNotIn("\\n", text, "存储看板不得出现字面量 \\\\n")
         self.assertIn("\n", text)

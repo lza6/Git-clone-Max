@@ -42,10 +42,15 @@ GCM = ROOT / "gcm"
 #     ui/statistics_dialog.py +1（非 list 返回值 → 当无数据处理）
 #   依据：新增能力不可能零异常处理；红线是「不许静默吞」，不是「不许写 except」。
 # - G82（A5-4）+1：settings_panel._clean_g53_history 的 except (TypeError, ValueError)
-#   → days=90 降级路径（有出口非静默），pass-only 不变。
+#   → days=90 降级路径（有出口非静默）。
+# - G82 终局修复 +4（except 614 / pass-only 283）：
+#   worker.py +1（闸门 acquire 异常 → 降级不限流，绝不卡死任务）
+#   statistics_dialog.py +3（QThread 聚合三段 try → 全部有「不可用」兜底渲染出口；
+#     其中 pass-only +2 是空画像/存储两处静默退化 —— 渲染层无日志面板可写，
+#     退化为 UI 兜底文案即「可观测出口」，符合红线原意）
 #   本次所有 handler 都有可观测出口，因此只上调总数、不上调 pass-only。
-BASELINE_EXCEPT = 610
-BASELINE_PASS_ONLY = 281
+BASELINE_EXCEPT = 614
+BASELINE_PASS_ONLY = 283
 
 
 def _py_files() -> list[Path]:

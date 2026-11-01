@@ -62,10 +62,10 @@ class TestSensitiveDir(unittest.TestCase):
         owner.target_edit.text.return_value = ""
         owner.settings = mock.Mock()
         owner.settings_store = mock.Mock()
+        from PyQt6.QtWidgets import QMessageBox as _QMB
         m_msg = mock.Mock()
-        m_msg.StandardButton.Yes = mock.Mock("Yes")
-        m_msg.StandardButton.No = mock.Mock("No")
-        m_msg.warning.return_value = m_msg.StandardButton.No
+        m_msg.StandardButton = _QMB.StandardButton
+        m_msg.warning.return_value = _QMB.StandardButton.No
         m_fd = mock.Mock()
         m_fd.getExistingDirectory.return_value = r"C:\Windows\System32"
         with mock.patch("gcm.ui.download_tools._msgbox", return_value=m_msg), \
@@ -81,9 +81,10 @@ class TestSensitiveDir(unittest.TestCase):
         owner.target_edit.text.return_value = ""
         owner.settings = mock.Mock()
         owner.settings_store = mock.Mock()
+        from PyQt6.QtWidgets import QMessageBox as _QMB
         m_msg = mock.Mock()
-        m_msg.StandardButton.Yes = mock.Mock("Yes")
-        m_msg.warning.return_value = m_msg.StandardButton.Yes
+        m_msg.StandardButton = _QMB.StandardButton
+        m_msg.warning.return_value = _QMB.StandardButton.Yes
         m_fd = mock.Mock()
         m_fd.getExistingDirectory.return_value = r"C:\Windows\Temp"
         with mock.patch("gcm.ui.download_tools._msgbox", return_value=m_msg), \
