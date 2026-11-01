@@ -29,7 +29,7 @@
 |-----------|---------------------|
 | 我该改哪、改动影响什么 | `docs/architecture.md` + `docs/adr/ADR-001..004` |
 | 什么条件下允许宣称「完成」 | `policy.md`（交付门禁 / 任务分级 / 证据标签 / 停止条件） |
-| 这条链路哪个测试证明它通 / 哪个接缝没覆盖 | `test_ledger.md`（S01–S36 接缝注册表 + 测试状态） |
+| 这条链路哪个测试证明它通 / 哪个接缝没覆盖 | `test_ledger.md`（S01–S40 接缝注册表 + 测试状态） |
 | 某个节点本轮的真实命令与输出 | `evidence/<节点ID>.json` |
 | 可复用的代码范式 | `docs/code-gems.md`（单写者/原子写/redact/批聚合/流控/注入时钟/契约/纯校验） |
 | agent 接入契约（CLI/MCP/HTTP schema、退出码、打码规则） | `docs/agent-contract.md` |

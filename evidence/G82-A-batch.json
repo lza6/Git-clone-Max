@@ -1,0 +1,209 @@
+{
+  "task_id": "G82-A-batch",
+  "status": "passed",
+  "timestamp": "2026-11-01T08:46:39",
+  "commands_executed": [
+    {
+      "cmd": "unittest tests.test_g48_git.TestConcurrencyAdapt (red)",
+      "exit_code": 1,
+      "raw_output_tail": "AssertionError: 8 != 4  ← A5-1 先红（中文文案缺陷复现）"
+    },
+    {
+      "cmd": "unittest tests.test_g48_git tests.test_g43_engine tests.test_g47_g48_cover",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 26 tests in 4.999s OK  ← A5-1 绿"
+    },
+    {
+      "cmd": "git stash push -- gcm/ui/*.py && unittest tests.test_a54_destructive_confirm",
+      "exit_code": 1,
+      "raw_output_tail": "FAILED (failures=3, errors=8)  ← A5-4 变异红（11 例红）"
+    },
+    {
+      "cmd": "git stash pop && unittest tests.test_a54_destructive_confirm",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 12 tests OK  ← A5-4 变异绿"
+    },
+    {
+      "cmd": "unittest tests.test_c3_chinese_error_classify",
+      "exit_code": 1,
+      "raw_output_tail": "FAILED (failures=2)  ← C-3 先红（中文平台文案 cat=other）"
+    },
+    {
+      "cmd": "unittest tests.test_c3_chinese_error_classify tests.test_g71_event_stream.TestErrorModel",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 14 tests OK  ← C-3 绿"
+    },
+    {
+      "cmd": "unittest tests.test_a52_rmw_closure tests.test_g52_retry_queue_extra tests.test_g73_dlq tests.test_g52_engine_integration tests.test_g69_regressions tests.test_g72_hardening tests.test_g43_engine",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 100 tests OK  ← A5-2"
+    },
+    {
+      "cmd": "unittest tests.test_a53_process_termination",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 4 tests OK  ← A5-3（真实子进程级）"
+    },
+    {
+      "cmd": "unittest tests.test_a55_host_gate",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 4 tests OK  ← A5-5（真实 6 线程峰值=2）"
+    },
+    {
+      "cmd": "unittest tests.test_g53_radar tests.test_g74_ui_layout",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 24 tests OK  ← A5-6（测试补事件循环等待）"
+    },
+    {
+      "cmd": "ruff check gcm",
+      "exit_code": 0,
+      "raw_output_tail": "All checks passed!"
+    },
+    {
+      "cmd": "mypy gcm",
+      "exit_code": 0,
+      "raw_output_tail": "Success: no issues found in 103 source files"
+    },
+    {
+      "cmd": "scripts/e2e_smoke.py",
+      "exit_code": 0,
+      "raw_output_tail": "E2E_SMOKE_RESULT: PASS"
+    },
+    {
+      "cmd": "CLI --cli --json (clone→update 二段)",
+      "exit_code": 0,
+      "raw_output_tail": "action: cloned / fetched | mirror_used: '' | degrade_path: ''  ← 新字段透传确认"
+    },
+    {
+      "cmd": "gcm.mcp_server (GCM_MCP_ENABLE=0)",
+      "exit_code": 3,
+      "raw_output_tail": "退出码 3 契约符合"
+    },
+    {
+      "cmd": "MCP initialize 握手",
+      "exit_code": 0,
+      "raw_output_tail": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"result\": {...\"serverInfo\": {\"name\": \"gcm\", \"version\": \"9.11.0\"}}}"
+    },
+    {
+      "cmd": "PyInstaller + build_portable_zip + health_check",
+      "exit_code": 0,
+      "raw_output_tail": "version 9.11.0 / started_ok: true / elapsed_ms: 3760"
+    },
+    {
+      "cmd": "打包 exe 真实克隆",
+      "exit_code": 0,
+      "raw_output_tail": "EXE E2E PASS (action=fetched)"
+    },
+    {
+      "cmd": "scripts/ui_screenshot_audit.py reports/ui-g82",
+      "exit_code": 0,
+      "raw_output_tail": "38 PNG（四主题×5分辨率 + 10 对话框）"
+    }
+  ],
+  "files_changed": [
+    "gcm/app/engine.py",
+    "gcm/app/retry_queue.py",
+    "gcm/app/worker.py",
+    "gcm/git/service.py",
+    "gcm/db/runtime_sessions.py",
+    "gcm/db/settings.py",
+    "gcm/ui/statistics_dialog.py",
+    "gcm/ui/settings_panel.py",
+    "gcm/ui/retry_panel.py",
+    "gcm/ui/main_window.py",
+    "gcm/ui/download_tools.py",
+    "gcm/ui/download_layout.py",
+    "gcm/app/errors.py",
+    "gcm/ui/engine_factory.py"
+  ],
+  "tests": [
+    {
+      "name": "A5-1 red→green",
+      "type": "unit",
+      "status": "passed",
+      "evidence": "8!=4 → 26 OK"
+    },
+    {
+      "name": "A5-2 rmw/key/merge",
+      "type": "unit",
+      "status": "passed",
+      "evidence": "8 + 100 OK"
+    },
+    {
+      "name": "A5-3 process termination",
+      "type": "integration",
+      "status": "passed",
+      "evidence": "真实子进程"
+    },
+    {
+      "name": "A5-4 destructive confirm + 变异",
+      "type": "unit",
+      "status": "passed",
+      "evidence": "12 OK / stash 红"
+    },
+    {
+      "name": "A5-5 host gate 并发峰值",
+      "type": "integration",
+      "status": "passed",
+      "evidence": "峰值=2"
+    },
+    {
+      "name": "A5-6 radar async",
+      "type": "unit",
+      "status": "passed",
+      "evidence": "24 OK"
+    },
+    {
+      "name": "CLI 契约矩阵",
+      "type": "e2e",
+      "status": "passed",
+      "evidence": "0/2/3"
+    },
+    {
+      "name": "MCP 握手 + 退出码",
+      "type": "e2e",
+      "status": "passed",
+      "evidence": "serverInfo 9.11.0"
+    },
+    {
+      "name": "exe 克隆 E2E",
+      "type": "e2e",
+      "status": "passed",
+      "evidence": "EXE E2E PASS"
+    },
+    {
+      "name": "快集全量",
+      "type": "unit",
+      "status": "passed",
+      "evidence": "见 docs/验证记录（后台串行重跑）"
+    },
+    {
+      "name": "截图审计",
+      "type": "smoke",
+      "status": "passed",
+      "evidence": "38 PNG + 1 缺陷修复复验"
+    }
+  ],
+  "coverage_summary": {
+    "lines": 82,
+    "branches": null,
+    "functions": null,
+    "statements": null
+  },
+  "seams_touched": [
+    "S35 画像链路（无触碰）",
+    "重试队列（S? queue_runner）",
+    "service 克隆链",
+    "统计中心渲染链"
+  ],
+  "mock_scenarios_covered": [],
+  "browser_validation": {
+    "performed": false,
+    "paths": [],
+    "screenshots": "reports/ui-g82/*.png (38)"
+  },
+  "limitations": [
+    "真实 GUI 点击未自动化（用户决策：截图审计口径）",
+    "A-3-2/3/4 留 B 批",
+    "C 系列非根因映射条目未逐条收口"
+  ]
+}

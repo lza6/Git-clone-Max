@@ -81,6 +81,7 @@ _ALLOWED_HISTORICAL_VERSIONS: dict[str, dict[str, str]] = {
     },
     "test_ledger.md": {
         "9.10.2": "「上一版是谁」的沿革说明（G80 起多版本共存于同一文件），非当前版本声明",
+    "9.10.3": "G80 历史引用（最后更新行已改 v9.11.0；此处为 G80 版本注释）",
     },
     "docs/data-model.md": {
         "8.0.2": "说明「被删的旧 db_structure.md 停在 v8.0.2」这一事实，是考古语境",

@@ -86,7 +86,12 @@ class TestResetDefaults(unittest.TestCase):
             w.settings.concurrency = 32
             w.settings.theme = "nord"
             w.settings_store.save(w.settings)
-            w.settings_panel._reset_defaults()
+            # A5-4：_reset_defaults 现在有默认 No 确认框 —— 必须 mock 并选 Yes 才会执行
+            from PyQt6.QtWidgets import QMessageBox as _QMB
+            with mock.patch("gcm.ui.settings_panel.QMessageBox") as m_msg:
+                m_msg.StandardButton = _QMB.StandardButton
+                m_msg.question.return_value = _QMB.StandardButton.Yes
+                w.settings_panel._reset_defaults()
             loaded = w.settings_store.load()
             self.assertEqual(loaded.token, "secret123", "token 应保留")
             self.assertEqual(loaded.geometry, w.settings.geometry)

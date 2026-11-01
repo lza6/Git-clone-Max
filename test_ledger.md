@@ -5,7 +5,7 @@
 > 这边是**跑了证明什么**（接缝 ↔ 用例 ↔ 最后结果）。
 > 只记录本轮真实运行过的结果；引用历史结果必须标日期。
 
-**最后更新**：2026-10-24（v9.10.3 G80 七批收口；v9.10.2 为 G79b）· 版本见 `gcm/__init__.py:__version__`（本文件不写死版本号）
+**最后更新**：2026-10-31（v9.11.0 G82 A 批收口 + 审查修复；v9.10.3 为 G80）· 版本见 `gcm/__init__.py:__version__`（本文件不写死版本号）
 
 ---
 
@@ -51,7 +51,12 @@
 | S35 | **已克隆目录 → 仓库画像 → DB → 详情页/统计页**（G81 / N-6） | `app/knowledge.probe_repo_profile`（纯函数，零 LLM）· `app/worker` 成功后探测 | `db/repo_profile`（`repos.profile_json`，schema **v5**）→ `cli._result_dict` / `event_bus` 事件 / `ui/repo_detail_dialog` / `ui/statistics_dialog` | ①探测**绝不抛**（失败只放弃画像，不能把成功的同步变失败）；②裸仓库（`checkout_state=="skip"`）不探测；③只读本机目录，不联网、不调 LLM；④`from_json` 对坏数据退化为空画像；⑤迁移 v4→v5 幂等（列不得重复添加）；⑥画像字段**不参与任何判定**，只用于展示/导出 | `test_g81_knowledge`（21：探测 9 + 持久化 5 + 接线/变异 7） |
 | S36 | **改动碎片 → changelog 聚合 → 版本单源**（G81 / N-4，构建期接缝） | `changelog.d/<slug>.<category>.md` | `scripts/changelog.py build` → `gcm/_changelog_data.ENTRIES` → `gcm.__changelog__` | ①`__changelog__` **必须就是** `ENTRIES`（同源，不得复制一份）；②首条必须以当前 `__version__` 开头；③`gcm/__init__.py` 只放版本契约（<40 行，回涨即红）；④碎片命名 `<slug>.<added|changed|fixed|internal>.md`；⑤`build` 同输入必产出同顺序（可重放）；⑥非法版本号退出码 2 且无副作用 | `test_g81_changelog`（9） |
 
-> **编号说明（避免与并行会话撞号）**：并行会话产出的《下一步改进指南》（位于 `docs/plans/`，截至本轮**尚未入库**）在其 §9B 建议了 S35–S42（定时队列 / 引擎参数契约 / 忙态令牌 / 错误动作 / 全文索引 / 事件持久化 / 契约 schema 导出 / 自更新校验），**那些都是未落地的规划**。本轮 S35/S36 是**已落地**的真实接缝，先占号；那份计划落地时请从 **S37** 起顺延。
+| S37 | **引擎 → 重试队列（key 契约 + 跨进程读改写）**（G82 / A5-2） | `app/engine._record_retry_failure` / `_clear_retry_success` | `app/retry_queue`（key=`owner/repo[@ref]`，`_rmw()` 同一跨进程临界区） | ①写路径必须经 `_rmw`（源码级守卫 test_a52_rmw_closure）；②key 无 ref 保持旧形态（旧 JSON 兼容）；③成功清理双形态（带/不带 ref）；④requeue 用被匹配记录自身 key | `tests/test_a52_rmw_closure`（8）· `test_g73_dlq` |
+| S38 | **引擎调度 → worker → per-host 闸门**（G82 / A5-5） | `app/engine._start_worker(host_gate=…)` | `app/worker.CloneWorker.run()`（acquire 0.5s 超时循环查取消 / finally release） | ①闸门 None=不限流；②acquire 循环必须查 payload.flag（否则 cancel_all 失效）；③只在真正 acquire 后 release；④`_start_worker` 必须透传闸门（接线守卫） | `tests/test_a55_host_gate`（4） |
+| S39 | **git 子进程 → 轮询取消 / 时间预算**（G82 / A5-3） | `git/service.run_git_ui`（100ms 步进轮询） | 主线程 deadline+cancelled 检查 / `budget` 每仓库总预算 | ①读线程的超时/取消分支只在**有输出行**时执行 —— 静默进程取消只能靠主线程轮询（C-1 本质）；②budget 经 settings→factory→engine→service 全链路（0=不限）；③`_kill_tree` taskkill 失败必须 `proc.kill()` 兜底 | `tests/test_a53_process_termination`（4，真实子进程） |
+| S40 | **统计中心 → 后台聚合线程**（G82 / A5-6） | `ui/statistics_dialog._run_scorecard_async` | `_Aggregator(QThread)` → `finished_with` → `_on_scorecard_ready`（GUI 线程渲染） | ①worker 只 emit 不碰控件；②换线程前 wait+disconnect 旧线程（QThread 运行中析构=SIGSEGV 同型）；③closeEvent 等 3s；④emit 参数不得包多余 tuple（曾致槽内 KeyError 被兜底 except 吃掉） | `tests/test_g53_radar`（事件循环等待） |
+
+> **编号说明（避免与并行会话撞号）**：并行会话产出的《下一步改进指南》（位于 `docs/plans/`）在其 §9B 建议了 S35–S42（定时队列 / 引擎参数契约 / 忙态令牌 / 错误动作 / 全文索引 / 事件持久化 / 契约 schema 导出 / 自更新校验），**那些都是未落地的规划**。本轮 S35/S36 是**已落地**的真实接缝，先占号；那份计划落地时请从 **S37** 起顺延。
 
 ---
 
