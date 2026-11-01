@@ -4,6 +4,14 @@
 
 | 模块 | 最近变更 | 版本 | 连带影响 |
 |------|---------|------|---------|
+| `gcm/app/engine.py` | **C1 批 7 处**：删 `_host_concurrency=4` 硬编码；`discard()` 停全定时器；`set_concurrency(by_user=)` 同步天花板并补满待发队列；新增 `batch_start_limit()/_top_up_pending()/_running_count()`；并发记忆恢复不再被 retry_queue 短路；删死常量 `_FLUSH_INTERVAL`；批次收尾 `_maybe_checkpoint_wal()` | v9.12.0 | ①改并发语义前先看 `set_concurrency` docstring（`by_user` 两种语义）；②`_running` 必须与 `_on_worker_done` 严格配对，否则补投停摆/超发；③流控上限现由池上限派生（并发 3 时首批只 3 个） |
+| `gcm/ui/settings_network.py` | **新增**：`host_concurrency` + `time_budget_min` 两行设置（含 0=不限 的说明与提示行） | v9.12.0 | `settings_groups.py` 已 786 行贴 800 上限 → **再加设置项请继续落新模块**；控件上限来自 `db/validators.int_range()` |
+| `gcm/db/validators.py` | `_INT_RANGES` 增 `host_concurrency(0..32)` / `time_budget_min(0..720)` | v9.12.0 | UI `setRange` 与后端钳制自动同源；新增字段若忘登记，UI 用 `int_range()` 会 KeyError（故意的） |
+| `gcm/ui/failure_panel.py` | **新增「疑似卡死任务」条** + `btn_cancel_stuck`（`cancel_stuck_tasks` 首个生产调用点） | v9.12.0 | 面板可独立构造（owner=None）→ 所有取引擎的地方都要 hasattr 兜底 |
+| `scripts/doc_drift_check.py` / `scripts/dev_metrics.py` | **新增**：文档数字漂移守卫 + 唯一度量口径 | v9.12.0 | 改模块行数/超长函数/测试文件数/技能包数/版本 → 必须同步文档，否则 `DRIFT n`；`dev_metrics --json` 是守卫与 CI 的公共入口 |
+| `tests/test_function_size_budget.py` | **新增**：>100 行函数集合相等（基线 20） | v9.12.0 | 新增超长函数或拆分现有超长函数 → 必须同步本表与 `CLAUDE.md` §6 |
+| `.github/workflows/ci.yml` | Lint/Type 步骤改 `pip install -r requirements-build.txt`（不再裸装 ruff/mypy） | v9.12.0 | 升级 ruff/mypy 要改 `requirements-build.txt`，改了一处三平台同时生效 |
+| `requirements.txt` | `PyQt6>=6.6` → `PyQt6==6.11.0` | v9.12.0 | 与 CI 单一真相（`TestDependencyPinning` 断言两处版本一致） |
 | `gcm/db/settings.py` | **删除 `depth` 字段**（唯一零读取的僵尸配置） | v9.10.0 | 落盘少一键；旧 `settings.json` 含 `depth` 由 `_DEFAULTS` 过滤静默忽略（有单测）。**新增字段必须同时有读取侧**，否则僵尸守卫红 |
 | `tests/test_g69_regressions.py` | **收紧 `TestG69_18NoZombieSettingsFields` 口径**：只认「settings 对象属性 + getattr/setattr/_save_field 字符串键」 | v9.10.0 | 同名局部变量不再能让字段蒙混过关；以后加字段若只用局部变量名「引用」会红 |
 | `tests/test_g79_repo_hygiene.py` | **新增（9 项）**：截图不许入库 / 根目录白名单 / 超 800 行集合相等 / 文档测试文件数 | v9.10.0 | 新增根目录文件或新增超限模块会红，需先登记理由 |

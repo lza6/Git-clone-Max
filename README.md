@@ -1,7 +1,7 @@
 # Git-clone-Max
 
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
-> **当前版本：v9.11.0**（A 批根因收口：子进程轮询取消/每仓库时间预算/per-host 并发闸门/跨进程读改写收口/并发自适应 classify_error 化/统计中心后台线程/破坏性操作确认；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）
+> **当前版本：v9.12.0**（接线与门禁收口：同平台并发上限与单仓时间预算**真正可配**（此前参数被硬编码覆盖/无 UI 入口）、并发改值不再被自适应顶回、批次流控按线程池派生、替换引擎不再留活定时器、卡死任务有 UI 入口、WAL 批次收尾收缩、文档数字漂移与函数规模双守卫、依赖与 CI 静态检查器锁版本；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）
 > **v5.0：多平台直克隆** — GitLab / Gitee / Codeberg / Bitbucket / 自建主机（HTTPS/SSH/短格式/子组）同样支持。
 > 克隆目录一律 `host__作者__仓库`（GitHub 为 `作者__仓库`），本地改动永不覆盖。
 
@@ -69,6 +69,8 @@ uv run python -m gcm --portable
 | 浅克隆加速 | 满量 / 浅克隆（可调 depth）/ **单分支浅克隆**（`--depth N --single-branch`）；弱网自动降级 treeless → **depth1 保命模式** |
 | 强制 IPv4 | 「强制 HTTP/1.1」开关，规避部分网络下 HTTP/2 兼容问题 |
 | 批量并行 | 线程池 ≤32 并发（默认 8，设置页可调 1–32），仓库互不阻塞，重复地址自动去重 |
+| 平台级限流 | **同一 host 在跑数上限**（设置页可调，默认 4，**0 = 不限流**）：300 仓同时打一个平台会成片触发 secondary rate limit，限流后「成片失败」变「整体减速」 |
+| 单仓时间预算 | 可选（分钟，0=不限）：单仓总预算覆盖镜像探测/重试/treeless→depth1 降级链全阶段，超预算如实报「已用尽时间预算」而不是把整批拖死在一个仓库上 |
 | 跨 host 命名 | `host__作者__仓库` 防同名冲突；GitHub 保持 `作者__仓库` |
 | 断点续传 | 进度周期落盘（原子写）+ 取消缓存；中断后已完成的仓库下一轮自动跳过、其余继续 |
 | 并发安全 | 引擎统一调度：SQLite `busy_timeout` 30s + 进度文件互斥锁，高并发下不闪退 / 锁死 |
@@ -145,7 +147,7 @@ Git-clone-Max/
 ├── skills/                  agent 技能包（gcm-clone/archive/report/diag/resume，各含 SKILL.md）
 ├── scripts/                 启动器（bat/ps1）+ E2E 冒烟 / 健康检查 / 发布 / 基准 / CI 快集
 ├── docs/                    架构 / ADR / 数据模型 / agent 契约 / SOP / 发布清单
-├── tests/                   单元 + 集成 + 真实 git E2E（159 个测试文件）
+├── tests/                   单元 + 集成 + 真实 git E2E（162 个测试文件）
 ├── requirements.txt         运行时依赖（PyQt6）
 └── pyproject.toml           项目元数据 + ruff / mypy 配置
 ```
@@ -212,7 +214,7 @@ GCM_MCP_ENABLE=1 python -m gcm.mcp_server --allow-export
 > IPv6（含 `::1`）暂不支持（本地 API 基于 AF_INET），传入会明确报错而非崩溃。
 > 需要远程访问请自行用带鉴权的反向代理转发到回环地址。
 
-仓库内 `skills/` 提供 5 个开箱技能包（克隆 / 归档 / 报表 / 诊断 / 续跑），每个含 `SKILL.md` + 可执行脚本，供 Claude Code / Codex 直接调用。
+仓库内 `skills/` 提供 6 个开箱技能包（克隆 / 归档 / 报表 / 诊断 / 续跑 / 功能开发），每个含 `SKILL.md`，其中 5 个另带可执行脚本（`gcm-feature` 是纯流程文档，无脚本），供 Claude Code / Codex 直接调用。
 
 ## 测试
 
@@ -264,9 +266,9 @@ python -m coverage run --source=gcm -m unittest discover -s tests
 ## 发布
 
 ```bash
-git tag v9.11.0   # 示例；发版时替换成当次版本（守卫会校验文档里的版本号）
+git tag v9.12.0   # 示例；发版时替换成当次版本（守卫会校验文档里的版本号）
 git push origin main --tags
-python scripts/publish_release.py --tag v9.11.0   # 自动上传 exe 到 GitHub Release
+python scripts/publish_release.py --tag v9.12.0   # 自动上传 exe 到 GitHub Release
 ```
 
 ## License

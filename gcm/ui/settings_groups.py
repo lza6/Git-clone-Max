@@ -161,6 +161,12 @@ def _build_group_network(owner: MainWindow, settings: Settings):
     f3.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
     _network_rows_basic(owner, settings, f3)
+    # C1-2（Rev7 §3.2/§3.3）：host_concurrency 与 time_budget_min 两行落在
+    # `settings_network.py`（本文件已 779 行，贴着 800 硬上限，不再往里加行）。
+    from .settings_network import add_host_concurrency_row, add_limit_hint, add_time_budget_row
+    add_host_concurrency_row(owner, settings, f3)
+    add_time_budget_row(owner, settings, f3)
+    add_limit_hint(f3)
     _network_rows_credentials(owner, settings, f3)
     return g3
 

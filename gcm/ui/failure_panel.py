@@ -138,6 +138,24 @@ class FailurePanel(QWidget):
     def _build_ui(self):
         v = QVBoxLayout(self)
         v.setSpacing(8)
+        # C1-3（Rev7 §3.4 X-3）：卡死任务条。引擎识别出「远超超时不结束」的任务后
+        # 只发 `task_stuck` 事件 + 写日志，而 `cancel_stuck_tasks()` 有实现、有单测，
+        # 却**零 UI 入口** —— 用户看到「疑似卡死」也做不了任何事。
+        # 这一行就是那个入口：默认隐藏（无卡死任务时不占位）。
+        self.stuck_row = QWidget()
+        _sr = QHBoxLayout(self.stuck_row)
+        _sr.setContentsMargins(0, 0, 0, 0)
+        self.stuck_lbl = QLabel("")
+        self.stuck_lbl.setWordWrap(True)
+        self.btn_cancel_stuck = QPushButton(tr("取消这些卡死任务"))
+        self.btn_cancel_stuck.setToolTip(tr(
+            "把这些任务的取消标志置位，让它们在下一个检查点尽快收敛。\n"
+            "不会超发并发（槽位仍等 worker 真正退出才释放）。"))
+        self.btn_cancel_stuck.clicked.connect(self._on_cancel_stuck)
+        _sr.addWidget(self.stuck_lbl, 1)
+        _sr.addWidget(self.btn_cancel_stuck)
+        self.stuck_row.setVisible(False)
+        v.addWidget(self.stuck_row)
         self.empty_lbl = QLabel(tr("暂无失败记录 🎉"))
         self.empty_lbl.setObjectName("muted")
         self.empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -163,6 +181,7 @@ class FailurePanel(QWidget):
 
     def refresh(self, failed_rows: Optional[list[dict[str, Any]]] = None) -> int:
         """从 progress 失败记录刷新聚合；返回类别行数。空态显示占位。"""
+        self._refresh_stuck()
         if failed_rows is None:
             failed_rows = self._load_failed_rows()
         rows = aggregate_failures(failed_rows)
@@ -193,6 +212,50 @@ class FailurePanel(QWidget):
         self.empty_lbl.setVisible(len(rows) == 0)
         self.table.setVisible(len(rows) > 0)
         return len(rows)
+
+    def _refresh_stuck(self) -> list[str]:
+        """刷新「疑似卡死任务」条：有则显示并可一键取消，无则整行隐藏。
+
+        数据源是**引擎内存**（`stuck_task_keys()`）而不是 progress.json —— 卡死是
+        「进程内还在跑但不结束」的实时状态，落盘就失去意义。引擎不存在
+        （面板可独立构造、或批次已结束）时自然显示为空。
+        """
+        keys: list[str] = []
+        owner = self.owner
+        engine = getattr(owner, "engine", None) if owner is not None else None
+        if engine is not None and hasattr(engine, "stuck_task_keys"):
+            try:
+                keys = list(engine.stuck_task_keys())
+            except Exception:  # noqa: BLE001 —— 巡检数据读失败不该拖垮面板刷新
+                keys = []
+        self._stuck_keys = keys
+        if keys:
+            shown = "、".join(keys[:3]) + (f" 等 {len(keys)} 个" if len(keys) > 3 else "")
+            self.stuck_lbl.setText(
+                tr("⚠ 发现 {n} 个疑似卡死任务（超过超时阈值仍未结束）：{items}")
+                .format(n=len(keys), items=shown))
+            self.stuck_row.setVisible(True)
+        else:
+            self.stuck_lbl.setText("")
+            self.stuck_row.setVisible(False)
+        return keys
+
+    def _on_cancel_stuck(self) -> int:
+        """把已上报的卡死任务的取消标志置位（不超发并发，见引擎文档）。"""
+        owner = self.owner
+        engine = getattr(owner, "engine", None) if owner is not None else None
+        if engine is None or not hasattr(engine, "cancel_stuck_tasks"):
+            return 0
+        try:
+            n = int(engine.cancel_stuck_tasks())
+        except Exception as e:  # noqa: BLE001 —— 单个取消失败只影响该次点击
+            n = 0
+            from ..app.applog import warn as _warn
+            _warn(f"取消卡死任务失败：{e}")
+        from ..app.applog import info as _info
+        _info(f"用户从失败面板请求取消 {n} 个疑似卡死任务")
+        self.refresh()
+        return n
 
     def _load_failed_rows(self) -> list[dict[str, Any]]:
         try:

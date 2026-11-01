@@ -74,6 +74,41 @@ class SettingsWiring(QObject):
         """单次 clone 超时（`engine_factory` 读它决定 CloneWorker 超时）。"""
         self._save_field("clone_timeout", int(value))
 
+    def save_host_concurrency(self, value):
+        """同平台并发上限（C1-2 / Rev7 §3.2 X-1：此前只有读侧、没有写入点）。
+
+        写入后立刻作用到**运行中的引擎**（`set_host_concurrency` 会清空闸门表，
+        新 worker 拿新闸门）。在跑的 worker 仍持旧票据 —— 这是 `set_host_concurrency`
+        文档里已写明的取舍，切换瞬间实际并发可能短暂超过新上限。
+        """
+        n = int(value)
+        ok = self._save_field("host_concurrency", n)
+        engine = getattr(self._owner, "engine", None)
+        if engine is not None and hasattr(engine, "set_host_concurrency"):
+            try:
+                engine.set_host_concurrency(n)
+            except Exception as e:  # noqa: BLE001 —— 运行期应用失败不该让保存失败
+                from ..app.applog import warn as _warn
+                _warn(f"运行中应用 host_concurrency={n} 失败（已保存，下批生效）：{e}")
+        return ok
+
+    def save_time_budget_min(self, value):
+        """单仓总时间预算（分钟，0=不限）。C1-2 / Rev7 §3.3 X-2：此前零写入点。
+
+        引擎在 `_service()` 里读 `self.time_budget`（秒），所以在跑引擎同步换算即可
+        立刻对**后续创建 worker** 生效。
+        """
+        minutes = int(value)
+        ok = self._save_field("time_budget_min", minutes)
+        engine = getattr(self._owner, "engine", None)
+        if engine is not None:
+            try:
+                engine.time_budget = max(0.0, float(minutes) * 60.0)
+            except Exception as e:  # noqa: BLE001
+                from ..app.applog import warn as _warn
+                _warn(f"运行中应用 time_budget_min={minutes} 失败（已保存，下批生效）：{e}")
+        return ok
+
     def save_watchdog_silent(self, checked):
         """看门狗静默续跑；同时作用到运行中的看门狗定时器。"""
         self._save_field("watchdog_silent", bool(checked))
@@ -156,7 +191,7 @@ def save_post_clone_hook(panel) -> None:
         else:
             ret = QMessageBox.warning(
                 owner, tr("确认克隆后钩子"),
-                tr("这条命令会在**每个**仓库克隆成功后，在该仓库目录执行：\n\n{hook}\n\n"
+                tr("这条命令会在每个仓库克隆成功后，在该仓库目录执行：\n\n{hook}\n\n"
                    "它拥有你当前用户的权限（可删除文件、联网、改系统设置）。\n"
                    "确认是你自己写的脚本再继续。").format(hook=new_val),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,

@@ -47,28 +47,65 @@ class TestBatchFlowControl(unittest.TestCase):
         return eng
 
     def test_batch_limits_simultaneous_start(self):
-        """G43-2：200 个仓库只入队前 64，其余进待发队列。"""
+        """G43-2 + C1-8：200 个仓库只入队前 `batch_start_limit()` 个（=线程池上限），
+        其余进待发队列。
+
+        语义变更（v9.12.0 / Rev7 C1-8）：原实现恒用模块常量 `_BATCH_START_LIMIT=64`，
+        而线程池上限最多 32 —— 「流控」名义成立、实际无效（超出的 worker 已构造完，
+        各持一个 Service 在池里干等）。现按池上限派生，断言精度不变（仍是精确相等），
+        只是基准换成派生值。
+        """
         eng = self._engine(200)
         started = []
         eng._start_worker = mock.Mock(side_effect=lambda i, s, f: started.append(i))
         specs = [_spec(i) for i in range(200)]
+        limit = eng.batch_start_limit()
+        self.assertEqual(limit, 8, "concurrency=8 时首批上限应正好等于 8")
         # 用 mock 避免真实 git：替换 pool.start 语义 —— launch 内部调用 _start_worker
         launched = eng.launch(specs)
         self.assertEqual(launched, 200, "launch 返回去重后总数")
-        self.assertEqual(len(started), _BATCH_START_LIMIT, "首批只应启动 64")
-        self.assertEqual(len(eng._pending_queue), 200 - _BATCH_START_LIMIT)
-        # 补投一个
+        self.assertEqual(len(started), limit, f"首批只应启动 {limit} 个")
+        self.assertEqual(len(eng._pending_queue), 200 - limit)
+        # 补投：`_replenish` 现在补满到上限，而 mock 掉 `_start_worker` 不会递增在跑计数
+        # → 一次调用会补到上限为止。这里改为直接断言「补投后待发队列变短」，
+        # 并单独用 `test_replenish_fills_to_limit` 覆盖「补满」语义。
+        before_pending = len(eng._pending_queue)
         eng._replenish()
-        self.assertEqual(len(started), _BATCH_START_LIMIT + 1)
-        self.assertEqual(len(eng._pending_queue), 200 - _BATCH_START_LIMIT - 1)
+        self.assertLess(len(eng._pending_queue), before_pending,
+                        "补投后待发队列必须变短")
+        self.assertGreaterEqual(len(started), limit)
         # 清理
         eng._cancelled = True
         eng._pending_queue = []
         eng._stop_buffers()
 
+    def test_replenish_fills_up_to_limit(self):
+        """C1-8：`_replenish` 必须补满到上限（否则用户调高并发后旧节奏不变）。"""
+        eng = self._engine(20, concurrency=3)
+        started = []
+
+        def _fake_start(i, s, f):
+            started.append(i)
+            eng._running = eng._running_count() + 1   # 与真实 _start_worker 同语义
+
+        eng._start_worker = mock.Mock(side_effect=_fake_start)
+        eng.launch([_spec(i) for i in range(20)])
+        self.assertEqual(len(started), 3)
+        # 3 → 6：模拟用户运行中把并发调高，随后一个任务完成触发补投
+        eng.set_concurrency(6)
+        self.assertEqual(len(started), 6, "调高并发后应立即补投到新上限（不等下一个任务完成）")
+        self.assertEqual(len(eng._pending_queue), 20 - 6)
+        # 一个任务完成 → 降到 5 → 补投回 6
+        eng._running = 5
+        eng._replenish()
+        self.assertEqual(len(started), 7)
+        eng._cancelled = True
+        eng._pending_queue = []
+        eng._stop_buffers()
+
     def test_dedupe_under_limit(self):
-        """≤64 时全部立即入队、无待发。"""
-        eng = self._engine(10)
+        """≤上限时全部立即入队、无待发。"""
+        eng = self._engine(10, concurrency=16)
         started = []
         eng._start_worker = mock.Mock(side_effect=lambda i, s, f: started.append(i))
         eng.launch([_spec(i) for i in range(10)])
@@ -82,15 +119,16 @@ class TestBatchFlowControl(unittest.TestCase):
         started = []
         # mock 掉真实 worker 启动（避免后台线程在测试结束时仍在跑导致 Qt 退出崩溃）
         eng._start_worker = mock.Mock(side_effect=lambda i, s, f: started.append(i))
-        specs = [_spec(i) for i in range(70)]  # 64 首批 + 6 待发
+        specs = [_spec(i) for i in range(70)]
+        limit = eng.batch_start_limit()      # concurrency=8 → 8
         ended = []
         eng.finished.connect(lambda: ended.append(True))
         launched = eng.launch(specs)
         self.assertEqual(launched, 70)
-        self.assertEqual(len(started), _BATCH_START_LIMIT, "首批应 mock 启动 64")
-        self.assertEqual(len(eng._pending_queue), 6)
-        # 模拟取消：先清空首批（_pending 到 6），待发队列由 cancel_all 收敛
-        eng._pending = 6
+        self.assertEqual(len(started), limit, f"首批应 mock 启动 {limit} 个")
+        self.assertEqual(len(eng._pending_queue), 70 - limit)
+        # 模拟取消：先清空首批（_pending 到待发数），待发队列由 cancel_all 收敛
+        eng._pending = 70 - limit
         eng.cancel_all()
         self.assertEqual(eng._pending, 0, "取消后 _pending 应归零")
         self.assertEqual(eng._pending_queue, [], "待发队列应清空")

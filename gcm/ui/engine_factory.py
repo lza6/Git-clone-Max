@@ -18,11 +18,24 @@ from ..app.engine import SyncEngine
 
 def build_sync_engine(owner: Any, target_root: Path | str, *,
                       single_branch: bool, mirror: bool,
-                      event_bus: Optional[Any] = None) -> SyncEngine:
-    """按 `owner.settings` 构造一个 `SyncEngine`。
+                      event_bus: Optional[Any] = None,
+                      enable_retry_queue: bool = True) -> SyncEngine:
+    """按 `owner.settings` 构造一个 `SyncEngine`。**这是设置 → 引擎的唯一映射点。**
 
     `owner` 需要提供：`settings`、`db`、`progress_path`、`data_dir`、
     `session_store`、`watchdog`（不在这里使用）、`_progress_gc_mod()`。
+
+    **为什么必须唯一**（v9.12.0 实测教训）：`MainWindow.__init__` 曾经也手写了一份
+    参数列表（G45 时代留下），两份列表慢慢漂移 —— 启动时那个「空闲引擎」漏掉了
+    `host_concurrency` / `time_budget` / `concurrency_state_path`，于是用户改完
+    设置重启后**控件回填正确、引擎却仍读默认值**（真机实测：改 11/20，重启后引擎
+    仍是 4/0）。现在启动期也走本函数，两处合并成一处，删掉手写列表。
+
+    `enable_retry_queue=False`：给**启动期的空闲引擎**用。
+    理由：重投要求复用上一批的 `_last_batch_ctx`（host_by_key / fetch_depth / mirror，
+    见 G67-3），而启动时空闲引擎的该快照为空 —— 让它自动重投会把非 GitHub 仓库
+    落库成 `host="github.com"`，污染 `UNIQUE(owner,repo,host)`（G67-3 修过的同类缺陷）。
+    真正的批次引擎（`_launch`）仍走默认 True。
     """
     s = getattr(owner, "settings", None)
     if s is None:
@@ -56,8 +69,9 @@ def build_sync_engine(owner: Any, target_root: Path | str, *,
         post_clone_hook=str(getattr(s, "post_clone_hook", "")),
         ssh_key=str(getattr(s, "ssh_key_path", "")),
         mirror=bool(mirror),
-        retry_queue_path=data_dir / "retry_queue.json",
-        retry_enabled=bool(getattr(s, "retry_enabled", False)),
+        retry_queue_path=(data_dir / "retry_queue.json") if enable_retry_queue else None,
+        retry_enabled=(bool(getattr(s, "retry_enabled", False))
+                       and enable_retry_queue),
         retry_max=int(getattr(s, "retry_max", 2) or 2),
         retry_backoff_base_sec=int(getattr(s, "retry_backoff_base_sec", 30) or 30),
         session_store=getattr(owner, "session_store", None),

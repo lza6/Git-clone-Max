@@ -7,23 +7,29 @@
 
 ---
 
-## 0. 最新一次真实运行（2026-11-01 · G82 A 批收口，v9.11.0）
+## 0. 最新一次真实运行（2026-11-01 · v9.12.0 Rev7 C1 批）
 
 | 项 | 命令 | 结果（实测） |
 |---|---|---|
-| 质量闸 | `ruff check gcm` / `mypy gcm` | All checks passed / Success（103 文件） |
-| 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | 见 docs/验证记录-2026-11-01-G82.md（v9.11.0 终局串行跑） |
-| A5 批定向 | test_g48/g52/g73/g43/g53/a52/a53/a54/a55 等 | 全绿（先红后绿证据在 evidence/G82-A-batch.json） |
-| 源码级 git E2E | `scripts/e2e_smoke.py` | `E2E_SMOKE_RESULT: PASS` |
-| 打包 E2E | dist exe `--cli --json`（真实克隆） | `EXE E2E PASS`（action=fetched） |
-| health_check | `--exe --zip --json` | version 9.11.0 / started_ok=true / 3760ms |
-| 截图审计 | `scripts/ui_screenshot_audit.py reports/ui-g82` | 38 PNG，1 缺陷（按钮裁切）修复并复验 |
-| MCP 握手 | initialize（GCM_MCP_ENABLE=1） | serverInfo 9.11.0 ✅；禁用退出码 3 ✅ |
+| 质量闸 | `ruff check gcm` / `mypy gcm` | All checks passed / Success（104 源文件） |
+| 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | **Ran 1717 · failures=0 · errors=0 · skipped=4**（149 模块，exit 0） |
+| 覆盖率 | `coverage report --include="gcm/*"` | **TOTAL 83%**（门禁 Windows 81 / POSIX 80） |
+| 文档漂移 | `python scripts/doc_drift_check.py` | **DRIFT 0**（首跑报 18 处真实漂移，已全修） |
+| 度量 | `python scripts/dev_metrics.py [--json]` | 105 文件 / 27,846 行 / 超 800 行 3 / 超 100 行函数 20 / except 621·pass 283 / tests 162 |
+| C1 定向 | `tests.test_c1_wiring`（29）· `test_function_size_budget`（4）· `test_doc_drift_guard`（8） | 全绿 |
+| 源码级 git E2E | `python scripts/e2e_smoke.py` | `E2E_SMOKE_RESULT: PASS` |
+| 真实 CLI 克隆 | `python -m gcm --cli --json --dir <tmp> urls.txt` | exit 0，`action=cloned`，`mirror_used=gh-proxy.com`，非法项 `code=2` |
+| 本地 HTTP API | `--serve 127.0.0.1:8901` + 5 个 GET | 全 200；非回环绑定 exit 2（边界未破） |
+| MCP | `GCM_MCP_ENABLE=1` + initialize/tools-list | `serverInfo 9.12.0`，4 个只读工具；未启用 exit 3 |
+| 截图审计 | `python scripts/ui_screenshot_audit.py reports/ui-v9120` | 34 PNG；新设置两行 `visibleRegion == rect` |
+| 打包 E2E | — | **本轮见 docs/验证记录-2026-11-01-v9.12.0.md §7（构建与健康检查）** |
 
-**本轮教训（勿重犯）**：改共享函数（如 `_reset_defaults`）必须跑**全部调用方**的既有测试——
-A5-4 加确认框后 test_g46_settings 老测试没 mock 弹框，快集卡死 20 分钟才暴露。
+**本轮教训（勿重犯）**：①**视觉验收抓到了单测抓不到的缺陷** —— 新文案里的 Markdown `**` 在 QLabel 里原样显示成星号，27 条单测全绿；已加 `TestNoMarkdownInUserFacingText`。
+②**不要在跑全量快集期间改代码/改版本号** —— 本轮有两次运行被自己的修改污染（版本 bump 让 `test_g67`/`test_g81` 假红），必须冻结后再跑。
 
 ---
+> 下面是历史记录（v9.11.0 G82 及更早），保留供考古；数字以本文件顶部为准。
+
 | 质量闸 | `ruff check gcm` / `mypy gcm` | All checks passed / Success（**86 文件**） |
 | 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | **Ran 1415 · failures=0 · errors=0 · skipped=4** |
 | 覆盖率 | `coverage report --include="gcm/*"` | **TOTAL 82%**（门禁 Windows 81 / POSIX 80） |

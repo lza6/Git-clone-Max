@@ -41,6 +41,8 @@ EXPECTED_WIDGETS = (
     "ck_watchdog_silent", "combo_sched_format",
     # 并行与网络
     "spin_concurrency", "spin_fetch_timeout", "spin_retries", "edit_proxy",
+    # C1-2（v9.12.0）：同平台并发上限 / 单仓时间预算（此前只有读侧、无控件）
+    "spin_host_concurrency", "spin_time_budget",
     "btn_detect_proxy", "spin_rate", "ck_unshallow", "ck_submodule", "ck_lfs",
     "spin_auto_update", "edit_token", "edit_host_tokens", "ck_show_host_tokens",
     "cb_auth_header", "edit_ssh_key", "btn_ssh_key", "edit_mirror",

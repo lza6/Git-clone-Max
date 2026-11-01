@@ -18,6 +18,11 @@ _INT_RANGES: dict[str, tuple[int, int]] = {
     "concurrency": (1, 32),
     "clone_timeout": (30, 7200),
     "retry_backoff_base_sec": (5, 600),
+    # C1-2（Rev7 §3.2/§3.3 X-1/X-2）：这两个字段此前只有类型标注、没有取值校验，
+    # 也没有任何 UI 写入点 —— 用户根本够不到，而 engine_factory 却在读它们。
+    # 0 = 不限（per-host 限流关闭 / 单仓时间预算关闭），与引擎侧语义一致。
+    "host_concurrency": (0, 32),
+    "time_budget_min": (0, 720),
 }
 
 # 只读视图（UI 的 setRange 从这里取，避免两套限制）

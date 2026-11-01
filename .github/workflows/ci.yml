@@ -88,9 +88,12 @@ jobs:
           python -m coverage report --fail-under=${{ env.COVERAGE_FAIL_UNDER }}
 
       # G29-2 ruff 静态检查：零 error
-      - name: Install ruff
+      # C1-12（Rev7 §4）：**不再裸装** ruff/mypy —— 版本来自 requirements-build.txt
+      # （此前 `pip install ruff` 每次装最新版，CI 绿了本地可能红，反之亦然；
+      #  「文件里有锁」不等于「CI 已锁」是本项目 G80 实测过的坑）。
+      - name: Install lint tools (pinned)
         run: |
-          python -m pip install ruff
+          python -m pip install -r requirements-build.txt
       - name: Lint (ruff)
         run: |
           ruff check gcm --output-format=github
@@ -98,7 +101,6 @@ jobs:
       # M7 收官：mypy 类型门禁（本地已 0 error，纳入矩阵防回归）
       - name: Type check (mypy)
         run: |
-          python -m pip install mypy
           mypy gcm
 
       # G29-6 模块级覆盖率表格输出到 job summary（pwsh 三平台预装）

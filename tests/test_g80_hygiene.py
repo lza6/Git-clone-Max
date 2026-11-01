@@ -49,7 +49,14 @@ GCM = ROOT / "gcm"
 #     其中 pass-only +2 是空画像/存储两处静默退化 —— 渲染层无日志面板可写，
 #     退化为 UI 兜底文案即「可观测出口」，符合红线原意）
 #   本次所有 handler 都有可观测出口，因此只上调总数、不上调 pass-only。
-BASELINE_EXCEPT = 614
+# - v9.12.0（Rev7 C1 批）+7（except 621 / **pass-only 仍 283**）：
+#   engine.py +3（`batch_start_limit` 池异常→退化为硬上限；
+#     `_maybe_checkpoint_wal` WAL 收缩失败→warn 不影响批次；
+#     `discard` 停卡死巡检失败→warn）
+#   ui/settings_actions.py +2（运行中应用 host_concurrency / time_budget 失败→warn 并注明"已保存，下批生效"）
+#   ui/failure_panel.py +2（卡死任务条读取失败→空列表兜底；取消失败→warn）
+#   **全部有可观测出口**（日志或 UI 兜底），因此只上调总数、不上调 pass-only。
+BASELINE_EXCEPT = 621
 BASELINE_PASS_ONLY = 283
 
 

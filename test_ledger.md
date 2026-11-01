@@ -5,7 +5,7 @@
 > 这边是**跑了证明什么**（接缝 ↔ 用例 ↔ 最后结果）。
 > 只记录本轮真实运行过的结果；引用历史结果必须标日期。
 
-**最后更新**：2026-10-31（v9.11.0 G82 A 批收口 + 审查修复；v9.10.3 为 G80）· 版本见 `gcm/__init__.py:__version__`（本文件不写死版本号）
+**最后更新**：2026-11-01（v9.12.0 Rev7 C1 批：S41–S46 六条新接缝；v9.11.0 G82 A 批；v9.10.3 为 G80）· 版本见 `gcm/__init__.py:__version__`（本文件不写死版本号）
 
 ---
 
@@ -55,8 +55,14 @@
 | S38 | **引擎调度 → worker → per-host 闸门**（G82 / A5-5） | `app/engine._start_worker(host_gate=…)` | `app/worker.CloneWorker.run()`（acquire 0.5s 超时循环查取消 / finally release） | ①闸门 None=不限流；②acquire 循环必须查 payload.flag（否则 cancel_all 失效）；③只在真正 acquire 后 release；④`_start_worker` 必须透传闸门（接线守卫） | `tests/test_a55_host_gate`（4） |
 | S39 | **git 子进程 → 轮询取消 / 时间预算**（G82 / A5-3） | `git/service.run_git_ui`（100ms 步进轮询） | 主线程 deadline+cancelled 检查 / `budget` 每仓库总预算 | ①读线程的超时/取消分支只在**有输出行**时执行 —— 静默进程取消只能靠主线程轮询（C-1 本质）；②budget 经 settings→factory→engine→service 全链路（0=不限）；③`_kill_tree` taskkill 失败必须 `proc.kill()` 兜底 | `tests/test_a53_process_termination`（4，真实子进程） |
 | S40 | **统计中心 → 后台聚合线程**（G82 / A5-6） | `ui/statistics_dialog._run_scorecard_async` | `_Aggregator(QThread)` → `finished_with` → `_on_scorecard_ready`（GUI 线程渲染） | ①worker 只 emit 不碰控件；②换线程前 wait+disconnect 旧线程（QThread 运行中析构=SIGSEGV 同型）；③closeEvent 等 3s；④emit 参数不得包多余 tuple（曾致槽内 KeyError 被兜底 except 吃掉） | `tests/test_g53_radar`（事件循环等待） |
+| S41 | **设置字段 → 引擎参数（逐字段生效断言）**（v9.12.0 / C1-2） | `db/settings` + `ui/settings_network.py` + `ui/settings_actions.save_*` | `ui/engine_factory.build_sync_engine` → `SyncEngine(host_concurrency=…, time_budget=…)` | ①每个引擎消费字段要么在此映射并**有生效断言**，要么进显式白名单；②`0` 语义必须一路通到引擎（per-host 闸门 None / 预算 0）；③控件上限来自 `db/validators.int_range()` 单一真相；④运行中改值要作用到在跑引擎 | `tests/test_c1_wiring.TestSettingsNetworkWiring`（4）· `TestHostConcurrencyInjection`（3） |
+| S42 | **并发策略：用户设置 ⟷ 自适应天花板**（v9.12.0 / C1-7） | `app/engine.set_concurrency(by_user=…)` | `_adapt_result`（内部减半/回升）/ `_restore_concurrency_state`（跨会话恢复） / `batch_start_limit`（流控派生） | ①`by_user=True` 同步 `_adapt_max/_adapt_current` 并立刻补投待发队列；②`by_user=False` 只动线程池、**不动天花板**（否则一次抖动永久压低并发）；③流控上限 = min(硬上限, 池上限)；④补投必须「补满到上限」而非每次一个 | `tests/test_c1_wiring.TestSetConcurrencyUpdatesAdaptMax`（3）· `TestBatchStartLimitDerived`（3）· `tests/test_g43_engine`（流控断言同步更新） |
+| S43 | **引擎替换 → 定时器/信号收尾**（v9.12.0 / C1-6） | `app/engine.discard()` | `_progress_timer` / `_stuck_timer` / `_retry_timer` / `_stop_buffers()` | ①三个定时器与行合并窗口必须全停；②不调 `drain()`（会在 UI 槽里泵事件 → 重入）；③`waitForDone` 阻塞收敛防「GIL ⟷ QThreadPool」死锁；④停表失败必须留痕不得静默 | `tests/test_c1_wiring.TestDiscardStopsAllTimers` |
+| S44 | **卡死识别 → 用户可处理**（v9.12.0 / C1-3） | `app/engine._check_stuck_tasks` / `cancel_stuck_tasks` | `ui/failure_panel` 的「疑似卡死」条 + 「取消这些卡死任务」 | ①无卡死任务时整行隐藏（不占位）；②点击必须真的调 `engine.cancel_stuck_tasks()`（AST 接线断言）；③**不得**静默改 MaxThreadCount（不超发并发）；④引擎日志必须指向该面板 | `tests/test_c1_wiring.TestStuckTaskUiEntry`（3）· `tests/test_g80_stuck_task`（7） |
+| S45 | **批次收尾 → WAL 收缩**（v9.12.0 / C1-11） | `db/repo_db.wal_checkpoint(PASSIVE)` | `app/engine._maybe_checkpoint_wal()`（批次终态调用） | ①只在批次收尾调一次（不是每任务）；②失败只 warn、不得影响本批结果；③无 db/无该方法时安全跳过 | `tests/test_c1_wiring.TestWalCheckpointOnBatchFinish`（2） |
+| S46 | **文档数字 → 实测度量**（v9.12.0 / C1-4/C1-5/C1-13） | `scripts/dev_metrics.py`（唯一度量口径） | `scripts/doc_drift_check.py`（6 类断言）· `tests/test_function_size_budget.py`（20 个 >100 行函数集合相等）· `tests/test_g79_repo_hygiene`（测试文件数） | ①模块行数表与实测差 ≤5；②超长函数集合相等（增删都红）；③测试文件数三处同源；④技能包数 = README 声称且每个有 SKILL.md；⑤每类断言必须有「改坏会红」的反向自检 | `tests/test_doc_drift_guard`（8）· `tests/test_function_size_budget`（4） |
 
-> **编号说明（避免与并行会话撞号）**：并行会话产出的《下一步改进指南》（位于 `docs/plans/`）在其 §9B 建议了 S35–S42（定时队列 / 引擎参数契约 / 忙态令牌 / 错误动作 / 全文索引 / 事件持久化 / 契约 schema 导出 / 自更新校验），**那些都是未落地的规划**。本轮 S35/S36 是**已落地**的真实接缝，先占号；那份计划落地时请从 **S37** 起顺延。
+> **编号说明（避免与并行会话撞号）**：并行会话产出的《下一步改进指南》（位于 `docs/plans/`）在其 §9B 建议了 S35–S42（定时队列 / 引擎参数契约 / 忙态令牌 / 错误动作 / 全文索引 / 事件持久化 / 契约 schema 导出 / 自更新校验），**那些都是未落地的规划**。本轮 S35/S36 是**已落地**的真实接缝，先占号。**2026-11-01 更正**：G82 已用掉 S37–S40（重试队列/闸门/子进程/统计线程），Rev7 的计划落地时请从 **S41** 起 —— 本表 S41–S46 即 v9.12.0（Rev7 C1 批）真实落地的六条接缝。
 
 ---
 

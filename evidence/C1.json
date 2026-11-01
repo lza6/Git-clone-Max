@@ -1,0 +1,273 @@
+{
+  "task_id": "C1",
+  "title": "Rev7 C1 批：接线与门禁收口（v9.12.0）",
+  "status": "done",
+  "timestamp": "2026-11-01",
+  "actor": "主控代理（Orchestrator + Builder + QA）",
+  "baseline": {
+    "branch": "main",
+    "commit_before": "1b9022b",
+    "version_before": "9.11.0",
+    "version_after": "9.12.0"
+  },
+  "scope": {
+    "done_in_this_batch": [
+      "C1-1 删 engine.py 中覆盖 host_concurrency 构造参数的硬编码行",
+      "C1-2 新增 ui/settings_network.py，为 host_concurrency 与 time_budget_min 补设置页控件（三段接线）",
+      "C1-3 failure_panel 新增「疑似卡死任务」条 + 取消按钮（cancel_stuck_tasks 首次有生产调用点）",
+      "C1-4 scripts/doc_drift_check.py + tests/test_doc_drift_guard.py（6 类断言 + 8 条变异自检）",
+      "C1-5 tests/test_function_size_budget.py（20 个 >100 行函数、集合相等 + 反向自检）",
+      "C1-6 discard() 停全部三个定时器与行合并窗口",
+      "C1-7 set_concurrency(by_user=) 同步自适应天花板 + 运行中补满待发队列",
+      "C1-8 _BATCH_START_LIMIT 由线程池上限派生（batch_start_limit()）",
+      "C1-9 并发记忆恢复不再被 retry_queue 短路",
+      "C1-10 删死常量 _FLUSH_INTERVAL",
+      "C1-11 批次收尾触发 wal_checkpoint(PASSIVE)",
+      "C1-12 requirements.txt 锁 PyQt6==6.11.0；CI Lint/Type 改读 requirements-build.txt",
+      "C1-13 scripts/dev_metrics.py（唯一度量口径，支持 --json）"
+    ],
+    "not_in_this_batch": [
+      "C2 界面不再断裂（X-4 1366×768 主操作行被裁 / U-6 大小列）",
+      "C3 规模真瓶颈（dir_size 异步+缓存 / prune_history 出 GUI 线程 / C-8 rollback / C-29 分阶段埋点）",
+      "C4 检索（双路 FTS5+LIKE，需 DB 迁移 v6）",
+      "C5 agent 生态 + 交付（MCP 写工具 / 契约导出 / 事件落盘 / 自校验更新）",
+      "C6 长挂机自愈（卡死真回收 / fsck / 趋势 / 按 task 过滤 / oplog）"
+    ]
+  },
+  "commands_executed": [
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen python -m coverage run --source=gcm scripts/ci_run_fast.py",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 1721 tests · failures=0 errors=0 skipped=4（149 模块逐模块 OK，进程退出码 0）"
+    },
+    {
+      "cmd": "python -m coverage report --include=gcm/*",
+      "exit_code": 0,
+      "raw_output_tail": "TOTAL 15405 2356 3908 682 83%"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe -m ruff check gcm",
+      "exit_code": 0,
+      "raw_output_tail": "All checks passed!"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe -m mypy gcm",
+      "exit_code": 0,
+      "raw_output_tail": "Success: no issues found in 104 source files"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen python -m unittest tests.test_c1_wiring",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 27 tests in 4.687s / OK"
+    },
+    {
+      "cmd": "python -m unittest tests.test_function_size_budget",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 4 tests in 0.140s / OK"
+    },
+    {
+      "cmd": "python -m unittest tests.test_doc_drift_guard",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 8 tests in 0.232s / OK"
+    },
+    {
+      "cmd": "python scripts/doc_drift_check.py",
+      "exit_code": 0,
+      "raw_output_tail": "DRIFT 0（首次运行报 18 处真实漂移，已全部修正后归零）"
+    },
+    {
+      "cmd": "python scripts/dev_metrics.py",
+      "exit_code": 0,
+      "raw_output_tail": "version=9.12.0 / gcm 105 文件 27844 行 / 超800行 3 个 / 超100行函数 20 个 / except 621 pass-only 283 / tests 162 文件"
+    },
+    {
+      "cmd": "python -m unittest tests.test_g66_patch.TestContractVersionSingleSource tests.test_g66_patch.TestPackagingVersionSync",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 11 tests / OK（版本单源：__version__/pyproject/spec/installer.iss/plugin.json/changelog 全部 9.12.0）"
+    },
+    {
+      "cmd": "python -m unittest tests.test_g67_docs_freshness tests.test_g81_ecosystem tests.test_g79_repo_hygiene",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 38 tests / OK"
+    },
+    {
+      "cmd": "python scripts/changelog.py build --version 9.12.0",
+      "exit_code": 0,
+      "raw_output_tail": "已聚合 10 条碎片为 9.12.0 条目；碎片归档到 changelog.d/_archive/9.12.0/"
+    },
+    {
+      "cmd": "python scripts/e2e_smoke.py",
+      "exit_code": 0,
+      "raw_output_tail": "E2E_SMOKE_RESULT: PASS（clone/ff 更新/ff 拒绝且不覆盖/冲突保留/merge --abort/HEAD）"
+    },
+    {
+      "cmd": "python -m gcm --cli --json --dir <tmp>/clones urls.txt",
+      "exit_code": 0,
+      "raw_output_tail": "version 9.12.0 ok True counts{success:1} action=cloned mirror_used=https://gh-proxy.com；invalid[0].code=2"
+    },
+    {
+      "cmd": "python -m gcm --cli --serve 127.0.0.1:8901 + 5 个 GET / 再试 --serve 0.0.0.0",
+      "exit_code": 0,
+      "raw_output_tail": "5 个端点全 200（/version 报 9.12.0 readonly:true）；非回环绑定 exit 2 拒绝"
+    },
+    {
+      "cmd": "GCM_MCP_ENABLE=1 python -m gcm.mcp_server（initialize + tools/list）",
+      "exit_code": 0,
+      "raw_output_tail": "serverInfo {'name':'gcm','version':'9.12.0'}；tools=[list_repos,search_repos,export_report,status]；未启用 exit 3"
+    }
+  ],
+  "files_changed": [
+    "gcm/app/engine.py（C1-1/6/7/8/9/10/11：删硬编码、discard 停三定时器、set_concurrency(by_user)、batch_start_limit/_top_up_pending、并发记忆恢复、删死常量、WAL 收缩）",
+    "gcm/db/validators.py（新增 host_concurrency/time_budget_min 区间，UI 与校验单一真相）",
+    "gcm/ui/settings_network.py（新增模块：两行限流设置 + 说明）",
+    "gcm/ui/settings_groups.py（网络组挂载新模块，+7 行至 786）",
+    "gcm/ui/settings_actions.py（save_host_concurrency / save_time_budget_min，运行中同步引擎）",
+    "gcm/ui/failure_panel.py（疑似卡死任务条 + 取消按钮）",
+    "scripts/dev_metrics.py（新增）",
+    "scripts/doc_drift_check.py（新增）",
+    ".github/workflows/ci.yml（Lint/Type 改读 requirements-build.txt）",
+    "requirements.txt（PyQt6>=6.6 → ==6.11.0）",
+    "tests/test_c1_wiring.py（新增，27 例）",
+    "tests/test_function_size_budget.py（新增，4 例）",
+    "tests/test_doc_drift_guard.py（新增，8 例）",
+    "tests/test_g43_engine.py（流控断言随 C1-8 语义更新，精度不降）",
+    "tests/test_g80_hygiene.py（except 总数基线 614→621，pass-only 仍 283；逐条登记理由）",
+    "tests/test_g79_repo_hygiene.py（_EXPECTED_TEST_FILES 159→162）",
+    "tests/test_g67_docs_freshness.py（新增 2 条历史版本白名单，附理由）",
+    "CLAUDE.md / README.md / docs/architecture.md / docs/慢测定位.md / test_ledger.md（数字与接缝 S41–S46 同步）",
+    "gcm/__init__.py / pyproject.toml / Git-clone-Max.spec / packaging/installer.iss / .claude-plugin/plugin.json / docs/agent-contract.md（版本 9.12.0 单源）",
+    "gcm/_changelog_data.py（9.12.0 条目，由 changelog.py build 生成）",
+    "changelog.d/_archive/9.12.0/（10 条碎片归档）",
+    "tests/test_c1_wiring.py 增 TestNoMarkdownInUserFacingText（2 例）+ TestDependencyPinning（4 例）",
+    "gcm/ui/settings_actions.py 修掉克隆后钩子确认框里的 **每个** Markdown 残留",
+    "gcm/ui/engine_factory.py：新增 enable_retry_queue 参数（启动期空闲引擎不挂重投队列）+ docstring 记录「唯一映射点」理由",
+    "gcm/ui/main_window.py：删除手写的第二份 settings→engine 参数列表，启动期改走 build_sync_engine（__init__ 252→240 行）"
+  ],
+  "tests": [
+    {
+      "name": "tests/test_c1_wiring.py",
+      "type": "unit+integration",
+      "status": "pass",
+      "count": 27
+    },
+    {
+      "name": "tests/test_function_size_budget.py",
+      "type": "static-guard",
+      "status": "pass",
+      "count": 4
+    },
+    {
+      "name": "tests/test_doc_drift_guard.py",
+      "type": "static-guard+mutation",
+      "status": "pass",
+      "count": 8
+    },
+    {
+      "name": "tests/test_g43_engine.py",
+      "type": "regression",
+      "status": "pass",
+      "count": 12
+    },
+    {
+      "name": "tests/test_a55_host_gate.py",
+      "type": "regression",
+      "status": "pass",
+      "count": 4
+    },
+    {
+      "name": "tests/test_g80_stuck_task.py",
+      "type": "regression",
+      "status": "pass",
+      "count": 7
+    },
+    {
+      "name": "tests/test_g68_settings_ui.py + test_g76_wiring.py",
+      "type": "regression",
+      "status": "pass",
+      "count": 39
+    },
+    {
+      "name": "tests/test_c1_wiring.py（追加后）",
+      "type": "unit+integration+static-guard",
+      "status": "pass",
+      "count": 29
+    }
+  ],
+  "mutation_verification": [
+    {
+      "guard": "test_c1_wiring.TestHostConcurrencyInjection",
+      "before_fix": "红：9 != 4（构造参数被覆盖）",
+      "after_fix": "绿"
+    },
+    {
+      "guard": "test_c1_wiring.TestSetConcurrencyUpdatesAdaptMax",
+      "before_fix": "红：_adapt_max 仍 8（用户设 3）",
+      "after_fix": "绿"
+    },
+    {
+      "guard": "test_c1_wiring.TestBatchStartLimitDerived",
+      "before_fix": "红：AttributeError（batch_start_limit 不存在）",
+      "after_fix": "绿"
+    },
+    {
+      "guard": "test_c1_wiring.TestDiscardStopsAllTimers",
+      "before_fix": "红：progress/stuck 定时器仍 isActive()",
+      "after_fix": "绿"
+    },
+    {
+      "guard": "test_c1_wiring.TestConcurrencyMemoryNotShortCircuited",
+      "before_fix": "红：恢复值未生效",
+      "after_fix": "绿"
+    },
+    {
+      "guard": "test_c1_wiring.TestWalCheckpointOnBatchFinish",
+      "before_fix": "红：wal_checkpoint 调用 0 次",
+      "after_fix": "绿"
+    },
+    {
+      "guard": "scripts/doc_drift_check.py",
+      "before_fix": "DRIFT 18（真实漂移：service 1768→1899、engine 1169→1516、14→20 个超长函数、159→162 测试文件、5→6 技能包…）",
+      "after_fix": "DRIFT 0"
+    },
+    {
+      "guard": "tests/test_doc_drift_guard（6 条反向自检）",
+      "note": "分别 monkeypatch 六个检查的输入为坏数据，断言各自报错 —— 防止守卫永远返回 0"
+    },
+    {
+      "guard": "TestStartupEngineReflectsSettings（跨重启路径）",
+      "before_fix": "红：settings 里 host_concurrency=11/time_budget_min=20，重启后 engine._host_concurrency 仍 4、time_budget 仍 0.0（控件回填却正确）",
+      "after_fix": "绿：引擎 11 / 1200s，闸门容量 11；空闲引擎 retry_queue 为 None；批次引擎 retry_queue 非 None"
+    }
+  ],
+  "seams_touched": [
+    "S41 设置字段→引擎参数",
+    "S42 并发策略（用户设置⟷自适应天花板）",
+    "S43 引擎替换→定时器收尾",
+    "S44 卡死识别→用户可处理",
+    "S45 批次收尾→WAL 收缩",
+    "S46 文档数字→实测度量"
+  ],
+  "coverage_summary": {
+    "total_percent": 83,
+    "statements": 15405,
+    "missing": 2356,
+    "branches": 3908,
+    "partial_branches": 682,
+    "gate": "Windows 81 / POSIX 80（快集口径）"
+  },
+  "limitations": [
+    "覆盖率需快集跑完才有（见 evidence/C1-fastrun-final.log）",
+    "C2–C6 未做（见 scope.not_in_this_batch）",
+    "服务端部署/热更新不适用（policy.md §4：桌面单机，等价交付链=打包→健康检查→GitHub Release）",
+    "Linux/macOS GUI 未验证（本机仅 Windows）",
+    "真机 125%/150% DPI 未目检"
+  ],
+  "visual_findings": [
+    {
+      "finding": "用户可见文案残留 Markdown 粗体标记（QLabel 纯文本渲染成星号）",
+      "where": "gcm/ui/settings_network.py 新增的两行限流提示（另修一处既有残留：gcm/ui/settings_actions.py 克隆后钩子确认框）",
+      "how_found": "真机截图目检（34 张审计 PNG 之外的专项截图），27 条单测全绿时它仍存在",
+      "fix": "改文案去掉 ** + 新增守卫 tests/test_c1_wiring.TestNoMarkdownInUserFacingText（AST 扫全仓 tr() 字面量，附反向自检）"
+    }
+  ]
+}

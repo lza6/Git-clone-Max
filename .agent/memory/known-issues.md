@@ -1,16 +1,36 @@
 # 已知问题与边界（known-issues）
 
 > 只记录**真实存在**且尚未解决的问题。修掉一个就删一条。
-> 最后更新：2026-11-01（G82：A5 批收口 + 终局审查 2B+4R 全修 + 快集暴露 test_g46 回归已修）
+> 最后更新：2026-11-01（v9.12.0 / Rev7 C1 批：12 项接线与门禁缺口收口；剩余项见文末「仍然开放」）
 
-## G82 已知取舍（2026-11-01，v9.11.0）
+## v9.12.0 已收口（2026-11-01，Rev7 C1 批）
+
+| # | 原问题 | 结论 |
+|---|--------|------|
+| 1 | `host_concurrency` / `time_budget_min` **无设置页 UI 控件**（用户够不到） | **已闭环**：新增 `ui/settings_network.py`（两控件 + 说明），三段接线有 `test_c1_wiring.TestSettingsNetworkWiring`（4 例） |
+| 2 | `host_concurrency` 构造参数**被 `__init__` 硬编码覆盖**（传 9 得 4、传 0 也得 4） | **已闭环**：删掉覆盖行；`TestHostConcurrencyInjection`（3 例）含「0=不限流」端到端 |
+| 3 | `set_host_concurrency` 运行中切换时新旧两代闸门短暂并存 | **保留**（docstring 已写明的工程取舍）：并发可能瞬时略超新上限；建议启动前改 |
+| 4 | `cancel_stuck_tasks()` **零生产调用点** | **已闭环**：失败汇总面板新增「疑似卡死」条 + 取消按钮（`test_c1_wiring.TestStuckTaskUiEntry` 3 例，含 AST 接线断言） |
+| 5 | `discard()` 只停 `_retry_timer`，progress/stuck 定时器继续跑（C-6） | **已闭环**：`TestDiscardStopsAllTimers`（带 QApplication 真实断言） |
+| 6 | 用户改并发被自适应顶回旧值（C-25） | **已闭环**：`set_concurrency(by_user=)`；`TestSetConcurrencyUpdatesAdaptMax`（3 例） |
+| 7 | 流控上限恒 64 > 池上限 32（C-12） | **已闭环**：`batch_start_limit()` 派生；`TestBatchStartLimitDerived`（3 例） |
+| 8 | 并发记忆恢复被 `retry_queue` 短路（C-13） | **已闭环**：`TestConcurrencyMemoryNotShortCircuited`（2 例） |
+| 9 | `_FLUSH_INTERVAL` 死常量（C-22）/ `wal_checkpoint` 零生产调用（C-24） | **已闭环**：删常量；批次收尾调 `wal_checkpoint(PASSIVE)`（各 2 例） |
+| 10 | 文档数字六处同时过期、无守卫 | **已闭环**：`scripts/doc_drift_check.py`（首跑报 18 处，现已 DRIFT 0）+ `tests/test_doc_drift_guard`（8 例含反向自检） |
+| 11 | 函数规模无守卫（文档称 14 个，实测 20 个） | **已闭环**：`tests/test_function_size_budget.py`（集合相等 + 反向自检） |
+| 12 | `requirements.txt` 未锁版本；CI 裸装 ruff/mypy | **已闭环**：`PyQt6==6.11.0`；CI 改读 `requirements-build.txt`；`TestDependencyPinning`（4 例） |
+| 13 | **启动路径漏接线**：`MainWindow.__init__` 手写第二份 settings→engine 列表，漏 `host_concurrency`/`time_budget`/`concurrency_state_path` → 改设置重启后引擎仍读默认值（控件回填却是对的） | **已闭环**：启动期改走 `build_sync_engine`（唯一映射点），`TestStartupEngineReflectsSettings`（4 例）；空闲引擎 `enable_retry_queue=False` 防启动即自动重投污染 host 列 |
+
+## 仍然开放（v9.12.0 之后）
 
 | # | 事项 | 状态 |
 |---|------|------|
-| 1 | `time_budget_min` / `host_concurrency` 新设置项**无设置页 UI 控件**（配置文件可改，默认值保持旧行为） | B2 批（统一 Job 模型）时补 UI |
-| 2 | `set_host_concurrency` 运行中切换时新旧两代闸门短暂并存（实际并发可能瞬时超上限） | docstring 已写明取舍；建议只在启动前改 |
-| 3 | A-3-2 engine_factory mypy 标注 / A-3-3 time.sleep 治理 / A-3-4 i18n 覆盖率守卫 | 留 B 批 |
-| 4 | C 系列非根因映射条目（C-7/8/9/12/13/14/19-27/29-32）未逐条收口 | 按 A-7 原则随 B 批根因批次处理 |
+| 1 | **1366×768 笔记本上「保存清单/载入/导入 Star」被裁到 10px**（实测 `visibleRegion` 86×10/86×42；1080p@150% 下完全不可见） | 待 C2 批（Rev7 §3.1 X-4） |
+| 2 | 管理页「仓库大小」列可能永久空白（`dir_size` 15 万文件实测 484ms > 600ms 单次定时器） | 待 C2 批（U-6） |
+| 3 | `prune_history` 全表窗口函数跑在 GUI 线程（10 万行 164ms）；DB 写方法异常路径无 rollback；无分阶段耗时埋点（C-8/C-9/C-29） | 待 C3 批 |
+| 4 | 检索仍是 LIKE 单路（中文两字词可用、无相关性排序/高亮）；**注意** FTS5 `trigram` 对两字中文查询零命中，必须双路 | 待 C4 批（Rev7 §2.1） |
+| 5 | MCP 仍只有 4 个只读工具；事件不落盘；本地 API 无 token | 待 C5 批 |
+| 6 | A-3-2 engine_factory mypy 标注 / A-3-3 `time.sleep` 治理 / A-3-4 i18n 覆盖率守卫（英文模式仍有 58 个 tr 键回退中文） | 待后续批 |
 
 ## 未闭环功能
 

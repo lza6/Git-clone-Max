@@ -25,7 +25,6 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..app.engine import SyncEngine
 from ..app.url_lib import parse_urls
 from ..app.worker import CancelFlag
 from ..db.repo_db import Database
@@ -128,29 +127,17 @@ class MainWindow(QMainWindow):
         self.settings = self.settings_store.load()
         self.progress_path = self.data_dir / "progress.json"
 
-        # 统一调度引擎：并发/去重/进度落盘/取消 全部收敛到 engine（不再各自拼装）
-        self.engine = SyncEngine(
-            self.data_dir / "clones",
-            db=self.db,
-            progress_path=self.progress_path,
-            concurrency=int(self.settings.concurrency),
-            fetch_timeout=self.settings.fetch_timeout,
-            clone_timeout=self.settings.clone_timeout,
-            retries=self.settings.retries,
-            proxy=self.settings.proxy,
-            token=self.settings.token,
-            host_tokens=getattr(self.settings, "host_tokens", None) or {},  # G38-1
-            mirror_prefix=getattr(self.settings, "mirror_prefix", None) or {},  # G38-2
-            mirror_use_presets=bool(getattr(self.settings, "mirror_use_presets", True)),  # G58-2
-            mirror_fallback=bool(getattr(self.settings, "mirror_fallback", True)),        # G58-2
-            mirror_probe_timeout=float(getattr(self.settings, "mirror_probe_timeout", 8) or 8),  # G58-2
-            host_auth_types=getattr(self.settings, "host_auth_types", None) or {},  # G58-5
-            precheck_remote=bool(getattr(self.settings, "precheck_remote", False)),  # G38-3
-            single_branch=bool(getattr(self.settings, "single_branch", False)),  # G38-4
-            force_ipv4=bool(getattr(self.settings, "force_ipv4", False)),  # G38-6
-            lfs_enabled=bool(getattr(self.settings, "lfs_enabled", False)),  # G48-2
-            post_clone_hook=str(getattr(self.settings, "post_clone_hook", "")),  # G48-5
-            ssh_key=str(getattr(self.settings, "ssh_key_path", "")),  # G48-3/G67-16 接线
+        # 统一调度引擎：**构造走 engine_factory（唯一映射点）**。
+        # v9.12.0（Rev7 C1-2）：这里原本手写着 20 行参数列表，与 engine_factory
+        # 的第二份列表慢慢漂移 —— 实测「改设置重启后控件回填正确、引擎仍是默认值」
+        # （host_concurrency 改 11 后引擎仍是 4；time_budget 改 20 分钟后引擎仍是 0）。
+        # 合并成一处后不再有第二份真相；`enable_retry_queue=False` 见该函数文档。
+        from .engine_factory import build_sync_engine
+        self.engine = build_sync_engine(
+            self, self.data_dir / "clones",
+            single_branch=bool(getattr(self.settings, "single_branch", False)),
+            mirror=False,
+            enable_retry_queue=False,
         )
         self.engine.line.connect(self._on_engine_line)
         self.engine.progress.connect(self._on_worker_progress)

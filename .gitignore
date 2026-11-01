@@ -26,6 +26,9 @@ reports/ui-g82*/
 reports/ui-g82*
 # G79 补漏：ui-audit-final 是 G74 轮产物，同样可重建，此前漏在这条规则之外
 reports/ui-audit-final/
+# v9.12.0 起：截图审计产物一律可重建（python scripts/ui_screenshot_audit.py <dir>），不入库
+reports/ui-v9120*/
+reports/ui-v9*/
 
 # 工作流状态文件：按约定不入库（test_g79 白名单守卫会拦）
 workflow_status.md
