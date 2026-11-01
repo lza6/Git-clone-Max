@@ -1,35 +1,29 @@
 # 已测试范围（tested-scope）
 
-> **下次改代码前先读这里**，避免重复跑同一批验证。
-> 时间戳 = 最后一次真实运行；命令可直接复制。
-
----
-
----
-
-## 0. 最新一次真实运行（2026-11-01 · v9.12.0 Rev7 C1 批）
+## 0. 最新一次真实运行（2026-11-02 · v9.12.1 默认直连 / X-4 / X-5）
 
 | 项 | 命令 | 结果（实测） |
 |---|---|---|
 | 质量闸 | `ruff check gcm` / `mypy gcm` | All checks passed / Success（104 源文件） |
-| 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | **Ran 1717 · failures=0 · errors=0 · skipped=4**（149 模块，exit 0） |
-| 覆盖率 | `coverage report --include="gcm/*"` | **TOTAL 83%**（门禁 Windows 81 / POSIX 80） |
-| 文档漂移 | `python scripts/doc_drift_check.py` | **DRIFT 0**（首跑报 18 处真实漂移，已全修） |
-| 度量 | `python scripts/dev_metrics.py [--json]` | 105 文件 / 27,846 行 / 超 800 行 3 / 超 100 行函数 20 / except 621·pass 283 / tests 162 |
-| C1 定向 | `tests.test_c1_wiring`（29）· `test_function_size_budget`（4）· `test_doc_drift_guard`（8） | 全绿 |
-| 源码级 git E2E | `python scripts/e2e_smoke.py` | `E2E_SMOKE_RESULT: PASS` |
-| 真实 CLI 克隆 | `python -m gcm --cli --json --dir <tmp> urls.txt` | exit 0，`action=cloned`，`mirror_used=gh-proxy.com`，非法项 `code=2` |
-| 本地 HTTP API | `--serve 127.0.0.1:8901` + 5 个 GET | 全 200；非回环绑定 exit 2（边界未破） |
-| MCP | `GCM_MCP_ENABLE=1` + initialize/tools-list | `serverInfo 9.12.0`，4 个只读工具；未启用 exit 3 |
-| 截图审计 | `python scripts/ui_screenshot_audit.py reports/ui-v9120` | 34 PNG；新设置两行 `visibleRegion == rect` |
-| 打包 E2E | `PyInstaller` → `build_portable_zip.py` → `health_check.py --json` | exe 41,677,729 B / zip 80,311,847 B · **7/7 项 OK** · exe 真克隆 exit 0 |
-| CI 三平台 | 提交 `6a10fcc` | **7/7 job success**（3×test + slow + fast-smoke + e2e-smoke + perf-baseline） |
-| Release | `publish_release.py --tag v9.12.0` | 已发布；从 Release 独立下载复验 sha256 一致 + 下载版 exe 真跑 exit 0 |
+| 全量快集 | `coverage run --source=gcm scripts/ci_run_fast.py` | **Ran 1737 · 0 失败 · 0 错误 · 4 skipped**（149 模块，exit 0） |
+| 覆盖率 | `coverage report --include="gcm/*"` | **83%**（门禁 Win 81 / POSIX 80） |
+| 文档漂移 | `python scripts/doc_drift_check.py` | **DRIFT 0**（本轮连拦 9 处，已全同步） |
+| i18n 覆盖 | `python scripts/i18n_coverage.py` | **I18N OK**（ZH=EN=566，EN 中仍是中文=0） |
+| 镜像默认 | 真实克隆 ×3 | **3,180 / 3,525 / 2,985 ms，`mirror_used=''`（直连）**；修复前走镜像 24.8s/24.4s |
+| X-4 几何 | `tests/test_ui_compact_visibility` | 9 个尺寸（含 1020×560）全部 `visibleRegion == rect` |
+| 镜像定向 | `tests.test_g58_mirror_failover`（58） | 全绿（含"预设必须为空"钉死断言） |
+| 真实 E2E | `scripts/e2e_smoke.py` / HTTP 5 端点 / MCP | PASS · 全 200 + 非回环 exit 2 · `serverInfo 9.12.1` |
+| 打包 | PyInstaller → zip → health_check | exe 41,703,367 B · zip 80,355,350 B · **7/7 OK** · exe 真克隆 exit 0（直连） |
 
-**本轮教训（勿重犯）**：①**视觉验收抓到了单测抓不到的缺陷** —— 新文案里的 Markdown `**` 在 QLabel 里原样显示成星号，27 条单测全绿；已加 `TestNoMarkdownInUserFacingText`。
-②**不要在跑全量快集期间改代码/改版本号** —— 本轮有两次运行被自己的修改污染（版本 bump 让 `test_g67`/`test_g81` 假红），必须冻结后再跑。
+**本轮教训（勿重犯）**：
+①**默认值必须同机量过**：内置镜像默认开启让克隆慢 8 倍（24.8s vs 3.0s），用户只会说"这软件慢"。
+②**改布局必须全尺寸复测**：X-4 搬完清单行后，1020×560 上动作区又被压成 31/42 —— 只是把裁切挪了地方。
+③**只存图不断言等于没测**：1366×768 的空框躲过 4 轮 UI 迭代。
+④**"键在不在字典里"不够**：还要断言"含中文的键其英文值不得再含中文"，否则占位未翻译等价于回退。
 
 ---
+> 下面是历史记录（v9.12.0 / v9.11.0 及更早），保留供考古；数字以本文件顶部为准。
+
 > 下面是历史记录（v9.11.0 G82 及更早），保留供考古；数字以本文件顶部为准。
 
 | 质量闸 | `ruff check gcm` / `mypy gcm` | All checks passed / Success（**86 文件**） |

@@ -2,6 +2,12 @@
 
 > 「改这块之前先看这里」。按模块记录最近一次重要变更与连带影响。
 
+
+| `gcm/app/mirrors.py` | **`DEFAULT_GITHUB_MIRRORS` 永久清空**（内置国内镜像移除） | v9.12.1 | 默认直连；`mirror_use_presets` 已失效；**用户自定义 `mirror_prefix` 仍生效**；有凭据/全局认证头仍禁用镜像 |
+| `gcm/ui/download_layout.py` | **清单行搬出滚动区**（`build_task_list_row`）+ 动作区纵向策略钉 Fixed | v9.12.1 | 主操作区从 2 行变 3 行；`download_top_scroll` 最小高随窗口变化（180/120/64）；改这块必须跑 `test_ui_compact_visibility` |
+| `gcm/i18n/{zh,en}.py` | 各 +72 键（英文已翻译） | v9.12.1 | 新增 `tr("字面量")` 时跑 `python scripts/i18n_coverage.py` 确认 I18N OK，否则英文模式回退中文 |
+| `scripts/i18n_coverage.py` | **新增**：i18n 三条断言 | v9.12.1 | 与 `scripts/doc_drift_check.py` 并列，属 DoD 的一部分 |
+| `tests/test_ui_compact_visibility.py` | **新增**：主操作区 9 尺寸零裁切 + 变异自检 | v9.12.1 | 新增主操作按钮要加进 `_MAIN_ACTION_WIDGETS` |
 | 模块 | 最近变更 | 版本 | 连带影响 |
 |------|---------|------|---------|
 | `gcm/app/engine.py` | **C1 批 7 处**：删 `_host_concurrency=4` 硬编码；`discard()` 停全定时器；`set_concurrency(by_user=)` 同步天花板并补满待发队列；新增 `batch_start_limit()/_top_up_pending()/_running_count()`；并发记忆恢复不再被 retry_queue 短路；删死常量 `_FLUSH_INTERVAL`；批次收尾 `_maybe_checkpoint_wal()` | v9.12.0 | ①改并发语义前先看 `set_concurrency` docstring（`by_user` 两种语义）；②`_running` 必须与 `_on_worker_done` 严格配对，否则补投停摆/超发；③流控上限现由池上限派生（并发 3 时首批只 3 个） |
