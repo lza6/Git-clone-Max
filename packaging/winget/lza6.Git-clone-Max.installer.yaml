@@ -8,6 +8,6 @@ Commands:
 Installers:
   - Architecture: x64
     InstallerUrl: https://github.com/lza6/Git-clone-Max/releases/download/v9.11.0/Git-clone-Max.exe
-    InstallerSha256: 4a929f92824102823a0d87bfaf0dd0f7c41a519cee7475c426f750305f40199d
+    InstallerSha256: fd3c05ed5fe78bc011f36bbb75b2d2427451ab7f56036feec2d6060b8ad7f79b
 ManifestType: installer
 ManifestVersion: 1.6.0
