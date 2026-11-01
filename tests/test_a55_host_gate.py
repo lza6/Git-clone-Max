@@ -8,6 +8,7 @@ import threading
 import time
 import unittest
 import unittest.mock
+import unittest.mock as mock
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -97,3 +98,91 @@ class TestHostGate(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestGateLeakThroughWorkerRun(unittest.TestCase):
+    """G82-hotfix4 回归守卫：worker.run 全路径票必须回收（_gate_held 缺失曾致死锁）。"""
+
+    def test_gate_value_restored_after_worker_run(self):
+        from gcm.app.worker import CloneWorker
+        from gcm.app.engine import SyncEngine  # noqa: F401 确保模块加载
+        e = SyncEngine(Path(tempfile.mkdtemp()) / "clones", concurrency=2)
+        try:
+            e.set_host_concurrency(1)
+            gate = e._host_gate("github.com")
+            from types import SimpleNamespace
+            spec = _spec("a", "b")
+            res_stub = SimpleNamespace(status=SimpleNamespace(value="failed"),
+                                       spec=spec, message="", detail="",
+                                       action=SimpleNamespace(value="failed"),
+                                       path="", mirror_used="", degrade_path="")
+            worker = CloneWorker.__new__(CloneWorker)
+            # 绕过 Qt __init__：直接装配 run() 需要的最小属性（SimpleNamespace 免 Mock 陷阱）
+            worker.index = 0
+            worker.payload = SimpleNamespace(spec=spec, flag=lambda: False)
+            svc = SimpleNamespace()
+            def _boom(*a, **k):
+                raise RuntimeError("boom")
+            svc.sync = _boom
+            worker.service = svc
+            worker.db = None
+            worker.progress_path = None
+            worker.on_line = None
+            worker.fetch_depth = 0
+            worker.unshallow = False
+            worker.engine = None
+            worker._is_update = False
+            worker._external_line = None
+            worker._host_gate = gate
+            worker.signals = SimpleNamespace(
+                line=SimpleNamespace(emit=lambda *a: None),
+                progress=SimpleNamespace(emit=lambda *a: None),
+                progress_detail=SimpleNamespace(emit=lambda *a: None),
+                result=SimpleNamespace(emit=lambda *a: None),
+                finished=SimpleNamespace(emit=lambda *a: None))
+            try:
+                worker.run()
+            except Exception:
+                pass
+            self.assertEqual(gate._value, 1,
+                             "worker.run 异常路径后票必须归还（泄漏=死锁）")
+        finally:
+            e.shutdown()
+
+    def test_gate_value_restored_success_path(self):
+        """正常路径（sync 成功）也必须归还票。"""
+        from types import SimpleNamespace
+        from gcm.app.worker import CloneWorker
+        e = SyncEngine(Path(tempfile.mkdtemp()) / "clones", concurrency=2)
+        try:
+            e.set_host_concurrency(1)
+            gate = e._host_gate("github.com")
+            spec = _spec("a", "b")
+            worker = CloneWorker.__new__(CloneWorker)
+            worker.index = 0
+            worker.payload = SimpleNamespace(spec=spec, flag=lambda: False)
+            res_stub = SimpleNamespace(status=SimpleNamespace(value="success"),
+                                       spec=spec, message="", detail="",
+                                       action=SimpleNamespace(value="cloned"),
+                                       path="", mirror_used="", degrade_path="")
+            worker.service = SimpleNamespace(sync=lambda *a, **k: res_stub)
+            worker.db = None
+            worker.progress_path = None
+            worker.on_line = None
+            worker.fetch_depth = 0
+            worker.unshallow = False
+            worker.engine = None
+            worker._is_update = False
+            worker._external_line = None
+            worker._host_gate = gate
+            worker.signals = SimpleNamespace(
+                line=SimpleNamespace(emit=lambda *a: None),
+                progress=SimpleNamespace(emit=lambda *a: None),
+                progress_detail=SimpleNamespace(emit=lambda *a: None),
+                result=SimpleNamespace(emit=lambda *a: None),
+                finished=SimpleNamespace(emit=lambda *a: None))
+            worker.run()
+            self.assertEqual(gate._value, 1,
+                             "worker.run 正常路径后票必须归还")
+        finally:
+            e.shutdown()
