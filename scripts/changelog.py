@@ -36,6 +36,12 @@ import pathlib
 import re
 import sys
 
+# CI Windows runner 的 stdout 默认 cp1252 —— 中文 [OK]/[FAIL] 输出直接
+# UnicodeEncodeError（实测 e37b511 三平台红）。脚本入口强制 UTF-8。
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 FRAGMENT_DIR = ROOT / "changelog.d"
 DATA_FILE = ROOT / "gcm" / "_changelog_data.py"

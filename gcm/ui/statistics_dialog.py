@@ -360,7 +360,11 @@ class StatisticsDialog(QDialog):
                 self.finished_with.emit(cards_payload[0], cards_payload[1], storage_text)
 
         # 旧线程若还在跑（快速切换周期），让它自然结束；结果信号连到当次渲染
-        self._agg_thread = _Aggregator(self)
+        # parent=None：QThread 以对话框为 parent 时，对话框在线程运行中被析构
+        # 会硬崩（macOS Abort trap 6 实测，e37b511 CI）。改为无 parent，
+        # 由 self._agg_thread 引用持有 + closeEvent wait 后 deleteLater 收尸。
+        self._agg_thread = _Aggregator(None)
+        self._agg_thread.finished.connect(self._agg_thread.deleteLater)
         self._agg_thread.finished_with.connect(self._on_scorecard_ready)
         self._agg_thread.start()
 

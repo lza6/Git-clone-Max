@@ -26,3 +26,6 @@ reports/ui-g82*/
 reports/ui-g82*
 # G79 补漏：ui-audit-final 是 G74 轮产物，同样可重建，此前漏在这条规则之外
 reports/ui-audit-final/
+
+# 工作流状态文件：按约定不入库（test_g79 白名单守卫会拦）
+workflow_status.md
