@@ -1,7 +1,7 @@
 # 构建与发布依赖（打包 exe / 上传 Release / 静态检查用；运行时不需要）
 # G45-5：锁定精确版本，保证 pip install -r 可复现构建（2026-09-19 实测 venv 版本）
 PyGithub==2.10.0
-pyinstaller==6.22.2
-ruff==0.16.7
-mypy==2.3.1
-coverage==7.16.0
+pyinstaller==6.22.3
+ruff==0.17.3
+mypy==2.4.1
+coverage==7.16.2
