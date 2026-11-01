@@ -48,3 +48,15 @@ python -m ruff check gcm && python -m mypy gcm
 - 永久失败任务进入 `dropped` 审计；重新入队用 `RetryQueue.requeue_dropped(key)`，
   attempts 重置为 0，保留 folder/ref。
 - UI 在 `ui/retry_panel` 的「显示已放弃」视图操作；不提供批量 redrive。
+
+## 铁律补充（v9.12.0 实测）
+
+1. **一个映射只留一处**：新增设置项时，`settings → 消费方` 的映射只允许存在于
+   `ui/engine_factory.build_sync_engine`（引擎类）或对应的单一工厂里。
+   `MainWindow.__init__` 曾经手写第二份参数表，慢慢漂移 —— 结果是「改设置重启后界面回填正确、
+   引擎仍读默认值」。**发现第二份就删掉它**，不要"顺手两边都补一下"。
+2. **新参数必须有生效断言**：`Xxx(arg=非默认值)` → `assert obj.attr == 非默认值`。
+   没有这条，参数随时会被后人在同一函数里覆盖掉而无人发现。
+3. **UI 入口三段 + 重启一段**：控件 → 保存回调 → 落盘 → **新建实例后消费方仍是新值**。
+   只测前三段会漏掉启动期接线（这是本项目真机上抓到过的缺陷）。
+

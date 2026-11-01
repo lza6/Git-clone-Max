@@ -16,6 +16,11 @@
 | **增删 `Settings` 字段** | `TestG69_18NoZombieSettingsFields` + `tests.test_extra`（旧配置兼容） | 快集 |
 | **改版本号 / 发版** | 版本单源 11 项 + `tests.test_g44_url_updater` + `tests.test_extra`（版本时间炸弹高发区） | 快集 + 打包 |
 | **往仓库加文件 / 改 .gitignore** | `tests.test_g79_repo_hygiene`（9 项） | — |
+| **新增/修改设置项** | 三段接线测试（控件 → 落盘 → **消费方属性真的变了**）+ **跨重启闭环**：改值 → 关窗 → 新建 MainWindow → 断言引擎读到新值 | 快集 |
+| **改模块行数 / 超长函数 / 测试文件数 / 技能包数** | `python scripts/doc_drift_check.py` → 必须 `DRIFT 0` | — |
+| **新增 >100 行函数** | `tests.test_function_size_budget`（集合相等，需登记） | — |
+| **改并发 / 调度策略** | `tests.test_c1_wiring`（并发语义）+ `test_g43_engine`（流控）+ `test_g52_engine_integration` | 快集 |
+| **改重投 / host 落库** | `test_g67_closure`（既有契约！）+ `test_g73_dlq` + `test_g52_retry_queue_extra` | 快集 |
 
 ## 判定标签（结论必须带其一）
 - **已验证**：实际运行并观察到结果
@@ -27,6 +32,10 @@
 - 断言必须能失败（不要 `assertTrue(True)`；计数断言要精确）。
 - 守卫必须覆盖**生产路径**（如 Qt 窗口必须 `show()` 后测）。
 - 静态守卫不要被注释/changelog 骗（用 AST）。
+- **跨重启路径**要单独验：`_launch` 走的路径与启动期构造走的路径是两条，只测前者会漏掉后者的接线缺失。
+- **审计脚本自身也要自证**：v9.12.0 的闭环抽查脚本用文本匹配判断「硬编码是否删除」，命中的是**注释里对修复的描述** → 误报 FAIL。改为 AST 后 PASS。
+- **视觉验收不能只截图**：`ui_screenshot_audit.py` 只存图不断言，1366×768 的按钮裁切因此躲过 4 轮迭代。
+  关键控件要加 `visibleRegion == rect` 的几何断言。
 
 ## 外部受限项
 付费 API / 第三方凭证：用 mock 覆盖 success/timeout/rate_limit/malformed/retry_exhausted，

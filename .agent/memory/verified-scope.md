@@ -1,5 +1,31 @@
 # 已验证范围（verified-scope）
 
+## 最新（2026-11-01，v9.12.0 / Rev7 C1 批与终局收口）
+
+| 项 | 命令/方式 | 结果 |
+|----|----------|------|
+| 静态门禁 | `ruff check gcm` / `mypy gcm` | All checks passed / Success（104 files） |
+| 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | **Ran 1728 · 0 失败 · 0 错误 · 4 skipped**（149 模块，exit 0） |
+| 覆盖率 | `coverage report --include="gcm/*"` | **83%**（门禁 Win 81 / POSIX 80） |
+| 文档漂移 | `python scripts/doc_drift_check.py` | **DRIFT 0**（首跑报 18 处真实漂移，已全修） |
+| 度量 | `python scripts/dev_metrics.py` | 105 文件 / 27,918 行 / 超 800 行 3 / 超 100 行函数 20 / except 622·pass 282 / tests 162 |
+| 真实 git E2E | `python scripts/e2e_smoke.py` | `E2E_SMOKE_RESULT: PASS` |
+| 真实 CLI 克隆 | `python -m gcm --cli --json --dir <tmp>` | exit 0 · `action=cloned` · `mirror_used=gh-proxy.com` · 非法项 `code=2` |
+| HTTP API | `--serve 127.0.0.1:8901` + 5 GET | 全 200 · **非回环绑定 exit 2**（安全边界未破） |
+| MCP | `GCM_MCP_ENABLE=1` initialize + tools/list | `serverInfo 9.12.0` · 4 个只读工具 · 未启用 exit 3 |
+| UI 截图 | `scripts/ui_screenshot_audit.py` | 34 PNG · 新增设置两行 `visibleRegion == rect` |
+| 打包 | PyInstaller → portable zip → health_check | exe 41,677,729 B · zip 80,311,847 B · **health 7/7 OK** |
+| 打包 exe E2E | `dist/Git-clone-Max.exe --cli --json` | exit 0 · 真克隆 |
+| CI 三平台 | 提交 `6a10fcc` / `ae07a22` | **7/7 job success**（test×3 + slow + 2×smoke + perf） |
+| Release 复验 | `gh release download v9.12.0` + sha256 + 真跑 | 两份资产逐字节一致 · 下载版 exe exit 0 |
+| 跨重启闭环 | 改设置 → 关窗 → 新建 MainWindow | 引擎读到新值（11 / 1200s）、闸门容量 11、空闲引擎无重投队列 |
+| 计划文档抽查 | AST 25 条 + 运行期 80 例 | **25/25 通过**（首版文本匹配误报 1 条，改 AST 后 PASS） |
+
+**未验证**：Linux/macOS GUI、真机 125%/150% DPI 目检、慢速网络长时间挂机、C2–C6 全部 27 项。
+
+---
+
+
 ## 本轮（2026-10-17，v9.4.5 / v9.4.6）真实验证
 
 | 项 | 命令/方式 | 结果 |

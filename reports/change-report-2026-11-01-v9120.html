@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8"><title>v9.12.0 变更报告（Rev7 C1 批）</title>
+<style>
+body{font-family:"Microsoft YaHei",sans-serif;max-width:980px;margin:24px auto;padding:0 16px;line-height:1.75;color:#1f2937}
+h1{border-bottom:3px solid #2bb673;padding-bottom:8px}
+h2{margin-top:2.2em;color:#1a7f55;border-left:4px solid #2bb673;padding-left:10px}
+h3{color:#374151;margin-top:1.6em}
+table{border-collapse:collapse;width:100%;margin:10px 0;font-size:14px}
+td,th{border:1px solid #d1d5db;padding:6px 10px;text-align:left;vertical-align:top}
+th{background:#f0fdf4}
+code{background:#f3f4f6;padding:1px 5px;border-radius:3px;font-family:Consolas,monospace;font-size:13px}
+pre{background:#1f2937;color:#e5e7eb;padding:12px;border-radius:6px;overflow-x:auto;font-size:13px;line-height:1.5}
+.warn{color:#b45309}.ok{color:#15803d}.bad{color:#b91c1c}
+.box{background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px 14px;margin:12px 0}
+.flow{background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:12px;font-family:Consolas,monospace;font-size:13px;white-space:pre;overflow-x:auto}
+li{margin:4px 0}
+</style></head><body>
+
+<h1>v9.12.0 变更报告 —— Rev7 C1 批：接线与门禁收口</h1>
+<p>日期：2026-11-01 · 分支 <code>main</code> ·
+提交链 <code>1b9022b</code>（Rev7 指南）→ <code>662a09f</code>（C1 主体）→ <code>9ca9995</code>（打包验收）→
+<code>23956a8</code>（独立审查轮修复）→ <code>6a10fcc</code>（tag v9.12.0）→ <code>a5aa2c2</code> / <code>ae07a22</code>（文档收口）<br>
+Release：<a href="https://github.com/lza6/Git-clone-Max/releases/tag/v9.12.0">v9.12.0</a></p>
+
+<h2>1. 上下文（为什么做这一版）</h2>
+<p>上一版 v9.11.0 交付了《下一步改进指南 Rev6》的 A 批（8 个根因）。随后对 Rev6 做了**前提复核**，
+发现其中 <strong>6 条技术前提被实测推翻或显著收窄</strong>（最典型：FTS5 <code>trigram</code> 对中文**两字词零命中**；
+「3000 仓库必须分页」实测首屏只要 23ms）。据此重写了 Rev7 指南，并把路线重排为 C1–C6。</p>
+<p>本版落地 <strong>C1 批（13 项）</strong>。它的主题不是加功能，而是：<strong>把「写好了却接不通」的能力接通，
+并让「文档 / 函数规模 / 动手验证」三类漂移第一次有守卫。</strong></p>
+
+<h2>2. 直觉与关键取舍（决策记录）</h2>
+<table>
+<tr><th>决策</th><th>取舍与理由</th></tr>
+<tr><td><strong>先做 C1 而不是先做 X-4（用户可见缺陷）</strong></td>
+<td>X-4（1366×768 主操作行被裁）确实更"抓眼"，但 C1 全是「一行/十行级」低回归改动，且
+<code>doc_drift_check</code> 必须先落地 —— 否则后面每一批改完代码，文档就再旧一点，最后没人信文档。<strong>先修地基再修立面。</strong></td></tr>
+<tr><td><strong>把 <code>set_concurrency</code> 拆成 <code>by_user</code> 两种语义</strong></td>
+<td>并发有两个来源（用户设置 / 自适应）。若让 setter 无条件同步天花板，自适应减半会把天花板永久压低，"回升"永不可能；
+若完全不同步，用户改 3 又会被顶回 8。<strong>同一个 setter 有两种语义时，必须写进签名，不能靠调用顺序隐式区分。</strong></td></tr>
+<tr><td><strong>拒绝按审查建议的第一版修 C-2</strong></td>
+<td>审查建议「无上一批上下文就拒绝重投」。但全量套件里 2026-10-17 的用例
+<code>test_retry_tick_without_prior_batch_still_works</code> 明确要求「快照为空时不得崩、仍要重投」。
+改为治根：<code>_host_for()</code> 从 URL 解析 host。<strong>按事实执行，不按建议执行。</strong></td></tr>
+<tr><td><strong>本轮不删除任何计划文档</strong></td>
+<td>§10.4 的删除前提是「无未闭环项」。Rev7 还有 C2–C6 共 27 项未做 → 不满足。
+归档目录里的 4 个 manifest 是**证据**，删了等于毁灭证据。</td></tr>
+</table>
+
+<h2>3. 做了什么（按修复面）</h2>
+
+<h3>3.1 用户可感知的能力修复</h3>
+<table>
+<tr><th>问题</th><th>修复前真实行为</th><th>修复</th></tr>
+<tr><td>同平台并发上限不可配</td>
+<td>构造参数被 <code>__init__</code> 末尾一行 <code>self._host_concurrency = 4</code> 无条件覆盖：
+<b>传 9 得 4、传 0（语义=不限流）也是 4</b>；setter 零生产调用点；设置页无控件 → <b>三重失效</b></td>
+<td>删该行 + 新增 <code>ui/settings_network.py</code> 控件；<code>0</code> 现在真等于不限流（<code>_host_gate</code> 返回 None）</td></tr>
+<tr><td>单仓时间预算不可配</td>
+<td><code>time_budget_min</code> 只有读侧，设置页无控件 —— A5-3 花大代价做的降级链预算用户够不到</td>
+<td>补控件（0=不限，上限由 <code>validators.int_range()</code> 单一真相派生）</td></tr>
+<tr><td>改完并发被自适应顶回</td>
+<td>用户把并发 8 改 3，连续 3 次成功后被顶回 8</td>
+<td><code>set_concurrency(by_user=)</code>；用户改 → 同步天花板 + 立刻补满待发队列</td></tr>
+<tr><td>卡死任务只能看不能动</td>
+<td><code>cancel_stuck_tasks()</code> 有实现有单测，<code>gcm/ui/</code> 零引用 → 用户只在日志里看到「疑似卡死」</td>
+<td>失败汇总面板新增一行（默认隐藏）+「取消这些卡死任务」；引擎日志也指向该面板</td></tr>
+<tr><td>替换引擎留下活定时器</td>
+<td><code>discard()</code> 只停 <code>_retry_timer</code>，100ms 心跳与 30s 巡检继续跑 → 旧引擎的过期进度 emit 给新 UI</td>
+<td>补 <code>_stop_buffers()</code> + <code>_stuck_timer.stop()</code></td></tr>
+</table>
+
+<h3>3.2 执行期真机实测抓到的两个「单测全绿也漏掉」的缺陷</h3>
+<div class="box">
+<p><b>① 启动路径漏接线（界面骗人）</b>：<code>MainWindow.__init__</code> 手写着<b>第二份</b> settings→engine 参数表，
+与 <code>engine_factory</code> 漂移，漏了 <code>host_concurrency</code> / <code>time_budget</code> / <code>concurrency_state_path</code>。
+实测：改 11 / 20 分钟 → 关窗重启 → <b>控件回填正确（11/20），引擎仍是 4 / 0s</b>。<br>
+修法（治根）：启动期也走 <code>build_sync_engine</code>，两处合并为<b>唯一映射点</b>（主窗 <code>__init__</code> 252 → 240 行）。
+空转引擎用 <code>enable_retry_queue=False</code> —— 启动时 <code>_last_batch_ctx</code> 为空。</p>
+</div>
+<div class="box">
+<p><b>② 用户可见文案残留 Markdown</b>：新加的限流提示在 <code>QLabel</code> 里把 <code>**</code> 原样渲染成星号
+（「以上两项对**下一个开始的任务**生效」）—— 当时 27 条单测全绿，<b>截图目检才发现</b>。
+修法：改文案 + 新增守卫 <code>TestNoMarkdownInUserFacingText</code>（AST 扫全仓 <code>tr()</code> 字面量），
+顺带修掉一处同类既有残留（克隆后钩子确认框）。</p>
+</div>
+
+<h3>3.3 其余 C1 项</h3>
+<ul>
+<li><b>批次流控上限按池派生</b>（原恒 64 &gt; 池上限 32 → 最多 63 个 worker 各持 Service 在 Qt 队列里干等）；
+补投改为「补满到上限」；新增在跑计数 <code>_running</code>（与 finished 严格配对，取消路径走 <code>count_running=False</code>）。</li>
+<li><b>并发记忆恢复不再被 <code>retry_enabled</code> 短路</b>（原来只写不读：重启又回 32 再被限流）。</li>
+<li><b>批次收尾触发一次 <code>wal_checkpoint(PASSIVE)</code></b>（原来零生产调用点，长挂机 WAL 不收缩）；删除死常量 <code>_FLUSH_INTERVAL</code>。</li>
+<li><b>依赖与 CI 锁版本</b>：<code>requirements.txt</code> 从 <code>PyQt6&gt;=6.6</code> 改为 <code>==6.11.0</code>；
+CI 的 Lint/Type 不再裸装 ruff/mypy（改读 <code>requirements-build.txt</code>）—— 此前「文件里有锁」被误当成「CI 已锁」。</li>
+</ul>
+
+<h3>3.4 新增守卫（这是本版最耐用的部分）</h3>
+<table>
+<tr><th>守卫</th><th>作用</th><th>首跑结果</th></tr>
+<tr><td><code>scripts/doc_drift_check.py</code></td>
+<td>6 类断言：模块行数表（CLAUDE.md + architecture.md，±5 行）· 超 100 行函数数 · 测试文件数（三处）· 技能包数 · 版本号 · basename 歧义</td>
+<td class="bad"><b>报出 18 处真实漂移</b>（service 1768→1899、engine 1169→1516、「14 个超长函数」实为 20、159 个测试文件实为 162、5 个技能包实为 6…）→ 全修后 <span class="ok">DRIFT 0</span></td></tr>
+<tr><td><code>tests/test_function_size_budget.py</code></td>
+<td>&gt;100 行函数<b>集合相等</b>（基线 20，逐项登记）—— 拦「又多了第 21 个」，也拦「偷偷拆掉却不更新文档」</td><td class="ok">4 例绿（含阈值降到 3 的反向自检）</td></tr>
+<tr><td><code>tests/test_doc_drift_guard.py</code></td>
+<td>给上面那个脚本做<b>反向自检</b>：6 个检查各自「把文档改坏必须报错」</td><td class="ok">8 例绿，<b>零 skip</b></td></tr>
+<tr><td><code>scripts/dev_metrics.py</code></td>
+<td>唯一度量口径（<code>--json</code> 供 CI/守卫复用）</td><td class="ok">与文档数字逐项对得上</td></tr>
+</table>
+
+<h2>4. 架构 / 链路变化</h2>
+<div class="flow">settings.json
+   │
+   ├─→ ui/settings_network.py（新控件：host_concurrency / time_budget_min）
+   │        │ valueChanged
+   │        └─→ ui/settings_actions.save_host_concurrency / save_time_budget_min
+   │                 ├─ _save_field()  → 落盘（跨进程锁）
+   │                 └─ 运行中引擎同步（set_host_concurrency / engine.time_budget）
+   │
+   └─→ ui/engine_factory.build_sync_engine()   ★ 现在是唯一映射点
+            ├─ 启动期：MainWindow.__init__ 也走它（原手写第二份表已删）
+            │     └─ enable_retry_queue=False（空闲引擎不挂重投队列）
+            └─ 批次期：_launch 走它（默认 True）
+
+engine.launch()
+   └─ start_limit = batch_start_limit() = min(硬上限64, 池上限)
+        ├─ 前 start_limit 个 → _start_worker（_running += 1，取 per-host 闸门）
+        └─ 其余 → _pending_queue；每完成一个 _replenish() → _top_up_pending()（补满到上限）
+
+engine._host_for(spec)   ★ 新增（审查 C-2 治根）
+   = 本批 host_by_key → 从 url_https 解析（url_lib.host_of）→ 才回落 "github.com"
+   被 _start_worker（闸门/事件）与 _on_result（落库 host）共用
+
+批次收尾 (_on_worker_done → _pending==0)
+   ├─ flush_all_buffers / flush_progress
+   ├─ _stop_buffers + _stuck_timer.stop
+   ├─ _run_progress_gc
+   └─ _maybe_checkpoint_wal()   ★ 新增（WAL PASSIVE）</div>
+
+<h2>5. 验证证据（全部本机真实执行）</h2>
+<table>
+<tr><th>项</th><th>命令</th><th>结果</th></tr>
+<tr><td>静态门禁</td><td><code>ruff check gcm</code> / <code>mypy gcm</code></td><td class="ok">All checks passed / Success (104 files)</td></tr>
+<tr><td>快集全量</td><td><code>coverage run --source=gcm scripts/ci_run_fast.py</code></td><td class="ok"><b>Ran 1728 · failures=0 · errors=0 · skipped=4</b>（149 模块，exit 0）</td></tr>
+<tr><td>覆盖率</td><td><code>coverage report --include="gcm/*"</code></td><td class="ok">83%（门禁 Win 81 / POSIX 80）</td></tr>
+<tr><td>文档漂移</td><td><code>python scripts/doc_drift_check.py</code></td><td class="ok">DRIFT 0</td></tr>
+<tr><td>真实 git E2E</td><td><code>python scripts/e2e_smoke.py</code></td><td class="ok">E2E_SMOKE_RESULT: PASS（clone/ff/冲突保留/abort/HEAD）</td></tr>
+<tr><td>真实 CLI 克隆</td><td><code>python -m gcm --cli --json --dir &lt;tmp&gt; urls.txt</code></td><td class="ok">exit 0 · action=cloned · mirror_used=gh-proxy.com · 非法项 code=2</td></tr>
+<tr><td>HTTP API</td><td><code>--serve 127.0.0.1:8901</code> + 5 GET</td><td class="ok">全 200；<b>非回环绑定 exit 2</b>（安全边界未破）</td></tr>
+<tr><td>MCP</td><td><code>GCM_MCP_ENABLE=1</code> initialize/tools-list</td><td class="ok">serverInfo 9.12.0 · 4 个只读工具 · 未启用 exit 3</td></tr>
+<tr><td>UI 截图</td><td><code>scripts/ui_screenshot_audit.py</code></td><td class="ok">34 PNG；新增两行 <code>visibleRegion == rect</code></td></tr>
+<tr><td>打包</td><td>PyInstaller → portable zip → health_check</td><td class="ok">exe 41,677,729 B · zip 80,311,847 B · <b>health 7/7 OK</b>（version==archive==9.12.0, started_ok）</td></tr>
+<tr><td>打包 exe E2E</td><td><code>dist/Git-clone-Max.exe --cli --json</code></td><td class="ok">exit 0 · 真克隆 · action=cloned</td></tr>
+<tr><td><b>CI 三平台</b></td><td>提交 <code>6a10fcc</code> / <code>ae07a22</code></td><td class="ok"><b>7/7 job success</b>（test×3 + slow + fast-smoke + e2e-smoke + perf-baseline）</td></tr>
+<tr><td><b>发布复验</b></td><td><code>gh release download v9.12.0</code> + 校验 + 真跑</td><td class="ok">两份资产 sha256 与本地<b>逐字节一致</b>；下载版 exe 真跑 exit 0</td></tr>
+<tr><td>计划文档审计</td><td>AST 抽查 25 条 + 运行期 80 例</td><td class="ok">25/25 通过（首版文本匹配误报 1 条，改 AST 后 PASS）</td></tr>
+</table>
+
+<h2>6. 独立审查（1 轮，Request Changes → 全修）</h2>
+<table>
+<tr><th>级别</th><th>发现</th><th>处置</th></tr>
+<tr><td class="bad"><b>阻塞 C-1</b></td>
+<td>并发记忆恢复<b>无下限/无失败率门控/无 UI 反馈</b>：一次抖动降到 1 → 写盘 → 之后每次构造都恢复 1；
+而每批新建引擎、成功连击随批清零 → 「一次 1~2 个仓库」的用户<b>永久钉在 1 并发</b>，界面却显示正常。<b>这是本版开启读侧时引入的</b></td>
+<td>三道守卫：①只在 <code>fail_rate&gt;0</code> 时恢复；②恢复值不低于天花板一半；③<code>applog.warn</code> + <code>adapt_changed</code> 可观测。6 例守卫</td></tr>
+<tr><td class="bad"><b>阻塞 C-2</b></td>
+<td>重投/启动期自动重投时 <code>_host_by_key</code> 为空，原 <code>or "github.com"</code> 会把 gitlab/gitee 仓库落库成 github.com，污染 <code>UNIQUE(owner,repo,host)</code></td>
+<td>审查建议的第一版（无上下文拒绝重投）<b>被既有测试打回</b> → 改治根：<code>_host_for()</code>（登记表→URL 解析→回落）。3 例 + 33 例回归</td></tr>
+<tr><td>Required ×4</td>
+<td>①<code>test_g43_engine</code> 的补投断言近乎恒真（mock 掉了递增 <code>_running</code> 的 <code>_start_worker</code>）②<code>test_doc_drift_guard</code> 两处 <code>skipTest</code>（恰在行数真变了时静默跳过）③两处静默 except ④<code>_running</code> 未初始化</td>
+<td>全部修：fake 同步递增 + 恢复精确断言；skip→fail；补 warn；初始化 + <code>count_running=</code></td></tr>
+<tr><td>Suggestion</td><td>8 条</td><td>采纳 6 条（含 <code>doc_drift_check</code> 在 cp936 终端打印 ✓/✗ 会崩 → reconfigure utf-8）；2 条登记为已知边界</td></tr>
+</table>
+
+<h2>7. 风险与回滚</h2>
+<ul>
+<li class="warn"><b>回滚点</b>：tag <code>v9.11.0</code>。用户侧覆盖回旧 exe 即可（<code>settings.json</code> / <code>repos.db</code> 向前兼容：本版只新增两个有默认值的字段，<b>无迁移</b>）。</li>
+<li class="warn"><b>代码侧回滚</b>：<code>git revert ae07a22 a5aa2c2 6a10fcc 23956a8 9ca9995 662a09f</code> 后重新构建。</li>
+<li class="warn"><b>Release 撤销</b>：<code>gh release delete v9.12.0</code>，不影响已下载用户的本地数据。</li>
+<li class="warn"><b>行为变更</b>（有意，需知情）：①首批入队上限从恒 64 变为「= 并发数」（并发 8 时首批 8 个，其余排队补投）；②用户改并发会立刻生效并重算天花板；③批次收尾多一次 WAL PASSIVE 收缩（不阻塞读者）。</li>
+</ul>
+
+<h2>8. 已知限制</h2>
+<ul>
+<li class="bad"><b>C2–C6 共 27 项未做</b>。C2 第一项仍是 <b>X-4</b>：1366×768 笔记本上「保存清单/载入/导入 Star」只露 10px（实测 <code>visibleRegion</code> 86×10 / 86×42；1080p@150% 下完全不可见）。</li>
+<li>英文模式仍有 <b>58 个 <code>tr()</code> 键</b>回退中文（i18n 覆盖率守卫未做，属 X-5 剩余部分）。</li>
+<li>Linux / macOS GUI、真机 125% / 150% DPI 目检、慢速网络长时间挂机：<b>未验证</b>（本机仅 Windows）。</li>
+<li>本地只跑快集；慢集由 CI <code>slow</code> job 覆盖（本轮 CI 绿已包含）。</li>
+<li>仓库根目录有一个<b>未跟踪</b>的 <code>参考的结果计划指南.md</code>，属并行会话的工作状态文件（其自身声明「禁止提交」），本会话未处置。</li>
+</ul>
+
+<h2>9. 底部测验（自测 8/8 通过）</h2>
+<ol>
+<li><b>选择：</b>为什么删掉 <code>engine.py</code> 里那行 <code>self._host_concurrency = 4</code> 就能让设置生效？<br>
+<span class="ok">答案：</span>构造参数在 <code>:121</code> 已按传入值赋过一次，<code>:192</code> 那行是无条件二次赋值把它覆盖了；
+删掉后参数才存活。同时必须补设置页控件，否则「参数活了但没人能改」仍是伪装。</li>
+
+<li><b>判断：</b><code>set_concurrency(n)</code> 现在有两种语义（<code>by_user=True/False</code>）。如果让 <code>_adapt_result</code> 也用 <code>by_user=True</code> 会怎样？<br>
+<span class="ok">答案：</span>网络抖动 → 并发减半 → 天花板 <code>_adapt_max</code> 被永久压低 → 「网络恢复后回升」永远不可能发生。所以内部调整必须 <code>by_user=False</code>。</li>
+
+<li><b>简答：</b>为什么启动期的空闲引擎要 <code>enable_retry_queue=False</code>？<br>
+<span class="ok">答案：</span>自动重投依赖上一批的 <code>_last_batch_ctx</code>（host_by_key/fetch_depth/mirror）。启动时它为空 ——
+虽然本版已用 <code>_host_for()</code> 消掉了 host 污染，但空闲引擎也没有批次语义（busy 状态、事件总线都未接），
+挂上队列会在用户没点「开始」时自起批次。</li>
+
+<li><b>选择：</b>并发记忆恢复为什么要「不低于天花板一半」？<br>
+<span class="ok">答案：</span>否则一次抖动降到 1 会被写盘并永久记住；而 <code>_launch</code> 每批新建引擎、成功连击随批清零，
+用户按「一次 1~2 个仓库」用时永远攒不满 3 次 → 永久单线程。<b>只被读了一半的状态文件，比完全不读更危险。</b></li>
+
+<li><b>判断：</b>审查建议「无 <code>_last_batch_ctx</code> 就拒绝重投」，为什么最后没采纳？<br>
+<span class="ok">答案：</span>它指出的<b>事实</b>（host 会被写错）成立，但<b>建议的修法</b>会关掉既有契约
+<code>test_g67_closure.test_retry_tick_without_prior_batch_still_works</code>（首次启动就有待重投队列是真实场景）。
+改为治根：host 从 URL 解析。</li>
+
+<li><b>选择：</b><code>doc_drift_check.py</code> 为什么对模块行数用 ±5 容差，而对「超 100 行函数数」用精确相等？<br>
+<span class="ok">答案：</span>行数每次编辑都会变，精确相等会让守卫天天红、进而被人关掉；函数<b>集合</b>只在新增长函数或拆分时变，
+精确相等才有意义（也才能拦住"偷偷拆掉却不更新文档"）。</li>
+
+<li><b>判断：</b>本轮 Rev7 计划文档可以删除吗？<br>
+<span class="ok">答案：</span>不可以。§10.4 的删除前提是「文档内所有任务已闭环/已过时/不适用」。Rev7 还有 C2–C6 共 27 项未做 →
+保留是规则判决。归档目录里的 4 个 <code>archive-manifest.md</code> 是**证据**，删除等于毁灭证据。</li>
+
+<li><b>简答：</b>本次审计脚本自己出过一次什么错？说明了什么？<br>
+<span class="ok">答案：</span>首版用文本匹配 <code>"self._host_concurrency = 4" not in src</code> 判定，命中了**注释里对修复的描述** → 误报 FAIL；
+改 AST（只看真实 <code>ast.Assign</code>）后 PASS。说明项目 D-05「守卫要用 AST 不用文本匹配」这条教训<b>对审计脚本自身同样适用</b>。</li>
+</ol>
+<p><b>通过标准</b>：≥7/8（87.5%）。<span class="ok"><b>自测结果：8/8（100%）</b> —— 逐题对照本报告 §3–§6 与
+<code>docs/验证记录-2026-11-01-v9.12.0.md</code> §8 核对，无猜测项。</span></p>
+
+<hr>
+<p style="color:#6b7280;font-size:13px">相关文档：
+<a href="../docs/验证记录-2026-11-01-v9.12.0.md">验证记录 v9.12.0</a> ·
+<a href="../docs/计划文档审计-2026-11-01.md">计划文档审计</a> ·
+<a href="../docs/plans/下一步改进指南.md">下一步改进指南 Rev7</a> ·
+<a href="../evidence/C1.json">evidence/C1.json</a></p>
+</body></html>
