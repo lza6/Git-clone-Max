@@ -1,27 +1,31 @@
 # 已测试范围（tested-scope）
 
-## 0. 最新一次真实运行（2026-11-02 · v9.13.0 C2 交互闭环 + C3-3）
+## 0. 最新一次真实运行（2026-11-02 · v9.14.0 C2 收官 + C3 5/6）
 
 | 项 | 命令 | 结果（实测） |
 |---|---|---|
-| 质量闸 | `ruff check gcm` / `mypy gcm` | All checks passed / Success（108 源文件） |
-| 全量快集 | `coverage run --source=gcm scripts/ci_run_fast.py` | **Ran 1764 · 0 失败 · 0 错误 · 4 skipped**（exit 0） |
-| 覆盖率 | `coverage report --include="gcm/*"` | **83%**（门禁 Win 81 / POSIX 80） |
-| 文档漂移 / i18n | `doc_drift_check.py` / `i18n_coverage.py` | **DRIFT 0** / **I18N OK**（ZH=EN=578） |
-| C2 定向 | `tests.test_c2_ux`（24）· `tests.test_c3_data`（3） | 全绿 |
-| 启动脚本 | `cmd /c scripts\启动Git-clone-Max.bat` | 检测 Python 3.14.3 → 单实例锁生效 → exit 0 |
-| 打包 | PyInstaller → zip → health_check | exe 41,754,631 B · zip 80,437,807 B · **7/7 OK** |
-| 打包 exe E2E | `dist/Git-clone-Max.exe --cli --json` | exit 0 · cloned · `mirror_used=''`（直连） |
-| CI 三平台 | 提交 `7614fd4` | **7/7 job success** |
-| Release 复验 | `gh release download v9.13.0` + sha256 + 真跑 | 逐字节一致 · 下载版 exit 0 |
+| 质量闸 | `ruff check gcm` / `mypy gcm` | All checks passed / Success（**111** 源文件） |
+| 全量快集 | `coverage run --source=gcm scripts/ci_run_fast.py` | **Ran 1777 · 0 失败 · 0 错误 · 4 skipped** |
+| 覆盖率 | `coverage report --include="gcm/*"` | **83%** |
+| 文档漂移（7 类） / i18n | `doc_drift_check.py` / `i18n_coverage.py` | **DRIFT 0** / **I18N OK**（ZH=EN=578） |
+| except / pass-only | AST 统计 | **650 / 282**（pass-only 未涨） |
+| 规模基线 | `python scripts/bench_scale.py` | 3000 仓：list_repos 14.2ms · 分页 0.7ms · 搜索 3.9ms · 模型 4.1ms · 首帧 0.14ms · dir_stats 命中 3.9ms；10 万行 prune 238ms |
+| 泄漏巡检 | `python scripts/mem_soak.py --rounds 500/2000` | 276.4 KiB / 279.7 KiB → **有界，不随轮数增长** |
+| C2/C3 定向 | `tests.test_c2_ux`（29）· `tests.test_c3_data`（10） | 全绿 |
+| 打包 | PyInstaller → zip → health_check | exe 41,788,755 B · zip 80,494,777 B · **7/7 OK** |
+| 打包 exe E2E | `dist/Git-clone-Max.exe --cli --json` | exit 0 · cloned · 直连 |
+| CI 三平台 | 提交 `3f19581` | **7/7 job success** |
+| Release 复验 | `gh release download v9.14.0` + sha256 + 真跑 | 逐字节一致 · 下载版 exit 0 |
 
 **本轮教训（勿重犯）**：
-①**「猜时间」的定时器一定会被现实打脸**：600ms 猜目录大小 → 大库永久空白。用「完成即 emit」。
-②**改布局/搬家要全尺寸复测**（上一轮 X-4 的教训，本轮又验证一次）。
-③**单测抓不到字形**：`⏸ 🎉 📦 ⚠ ✗` 六处 tofu 全靠截图目检；现已加 `TestNoTofuGlyphsInUi` 守卫。
-④**新增代码会把文件顶过 800 行**：本轮 `repo_db` 曾到 814 → 按范式抽模块（不是登记豁免）。
+①**加代码会把文件顶过 800 行**（本轮 `repo_db` 到 807）→ 按范式抽模块，**不要登记豁免**。
+②**「文档里的版本/结构数字」必须进守卫**：`data-model.md` 声称 schema=4 而实际已 6，两轮没人发现。
+③**别把版本沿革堆在首段一行**（每次发版都撞版本守卫）——沿革写在各自条目里。
+④**契约变更要连测试一起改**（`add_sync_history` 不再自动清理 → 既有用例按新语义改写 + 加对照组）。
 
 ---
+> 下面是历史记录（v9.13.0 / v9.12.1 / v9.12.0 / v9.11.0 及更早），保留供考古；数字以本文件顶部为准。
+
 > 下面是历史记录（v9.12.1 / v9.12.0 / v9.11.0 及更早），保留供考古；数字以本文件顶部为准。
 
 > 下面是历史记录（v9.12.0 / v9.11.0 及更早），保留供考古；数字以本文件顶部为准。
