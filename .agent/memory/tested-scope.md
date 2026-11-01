@@ -1,27 +1,29 @@
 # 已测试范围（tested-scope）
 
-## 0. 最新一次真实运行（2026-11-02 · v9.12.1 默认直连 / X-4 / X-5）
+## 0. 最新一次真实运行（2026-11-02 · v9.13.0 C2 交互闭环 + C3-3）
 
 | 项 | 命令 | 结果（实测） |
 |---|---|---|
-| 质量闸 | `ruff check gcm` / `mypy gcm` | All checks passed / Success（104 源文件） |
-| 全量快集 | `coverage run --source=gcm scripts/ci_run_fast.py` | **Ran 1737 · 0 失败 · 0 错误 · 4 skipped**（149 模块，exit 0） |
+| 质量闸 | `ruff check gcm` / `mypy gcm` | All checks passed / Success（108 源文件） |
+| 全量快集 | `coverage run --source=gcm scripts/ci_run_fast.py` | **Ran 1764 · 0 失败 · 0 错误 · 4 skipped**（exit 0） |
 | 覆盖率 | `coverage report --include="gcm/*"` | **83%**（门禁 Win 81 / POSIX 80） |
-| 文档漂移 | `python scripts/doc_drift_check.py` | **DRIFT 0**（本轮连拦 9 处，已全同步） |
-| i18n 覆盖 | `python scripts/i18n_coverage.py` | **I18N OK**（ZH=EN=566，EN 中仍是中文=0） |
-| 镜像默认 | 真实克隆 ×3 | **3,180 / 3,525 / 2,985 ms，`mirror_used=''`（直连）**；修复前走镜像 24.8s/24.4s |
-| X-4 几何 | `tests/test_ui_compact_visibility` | 9 个尺寸（含 1020×560）全部 `visibleRegion == rect` |
-| 镜像定向 | `tests.test_g58_mirror_failover`（58） | 全绿（含"预设必须为空"钉死断言） |
-| 真实 E2E | `scripts/e2e_smoke.py` / HTTP 5 端点 / MCP | PASS · 全 200 + 非回环 exit 2 · `serverInfo 9.12.1` |
-| 打包 | PyInstaller → zip → health_check | exe 41,703,367 B · zip 80,355,350 B · **7/7 OK** · exe 真克隆 exit 0（直连） |
+| 文档漂移 / i18n | `doc_drift_check.py` / `i18n_coverage.py` | **DRIFT 0** / **I18N OK**（ZH=EN=578） |
+| C2 定向 | `tests.test_c2_ux`（24）· `tests.test_c3_data`（3） | 全绿 |
+| 启动脚本 | `cmd /c scripts\启动Git-clone-Max.bat` | 检测 Python 3.14.3 → 单实例锁生效 → exit 0 |
+| 打包 | PyInstaller → zip → health_check | exe 41,754,631 B · zip 80,437,807 B · **7/7 OK** |
+| 打包 exe E2E | `dist/Git-clone-Max.exe --cli --json` | exit 0 · cloned · `mirror_used=''`（直连） |
+| CI 三平台 | 提交 `7614fd4` | **7/7 job success** |
+| Release 复验 | `gh release download v9.13.0` + sha256 + 真跑 | 逐字节一致 · 下载版 exit 0 |
 
 **本轮教训（勿重犯）**：
-①**默认值必须同机量过**：内置镜像默认开启让克隆慢 8 倍（24.8s vs 3.0s），用户只会说"这软件慢"。
-②**改布局必须全尺寸复测**：X-4 搬完清单行后，1020×560 上动作区又被压成 31/42 —— 只是把裁切挪了地方。
-③**只存图不断言等于没测**：1366×768 的空框躲过 4 轮 UI 迭代。
-④**"键在不在字典里"不够**：还要断言"含中文的键其英文值不得再含中文"，否则占位未翻译等价于回退。
+①**「猜时间」的定时器一定会被现实打脸**：600ms 猜目录大小 → 大库永久空白。用「完成即 emit」。
+②**改布局/搬家要全尺寸复测**（上一轮 X-4 的教训，本轮又验证一次）。
+③**单测抓不到字形**：`⏸ 🎉 📦 ⚠ ✗` 六处 tofu 全靠截图目检；现已加 `TestNoTofuGlyphsInUi` 守卫。
+④**新增代码会把文件顶过 800 行**：本轮 `repo_db` 曾到 814 → 按范式抽模块（不是登记豁免）。
 
 ---
+> 下面是历史记录（v9.12.1 / v9.12.0 / v9.11.0 及更早），保留供考古；数字以本文件顶部为准。
+
 > 下面是历史记录（v9.12.0 / v9.11.0 及更早），保留供考古；数字以本文件顶部为准。
 
 > 下面是历史记录（v9.11.0 G82 及更早），保留供考古；数字以本文件顶部为准。
