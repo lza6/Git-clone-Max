@@ -492,7 +492,10 @@ class ManagePanel(QWidget):
         读到的就是空列表，且**不再重试** → 大小列永久空白（用户以为功能坏了）。
         现在改为线程算完 `emit`，由 Qt 队列切回 GUI 线程（真正的"完成即回填"）。
 
-        另加 TTL 缓存：同一目录 5 分钟内不重复递归 `scandir`（原来每次刷新都全量重算）。
+        C3-1（Rev7 §B3-5）：两级缓存 —— ①**库内** `dir_stats` 表（跨重启，默认 30 分钟）；
+        ②进程内 `_size_cache`（5 分钟）。**DB 的读与写都只在 GUI 线程做**（单写者 ADR）：
+        进函数时批量读缓存，出结果后在 `_apply_sizes` 里批量写回；工作线程只做纯
+        文件系统遍历（`Database.dir_size` 是静态方法，不碰连接）。
         """
         try:
             if getattr(self, "_size_thread", None) is not None and \
@@ -507,21 +510,39 @@ class ManagePanel(QWidget):
             cache = self._size_cache
             ttl = self._SIZE_TTL_SEC
             now = time.time()
+            # GUI 线程批量读库内缓存（一次查询，不在工作线程碰 DB）
+            db_hits: dict[str, int] = {}
+            reader = getattr(db, "get_dir_sizes", None)
+            if callable(reader):
+                try:
+                    db_hits = dict(reader([p for _rid, p in targets]) or {})
+                except Exception as e:   # noqa: BLE001 —— 缓存读失败按未命中处理
+                    from ..app.applog import warn as _warn
+                    _warn(f"读取目录大小缓存失败（按未命中处理）：{e}")
+                    db_hits = {}
 
             def _run():
-                out = []
+                out = []                      # (rid, path, 显示文本, 新算出的字节数或 None)
                 for rid, path in targets:
                     hit = cache.get(path)
                     if hit is not None and (now - hit[0]) < ttl:
-                        out.append((rid, hit[1]))
+                        out.append((rid, path, hit[1], None))
                         continue
+                    if path in db_hits:
+                        text = self._human_size(db_hits[path])
+                        cache[path] = (now, text)      # 回填进程内缓存
+                        out.append((rid, path, text, None))
+                        continue
+                    size = None
                     try:
-                        text = self._human_size(db.dir_size(path))
+                        size = int(db.dir_size(path))
+                        text = self._human_size(size)
                     except Exception:      # noqa: BLE001 —— 单目录失败只留空，不影响其它行
                         text = ""
+                        size = None
                     else:
                         cache[path] = (now, text)
-                    out.append((rid, text))
+                    out.append((rid, path, text, size))
                 try:
                     self.sizes_ready.emit(out)   # 跨线程 emit → 排队回 GUI 线程槽
                 except RuntimeError:
@@ -534,13 +555,33 @@ class ManagePanel(QWidget):
             pass
 
     def _apply_sizes(self, rows) -> None:
-        """GUI 线程：把线程算好的大小写进模型（`sizes_ready` 的槽）。"""
+        """GUI 线程：把线程算好的大小写进模型（`sizes_ready` 的槽），并批量写回库内缓存。"""
+        fresh: list[tuple[str, int]] = []
         try:
-            for rid, text in rows or []:
+            for row in rows or []:
+                row = list(row)
+                # 兼容两种形状：2 元组 (rid, text)（旧调用/测试）与
+                # 4 元组 (rid, path, text, size)（本轮起，带缓存写回）
+                if len(row) >= 4:
+                    rid, path, text, size = row[0], row[1], row[2], row[3]
+                elif len(row) == 2:
+                    rid, path, text, size = row[0], None, row[1], None
+                else:                      # pragma: no cover - 防御
+                    continue
                 self.manage_model.set_size(rid, text)
+                if path and size is not None:
+                    fresh.append((str(path), int(size)))
         except Exception as e:      # noqa: BLE001 —— 回填失败只留痕，不打断 UI
             from ..app.applog import warn as _warn
             _warn(f"仓库大小回填失败（列可能为空）：{e}")
+        if fresh:
+            writer = getattr(getattr(self.owner, "db", None), "set_dir_sizes", None)
+            if callable(writer):
+                try:
+                    writer(fresh)   # GUI 线程写库（单写者 ADR）
+                except Exception as e:   # noqa: BLE001 —— 写缓存失败不影响显示
+                    from ..app.applog import warn as _warn
+                    _warn(f"写回目录大小缓存失败：{e}")
 
     def _apply_pending_sizes(self):
         """兼容旧名（历史测试/外部脚本可能引用）—— 回放 `_pending_sizes`。"""

@@ -29,7 +29,7 @@ SQLite，文件 `data/repos.db`，WAL 模式。
 | 锁等待 | `PRAGMA busy_timeout=30000` | `_BUSY_TIMEOUT_MS` |
 | 外键 | `PRAGMA foreign_keys=ON` | `Database.__init__` |
 | 连接 | `check_same_thread=False` + 进程内 `RLock`（**单写者**：DB 写入只在引擎主线程） | `Database.__init__` |
-| schema 版本 | `PRAGMA user_version` = **4**（A-2-1 修正：v4 起 `sync_queue` 表由 `migrate_to_v4` 创建，DDL 见 `docs/B7-3-持久队列设计.md` §2） | `_SCHEMA_VERSION` |
+| schema 版本 | `PRAGMA user_version` = **6**（v4 `sync_queue` / v5 `repos.profile_json` / v6 `dir_stats`；后两者分别由 `db/repo_profile.py`、`db/dir_stats.py` 实现——`repo_db.py` 贴着 800 行红线，迁移实现一律落新模块） | `_SCHEMA_VERSION` |
 
 ### 1.1 迁移链（`_migrate`，幂等）
 
@@ -39,6 +39,9 @@ SQLite，文件 `data/repos.db`，WAL 模式。
 | 1 | `repos` + `tags` / `favorite` / `excluded` | G06-6 |
 | 2 | `repos` + `note`（每仓库备注） | G37-6 |
 | 3 | `repos` + `ssh_key`（该仓库指定 SSH 私钥） | G48-3 |
+| 4 | 新增 `sync_queue` 表（定时同步队列） | G80-B7-3（`db/queue_db.migrate_to_v4`） |
+| 5 | `repos` + `profile_json`（零 LLM 仓库画像） | G81（`db/repo_profile.migrate_to_v5`） |
+| 6 | 新增 `dir_stats` 表（目录大小缓存，默认 30 分钟 TTL） | C3-1（`db/dir_stats.migrate_to_v6`） |
 
 > 每条迁移先 `PRAGMA table_info` 判列存在（幂等），最后统一 `PRAGMA user_version=N` + commit。
 > 新增列请递增 `_SCHEMA_VERSION` **并**补一段 `if v < N:`，不要直接改 `_SCHEMA` 里的 `CREATE TABLE`
@@ -159,3 +162,18 @@ SQLite，文件 `data/repos.db`，WAL 模式。
 - `dropped`（G73）：同样保留 `url_https/display/folder_name/local_path/ref/is_local`，
   以便「重新入队」不丢 @tag；重新入队时 attempts 重置为 0、`next_retry_at=0`。
 - `path=None` 时是**纯内存队列**（测试/临时用），结构相同但不出现在磁盘。
+
+### 1.6 `dir_stats`（v6 / C3-1）
+
+| 列 | 类型 | 说明 |
+|----|------|------|
+| `path` | TEXT PRIMARY KEY | 仓库本地目录绝对路径 |
+| `size` | INTEGER NOT NULL | 该目录总字节数（`Database.dir_size` 递归结果） |
+| `updated_at` | REAL NOT NULL | 计算时刻（Unix 秒）。默认 TTL 1800s，`get_dir_sizes(max_age_sec=…)` 可覆盖 |
+
+**为什么落库**：`dir_size()` 是递归 `scandir`（实测 15 万文件 484ms），只放内存的话
+每次重开应用都要把几百个仓库重新 stat 一遍。
+
+**单写者铁律**：本表的读与写**只在 GUI/引擎主线程**发生 —— `manage_panel` 的目录统计
+线程只做纯文件系统遍历（`Database.dir_size` 是静态方法，不碰连接），算完的结果由
+GUI 线程一次性批量写回。**不要**为了让统计"更快"就在工作线程里拿 `Database._conn`。

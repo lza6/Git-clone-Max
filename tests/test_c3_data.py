@@ -102,3 +102,87 @@ class TestWriteTxnRollback(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDirStatsCache(unittest.TestCase):
+    """C3-1：目录大小落库缓存（schema v6）+ 批量读写 + TTL + 清空。"""
+
+    def _db(self) -> Database:
+        return Database(Path(tempfile.mkdtemp()) / "repos.db")
+
+    def test_schema_is_v6(self):
+        db = self._db()
+        try:
+            v = db._conn.execute("PRAGMA user_version").fetchone()[0]
+            self.assertEqual(v, 6, "C3-1 需要 v6（dir_stats 表）")
+            row = db._conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='dir_stats'"
+            ).fetchone()
+            self.assertIsNotNone(row, "dir_stats 表必须由迁移创建")
+        finally:
+            db.close()
+
+    def test_roundtrip_and_ttl(self):
+        db = self._db()
+        try:
+            self.assertEqual(db.set_dir_sizes([("/a", 100), ("/b", 200)]), 2)
+            self.assertEqual(db.get_dir_sizes(["/a", "/b", "/missing"]),
+                             {"/a": 100, "/b": 200})
+            self.assertEqual(db.get_dir_sizes(["/a"], max_age_sec=0), {},
+                             "TTL=0 时必须全部视为过期")
+        finally:
+            db.close()
+
+    def test_clear(self):
+        db = self._db()
+        try:
+            db.set_dir_sizes([("/a", 1)])
+            self.assertEqual(db.clear_dir_sizes(), 1)
+            self.assertEqual(db.get_dir_sizes(["/a"]), {})
+        finally:
+            db.close()
+
+    def test_upsert_updates_existing(self):
+        db = self._db()
+        try:
+            db.set_dir_sizes([("/a", 1)])
+            db.set_dir_sizes([("/a", 2)])
+            self.assertEqual(db.get_dir_sizes(["/a"]), {"/a": 2})
+        finally:
+            db.close()
+
+
+class TestPruneMovedOutOfHotPath(unittest.TestCase):
+    """C3-2：`prune_history` 不再每 100 条历史触发（全表窗口函数 10 万行 238ms），
+    改为批次收尾一次。"""
+
+    def test_add_sync_history_no_longer_prunes(self):
+        import unittest.mock as mock
+        db = Database(Path(tempfile.mkdtemp()) / "repos.db")
+        try:
+            rid = db.upsert_repo(_spec(9), "/tmp/p", host="github.com")
+            with mock.patch.object(db, "prune_history") as pruner:
+                for _ in range(250):        # 跨过原来的 100 次阈值
+                    db.add_sync_history(rid, SyncStatus.SUCCESS, SyncAction.CLONED)
+            pruner.assert_not_called()
+        finally:
+            db.close()
+
+    def test_batch_end_prunes_once(self):
+        import unittest.mock as mock
+        db = Database(Path(tempfile.mkdtemp()) / "repos.db")
+        try:
+            with mock.patch.object(db, "_maybe_prune_history", return_value=3) as inner:
+                self.assertEqual(db.prune_history_if_due(), 3)
+            inner.assert_called_once_with(force=True)
+        finally:
+            db.close()
+
+    def test_prune_failure_does_not_raise(self):
+        import unittest.mock as mock
+        db = Database(Path(tempfile.mkdtemp()) / "repos.db")
+        try:
+            with mock.patch.object(db, "_maybe_prune_history", side_effect=RuntimeError("x")):
+                self.assertEqual(db.prune_history_if_due(), 0, "治理失败不得抛")
+        finally:
+            db.close()

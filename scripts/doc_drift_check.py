@@ -186,6 +186,29 @@ def check_skills() -> list[str]:
     return problems
 
 
+def check_schema_version() -> list[str]:
+    """`docs/data-model.md` 声称的 schema 版本 = `repo_db._SCHEMA_VERSION`。
+
+    C3-1 实测教训：代码从 v5 涨到 v6 时，`data-model.md` 还写着 **4** —— 两轮都没人发现，
+    因为没有任何守卫盯这个数字。数据库迁移链是**最难回溯**的一类漂移（用户库已经改了，
+    文档却说是旧结构）。
+    """
+    import re as _re
+    code = (ROOT / "gcm/db/repo_db.py").read_text(encoding="utf-8")
+    m_code = _re.search(r"^_SCHEMA_VERSION\s*=\s*(\d+)", code, _re.M)
+    if not m_code:
+        return ["gcm/db/repo_db.py 里找不到 _SCHEMA_VERSION（脚本需同步）"]
+    real = int(m_code.group(1))
+    doc = (ROOT / "docs/data-model.md").read_text(encoding="utf-8")
+    m_doc = _re.search(r"schema 版本[^\n]*?\*\*(\d+)\*\*", doc)
+    if not m_doc:
+        return ["docs/data-model.md 找不到「schema 版本 = **N**」声明（脚本需同步）"]
+    if int(m_doc.group(1)) != real:
+        return [f"docs/data-model.md：schema 版本写的是 v{m_doc.group(1)}，"
+                f"实测 _SCHEMA_VERSION={real} → 请改成 **{real}** 并补迁移链条目"]
+    return []
+
+
 def check_version() -> list[str]:
     """README「当前版本：vX.Y.Z」= gcm.__version__。"""
     real = dev_metrics.version()
@@ -211,6 +234,7 @@ def main(argv: list[str]) -> int:
         ("测试文件数（三处）", check_test_file_count),
         ("技能包数", check_skills),
         ("版本号", check_version),
+        ("数据库 schema 版本", check_schema_version),
     ]
     problems: list[str] = []
     for label, fn in checks:

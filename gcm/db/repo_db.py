@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ..models import RepoSpec, SyncAction, SyncStatus
+from .dir_stats import DirStatsMixin, migrate_to_v6
+from .history_prune import HistoryPruneMixin
 from .queue_db import QueueStore, migrate_to_v4
 from .repo_profile import RepoProfileMixin, migrate_to_v5
 from .repo_search import SearchMixin
@@ -54,7 +56,7 @@ CREATE INDEX IF NOT EXISTS idx_sync_history_repo ON sync_history(repo_id, starte
 _BUSY_TIMEOUT_MS = 30000  # SQLite 写锁竞争等待上限，避免高并发直接抛 database is locked
 
 # 数据库 schema 版本（PRAGMA user_version）。每次结构变更，递增此值并补一段迁移。
-_SCHEMA_VERSION = 5
+_SCHEMA_VERSION = 6
 
 
 def _migrate(conn):
@@ -82,11 +84,14 @@ def _migrate(conn):
         migrate_to_v4(conn)
     if v < 5:  # v5：仓库画像（G81），实现抽到 repo_profile.py（本文件贴 800 红线）
         migrate_to_v5(conn)
+    if v < 6:  # v6：目录大小缓存表（C3-1），实现抽到 dir_stats.py（同上）
+        migrate_to_v6(conn)
     conn.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
     conn.commit()
 
 
-class Database(SshKeyMixin, SearchMixin, RepoProfileMixin):
+class Database(SshKeyMixin, SearchMixin, RepoProfileMixin, DirStatsMixin,
+               HistoryPruneMixin):
     """线程安全 SQLite 封装。"""
 
     def __init__(self, db_path: str | Path, readonly: bool = False):
@@ -315,53 +320,6 @@ class Database(SshKeyMixin, SearchMixin, RepoProfileMixin):
                  started_at or time.strftime("%Y-%m-%d %H:%M:%S"),
                  ended_at or time.strftime("%Y-%m-%d %H:%M:%S")),
             )
-            # G33-5：插入后按计数器节奏触发容量清理
-            self._maybe_prune_history()
-
-    # ------------------------------------------------------------ G33-5 容量治理
-    def _maybe_prune_history(self, force: bool = False) -> int:
-        """sync_history 容量治理：每仓保留 200 条 + 可配保留天数（G53-4）。"""
-        self._prune_counter += 1
-        if not (force or self._prune_counter % 100 == 0):
-            return 0
-        n = self.prune_history(self._history_retention_days)
-        self._prune_counter = 0
-        return n
-    def set_history_retention_days(self, days: int) -> None:
-        """G53-4 设置历史保留天数（1-3650，默认 90）。"""
-        try:
-            self._history_retention_days = max(1, min(3650, int(days)))
-        except (TypeError, ValueError):
-            self._history_retention_days = 90
-
-    def get_history_retention_days(self) -> int:
-        """G53-4 当前历史保留天数。"""
-        return self._history_retention_days
-
-    def prune_history(self, retention_days: int | None = None) -> int:
-        """G53-4 按保留天数清理 sync_history；删除超窗口且超 200 行/仓的记录。"""
-        if retention_days is None:
-            retention_days = self._history_retention_days
-        try:
-            days = max(1, min(3650, int(retention_days)))
-        except (TypeError, ValueError):
-            days = 90
-        with self._lock:
-            cur = self._conn.execute(
-                """
-                DELETE FROM sync_history WHERE id NOT IN (
-                    SELECT id FROM (
-                        SELECT id, ROW_NUMBER() OVER (PARTITION BY repo_id ORDER BY id DESC) AS rn
-                        FROM sync_history
-                    ) WHERE rn <= 200
-                ) OR started_at < datetime('now', 'localtime', ?)
-                """
-                ,
-                (f"-{days} days",),
-            )
-            self._conn.commit()
-            self._prune_counter = 0
-            return cur.rowcount
 
     # ------------------------------------------------------------------ 读
 

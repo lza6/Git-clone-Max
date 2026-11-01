@@ -64,21 +64,43 @@ class TestPruneCapacity(unittest.TestCase):
                          "今天的记录应保留")
         db.close()
 
-    def test_prune_counter_triggers_cleanup(self):
-        """计数器到 100 时，add_sync_history 自动触发清理。"""
+    def test_insert_does_not_auto_prune_anymore(self):
+        """C3-2（v9.14.0）**契约变更**：插入历史不再自动触发清理。
+
+        原实现每 100 条历史就在 GUI 线程跑一次全表窗口函数（10 万行实测 238ms），
+        挂机几周后每 100 个结果卡一帧。现在只在**批次收尾**调一次
+        `prune_history_if_due()`；本用例锁住"插入不再自动清理"这一半，
+        下一例锁住"批次收尾确实清理"那一半。
+        """
+        tmp = Path(tempfile.mkdtemp())
+        db = Database(tmp / "t.db")
+        rid = db.upsert_repo(_spec("o", "c"), str(tmp / "o__c"))
+        old_row = _days_ago(100)
+        _add_history(db, rid, started_at=old_row)     # 超窗记录
+        db._prune_counter = 99                        # 模拟原来的触发点
+        _add_history(db, rid, started_at=_days_ago(1))
+        remaining = db.history(rid, limit=1000)
+        self.assertEqual(len(remaining), 2,
+                         "插入历史**不得**再自动清理（否则挂机时每 100 条卡一帧）")
+        self.assertEqual(db._prune_counter, 99,
+                         "计数器不再被插入路径推进（治理已挪到批次收尾）")
+        db.close()
+
+    def test_batch_end_prunes_counter_style(self):
+        """批次收尾（`prune_history_if_due`）确实会删掉超窗记录并把计数器复位。"""
         tmp = Path(tempfile.mkdtemp())
         db = Database(tmp / "t.db")
         rid = db.upsert_repo(_spec("o", "c"), str(tmp / "o__c"))
         _add_history(db, rid, started_at=_days_ago(100))  # 超窗记录
-        db._prune_counter = 99                            # 模拟接近触发点
-        inside = _days_ago(1)                             # 第 100 次 → 触发清理
+        inside = _days_ago(1)
         _add_history(db, rid, started_at=inside)
-        # 清理被执行：超窗行被删，仅剩今天的行
+        self.assertEqual(len(db.history(rid, limit=1000)), 2, "前提：两条都在")
+        deleted = db.prune_history_if_due()
+        self.assertGreaterEqual(deleted, 1)
         remaining = db.history(rid, limit=1000)
-        self.assertEqual(len(remaining), 1, "计数器触发的清理应删除 100 天前的行")
+        self.assertEqual(len(remaining), 1, "批次收尾治理应删除 100 天前的行")
         self.assertEqual(remaining[0]["started_at"], inside)
-        # 计数器应已复位
-        self.assertEqual(db._prune_counter, 0)
+        self.assertEqual(db._prune_counter, 0, "治理后计数器应复位")
         db.close()
 
     def test_prune_not_run_before_counter(self):

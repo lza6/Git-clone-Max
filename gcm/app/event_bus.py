@@ -62,12 +62,16 @@ class EventType:
     #: C2-6：批次暂停/恢复（暂停 = 不再补投新任务，在途的跑完即止；不是取消）
     BATCH_PAUSED = "batch_paused"
     BATCH_RESUMED = "batch_resumed"
+    #: C2-3：非批次类耗时入口的忙态（诊断包导出 / 报表导出…）。前端据此显示"正在处理"。
+    JOB_STARTED = "job_started"
+    JOB_FINISHED = "job_finished"
     SYSTEM = "system"
 
     ALL: frozenset[str] = frozenset({
         BATCH_STARTED, TASK_QUEUED, TASK_STARTED, TASK_PROGRESS,
         TASK_RESULT, TASK_ERROR, TASK_STUCK, RETRY_QUEUED, RETRY_STARTED,
-        RETRY_DROPPED, BATCH_FINISHED, BATCH_PAUSED, BATCH_RESUMED, SYSTEM,
+        RETRY_DROPPED, BATCH_FINISHED, BATCH_PAUSED, BATCH_RESUMED,
+        JOB_STARTED, JOB_FINISHED, SYSTEM,
     })
 
 

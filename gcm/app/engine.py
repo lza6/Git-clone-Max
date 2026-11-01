@@ -574,6 +574,21 @@ class SyncEngine(QObject):
         except Exception:
             pass
 
+    def _prune_history_if_due(self) -> None:
+        """批次收尾：让 DB 做一次同步历史容量治理（C3-2）。失败只 warn。"""
+        db = self.db
+        fn = getattr(db, "prune_history_if_due", None)
+        if not callable(fn):
+            return
+        try:
+            n = int(fn() or 0)
+        except Exception as e:      # noqa: BLE001 —— 治理失败不该影响批次收尾
+            from . import applog
+            applog.warn(f"同步历史容量治理失败（不影响本批结果）：{e}")
+            return
+        if n:
+            self._emit_line(0, f"同步历史已治理：删除 {n} 条过期记录", "info")
+
     def _maybe_checkpoint_wal(self) -> None:
         """批次收尾时做一次被动 WAL 收缩（C1-11 / Rev7 §4 C-24）。
 
@@ -1428,6 +1443,9 @@ class SyncEngine(QObject):
             # G52-4：批次完成（非取消）→ 进度文件滚动/裁剪
             if not self._cancelled:
                 self._run_progress_gc()
+                # C3-2（Rev7 C-9）：同步历史容量治理挪到批次收尾（原来每 100 条历史触发
+                # 一次全表窗口函数，10 万行实测 164ms，且发生在 GUI 线程）
+                self._prune_history_if_due()
             # C1-11（Rev7 §4 C-24）：批次正常收尾 → 触发一次被动 WAL 收缩。
             # 为什么放这里而不是每任务：`wal_checkpoint(PASSIVE)` 不阻塞读者、不丢未提交
             # 数据，是安全操作；但每个任务一次会造成无谓 IO。此前该方法有实现、**零生产

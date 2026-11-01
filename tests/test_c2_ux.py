@@ -382,3 +382,68 @@ class TestNoTofuGlyphsInUi(_QtCase):
         """反向自检：扫描器必须真的扫到大量 UI 字符串。"""
         count = sum(1 for _ in self._iter_string_constants())
         self.assertGreater(count, 500, f"只扫到 {count} 条 UI 字符串，扫描器可疑")
+
+
+# --------------------------------------------------------------------- C2-3
+class TestUnifiedBusy(_QtCase):
+    """C2-3 / B2-1：忙态必须「进入置忙 → 退出**必恢复**」，异常路径也一样。"""
+
+    def _owner(self):
+        from PyQt6.QtWidgets import QPushButton
+        class _O:
+            def __init__(self):
+                self.btn_diag_bundle = QPushButton("诊断包")
+                self.btn_diag_bundle.setEnabled(True)
+        return _O()
+
+    def test_disables_then_restores(self):
+        from gcm.ui.busy import busy
+        o = self._owner()
+        with busy(o, "diag", buttons=("btn_diag_bundle",)):
+            self.assertFalse(o.btn_diag_bundle.isEnabled(), "进入忙态必须禁用入口")
+        self.assertTrue(o.btn_diag_bundle.isEnabled(), "退出必须恢复")
+
+    def test_restores_even_on_exception(self):
+        from gcm.ui.busy import busy
+        o = self._owner()
+        with self.assertRaises(RuntimeError):
+            with busy(o, "diag", buttons=("btn_diag_bundle",)):
+                raise RuntimeError("boom")
+        self.assertTrue(o.btn_diag_bundle.isEnabled(),
+                        "异常路径也必须恢复，否则按钮永久灰掉")
+
+    def test_restores_to_previous_state_not_always_enabled(self):
+        """本来就该禁用的按钮不该被点亮（恢复的是进入前的状态）。"""
+        from gcm.ui.busy import busy
+        o = self._owner()
+        o.btn_diag_bundle.setEnabled(False)
+        with busy(o, "diag", buttons=("btn_diag_bundle",)):
+            pass
+        self.assertFalse(o.btn_diag_bundle.isEnabled())
+
+    def test_publishes_job_events(self):
+        from gcm.app.event_bus import EventType, get_event_bus
+        from gcm.ui.busy import busy
+        o = self._owner()
+        with busy(o, "export", buttons=("btn_diag_bundle",)):
+            pass
+        types = [e.type for e in get_event_bus().snapshot(limit=20)]
+        self.assertIn(EventType.JOB_STARTED, types)
+        self.assertIn(EventType.JOB_FINISHED, types)
+        self.assertIn(EventType.JOB_STARTED, EventType.ALL,
+                      "新事件类型必须登记进 ALL，否则 SSE 过滤会漏")
+
+    def test_real_entries_use_busy(self):
+        """接线断言：诊断包与报表导出两处必须真的走忙态（AST 只看真实调用）。"""
+        import ast
+        hits = []
+        for rel in ("gcm/ui/main_window.py", "gcm/ui/download_tools.py"):
+            tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.With):
+                    for item in node.items:
+                        ctx = item.context_expr
+                        if (isinstance(ctx, ast.Call) and getattr(ctx.func, "id", "") == "_busy"):
+                            hits.append(rel)
+        self.assertGreaterEqual(len(set(hits)), 2,
+                                f"诊断包与报表导出都应接忙态，实际只有：{set(hits)}")

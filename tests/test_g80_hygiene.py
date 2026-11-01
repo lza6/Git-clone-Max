@@ -66,7 +66,10 @@ GCM = ROOT / "gcm"
 #   settings_nav 的导航与滚动、batch_actions 的状态切换、manage_panel 的大小回填
 #   与缓存清理、progress_table 的按钮复位。**全部改为 applog.warn 留痕**
 #   （本轮先写成 pass，随后按红线改掉 —— pass-only 因此没有上涨）。
-BASELINE_EXCEPT = 641
+# - v9.14.0 +9（except 650 / **pass-only 282 未涨**）：
+#   C2-3 busy / C3-1 dir_stats / C3-2 history_prune 三个新模块的防御分支，
+#   全部有 applog.warn 或明确降级出口。
+BASELINE_EXCEPT = 650
 BASELINE_PASS_ONLY = 283
 
 

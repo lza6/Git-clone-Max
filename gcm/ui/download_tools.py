@@ -60,13 +60,16 @@ def export_report(owner, fmt_dt) -> None:
         return
     try:
         from ..reports import export_csv, export_markdown, export_xlsx
+        from .busy import busy as _busy
         lower = str(path).lower()
-        if lower.endswith(".xlsx"):
-            n = export_xlsx(owner.db, path)
-        elif lower.endswith(".md"):
-            n = export_markdown(owner.db, path)
-        else:
-            n = export_csv(owner.db, path)
+        # C2-3：几千仓库导 xlsx 要数百毫秒到数秒，置忙并禁用「导出」入口
+        with _busy(owner, "export_report", buttons=("btn_export",)):
+            if lower.endswith(".xlsx"):
+                n = export_xlsx(owner.db, path)
+            elif lower.endswith(".md"):
+                n = export_markdown(owner.db, path)
+            else:
+                n = export_csv(owner.db, path)
         owner._emit_log(fmt_dt(), LogLevel.INFO,
                         f"报表已导出：{path}（{n} 行）")
         owner.statusBar().showMessage(f"报表已导出：{path}（{n} 行）")

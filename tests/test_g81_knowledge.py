@@ -172,8 +172,13 @@ class TestProfilePersistence(unittest.TestCase):
         db = self._db()
         cols = [r[1] for r in db._conn.execute("PRAGMA table_info(repos)")]
         self.assertIn("profile_json", cols, "v5 迁移必须加 profile_json 列")
-        self.assertEqual(
-            db._conn.execute("PRAGMA user_version").fetchone()[0], 5)
+        # v9.14.0：schema 已到 v6（C3-1 的 dir_stats 表）——这里断言的是
+        # 「**至少**到 v5，且 profile_json 在」，不再钉死具体版本号，
+        # 否则每加一次迁移都要改这个与画像无关的用例。
+        from gcm.db.repo_db import _SCHEMA_VERSION
+        ver = db._conn.execute("PRAGMA user_version").fetchone()[0]
+        self.assertEqual(ver, _SCHEMA_VERSION, "user_version 应等于当前 _SCHEMA_VERSION")
+        self.assertGreaterEqual(ver, 5)
 
     def test_migration_is_idempotent(self) -> None:
         """旧库升级 + 二次打开都安全：列不得重复添加。"""

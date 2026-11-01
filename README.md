@@ -1,7 +1,7 @@
 # Git-clone-Max
 
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
-> **当前版本：v9.13.0**（交互闭环：Ctrl+K 命令面板 / 批次暂停继续 / 失败后给可点的下一步 / 仓库大小列不再空白；数据层写失败会回滚。加上 v9.12.1 的「默认直连」（内置国内镜像已移除，实测比直连慢 8 倍）；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）、并发改值不再被自适应顶回、批次流控按线程池派生、替换引擎不再留活定时器、卡死任务有 UI 入口、WAL 批次收尾收缩、文档数字漂移与函数规模双守卫、依赖与 CI 静态检查器锁版本；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）
+> **当前版本：v9.14.0**（C2 交互闭环收官：统一忙态 / 命令面板 / 批次暂停 / 失败后给可点的下一步；C3 5/6：目录大小落库缓存（schema v6）/ 历史治理挪出热路径 / 规模与泄漏基线脚本；内置国内镜像已移除、默认直连；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）、并发改值不再被自适应顶回、批次流控按线程池派生、替换引擎不再留活定时器、卡死任务有 UI 入口、WAL 批次收尾收缩、文档数字漂移与函数规模双守卫、依赖与 CI 静态检查器锁版本；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）
 > **v5.0：多平台直克隆** — GitLab / Gitee / Codeberg / Bitbucket / 自建主机（HTTPS/SSH/短格式/子组）同样支持。
 > 克隆目录一律 `host__作者__仓库`（GitHub 为 `作者__仓库`），本地改动永不覆盖。
 
@@ -269,9 +269,9 @@ python -m coverage run --source=gcm -m unittest discover -s tests
 ## 发布
 
 ```bash
-git tag v9.13.0   # 示例；发版时替换成当次版本（守卫会校验文档里的版本号）
+git tag v9.14.0   # 示例；发版时替换成当次版本（守卫会校验文档里的版本号）
 git push origin main --tags
-python scripts/publish_release.py --tag v9.13.0   # 自动上传 exe 到 GitHub Release
+python scripts/publish_release.py --tag v9.14.0   # 自动上传 exe 到 GitHub Release
 ```
 
 ## License

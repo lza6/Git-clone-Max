@@ -2443,11 +2443,14 @@ class MainWindow(QMainWindow):
             if not str(path).lower().endswith(".zip"):
                 path = str(path) + ".zip"
             from ..app.event_bus import get_event_bus
-            out = build_diag_bundle(
-                path, data_dir=self.data_dir,
-                report_text=self._diag_status_report(),
-                event_bus=get_event_bus(),
-                extra_manifest={"tab": self.tabs.currentIndex() if hasattr(self, "tabs") else 0})
+            from .busy import busy as _busy
+            # C2-3：诊断包要遍历事件/日志并压 zip（几百 MB 数据时数秒），置忙并禁用入口
+            with _busy(self, "diag_bundle", buttons=("btn_diag_bundle",)):
+                out = build_diag_bundle(
+                    path, data_dir=self.data_dir,
+                    report_text=self._diag_status_report(),
+                    event_bus=get_event_bus(),
+                    extra_manifest={"tab": self.tabs.currentIndex() if hasattr(self, "tabs") else 0})
             self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"诊断包已导出：{out}")
             QMessageBox.information(self, tr("诊断包已导出"), str(out))
         except Exception as e:  # noqa: BLE001
