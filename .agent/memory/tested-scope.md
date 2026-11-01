@@ -1,29 +1,31 @@
 # 已测试范围（tested-scope）
 
-## 0. 最新一次真实运行（2026-11-02 · v9.14.0 C2 收官 + C3 5/6）
+## 0. 最新一次真实运行（2026-11-02 · v9.15.0 C3 收官 + C4 检索）
 
 | 项 | 命令 | 结果（实测） |
 |---|---|---|
-| 质量闸 | `ruff check gcm` / `mypy gcm` | All checks passed / Success（**111** 源文件） |
-| 全量快集 | `coverage run --source=gcm scripts/ci_run_fast.py` | **Ran 1777 · 0 失败 · 0 错误 · 4 skipped** |
-| 覆盖率 | `coverage report --include="gcm/*"` | **83%** |
-| 文档漂移（7 类） / i18n | `doc_drift_check.py` / `i18n_coverage.py` | **DRIFT 0** / **I18N OK**（ZH=EN=578） |
-| except / pass-only | AST 统计 | **650 / 282**（pass-only 未涨） |
-| 规模基线 | `python scripts/bench_scale.py` | 3000 仓：list_repos 14.2ms · 分页 0.7ms · 搜索 3.9ms · 模型 4.1ms · 首帧 0.14ms · dir_stats 命中 3.9ms；10 万行 prune 238ms |
-| 泄漏巡检 | `python scripts/mem_soak.py --rounds 500/2000` | 276.4 KiB / 279.7 KiB → **有界，不随轮数增长** |
-| C2/C3 定向 | `tests.test_c2_ux`（29）· `tests.test_c3_data`（10） | 全绿 |
-| 打包 | PyInstaller → zip → health_check | exe 41,788,755 B · zip 80,494,777 B · **7/7 OK** |
+| 质量闸 | `ruff check gcm` / `mypy gcm` | All checks passed / Success（**114** 源文件） |
+| 全量快集 | `coverage run --source=gcm scripts/ci_run_fast.py` | **Ran 1806 · 0 失败 · 0 错误 · 4 skipped** |
+| 覆盖率 | `coverage report --include="gcm/*"` | **82%**（门禁 Win 81 / POSIX 80；比上版低 1 点，因新增 5 个模块的防御分支） |
+| 文档漂移（7 类）/ i18n | `doc_drift_check.py` / `i18n_coverage.py` | **DRIFT 0** / **I18N OK** |
+| except / pass-only | AST 统计 | **667 / 282**（pass-only 未涨） |
+| C3/C4 定向 | `tests.test_c3_data`（15）· `tests.test_c4_search`（24） | 全绿 |
+| 打包 | PyInstaller → zip → health_check | exe 41,842,989 B · zip 80,583,107 B · **7/7 OK** |
 | 打包 exe E2E | `dist/Git-clone-Max.exe --cli --json` | exit 0 · cloned · 直连 |
-| CI 三平台 | 提交 `3f19581` | **7/7 job success** |
-| Release 复验 | `gh release download v9.14.0` + sha256 + 真跑 | 逐字节一致 · 下载版 exit 0 |
+| CI 三平台 | 提交 `4ccf725` | **7/7 job success** |
+| Release 复验 | `gh release download v9.15.0` + sha256 + 真跑 | 逐字节一致 · 下载版 exit 0 |
 
 **本轮教训（勿重犯）**：
-①**加代码会把文件顶过 800 行**（本轮 `repo_db` 到 807）→ 按范式抽模块，**不要登记豁免**。
-②**「文档里的版本/结构数字」必须进守卫**：`data-model.md` 声称 schema=4 而实际已 6，两轮没人发现。
-③**别把版本沿革堆在首段一行**（每次发版都撞版本守卫）——沿革写在各自条目里。
-④**契约变更要连测试一起改**（`add_sync_history` 不再自动清理 → 既有用例按新语义改写 + 加对照组）。
+①**别把 schema 版本钉死在与它无关的用例里**（`test_g81_knowledge` / `test_c3_data` 各犯一次）——
+应断言「等于 `_SCHEMA_VERSION` 且 ≥N」。
+②**外部内容 FTS 表的 `count(*)` 不能用来判"索引是否存在"**（它从内容表读，永远等于 repos 行数）
+→ `ensure_fts()` 直接对齐（重建成本毫秒级，调用点只有两个）。
+③**活文档标题里不要写版本号**（`慢测定位.md` §7 因此撞了版本守卫）。
+④**新搜索功能必须同时测「两字中文」**：这是 trigram 的硬下限，不测就等于没做。
 
 ---
+> 下面是历史记录（v9.14.0 / v9.13.0 / v9.12.x / v9.11.0 及更早），保留供考古；数字以本文件顶部为准。
+
 > 下面是历史记录（v9.13.0 / v9.12.1 / v9.12.0 / v9.11.0 及更早），保留供考古；数字以本文件顶部为准。
 
 > 下面是历史记录（v9.12.1 / v9.12.0 / v9.11.0 及更早），保留供考古；数字以本文件顶部为准。
