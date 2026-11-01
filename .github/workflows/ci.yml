@@ -33,7 +33,7 @@ jobs:
     # 步骤级完全覆盖 job 级。死值会误导 review，也可能在某天有人删掉步骤级 env 时
     # 静默把门禁变成 84。故删除，唯一生效点保留在步骤级。
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python 3.14
         uses: actions/setup-python@v5
@@ -156,7 +156,7 @@ jobs:
   e2e-smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python 3.14
         uses: actions/setup-python@v5
@@ -172,7 +172,7 @@ jobs:
   fast-smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python 3.14
         uses: actions/setup-python@v5
@@ -207,7 +207,7 @@ jobs:
   perf-baseline:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python 3.14
         uses: actions/setup-python@v5
@@ -235,7 +235,7 @@ jobs:
   slow:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python 3.14
         uses: actions/setup-python@v5
@@ -285,7 +285,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python 3.14
         uses: actions/setup-python@v5
