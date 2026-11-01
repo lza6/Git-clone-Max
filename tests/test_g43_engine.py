@@ -57,23 +57,31 @@ class TestBatchFlowControl(unittest.TestCase):
         """
         eng = self._engine(200)
         started = []
-        eng._start_worker = mock.Mock(side_effect=lambda i, s, f: started.append(i))
+
+        def _fake_start(i, s, f):
+            # 审查 Required-1：fake 必须同步递增在跑计数 —— 否则 `_running` 恒 0，
+            # `_replenish` 会把 192 条全部倒出来，而「补投变短」这种断言依然通过
+            # （等于测不到上限）。这里与真实 `_start_worker` 的副作用保持一致。
+            started.append(i)
+            eng._running = eng._running_count() + 1
+
+        eng._start_worker = mock.Mock(side_effect=_fake_start)
         specs = [_spec(i) for i in range(200)]
         limit = eng.batch_start_limit()
         self.assertEqual(limit, 8, "concurrency=8 时首批上限应正好等于 8")
-        # 用 mock 避免真实 git：替换 pool.start 语义 —— launch 内部调用 _start_worker
         launched = eng.launch(specs)
         self.assertEqual(launched, 200, "launch 返回去重后总数")
         self.assertEqual(len(started), limit, f"首批只应启动 {limit} 个")
         self.assertEqual(len(eng._pending_queue), 200 - limit)
-        # 补投：`_replenish` 现在补满到上限，而 mock 掉 `_start_worker` 不会递增在跑计数
-        # → 一次调用会补到上限为止。这里改为直接断言「补投后待发队列变短」，
-        # 并单独用 `test_replenish_fills_to_limit` 覆盖「补满」语义。
-        before_pending = len(eng._pending_queue)
+        # 补投：每完成一个补一个（模拟一次 worker 结束 → 在跑 -1 → 补投回上限）
+        eng._running = limit - 1
         eng._replenish()
-        self.assertLess(len(eng._pending_queue), before_pending,
-                        "补投后待发队列必须变短")
-        self.assertGreaterEqual(len(started), limit)
+        self.assertEqual(len(started), limit + 1, "补投后应正好多启动 1 个")
+        self.assertEqual(len(eng._pending_queue), 200 - limit - 1)
+        # 上限没被突破
+        eng._replenish()   # 在跑已等于上限 → 不该再启动
+        self.assertEqual(len(started), limit + 1,
+                         "在跑数已达上限时补投不得超发")
         # 清理
         eng._cancelled = True
         eng._pending_queue = []

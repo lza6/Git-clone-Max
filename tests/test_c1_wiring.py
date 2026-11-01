@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from gcm.app.engine import SyncEngine  # noqa: E402
-from gcm.models import SyncStatus  # noqa: E402
+from gcm.models import SyncResult, SyncStatus  # noqa: E402
 
 
 def _engine(**kw):
@@ -187,32 +187,80 @@ class TestDiscardStopsAllTimers(unittest.TestCase):
 
 
 class TestConcurrencyMemoryNotShortCircuited(unittest.TestCase):
-    """C-13：并发记忆的「恢复」不得依赖重试队列是否启用。"""
+    """C-13 + 审查 C-1：并发记忆的「恢复」不得依赖重试队列，但**必须**有三条守卫。
 
-    def test_restore_runs_without_retry_queue(self):
+    守卫（都是真机可触发的坑，见 `_restore_concurrency_state` docstring）：
+    ① 只在 `fail_rate > 0` 时恢复（否则陈旧状态文件会悄悄覆盖用户设置）；
+    ② 恢复值不低于天花板的一半（否则一次抖动降到 1 会被永久记住）；
+    ③ 恢复必须可观测（applog + `adapt_changed`）。
+    """
+
+    def _engine(self, state_json: str, concurrency: int = 8):
         d = Path(tempfile.mkdtemp())
         state = d / "concurrency_state.json"
-        state.write_text('{"concurrency": 3}', encoding="utf-8")
-        e = SyncEngine(d / "clones", concurrency=8,
-                       concurrency_state_path=state)
+        state.write_text(state_json, encoding="utf-8")
+        return SyncEngine(d / "clones", concurrency=concurrency,
+                          concurrency_state_path=state)
+
+    def test_restore_runs_without_retry_queue(self):
+        """核心断言：**没有** retry_queue 时也要能恢复（原实现被短路）。"""
+        e = self._engine('{"concurrency": 3, "fail_rate": 0.4}')
         try:
             self.assertEqual(
-                e._adapt_current, 3,
-                "上次会话被降到 3 并发，重启后应恢复 3；"
-                "当前被 `if self._retry_queue is not None` 短路了（C-13）")
+                e._adapt_current, 4,
+                "缩到 3 且确实有网络失败 → 应恢复（并抬到天花板一半 4）；"
+                "若仍被 `if self._retry_queue is not None` 短路，这里会是 8")
+        finally:
+            e.shutdown()
+
+    def test_no_restore_when_last_batch_had_no_network_failure(self):
+        """守卫①：`fail_rate=0` 的陈旧状态不得覆盖用户设置（审查 C-1）。"""
+        e = self._engine('{"concurrency": 2, "fail_rate": 0}', concurrency=8)
+        try:
+            self.assertEqual(e._adapt_current, 8,
+                             "上次没有网络失败 → 不该把并发记成 2 并沿用")
+        finally:
+            e.shutdown()
+
+    def test_restore_has_floor_at_half_of_ceiling(self):
+        """守卫②：降到 1 也要抬到天花板一半，否则小批次永远回不来。"""
+        e = self._engine('{"concurrency": 1, "fail_rate": 0.9}', concurrency=8)
+        try:
+            self.assertEqual(e._adapt_current, 4,
+                             "恢复到 1 会让「一次 1~2 个仓库」的用户永久卡在单线程")
+            self.assertEqual(e.pool.maxThreadCount(), 4)
+        finally:
+            e.shutdown()
+
+    def test_restored_value_is_observable_and_recovers(self):
+        """守卫③ + 可回升：恢复后发 adapt_changed，且 3 次成功回到天花板。"""
+        e = self._engine('{"concurrency": 1, "fail_rate": 0.9}', concurrency=8)
+        try:
+            seen = []
+            e.adapt_changed.connect(lambda n, why: seen.append((n, why)))
+            e._net_ok_streak = 2
+            e._adapt_result(SyncStatus.SUCCESS, "ok")
+            self.assertEqual(e._adapt_current, 8,
+                             "3 次成功后必须回到用户设的天花板 8")
+            self.assertTrue(seen and seen[-1][0] == 8,
+                            f"回升必须通过 adapt_changed 通知 UI：{seen}")
         finally:
             e.shutdown()
 
     def test_restore_still_respects_upper_bound(self):
         """回归：恢复值不得超过用户当前设置的并发上限。"""
-        d = Path(tempfile.mkdtemp())
-        state = d / "concurrency_state.json"
-        state.write_text('{"concurrency": 30}', encoding="utf-8")
-        e = SyncEngine(d / "clones", concurrency=4,
-                       concurrency_state_path=state)
+        e = self._engine('{"concurrency": 30, "fail_rate": 0.5}', concurrency=4)
         try:
             self.assertEqual(e._adapt_current, 4,
                              "记忆值 30 > 当前上限 4 → 必须被钳到 4")
+        finally:
+            e.shutdown()
+
+    def test_corrupt_state_file_does_not_block_startup(self):
+        """状态文件损坏时按设置值启动，且不得抛。"""
+        e = self._engine("{not json")
+        try:
+            self.assertEqual(e._adapt_current, 8)
         finally:
             e.shutdown()
 
@@ -613,11 +661,12 @@ class TestStartupEngineReflectsSettings(unittest.TestCase):
             e.shutdown()
 
     def test_startup_engine_restores_concurrency_memory(self):
-        """C1-9 在启动路径上的端到端验证：上次的并发值会被恢复。"""
+        """C1-9 在启动路径上的端到端验证：上次因网络失败降下来的并发会被恢复。"""
         from gcm.db.settings import SettingsStore
         from gcm.ui.main_window import MainWindow
         tmp = Path(tempfile.mkdtemp())
-        (tmp / "concurrency_state.json").write_text('{"concurrency": 3}', encoding="utf-8")
+        (tmp / "concurrency_state.json").write_text(
+            '{"concurrency": 3, "fail_rate": 0.3}', encoding="utf-8")
         store = SettingsStore(tmp / "settings.json")
         s = store.load()
         s.first_run_done = True
@@ -628,8 +677,81 @@ class TestStartupEngineReflectsSettings(unittest.TestCase):
         store.save(s)
         w = MainWindow(data_dir=tmp)
         try:
-            self.assertEqual(w.engine._adapt_current, 3,
-                             "启动时应恢复上次的并发（C1-9）；天花板仍是用户设的 8")
+            self.assertEqual(w.engine._adapt_current, 4,
+                             "启动时应恢复上次的并发（C1-9），并抬到天花板一半 4；"
+                             "天花板仍是用户设的 8")
             self.assertEqual(w.engine._adapt_max, 8)
         finally:
             w.close()
+
+
+class TestHostNotPollutedWithoutBatchContext(unittest.TestCase):
+    """审查 C-2（治根版）：没有「本批登记表」时，host 必须**从 URL 解析**，不能盲落 github.com。
+
+    背景：重投路径与「启动期自动重投」下 `_host_by_key` 是空的。原实现
+    `self._host_by_key.get(key) or "github.com"` 会把 gitlab / gitee / 自建主机
+    的仓库**落库成 `host="github.com"`**，污染 `UNIQUE(owner,repo,host)`。
+
+    注意：这里**不**拦截「无上下文重投」—— 那是 `tests/test_g67_closure.
+    test_retry_tick_without_prior_batch_still_works` 明确要求的既有契约
+    （首次启动就有待重投队列是真实场景）。根因在取值方式，不在重投本身。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from PyQt6.QtWidgets import QApplication
+        cls._app = QApplication.instance() or QApplication([])
+
+    def test_host_derived_from_url_when_no_map(self):
+        from gcm.models import RepoSpec
+        e = SyncEngine(Path(tempfile.mkdtemp()) / "clones", concurrency=4)
+        try:
+            self.assertEqual(e._host_by_key, {}, "前提：本批没有登记表")
+            cases = {
+                "https://gitlab.com/a/b.git": "gitlab.com",
+                "https://gitee.com/a/b": "gitee.com",
+                "https://codeberg.org/a/b.git": "codeberg.org",
+                "git@gitlab.com:a/b.git": "gitlab.com",
+                "https://git.corp.example/x/y.git": "git.corp.example",
+                "https://github.com/a/b": "github.com",
+                "a/b": "github.com",          # 短格式默认 github
+            }
+            for url, want in cases.items():
+                spec = RepoSpec(owner="a", repo="b", url_https=url)
+                self.assertEqual(e._host_for(spec), want,
+                                 f"{url} 的 host 应解析成 {want}，而不是盲落 github.com")
+        finally:
+            e.shutdown()
+
+    def test_map_wins_over_url(self):
+        from gcm.models import RepoSpec
+        e = SyncEngine(Path(tempfile.mkdtemp()) / "clones", concurrency=4)
+        try:
+            e._host_by_key = {"a/b": "self.hosted.example"}
+            spec = RepoSpec(owner="a", repo="b", url_https="https://github.com/a/b.git")
+            self.assertEqual(e._host_for(spec), "self.hosted.example",
+                             "本批登记表优先于 URL 解析（用户可能用别名主机）")
+        finally:
+            e.shutdown()
+
+    def test_retry_with_empty_context_does_not_write_github_host(self):
+        """端到端：空上下文重投时，落库用的 host 来自 URL（不是 github.com）。"""
+        import unittest.mock as mock
+        from gcm.models import RepoSpec, SyncAction, SyncStatus
+        d = Path(tempfile.mkdtemp())
+        e = SyncEngine(d / "clones", concurrency=4)
+        try:
+            db = mock.Mock()
+            db.upsert_repo.return_value = 1
+            e.db = db
+            spec = RepoSpec(owner="grp", repo="proj",
+                            url_https="https://gitlab.com/grp/proj.git")
+            res = SyncResult(spec=spec, status=SyncStatus.SUCCESS,
+                             action=SyncAction.CLONED, message="克隆完成", path=str(d))
+            with mock.patch.object(e, "_publish"),                     mock.patch.object(e, "_mark_done"),                     mock.patch.object(e, "_adapt_result"):
+                e._on_result(0, res)
+            host = db.upsert_repo.call_args.kwargs.get("host")
+            self.assertEqual(host, "gitlab.com",
+                             f"gitlab 仓库不得落库成 github.com（实际 {host}）")
+        finally:
+            e.shutdown()

@@ -42,7 +42,8 @@ def add_host_concurrency_row(owner: MainWindow, settings: Settings,
         "同一平台（如 github.com）同时在跑的仓库数上限。默认 4 —— 300 个仓库同时打\n"
         "同一个 host 会成片触发 secondary rate limit，限流后「成片失败」会变成「整体减速」。\n"
         "设为 0 = 不限流（只有在你确认不会被平台限流时才这么设）。\n"
-        "改动在下一批任务生效（本批已在跑的保持原并发）。"))
+        "改动对「下一个开始的任务」生效：正在跑的仓库保持原并发，"
+        "本批里还没开始的会用新值。"))
     owner.spin_host_concurrency.valueChanged.connect(
         owner.settings_panel.wiring.save_host_concurrency)
     form.addRow(tr("同平台并发上限（0=不限）："), owner.spin_host_concurrency)

@@ -56,7 +56,10 @@ GCM = ROOT / "gcm"
 #   ui/settings_actions.py +2（运行中应用 host_concurrency / time_budget 失败→warn 并注明"已保存，下批生效"）
 #   ui/failure_panel.py +2（卡死任务条读取失败→空列表兜底；取消失败→warn）
 #   **全部有可观测出口**（日志或 UI 兜底），因此只上调总数、不上调 pass-only。
-BASELINE_EXCEPT = 621
+# - v9.12.0 审查轮 +1（except 622 / **pass-only 282，比基线还降 1**）：
+#   engine._host_for 的 url 解析失败兜底（→ warn + 回落 github.com）
+#   同一轮把 `_refresh_stuck` 的静默赋值改成 warn 后，pass-only 反而少了一个。
+BASELINE_EXCEPT = 622
 BASELINE_PASS_ONLY = 283
 
 

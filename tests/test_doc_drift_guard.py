@@ -52,26 +52,33 @@ class TestGuardCatchesDrift(unittest.TestCase):
         ddc._read = _read
         return _read
 
+    # 审查 Required-2：这两条原本用 `skipTest` 兜「文档里的旧值变了」——
+    # **恰恰在行数真的变了（守卫最该生效的时刻）它静默跳过**，变异验证可以永久失效。
+    # 现改为从文档里现取一个真实数字，再把它改坏；取不到就 `fail`（而不是跳过）。
+    def _corrupt_first_line_count(self, rel: str, check) -> list[str]:
+        import re as _re
+        text = self._orig_read(rel)
+        pat = (r"`([A-Za-z0-9_]+\.py)`\s*\*\*(\d+)\*\*" if rel.endswith(".md")
+               and not rel.startswith("docs/architecture")
+               else r"\|\s*`(gcm/[^`]+)`\s*\|\s*(\d+)\s*\|")
+        m = _re.search(pat, text)
+        self.assertIsNotNone(
+            m, f"{rel} 里找不到可改坏的模块行数（格式变了？本用例必须同步，不能跳过）")
+        name, num = m.group(1), m.group(2)
+        bogus = str(int(num) + 111)
+        broken = text.replace(m.group(0), m.group(0).replace(num, bogus), 1)
+        self.assertNotEqual(text, broken, "改坏失败，本用例无效")
+        self._fake({rel: broken})
+        problems = check(ddc._actual_lines())
+        self.assertTrue(any(name in p and bogus in p for p in problems),
+                        f"把 {name} 从 {num} 改成 {bogus} 却没报出来：{problems}")
+        return problems
+
     def test_catches_module_line_drift_in_claude_md(self):
-        text = self._orig_read("CLAUDE.md")
-        broken = text.replace("`service.py` **1899**", "`service.py` **1111**")
-        if broken == text:
-            self.skipTest("CLAUDE.md 的 service.py 行数已变，请同步本用例里的旧值")
-        self._fake({"CLAUDE.md": broken})
-        problems = ddc.check_claude_md(ddc._actual_lines())
-        self.assertTrue(any("service.py" in p and "1111" in p for p in problems),
-                        f"改坏行数却没报出来：{problems}")
+        self._corrupt_first_line_count("CLAUDE.md", ddc.check_claude_md)
 
     def test_catches_module_line_drift_in_architecture_md(self):
-        text = self._orig_read("docs/architecture.md")
-        broken = text.replace("| `gcm/app/engine.py` | 1516 |",
-                              "| `gcm/app/engine.py` | 999 |")
-        if broken == text:
-            self.skipTest("architecture.md 的 engine.py 行数已变，请同步本用例里的旧值")
-        self._fake({"docs/architecture.md": broken})
-        problems = ddc.check_architecture_md(ddc._actual_lines())
-        self.assertTrue(any("engine.py" in p and "999" in p for p in problems),
-                        f"改坏行数却没报出来：{problems}")
+        self._corrupt_first_line_count("docs/architecture.md", ddc.check_architecture_md)
 
     def test_catches_long_function_count_drift(self):
         import re as _re

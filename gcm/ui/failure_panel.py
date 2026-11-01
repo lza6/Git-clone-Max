@@ -226,7 +226,9 @@ class FailurePanel(QWidget):
         if engine is not None and hasattr(engine, "stuck_task_keys"):
             try:
                 keys = list(engine.stuck_task_keys())
-            except Exception:  # noqa: BLE001 —— 巡检数据读失败不该拖垮面板刷新
+            except Exception as e:  # noqa: BLE001 —— 读失败不该拖垮面板，但必须留痕
+                from ..app.applog import warn as _warn
+                _warn(f"读取疑似卡死任务失败（面板按无处理）：{e}")
                 keys = []
         self._stuck_keys = keys
         if keys:

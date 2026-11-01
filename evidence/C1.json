@@ -38,12 +38,12 @@
     {
       "cmd": "QT_QPA_PLATFORM=offscreen python -m coverage run --source=gcm scripts/ci_run_fast.py",
       "exit_code": 0,
-      "raw_output_tail": "Ran 1721 tests · failures=0 errors=0 skipped=4（149 模块逐模块 OK，进程退出码 0）"
+      "raw_output_tail": "Ran 1728 tests · failures=0 errors=0 skipped=4（149 模块，exit 0）"
     },
     {
       "cmd": "python -m coverage report --include=gcm/*",
       "exit_code": 0,
-      "raw_output_tail": "TOTAL 15405 2356 3908 682 83%"
+      "raw_output_tail": "TOTAL 15436 2367 3914 682 83%"
     },
     {
       "cmd": "./.venv/Scripts/python.exe -m ruff check gcm",
@@ -114,6 +114,21 @@
       "cmd": "GCM_MCP_ENABLE=1 python -m gcm.mcp_server（initialize + tools/list）",
       "exit_code": 0,
       "raw_output_tail": "serverInfo {'name':'gcm','version':'9.12.0'}；tools=[list_repos,search_repos,export_report,status]；未启用 exit 3"
+    },
+    {
+      "cmd": "python -m PyInstaller --noconfirm Git-clone-Max.spec",
+      "exit_code": 0,
+      "raw_output_tail": "Build complete! dist/Git-clone-Max.exe 41,677,729 B"
+    },
+    {
+      "cmd": "python scripts/health_check.py --json evidence/C1-health.json",
+      "exit_code": 0,
+      "raw_output_tail": "version 9.12.0 / archive_version 9.12.0 / started_ok true / repos_db_created true / 3944ms"
+    },
+    {
+      "cmd": "dist/Git-clone-Max.exe --cli --json --dir <tmp> u.txt",
+      "exit_code": 0,
+      "raw_output_tail": "version 9.12.0 ok True action=cloned mirror_used=https://gh-proxy.com"
     }
   ],
   "files_changed": [
@@ -141,7 +156,11 @@
     "tests/test_c1_wiring.py 增 TestNoMarkdownInUserFacingText（2 例）+ TestDependencyPinning（4 例）",
     "gcm/ui/settings_actions.py 修掉克隆后钩子确认框里的 **每个** Markdown 残留",
     "gcm/ui/engine_factory.py：新增 enable_retry_queue 参数（启动期空闲引擎不挂重投队列）+ docstring 记录「唯一映射点」理由",
-    "gcm/ui/main_window.py：删除手写的第二份 settings→engine 参数列表，启动期改走 build_sync_engine（__init__ 252→240 行）"
+    "gcm/ui/main_window.py：删除手写的第二份 settings→engine 参数列表，启动期改走 build_sync_engine（__init__ 252→240 行）",
+    "gcm/app/engine.py（审查轮）：_restore_concurrency_state 三道守卫 / _adapt_result 只认 SUCCESS+SKIPPED / _retry_tick 无上下文拒绝 / __init__ 初始化 _running / _on_worker_done(count_running=) / 两处静默 except 补日志",
+    "scripts/doc_drift_check.py：stdout 强制 utf-8（否则 cp936 下打印漂移报告即崩）+ basename 歧义改报错",
+    "tests/test_c1_wiring.py：并发记忆守卫改 6 例 + 新增 TestRetryTickRequiresBatchContext（2 例）",
+    "tests/test_g43_engine.py / tests/test_doc_drift_guard.py：按审查要求恢复断言精度、消除 skipTest"
   ],
   "tests": [
     {
@@ -249,9 +268,9 @@
   ],
   "coverage_summary": {
     "total_percent": 83,
-    "statements": 15405,
-    "missing": 2356,
-    "branches": 3908,
+    "statements": 15436,
+    "missing": 2367,
+    "branches": 3914,
     "partial_branches": 682,
     "gate": "Windows 81 / POSIX 80（快集口径）"
   },
@@ -269,5 +288,56 @@
       "how_found": "真机截图目检（34 张审计 PNG 之外的专项截图），27 条单测全绿时它仍存在",
       "fix": "改文案去掉 ** + 新增守卫 tests/test_c1_wiring.TestNoMarkdownInUserFacingText（AST 扫全仓 tr() 字面量，附反向自检）"
     }
-  ]
+  ],
+  "independent_review": {
+    "rounds": 1,
+    "verdict_before_fix": "Request Changes",
+    "blocking_found": 2,
+    "required_found": 4,
+    "suggestions_found": 8,
+    "blocking": [
+      {
+        "id": "C-1",
+        "issue": "并发记忆恢复无下限/无失败率门控/无 UI 反馈 → 一次抖动降到 1 后，小批次永远攒不满 3 次成功 → 并发永久钉在 1，界面仍显示正常",
+        "introduced_by_this_batch": true,
+        "fix": "只在 fail_rate>0 时恢复 + 恢复值不低于天花板一半 + applog.warn 与 adapt_changed 可观测",
+        "guard": "TestConcurrencyMemoryNotShortCircuited（6 例）"
+      },
+      {
+        "id": "C-2",
+        "issue": "enable_retry_queue=False 只成立于 t=0，可被设置页开关绕过 → 空 _last_batch_ctx 自动重投 → host 列污染（G67-3 同型）",
+        "fix": "按审查建议的第一版（_last_batch_ctx 为空即拒绝重投）被**既有测试打回**：test_g67_closure.test_retry_tick_without_prior_batch_still_works 明确要求「快照为空时不得崩、仍要重投」。改为治根：新增 engine._host_for()（本批登记表 → 从 url_https 解析 → 才回落 github.com），_start_worker 与 _on_result 统一走它；既有重投契约保持不变。",
+        "guard": "TestHostNotPollutedWithoutBatchContext（3 例）+ test_g67_closure / test_g52_retry_queue_extra / test_g73_dlq 33 例回归"
+      }
+    ],
+    "required_fixed": [
+      "test_g43_engine 补投断言原先近乎恒真（mock 掉了递增 _running 的 _start_worker）→ fake 同步递增 + 恢复精确断言 + 在跑达上限不得超发",
+      "test_doc_drift_guard 两处 skipTest → 改为从文档现取真值再改坏（取不到即 fail），现 8 例零 skip",
+      "batch_start_limit / _refresh_stuck 两处静默 except → 补 applog.warn（原判据只认 ast.Pass，一行赋值即可绕过）",
+      "_running 未在 __init__ 初始化 + cancel_all 为待发项合成终态会误递减 → 初始化 + count_running=False"
+    ],
+    "suggestions_adopted": 6,
+    "suggestions_logged_as_known_boundary": 2,
+    "reviewer_confirmed_ok": [
+      "启动路径参数合并无字段丢失（逐项核对为超集）",
+      "真实 worker 的 finished 与 _running 严格配对且全在 GUI 线程改，无数据竞争",
+      "_top_up_pending 有 _cancelled 早退，取消/替换后不会误建 worker",
+      "launch 清空旧 pending_queue 是幂等防御",
+      "except=621 / pass-only=283 自洽，红线未破"
+    ],
+    "self_inflicted_regression_caught_by_suite": {
+      "test": "tests/test_g67_closure.TestRetryReusesBatchContext.test_retry_tick_without_prior_batch_still_works",
+      "cause": "C-2 第一版修法（无上下文拒绝重投）关掉了既有契约",
+      "lesson": "审查意见要按其指出的事实执行，不要按其建议的修法执行；全量快集里的历史边界用例是这类反转的唯一拦网"
+    }
+  },
+  "artifacts": {
+    "exe_size": 41677729,
+    "exe_sha256": "ba7576d2706b2473bbca689670667b74c09b818bf8bfbeac0b065904cec96a86",
+    "zip_size": 80311847,
+    "zip_sha256": "5cf80ad61cde145935101e70f1ec4d854545de2cf4ad3a9b98e5d911b473d3b5",
+    "health_check": "7/7 OK（version==archive_version==9.12.0, started_ok, repos_db_created, 3944ms）",
+    "exe_e2e": "dist/Git-clone-Max.exe --cli --json 真克隆 exit 0（action=cloned, mirror_used=gh-proxy.com）",
+    "note": "本次构建发生在独立审查全部修复之后（首版产物 053aa68f… 已作废，未发布）"
+  }
 }

@@ -32,6 +32,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
+# 窄编码终端（中文 Windows 的 cp936）下 `✓/✗` 会抛 UnicodeEncodeError ——
+# 而本脚本唯一的用途就是在**有漂移时**把这些行打出来（实测过：那一刻以 traceback 结束）。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 import dev_metrics  # noqa: E402  （同目录脚本，复用同一套度量口径）
 
 LINE_TOLERANCE = 5
@@ -50,12 +56,21 @@ def _actual_lines() -> dict[str, int]:
     return dev_metrics.line_counts()
 
 
-def _resolve(name: str, actual: dict[str, int]) -> str | None:
-    """把文档里写的模块名（可能只有 basename）映射到实际路径。"""
+def _resolve(name: str, actual: dict[str, int]) -> tuple[str | None, str]:
+    """把文档里写的模块名（可能只有 basename）映射到实际路径。
+
+    返回 `(路径或 None, 问题描述)`。basename 有歧义时返回问题而**不是静默跳过** ——
+    否则文档里写一句 `` `__init__.py` **N**`` 就会永远不被检查且不报错（审查意见）。
+    """
     if name in actual:
-        return name
+        return name, ""
     cands = [p for p in actual if p.endswith("/" + name)]
-    return cands[0] if len(cands) == 1 else None
+    if len(cands) == 1:
+        return cands[0], ""
+    if len(cands) > 1:
+        return None, (f"CLAUDE.md §6 里的 `{name}` 有 {len(cands)} 个同名文件"
+                      f"（{'、'.join(sorted(cands))}），无法确定指的是哪个 → 请写全路径")
+    return None, ""
 
 
 def check_claude_md(actual: dict[str, int]) -> list[str]:
@@ -69,7 +84,10 @@ def check_claude_md(actual: dict[str, int]) -> list[str]:
     seen = 0
     for m in re.finditer(r"`([A-Za-z0-9_]+\.py)`\s*\*\*(\d+)\*\*", section):
         name, claimed = m.group(1), int(m.group(2))
-        path = _resolve(name, actual)
+        path, problem = _resolve(name, actual)
+        if problem:
+            problems.append(problem)
+            continue
         if path is None:
             continue
         seen += 1

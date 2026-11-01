@@ -202,6 +202,10 @@ class SyncEngine(QObject):
         self._depth = 0
         self._unshallow = False
         self._pending = 0
+        # C1-8：在跑 worker 计数（流控补投判定）。必须在此初始化 —— 原实现只在
+        # `launch` 里赋值，`set_concurrency`→`_top_up_pending` 若早于 launch 被调用
+        # 就只能靠 getattr 兜底（审查意见）。
+        self._running = 0
         self.busy = False
 
         # 进度内存态 + 周期落盘（G22-2：in_progress/failed 全生命周期跟踪）
@@ -290,15 +294,19 @@ class SyncEngine(QObject):
         """
         try:
             pool_max = int(self.pool.maxThreadCount())
-        except Exception:  # pragma: no cover - 池异常时退化为硬上限
+        except Exception as e:  # noqa: BLE001 - 池异常退化为硬上限，但要留痕
+            from . import applog
+            applog.warn(f"读取线程池上限失败，流控退化为硬上限 "
+                        f"{_BATCH_START_LIMIT}：{e}")
             pool_max = _BATCH_START_LIMIT
         return max(1, min(_BATCH_START_LIMIT, pool_max))
 
     def _top_up_pending(self) -> None:
         """把待发队列补投到当前上限（并发达上限/已取消/无排队时不做）。
 
-        与 `_replenish` 的区别：`_replenish` 只补一个（每完成一个任务补一个），
-        本方法会**循环补满** —— 供「用户运行中调高并发」时立刻生效。
+        `_replenish()` 是它的别名（每完成一个任务调用一次 → 补满到当前上限）。
+        `cancel_all()` 为待发项合成终态时**不会**走 `_start_worker`，因此那里的
+        `_on_worker_done(count_running=False)` 不递减在跑计数。
         """
         if getattr(self, "_cancelled", False):
             return
@@ -316,19 +324,40 @@ class SyncEngine(QObject):
 
     # ------------------------------------------------------------ G52-6 并发记忆
     def _restore_concurrency_state(self) -> None:
-        """启动时从 concurrency_state.json 恢复上次并发（受设置上限约束）。"""
+        """启动时从 concurrency_state.json 恢复上次因**网络问题**降下来的并发。
+
+        三条守卫（审查 C-1，都是真机可触发的坑）：
+
+        ① **只在 `fail_rate > 0` 时恢复** —— 写入侧一直是无条件写的，若不加门控，
+           一份陈旧的 `{"concurrency": 1, "fail_rate": 0}` 会把用户设置悄悄覆盖掉；
+        ② **不低于天花板的一半** —— 否则一次抖动降到 1 会被永久记住；而 `_launch`
+           每批都新建引擎、`_net_ok_streak` 随批清零，用户若按「一次 1~2 个仓库」
+           的节奏用，永远攒不满 3 次成功 → 并发永久钉在 1，界面还显示得很正常；
+        ③ **必须可观测**（applog + `adapt_changed`）—— 静默降并发等于用户看着
+           「并行线程 32」而实际单线程跑。
+
+        `by_user=False`：恢复的是「上次的当前值」，不动天花板 `_adapt_max`
+        （天花板由用户本次设置决定）。
+        """
         if self._concurrency_state_path is None or not self._concurrency_state_path.exists():
             return
         try:
             data = json.loads(self._concurrency_state_path.read_text(encoding="utf-8"))
             n = int(data.get("concurrency", 0))
-            if 1 <= n <= self._adapt_max:
-                # by_user=False：恢复的是「上次的当前值」，不该动天花板 ——
-                # 天花板由用户本次的设置决定（`_adapt_max`）。
-                self.set_concurrency(n, by_user=False)
-                self._adapt_current = n
-        except Exception:
-            pass
+            fail_rate = float(data.get("fail_rate", 0) or 0.0)
+            if fail_rate <= 0 or not (1 <= n < self._adapt_max):
+                return
+            floor = max(1, (self._adapt_max + 1) // 2)
+            n = max(n, floor)
+            self.set_concurrency(n, by_user=False)
+            self._adapt_current = n
+            from . import applog
+            applog.warn(f"已按上次网络状况临时降至 {n} 并发"
+                        f"（设置上限 {self._adapt_max}；连续成功后自动回升）")
+            self.adapt_changed.emit(n, f"已按上次网络状况临时降至 {n} 并发")
+        except Exception as e:  # noqa: BLE001 - 状态文件损坏不该阻止启动
+            from . import applog
+            applog.warn(f"并发记忆恢复失败（按设置值启动）：{e}")
 
     def _persist_concurrency_state(self) -> None:
         """批次结束时持久化当前并发与近批失败率。"""
@@ -450,6 +479,14 @@ class SyncEngine(QObject):
             return
         if self.busy or self._cancelled:
             return
+        # 审查 C-2 的处理方式（重要，别退回硬拦截）：
+        # 起初我在这里加过 `if not self._last_batch_ctx: return`，想挡住「空上下文重投
+        # → host 列被写成 github.com」。但这会**关掉一个既有契约** ——
+        # `tests/test_g67_closure.test_retry_tick_without_prior_batch_still_works`
+        # 明确要求「快照为空时不得崩、仍要重投」（首次启动就有待重投队列是真实场景）。
+        # 真正的根因不在重投，而在 host 的取值方式：原来盲 `or "github.com"`。
+        # 现在改为 `_host_for()`（登记表 → 从 URL 解析 → 才回落），污染源已消除，
+        # 因此这里保持原行为（允许无上下文重投）。
         try:
             # G72：单 tick 最多重投 50 条，避免几百个同时到期造成瞬时尖峰
             due = self._retry_queue.due_tasks(limit=50)
@@ -720,7 +757,10 @@ class SyncEngine(QObject):
                         self.set_concurrency(nxt, by_user=False)
                         self.adapt_changed.emit(
                             nxt, f"网络抖动，并发已自动降至 {nxt}")
-            else:
+            elif status in (SyncStatus.SUCCESS, SyncStatus.SKIPPED):
+                # 审查意见：只有真正成功/跳过才算「网络恢复」的证据。
+                # 原实现的 else 分支把 CANCELLED（cancel_all 合成的终态）也算进来，
+                # 会冒出一次假的「网络恢复，并发已回升」。
                 self._net_ok_streak += 1
                 self._net_fail_streak = 0
                 if self._net_ok_streak >= 3 and self._adapt_current < self._adapt_max:
@@ -762,7 +802,8 @@ class SyncEngine(QObject):
             res = SyncResult(spec=spec, status=SyncStatus.CANCELLED,
                              action=SyncAction.CANCELLED, message="已取消")
             self._on_result(index, res)
-            self._on_worker_done()
+            # count_running=False：这些项从未 _start_worker（没递增过在跑计数）
+            self._on_worker_done(count_running=False)
 
     def pause_task(self, index: int) -> bool:
         """暂停单个任务：只取消目标 worker 的 flag，其余任务继续（G02-3）。
@@ -1035,6 +1076,30 @@ class SyncEngine(QObject):
         self._progress_timer.start()
         return len(unique_specs)
 
+    def _host_for(self, spec: RepoSpec) -> str:
+        """该仓库的 host（落库 / 事件 / per-host 闸门共用）。
+
+        取值顺序：**本批登记表 → 从 `url_https` 解析 → 最后才回落到 github.com**。
+
+        为什么不能直接 `self._host_by_key.get(key) or "github.com"`（审查 C-2 根因）：
+        重投路径与「启动期自动重投」下本批登记表是空的，盲回落会把 gitlab / gitee /
+        自建主机的仓库**落库成 `host="github.com"`**，污染 `UNIQUE(owner,repo,host)`
+        —— 同一仓库被当成两个，之后「一键更新」会指向错误来源。
+        """
+        key = f"{spec.owner}/{spec.repo}"
+        host = (self._host_by_key.get(key) or "").strip()
+        if host:
+            return host
+        raw = getattr(spec, "url_https", "") or getattr(spec, "url", "") or ""
+        try:
+            from .url_lib import host_of
+            got = (host_of(str(raw)) or "").strip()
+        except Exception as e:  # noqa: BLE001 - 解析失败按默认 host，但要留痕
+            from . import applog
+            applog.warn(f"解析仓库 host 失败（{raw}），按 github.com 处理：{e}")
+            got = ""
+        return got or "github.com"
+
     def _host_gate(self, host: str) -> Optional[threading.Semaphore]:
         """取（惰性建）某 host 的并发闸门。host_concurrency<=0 → None（不限流）。"""
         if self._host_concurrency <= 0:
@@ -1063,9 +1128,10 @@ class SyncEngine(QObject):
     def _start_worker(self, index: int, spec: RepoSpec, flag: CancelFlag):
         """构造并启动单个 worker（launch 首批与 _replenish 补投共用）。"""
         key = f"{spec.owner}/{spec.repo}"
-        host = self._host_by_key.get(key) or "github.com"
-        # C1-8：在跑计数（流控补投判定用）。与 worker 的 finished 信号严格配对，
-        # 见 `_on_worker_done` 的递减 —— 两处必须成对，否则补投会停摆或超发。
+        host = self._host_for(spec)
+        # C1-8：在跑计数（流控补投判定用）。与真实 worker 的 finished 严格配对
+        # （`_on_worker_done(count_running=True)`）；取消时为待发项合成的终态走
+        # `count_running=False` —— 那些项从未在此递增过，不能递减。
         self._running = self._running_count() + 1
         # A5-5/R3：per-host 并发闸门 —— 同一 host 的在跑任务数受 host_concurrency
         # 限制（默认 4）。300 仓全指 github.com × 全局并发 32 会成片触发
@@ -1195,9 +1261,9 @@ class SyncEngine(QObject):
             try:
                 repo_id = self.db.upsert_repo(
                     res.spec, res.path,
-                    host=(self.specs.get(index, res.spec) and
-                          self._host_by_key.get(f"{res.spec.owner}/{res.spec.repo}",
-                                                "github.com")),
+                    # 审查 C-2 根因：原来盲回落 "github.com"，会把 gitlab/gitee 仓库
+                    # 落库成 github.com（污染 UNIQUE(owner,repo,host)）
+                    host=self._host_for(res.spec),
                     default_branch=None, head_sha=res.head_sha or None)
                 self.db.add_sync_history(
                     repo_id, res.status, res.action, res.message, res.detail,
@@ -1298,11 +1364,13 @@ class SyncEngine(QObject):
         # 转发给 UI
         self.result.emit(index, res)
 
-    def _on_worker_done(self):
+    def _on_worker_done(self, count_running: bool = True):
         # 计数含取消：取消也是终态，若不计入会导致 finished 信号永不收敛
         self._pending = max(0, self._pending - 1)
-        # C1-8：在跑计数递减（与 `_start_worker` 的递增严格配对，供流控补投判定）
-        self._running = max(0, self._running_count() - 1)
+        # C1-8：在跑计数递减，与 `_start_worker` 的递增配对。
+        # `count_running=False` 给「从未启动过的待发项」的合成终态（cancel_all）用。
+        if count_running:
+            self._running = max(0, self._running_count() - 1)
         # A5-6/C-15：每任务结束都全量 fsync 落盘 → 32 并发同帧完成时每帧 2 次
         # fsync（5-20ms）阻塞 GUI。改为节流：距上次落盘 <2s 只标记 dirty，
         # 由既有 100ms 心跳兜底落盘；批次收尾/launch 仍强制 flush。

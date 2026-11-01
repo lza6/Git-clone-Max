@@ -229,7 +229,7 @@ docs/        工程/产品/契约文档
 - **CI 已锁定 PyQt6 版本**：`.github/workflows/ci.yml` 在 4 处 `pip install PyQt6==6.11.0`；
   `requirements-build.txt` 里也锁了 ruff/mypy/coverage/pyinstaller 的精确版本，但 **CI 的 Lint/Type 步骤是裸 `pip install ruff` / `pip install mypy`（不读该文件）→ CI 上的 ruff/mypy 版本仍不锁**。G80 实测登记，别再把「文件里有锁」当成「CI 已锁」。
 - **代码规模现状（2026-11-01 v9.12.0 实测，`python scripts/dev_metrics.py` 可一键复测）**：仍为 **3 个**文件超 800 行 —— `main_window.py` **2778**、
-  `service.py` **1899**、`engine.py` **1516**（`progress_table.py` **790**、`repo_db.py` **793**、
+  `service.py` **1899**、`engine.py` **1586**（`progress_table.py` **790**、`repo_db.py` **793**、
   `settings_panel.py` **798**、`settings_groups.py` **786** 均在 800 线内；
   G76 新增 `settings_actions.py`（276，设置页动作型回调）就是为了让这两个设置模块不越线；G77 把更新检查三段抽到 `update_flow.py`（205），主窗从 2750 降到 2658；G78 修 chip 裁切时 +7 行 → 2665；G79b 给紧凑布局补注释 +5 行 → 2670；G80 新增回调+后台任务接线后 2765；G82 A5-4 确认范式 +25 行 → 2790；v9.12.0 C1 批 +1 行 → **2791**。**超 800 行集合现在有守卫**（`tests/test_g79_repo_hygiene::TestNoNewOversizedModules` 用集合相等断言），新增第 4 个超限文件会直接红。
   G75 把 `theme.py` 从 598 拆到 **314**（色板→`palettes`、字排→`typography`、QSS→`qss_build`），
