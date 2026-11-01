@@ -139,10 +139,8 @@ class StatisticsDialog(QDialog):
         """
         t = getattr(self, "_agg_thread", None)
         if t is not None and t.isRunning():
-            try:
-                t.disconnect()
-            except TypeError:
-                pass  # 本就无连接
+            # 不 disconnect（Qt 无连接时抛 TypeError，且 except 预算红线）；
+            # 过期轮次由渲染槽用代际令牌丢弃（见 _on_scorecard_ready）。
             t.wait(3000)
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt 命名
@@ -376,11 +374,19 @@ class StatisticsDialog(QDialog):
         # 由 self._agg_thread 引用持有 + closeEvent wait 后 deleteLater 收尸。
         self._agg_thread = _Aggregator(None)
         self._agg_thread.finished.connect(self._agg_thread.deleteLater)
+        self._agg_generation = getattr(self, "_agg_generation", 0) + 1
+        self._agg_thread._generation = self._agg_generation
         self._agg_thread.finished_with.connect(self._on_scorecard_ready)
         self._agg_thread.start()
 
     def _on_scorecard_ready(self, summary, avg, storage_text) -> None:
-        """后台聚合完成 → GUI 线程渲染（U-3：worker 只 emit，不碰控件）。"""
+        """后台聚合完成 → GUI 线程渲染（U-3：worker 只 emit，不碰控件）。
+
+        代际令牌：只渲染最新一轮（旧线程结果到达时丢弃，替代 disconnect）。
+        """
+        t = getattr(self, "_agg_thread", None)
+        if t is not None and getattr(t, "_generation", 0) != getattr(self, "_agg_generation", 0):
+            return  # 过期轮次
         try:
             if summary == "__error__" or summary is None:
                 self.lbl_scorecard.setText("评分卡：（不可用）")
