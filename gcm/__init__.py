@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from ._changelog_data import ENTRIES as __changelog__
 
-__version__ = "9.14.0"
+__version__ = "9.15.0"
 __app_name__ = "Git-clone-Max"
 
 __all__ = ["__version__", "__app_name__", "__changelog__"]

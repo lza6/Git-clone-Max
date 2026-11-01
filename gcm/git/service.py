@@ -1111,7 +1111,38 @@ class GitService:
 
     def sync(self, spec: RepoSpec) -> SyncResult:
         """统一入口：存在则增量更新，不存在则克隆。"""
-        return self._finalize_checkout(self._sync_inner(spec))
+        res = self._sync_inner(spec)
+        # C3-4：检出校验单独计时（`_finalize_checkout` 会递归 stat 工作树，
+        # 大仓/杀软环境下这一段可能比 fetch 还慢）
+        _t0 = time.time()
+        try:
+            return self._finalize_checkout(res)
+        finally:
+            try:
+                res.stages["checkout"] = round(
+                    float(res.stages.get("checkout", 0.0)) + (time.time() - _t0) * 1000.0, 1)
+            except Exception as e:      # noqa: BLE001 —— 埋点失败绝不影响结果
+                from ..app.applog import warn as _warn
+                _warn(f"checkout 阶段计时失败：{e}")
+
+    def _timed(self, res: SyncResult, name: str, fn):
+        """C3-4：跑 `fn()` 并把耗时累加进 `res.stages[name]`（毫秒）。
+
+        **为什么用「包一层调用」而不是在 `run_git_ui` 内埋点**：`_clone`/`_update`
+        内部各有 4~5 处 `run_git_ui`（镜像首跳 / 回退源站 / treeless→depth1 降级 /
+        unshallow / 子模块），逐处插桩既啰嗦又容易漏；而用户问的是**「这次慢在传输
+        还是别处」**，包住整段降级链正好回答这个问题，且只有两个接入点。
+        """
+        t0 = time.time()
+        try:
+            return fn()
+        finally:
+            try:
+                res.stages[name] = round(
+                    float(res.stages.get(name, 0.0)) + (time.time() - t0) * 1000.0, 1)
+            except Exception as e:      # noqa: BLE001 —— 埋点失败绝不影响同步结果
+                from ..app.applog import warn as _warn
+                _warn(f"阶段耗时埋点失败（{name}）：{e}")
 
     def _sync_inner(self, spec: RepoSpec) -> SyncResult:
         """原 `sync` 主体（G80-B4 拆出，便于在唯一出口做检出校验）。"""
@@ -1132,7 +1163,9 @@ class GitService:
         # G38-3 远端可达性预检（可选开启）：断网/坏 host 时 10s 内明确失败，
         # 不必等满 clone/fetch 超时。仅对含远端 URL 的仓库执行。
         if self.precheck_remote and not spec.is_local and spec.url_https:
+            _t_pre = time.time()
             ok, err = self._precheck_reachable(spec.url_https)
+            res.stages["precheck"] = round((time.time() - _t_pre) * 1000.0, 1)
             if not ok:
                 # G69-21：源站不可达正是镜像的用武之地。此前这里直接失败，
                 # 导致「开了预检就永远用不上镜像」—— 两个功能互斥。
@@ -1158,7 +1191,7 @@ class GitService:
                     res.head_sha = self._head_sha(repo_dir)
                     res.remote_sha = ""
                     return res
-                return self._update(spec, res)
+                return self._timed(res, "transfer", lambda: self._update(spec, res))
             # 半成品目录（断点残留）
             if repo_dir.exists():
                 self._emit(f"[警告] 发现不完整目录 {repo_dir.name}，尝试清理后重新克隆", "warn")
@@ -1196,7 +1229,7 @@ class GitService:
                                       "已跳过删除以免误删用户数据")
                         res.ended = time.time()
                         return res
-            return self._clone(spec, res)
+            return self._timed(res, "transfer", lambda: self._clone(spec, res))
         finally:
             # 统一兜底：任何路径都必须有结束时间，否则 duration 会为 0
             if res.ended == 0.0:

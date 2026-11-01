@@ -126,6 +126,12 @@ class MainWindow(QMainWindow):
         self.settings_store = settings or SettingsStore(self.data_dir / "settings.json")
         self.settings = self.settings_store.load()
         self.progress_path = self.data_dir / "progress.json"
+        # C4-2：启动时若全文索引与 repos 行数不一致则重建（首次升级后会跑一次）
+        try:
+            self.db.ensure_fts()
+        except Exception as e:      # noqa: BLE001 —— 索引不可用不影响启动（搜索降级 LIKE）
+            from ..app.applog import warn as _applog_warn  # 注意别叫 _warn：本文件已有同名闭包
+            _applog_warn(f"启动时检查全文索引失败（搜索将降级为 LIKE）：{e}")
 
         # 统一调度引擎：**构造走 engine_factory（唯一映射点）**。
         # v9.12.0（Rev7 C1-2）：这里原本手写着 20 行参数列表，与 engine_factory
@@ -1003,6 +1009,15 @@ class MainWindow(QMainWindow):
         lines.append(f"PyQt6：{PYQT_VERSION_STR}")
         lines.append(f"数据目录：{self.data_dir}")
         lines.append(f"当前并发：{self.engine.concurrency}（上限 {MAX_CONCURRENCY}）")
+        # C3-4：分阶段耗时累计（回答"这些批次慢在传输还是别处"）
+        try:
+            totals = self.db.stage_totals() if hasattr(self.db, "stage_totals") else {}
+        except Exception:       # noqa: BLE001 —— 诊断附带项，取不到就跳过
+            totals = {}
+        if totals:
+            shown = " · ".join(f"{k} {v / 1000:.1f}s" for k, v in
+                               sorted(totals.items(), key=lambda kv: -kv[1]))
+            lines.append(f"阶段耗时累计：{shown}")
         lines.append(f"数据目录可写：{'是' if os.access(self.data_dir, os.W_OK) else '否'}")
         # G33-6 启动耗时：构造完成即记录；>3s 标注较慢（exe 解包/低配机器场景）
         startup_ms = getattr(self, "_startup_ms", 0)

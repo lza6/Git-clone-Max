@@ -29,7 +29,7 @@ SQLite，文件 `data/repos.db`，WAL 模式。
 | 锁等待 | `PRAGMA busy_timeout=30000` | `_BUSY_TIMEOUT_MS` |
 | 外键 | `PRAGMA foreign_keys=ON` | `Database.__init__` |
 | 连接 | `check_same_thread=False` + 进程内 `RLock`（**单写者**：DB 写入只在引擎主线程） | `Database.__init__` |
-| schema 版本 | `PRAGMA user_version` = **6**（v4 `sync_queue` / v5 `repos.profile_json` / v6 `dir_stats`；后两者分别由 `db/repo_profile.py`、`db/dir_stats.py` 实现——`repo_db.py` 贴着 800 行红线，迁移实现一律落新模块） | `_SCHEMA_VERSION` |
+| schema 版本 | `PRAGMA user_version` = **8**（v4 `sync_queue` / v5 `repos.profile_json` / v6 `dir_stats` / v7 `sync_history.stage_json` / v8 `repo_fts`；实现分别落在 `db/repo_profile.py`、`db/dir_stats.py`、`db/repo_fts.py`（v7 只是加列，在 `_migrate` 内）——`repo_db.py` 贴着 800 行红线，迁移实现一律落新模块） | `_SCHEMA_VERSION` |
 
 ### 1.1 迁移链（`_migrate`，幂等）
 
@@ -42,6 +42,8 @@ SQLite，文件 `data/repos.db`，WAL 模式。
 | 4 | 新增 `sync_queue` 表（定时同步队列） | G80-B7-3（`db/queue_db.migrate_to_v4`） |
 | 5 | `repos` + `profile_json`（零 LLM 仓库画像） | G81（`db/repo_profile.migrate_to_v5`） |
 | 6 | 新增 `dir_stats` 表（目录大小缓存，默认 30 分钟 TTL） | C3-1（`db/dir_stats.migrate_to_v6`） |
+| 7 | `sync_history` + `stage_json`（分阶段耗时：precheck/transfer/checkout/hook） | C3-4 |
+| 8 | 新增 `repo_fts` 虚表（FTS5 **trigram** 外部内容表，索引 `owner/repo/folder_name/tags/note`） | C4-1（`db/repo_fts.migrate_to_v8`） |
 
 > 每条迁移先 `PRAGMA table_info` 判列存在（幂等），最后统一 `PRAGMA user_version=N` + commit。
 > 新增列请递增 `_SCHEMA_VERSION` **并**补一段 `if v < N:`，不要直接改 `_SCHEMA` 里的 `CREATE TABLE`
@@ -177,3 +179,13 @@ SQLite，文件 `data/repos.db`，WAL 模式。
 **单写者铁律**：本表的读与写**只在 GUI/引擎主线程**发生 —— `manage_panel` 的目录统计
 线程只做纯文件系统遍历（`Database.dir_size` 是静态方法，不碰连接），算完的结果由
 GUI 线程一次性批量写回。**不要**为了让统计"更快"就在工作线程里拿 `Database._conn`。
+
+### 1.7 `repo_fts`（v8 / C4-1）—— **派生索引，可随时重建**
+
+| 项 | 说明 |
+|---|---|
+| 类型 | FTS5 **外部内容表**：`content='repos', content_rowid='id'`（不存正文，只存索引） |
+| 分词器 | `trigram` —— 要求查询 **≥3 个 unicode 字符**；**2 个汉字会零命中**（实测），所以搜索走双路：≥3 字用 FTS，<3 字用 LIKE |
+| 维护 | **没有触发器**（避免 3000 仓导入时每次 upsert 多一轮索引写）；由 `ensure_fts()` 在**应用启动**与**每批结束**各对齐一次 |
+| 事实源 | `repos` 表。`repo_fts` 随时可 `INSERT INTO repo_fts(repo_fts) VALUES('rebuild')`，删掉它搜索会自动降级为 LIKE |
+| 降级 | 当前 SQLite 不带 FTS5/trigram 时，`Database.__init__` 捕获 `OperationalError` → `_fts_ready=False`，搜索走纯 LIKE，**应用照常可用** |

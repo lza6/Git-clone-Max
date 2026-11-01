@@ -69,7 +69,10 @@ GCM = ROOT / "gcm"
 # - v9.14.0 +9（except 650 / **pass-only 282 未涨**）：
 #   C2-3 busy / C3-1 dir_stats / C3-2 history_prune 三个新模块的防御分支，
 #   全部有 applog.warn 或明确降级出口。
-BASELINE_EXCEPT = 650
+# - v9.15.0 +17（except 667 / **pass-only 282 未涨**）：
+#   C3-4 stage_stats / C4 repo_fts+migrate / repo_search 双路的防御分支，
+#   全部有 applog.warn 或明确降级出口（FTS 不可用 → 退 LIKE）。
+BASELINE_EXCEPT = 667
 BASELINE_PASS_ONLY = 283
 
 

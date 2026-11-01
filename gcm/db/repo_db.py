@@ -13,9 +13,11 @@ from ..models import RepoSpec, SyncAction, SyncStatus
 from .dir_stats import DirStatsMixin, migrate_to_v6
 from .history_prune import HistoryPruneMixin
 from .queue_db import QueueStore, migrate_to_v4
+from .repo_fts import RepoFtsMixin, migrate_to_v8
 from .repo_profile import RepoProfileMixin, migrate_to_v5
 from .repo_search import SearchMixin
 from .repo_ssh import SshKeyMixin
+from .stage_stats import StageStatsMixin, dumps_stages
 from .txn import write_txn
 
 _SCHEMA = """
@@ -56,7 +58,7 @@ CREATE INDEX IF NOT EXISTS idx_sync_history_repo ON sync_history(repo_id, starte
 _BUSY_TIMEOUT_MS = 30000  # SQLite 写锁竞争等待上限，避免高并发直接抛 database is locked
 
 # 数据库 schema 版本（PRAGMA user_version）。每次结构变更，递增此值并补一段迁移。
-_SCHEMA_VERSION = 6
+_SCHEMA_VERSION = 8
 
 
 def _migrate(conn):
@@ -86,12 +88,19 @@ def _migrate(conn):
         migrate_to_v5(conn)
     if v < 6:  # v6：目录大小缓存表（C3-1），实现抽到 dir_stats.py（同上）
         migrate_to_v6(conn)
+    if v < 7:  # v7：sync_history 分阶段耗时列（C3-4）
+        cols_h = [r[1] for r in conn.execute("PRAGMA table_info(sync_history)")]
+        if "stage_json" not in cols_h:
+            conn.execute(
+                "ALTER TABLE sync_history ADD COLUMN stage_json TEXT DEFAULT ''")
+    if v < 8:  # v8：全文索引虚表（C4-1）；FTS5/trigram 不可用时由调用方降级为 LIKE
+        migrate_to_v8(conn)
     conn.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
     conn.commit()
 
 
 class Database(SshKeyMixin, SearchMixin, RepoProfileMixin, DirStatsMixin,
-               HistoryPruneMixin):
+               HistoryPruneMixin, StageStatsMixin, RepoFtsMixin):
     """线程安全 SQLite 封装。"""
 
     def __init__(self, db_path: str | Path, readonly: bool = False):
@@ -122,8 +131,22 @@ class Database(SshKeyMixin, SearchMixin, RepoProfileMixin, DirStatsMixin,
             self._conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS};")  # 高并发写不立刻抛锁错误
             with self._lock:
                 self._conn.executescript(_SCHEMA)
-                _migrate(self._conn)
+                # C4-1：v8 要建 FTS5 虚表。若当前 SQLite 不带 FTS5/trigram，
+                # 迁移会抛 OperationalError —— 此时**降级为纯 LIKE**（搜索仍可用），
+                # 而不是让整个数据库打不开。
+                self._fts_ready = True
+                try:
+                    _migrate(self._conn)
+                except sqlite3.OperationalError as e:
+                    self._conn.rollback()
+                    self._fts_ready = False
+                    from ..app.applog import warn as _warn
+                    _warn(f"FTS5/trigram 不可用，全文搜索降级为 LIKE：{e}")
+                    # 退一步：把版本号推到当前，避免每次打开都重试建表失败
+                    self._conn.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
                 self._conn.commit()
+        if not hasattr(self, "_fts_ready"):
+            self._fts_ready = not readonly
         # G80-B7-3：同步队列读写（S1）
         self.queue = QueueStore(self._conn, self._lock)
         # G33-5：sync_history 容量治理计数器（每 100 次 add_sync_history 自动清理一次）
@@ -306,19 +329,21 @@ class Database(SshKeyMixin, SearchMixin, RepoProfileMixin, DirStatsMixin,
                          message: str = "", detail: str = "", commits: int = 0,
                          head_before: str | None = None, head_after: str | None = None,
                          remote_head: str | None = None, duration_ms: int = 0,
+                         stages: dict | None = None,
                          started_at: str | None = None, ended_at: str | None = None):
         with self._lock, write_txn(self):
             self._conn.execute(
                 """
                 INSERT INTO sync_history
                     (repo_id, status, action, message, detail, commits, head_before,
-                     head_after, remote_head, duration_ms, started_at, ended_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                     head_after, remote_head, duration_ms, started_at, ended_at, stage_json)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (repo_id, status.value, action.value, message, detail, commits,
                  head_before, head_after, remote_head, duration_ms,
                  started_at or time.strftime("%Y-%m-%d %H:%M:%S"),
-                 ended_at or time.strftime("%Y-%m-%d %H:%M:%S")),
+                 ended_at or time.strftime("%Y-%m-%d %H:%M:%S"),
+                 dumps_stages(stages)),
             )
 
     # ------------------------------------------------------------------ 读

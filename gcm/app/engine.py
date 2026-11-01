@@ -574,6 +574,22 @@ class SyncEngine(QObject):
         except Exception:
             pass
 
+    def _rebuild_search_index_if_due(self) -> None:
+        """批次收尾：与 repos 行数不一致时重建 FTS 索引（C4-2）。失败只 warn。"""
+        db = self.db
+        fn = getattr(db, "ensure_fts", None)
+        if not callable(fn):
+            return
+        try:
+            n = int(fn() or 0)
+        except Exception as e:      # noqa: BLE001 —— 索引重建失败不影响批次结果
+            from . import applog
+            applog.warn(f"全文索引重建失败（搜索降级为 LIKE）：{e}")
+            return
+        if n:
+            from . import applog
+            applog.info(f"全文索引已重建：{n} 条")
+
     def _prune_history_if_due(self) -> None:
         """批次收尾：让 DB 做一次同步历史容量治理（C3-2）。失败只 warn。"""
         db = self.db
@@ -1318,7 +1334,10 @@ class SyncEngine(QObject):
                 self.db.add_sync_history(
                     repo_id, res.status, res.action, res.message, res.detail,
                     commits=res.commits, head_before="", head_after=res.head_sha,
-                    remote_head=res.remote_sha, duration_ms=res.duration_ms)
+                    remote_head=res.remote_sha, duration_ms=res.duration_ms,
+                    # C3-4：分阶段耗时（precheck/transfer/checkout/hook）一起落库，
+                    # 供"这批为什么慢"直接查，不必翻 git 原始日志
+                    stages=getattr(res, "stages", None))
                 # G81（N-6）：仓库画像落库。失败只记日志，不影响这条结果
                 # （画像是展示用派生数据，绝不能让它把成功的同步变成失败）。
                 if getattr(res, "profile", None) is not None:
@@ -1446,6 +1465,9 @@ class SyncEngine(QObject):
                 # C3-2（Rev7 C-9）：同步历史容量治理挪到批次收尾（原来每 100 条历史触发
                 # 一次全表窗口函数，10 万行实测 164ms，且发生在 GUI 线程）
                 self._prune_history_if_due()
+                # C4-2：全文索引是**派生**的，批次收尾重建一次（搜索是低频操作，
+                # 不必给每次 upsert 加触发器）
+                self._rebuild_search_index_if_due()
             # C1-11（Rev7 §4 C-24）：批次正常收尾 → 触发一次被动 WAL 收缩。
             # 为什么放这里而不是每任务：`wal_checkpoint(PASSIVE)` 不阻塞读者、不丢未提交
             # 数据，是安全操作；但每个任务一次会造成无谓 IO。此前该方法有实现、**零生产

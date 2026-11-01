@@ -113,8 +113,11 @@ class TestDirStatsCache(unittest.TestCase):
     def test_schema_is_v6(self):
         db = self._db()
         try:
+            from gcm.db.repo_db import _SCHEMA_VERSION
             v = db._conn.execute("PRAGMA user_version").fetchone()[0]
-            self.assertEqual(v, 6, "C3-1 需要 v6（dir_stats 表）")
+            # 不钉死具体版本号（v7 起还有 stage_json）——只要求「已迁到当前版本且 >= 6」
+            self.assertEqual(v, _SCHEMA_VERSION)
+            self.assertGreaterEqual(v, 6, "C3-1 需要 v6 起（dir_stats 表）")
             row = db._conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='dir_stats'"
             ).fetchone()
@@ -186,3 +189,90 @@ class TestPruneMovedOutOfHotPath(unittest.TestCase):
                 self.assertEqual(db.prune_history_if_due(), 0, "治理失败不得抛")
         finally:
             db.close()
+
+
+class TestStageTiming(unittest.TestCase):
+    """C3-4：分阶段耗时埋点（precheck / transfer / checkout / hook）与聚合。"""
+
+    def _db(self):
+        return Database(Path(tempfile.mkdtemp()) / "repos.db")
+
+    def test_schema_is_v7_with_stage_json(self):
+        from gcm.db.repo_db import _SCHEMA_VERSION
+        db = self._db()
+        try:
+            v = db._conn.execute("PRAGMA user_version").fetchone()[0]
+            self.assertEqual(v, _SCHEMA_VERSION, "user_version 应等于当前 _SCHEMA_VERSION")
+            self.assertGreaterEqual(v, 7, "C3-4 需要 v7 起（stage_json 列）")
+            cols = [r[1] for r in db._conn.execute("PRAGMA table_info(sync_history)")]
+            self.assertIn("stage_json", cols, "v7 必须给 sync_history 加 stage_json")
+        finally:
+            db.close()
+
+    def test_roundtrip_and_aggregation(self):
+        db = self._db()
+        try:
+            rid = db.upsert_repo(_spec(11), "/tmp/s", host="github.com")
+            db.add_sync_history(rid, SyncStatus.SUCCESS, SyncAction.CLONED,
+                                duration_ms=5000,
+                                stages={"precheck": 120.0, "transfer": 4200.5,
+                                        "checkout": 480.0})
+            slow = db.slow_stages(5)
+            self.assertEqual(len(slow), 1)
+            self.assertEqual(slow[0]["duration_ms"], 5000)
+            self.assertAlmostEqual(slow[0]["stages"]["transfer"], 4200.5, places=1)
+            totals = db.stage_totals()
+            self.assertAlmostEqual(totals["transfer"], 4200.5, places=1)
+            self.assertAlmostEqual(totals["checkout"], 480.0, places=1)
+        finally:
+            db.close()
+
+    def test_rows_without_stages_are_excluded(self):
+        """没埋点的老数据不得进统计（否则会出现 0 值假数据）。"""
+        db = self._db()
+        try:
+            rid = db.upsert_repo(_spec(12), "/tmp/t", host="github.com")
+            db.add_sync_history(rid, SyncStatus.SUCCESS, SyncAction.CLONED, duration_ms=99)
+            self.assertEqual(db.slow_stages(5), [])
+            self.assertEqual(db.stage_totals(), {})
+        finally:
+            db.close()
+
+    def test_bad_json_never_raises(self):
+        from gcm.db.stage_stats import dumps_stages, loads_stages
+        self.assertEqual(loads_stages("{not json"), {})
+        self.assertEqual(loads_stages(None), {})
+        self.assertEqual(loads_stages("[]"), {})
+        self.assertEqual(dumps_stages({"a": 1, "b": "x"}), '{"a": 1.0}')
+        self.assertEqual(dumps_stages({}), "")
+
+    def test_service_records_transfer_and_checkout(self):
+        """真实 service 路径：一次本地克隆必须产出 transfer 阶段，且 checkout 有值。"""
+        import subprocess
+        import tempfile as _tf
+        from gcm.git.service import GitService
+        from gcm.models import RepoSpec
+
+        work = Path(_tf.mkdtemp(prefix="gcm_stage_"))
+        origin = work / "origin"
+        origin.mkdir()
+        env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@e",
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@e"}
+
+        def run(*args, cwd=None):
+            subprocess.run(["git", *args], cwd=str(cwd or origin), check=True,
+                           capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", env={**__import__("os").environ, **env})
+
+        run("init", "-b", "main")
+        (origin / "a.txt").write_text("x", encoding="utf-8")
+        run("add", ".")
+        run("commit", "-m", "init")
+
+        svc = GitService(work / "clones")
+        spec = RepoSpec(owner="o", repo="r", url_https=str(origin))
+        res = svc.sync(spec)
+        self.assertEqual(res.status.value, "success", res.message)
+        self.assertIn("transfer", res.stages, "传输阶段必须被计时")
+        self.assertGreaterEqual(res.stages["transfer"], 0.0)
+        self.assertIn("checkout", res.stages, "检出校验阶段必须被计时")

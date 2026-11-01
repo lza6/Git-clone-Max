@@ -1,6 +1,6 @@
 {
   "name": "git-clone-max",
-  "version": "9.14.0",
+  "version": "9.15.0",
   "description": "Batch clone, incrementally update, and track hundreds of Git repositories from GitHub / GitLab / Gitee / Codeberg / Bitbucket / self-hosted hosts — desktop app with CLI, MCP and local HTTP interfaces.",
   "author": {
     "name": "lza6"

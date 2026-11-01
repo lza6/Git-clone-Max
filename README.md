@@ -1,7 +1,7 @@
 # Git-clone-Max
 
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
-> **当前版本：v9.14.0**（C2 交互闭环收官：统一忙态 / 命令面板 / 批次暂停 / 失败后给可点的下一步；C3 5/6：目录大小落库缓存（schema v6）/ 历史治理挪出热路径 / 规模与泄漏基线脚本；内置国内镜像已移除、默认直连；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）、并发改值不再被自适应顶回、批次流控按线程池派生、替换引擎不再留活定时器、卡死任务有 UI 入口、WAL 批次收尾收缩、文档数字漂移与函数规模双守卫、依赖与 CI 静态检查器锁版本；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）
+> **当前版本：v9.15.0**（C3 收口：分阶段耗时埋点 + 目录大小落库缓存 + 历史治理出热路径；C4 检索：≥3 字走 FTS5、<3 字退回 LIKE，中文两字词终于搜得到；内置国内镜像已移除、默认直连；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）/ 历史治理挪出热路径 / 规模与泄漏基线脚本；内置国内镜像已移除、默认直连；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）、并发改值不再被自适应顶回、批次流控按线程池派生、替换引擎不再留活定时器、卡死任务有 UI 入口、WAL 批次收尾收缩、文档数字漂移与函数规模双守卫、依赖与 CI 静态检查器锁版本；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）
 > **v5.0：多平台直克隆** — GitLab / Gitee / Codeberg / Bitbucket / 自建主机（HTTPS/SSH/短格式/子组）同样支持。
 > 克隆目录一律 `host__作者__仓库`（GitHub 为 `作者__仓库`），本地改动永不覆盖。
 
@@ -91,6 +91,7 @@ uv run python -m gcm --portable
 | 子模块 | 设置开关拉取 `--recurse-submodules`，工作区完整 |
 | 代理/限速 | 手动填写或一键自动检测（环境变量 / Windows 注册表）；下载限速（lowSpeedLimit） |
 | 仓库管理 | 标签 / 收藏置顶 / 黑名单（一键更新排除）/ 过期高亮 / 搜索过滤 / host 分布统计 |
+| 检索（双路） | 关键字 **≥3 字符走 FTS5 全文索引**（bm25 相关性排序），**<3 字符自动退回 LIKE**（中文两字词「克隆/爬虫」在 trigram 下会零命中，实测）；支持 `tag:` / `host:` / `favorite:` / `updated:<30d` 与 `-` 负向；`lang:`/`size:` 会明确报「不支持」而不是静默忽略 |
 | 数据洞察 | 统计中心（全局 + host + 30 天趋势 + 用量 + **6 维评分卡雷达图** + 语言构成）、报表筛选导出（CSV / Markdown / Excel(xlsx)）、每仓库备注、远端检查 |
 | 仓库画像 | 每个仓库同步后自动生成**零 LLM** 的确定性画像：主语言 / 项目形态（CLI/库/服务/技能包/文档）/ 有无 CI·测试·文档 / README 首段简介 / 语言构成；详情页与统计页直接可见，不需要联网也不需要 API Key |
 | 为什么慢 / 历史为何不全 | 结果行新增 `mirror_used`（这次走了哪个镜像，空=直连源站）与 `degrade_path`（`treeless` / `depth1` 弱网降级档位）；GUI、SSE 事件流与 `--json` 三个出口同源，agent 可据此解释「这次为什么慢」「为什么历史不完整」 |
@@ -150,7 +151,7 @@ Git-clone-Max/
 ├── skills/                  agent 技能包（gcm-clone/archive/report/diag/resume，各含 SKILL.md）
 ├── scripts/                 启动器（bat/ps1）+ E2E 冒烟 / 健康检查 / 发布 / 基准 / CI 快集
 ├── docs/                    架构 / ADR / 数据模型 / agent 契约 / SOP / 发布清单
-├── tests/                   单元 + 集成 + 真实 git E2E（166 个测试文件）
+├── tests/                   单元 + 集成 + 真实 git E2E（167 个测试文件）
 ├── requirements.txt         运行时依赖（PyQt6）
 └── pyproject.toml           项目元数据 + ruff / mypy 配置
 ```
@@ -269,9 +270,9 @@ python -m coverage run --source=gcm -m unittest discover -s tests
 ## 发布
 
 ```bash
-git tag v9.14.0   # 示例；发版时替换成当次版本（守卫会校验文档里的版本号）
+git tag v9.15.0   # 示例；发版时替换成当次版本（守卫会校验文档里的版本号）
 git push origin main --tags
-python scripts/publish_release.py --tag v9.14.0   # 自动上传 exe 到 GitHub Release
+python scripts/publish_release.py --tag v9.15.0   # 自动上传 exe 到 GitHub Release
 ```
 
 ## License

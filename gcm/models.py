@@ -1,5 +1,5 @@
 """共享数据模型与常量。"""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
@@ -75,6 +75,10 @@ class SyncResult:
     # 对应 service.py 既有两级降级；用于把"为什么历史不完整"从日志搬到结果行。
     mirror_used: str = ""
     degrade_path: str = ""
+    #: C3-4（Rev7 C-29）：分阶段耗时（毫秒），键如 precheck / transfer / checkout / hook。
+    #: 只用于解释「这次为什么慢」与统计页的瓶颈排序，**不参与任何判定**。
+    #: 加性字段：老消费者忽略即可；CLI/SSE 都从同一份对象出。
+    stages: dict = field(default_factory=dict)
     # G81（N-6）：确定性仓库画像（`app.knowledge.RepoProfile`）。由 worker 在
     # 同步成功后探测、由引擎落库；**不参与任何判定**，只用于展示/导出。
     # 类型标 Any 是刻意的：`models` 是底层，不能反向 import `app.knowledge`
