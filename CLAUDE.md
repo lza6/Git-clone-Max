@@ -82,7 +82,7 @@ gcm/util/    跨层工具：redact（脱敏）/ filelock（跨进程文件锁）
 gcm/i18n/    文案字典 zh/en（key 即中文，缺失回退中文）
 skills/      agent 技能包（SKILL.md + scripts/），每个必须自包含验收步骤
 scripts/     运维/CI/基准脚本（不参与打包）
-tests/       测试（162 文件）；**新增测试文件默认落在 CI 快集**（scripts/ci_run_fast.py 用黑名单，不是白名单）。G80 起新增 `test_g80_contract` / `test_g80_hygiene` 两个守卫，改契约或删符号前先看它们。
+tests/       测试（164 文件）；**新增测试文件默认落在 CI 快集**（scripts/ci_run_fast.py 用黑名单，不是白名单）。G80 起新增 `test_g80_contract` / `test_g80_hygiene` 两个守卫，改契约或删符号前先看它们。
 docs/reports/ 历次审计报告（HTML，只读快照）
 docs/        工程/产品/契约文档
 ```
@@ -195,7 +195,14 @@ docs/        工程/产品/契约文档
     **2026-10-18 已闭环（v9.5.0）**：`gcm/app/mirrors.py`（多候选 + 预设）+
     `gcm/app/mirror_probe.py`（`git ls-remote` 短超时探测 + 缓存）+
     克隆前探测择优、克隆失败回退源站、更新失败在镜像/源站间切换。
-- **镜像默认启用（G58-2，v9.5.0）**：内置 4 个国内 GitHub 镜像**默认开启**。
+- **~~镜像默认启用（G58-2，v9.5.0）~~ → 已作废（v9.12.1）**：内置国内镜像**已永久移除**。
+  实测（2026-11-01，同一仓库 `lza6/Git-clone-Max`，干净临时目录、各两轮）：
+  走镜像 **24,836 / 24,398 ms** vs 直连 **3,079 / 2,971 ms** —— **慢约 8 倍**。
+  而且每个仓库克隆前还要先 `git ls-remote` 探测一轮候选（每个最多 8s）。
+  `DEFAULT_GITHUB_MIRRORS` 现为**空元组**，`mirror_use_presets` 字段保留但已失效；
+  **用户自定义 `mirror_prefix` 仍支持**，「有凭据绝不走镜像」「失败回退源站」两条约束不变。
+  守卫：`test_g58_mirror_failover.test_no_builtin_presets_at_all` + `test_default_settings_do_not_use_mirrors`。
+  以下为历史说明（保留供考古，**不要再按它行事**）：内置 4 个国内 GitHub 镜像**默认开启**。
   三条边界必须守住：① 只对 `github.com` + HTTPS 生效；② **有令牌/主机凭据时绝不用镜像**
   （第三方镜像能看到 `Authorization` 头）；③ 源站永远是最后候选，镜像全挂也能继续。
   预设是 2026-10-18 用 `git ls-remote` 实测的第三方服务，会失效；设置页可关闭或
@@ -228,13 +235,13 @@ docs/        工程/产品/契约文档
   **不得**用 `skip`/重试把崩溃「弄绿」。
 - **CI 已锁定 PyQt6 版本**：`.github/workflows/ci.yml` 在 4 处 `pip install PyQt6==6.11.0`；
   `requirements-build.txt` 里也锁了 ruff/mypy/coverage/pyinstaller 的精确版本，但 **CI 的 Lint/Type 步骤是裸 `pip install ruff` / `pip install mypy`（不读该文件）→ CI 上的 ruff/mypy 版本仍不锁**。G80 实测登记，别再把「文件里有锁」当成「CI 已锁」。
-- **代码规模现状（2026-11-01 v9.12.0 实测，`python scripts/dev_metrics.py` 可一键复测）**：仍为 **3 个**文件超 800 行 —— `main_window.py` **2778**、
+- **代码规模现状（2026-11-02 v9.12.1 实测，`python scripts/dev_metrics.py` 可一键复测）**：仍为 **3 个**文件超 800 行 —— `main_window.py` **2794**、
   `service.py` **1899**、`engine.py` **1586**（`progress_table.py` **790**、`repo_db.py` **793**、
-  `settings_panel.py` **798**、`settings_groups.py` **786** 均在 800 线内；
-  G76 新增 `settings_actions.py`（276，设置页动作型回调）就是为了让这两个设置模块不越线；G77 把更新检查三段抽到 `update_flow.py`（205），主窗从 2750 降到 2658；G78 修 chip 裁切时 +7 行 → 2665；G79b 给紧凑布局补注释 +5 行 → 2670；G80 新增回调+后台任务接线后 2765；G82 A5-4 确认范式 +25 行 → 2790；v9.12.0 C1 批 +1 行 → **2791**。**超 800 行集合现在有守卫**（`tests/test_g79_repo_hygiene::TestNoNewOversizedModules` 用集合相等断言），新增第 4 个超限文件会直接红。
+  `settings_panel.py` **791**、`settings_groups.py` **786** 均在 800 线内；
+  G76 新增 `settings_actions.py`（276，设置页动作型回调）就是为了让这两个设置模块不越线；G77 把更新检查三段抽到 `update_flow.py`（205），主窗从 2750 降到 2658；G78 修 chip 裁切时 +7 行 → 2665；G79b 给紧凑布局补注释 +5 行 → 2670；G80 新增回调+后台任务接线后 2765；G82 A5-4 确认范式 +25 行 → 2790；上一版 C1 批 +1 行 → 2791；本版（X-4 布局修复）+3 行 → **2794**。**超 800 行集合现在有守卫**（`tests/test_g79_repo_hygiene::TestNoNewOversizedModules` 用集合相等断言），新增第 4 个超限文件会直接红。
   G75 把 `theme.py` 从 598 拆到 **314**（色板→`palettes`、字排→`typography`、QSS→`qss_build`），
   并把批次总览/结果文案/齿条/pill 各自成模块；
-  **20 个**函数超 100 行（最大 `MainWindow.__init__` 252 行）。这两条数字（模块行数表 + 超长函数数）
+  **19 个**函数超 100 行（最大 `MainWindow.__init__` 252 行）。这两条数字（模块行数表 + 超长函数数）
   现已由 `scripts/doc_drift_check.py` 守住：改了代码没同步文档 → `DRIFT n` 非 0 退出。
   G71 已完成的长函数拆分：`service._update` **337→105**（拆出 `_update_bare_mirror` /
   `_fetch_remote` / `_merge_remote`）、`MainWindow._launch` **153→129**（参数映射拆到

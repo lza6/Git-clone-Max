@@ -363,17 +363,14 @@ def _network_rows_mirror(owner: MainWindow, settings: Settings, f3: QFormLayout)
     owner.edit_mirror.setPlaceholderText(
         tr("github.com=https://mirror-a, https://mirror-b（每行一个主机，多个镜像用逗号）"))
     owner.edit_mirror.setToolTip(tr(
-        "按平台配置镜像前缀（仅 https 克隆生效；SSH 不拼）。"
-        "一个主机可写多个镜像，按顺序尝试；全部失败自动回退源站。"))
+        "按需填写镜像前缀（仅 https 克隆生效；SSH 不拼）。"
+        "一个主机可写多个镜像，按顺序尝试；全部失败自动回退源站。\n"
+        "留空 = 直连源站（默认；内置国内镜像已于 v9.12.1 移除，实测它比直连慢 8 倍）。"))
     owner.edit_mirror.editingFinished.connect(owner._save_mirror)
     f3.addRow(tr("镜像前缀："), owner.edit_mirror)
 
-    owner.ck_mirror_presets = QCheckBox(tr("使用内置国内镜像（GitHub）"))
-    owner.ck_mirror_presets.setChecked(bool(getattr(settings, "mirror_use_presets", True)))
-    owner.ck_mirror_presets.setToolTip(tr(
-        "内置 4 个实测可用的 GitHub 镜像（第三方服务，实测日期 2026-10-18）。"
-        "配置了令牌/主机凭据时不会走镜像，避免凭据泄漏。"))
-    owner.ck_mirror_presets.toggled.connect(owner._save_mirror_presets)
+    # v9.12.1：内置国内镜像已永久移除（实测比直连慢 8 倍），这里不再提供开关。
+    # 只保留「自定义镜像前缀」（上面那行）+ 回退开关 + 测速按钮。
     owner.ck_mirror_fallback = QCheckBox(tr("镜像失败自动重试（含回退源站）"))
     owner.ck_mirror_fallback.setChecked(bool(getattr(settings, "mirror_fallback", True)))
     owner.ck_mirror_fallback.setToolTip(tr(
@@ -381,12 +378,12 @@ def _network_rows_mirror(owner: MainWindow, settings: Settings, f3: QFormLayout)
         "只是不再额外重试"))
     owner.ck_mirror_fallback.toggled.connect(owner._save_mirror_fallback)
     _mir_lay = QHBoxLayout()
-    _mir_lay.addWidget(owner.ck_mirror_presets)
     _mir_lay.addWidget(owner.ck_mirror_fallback)
     owner.btn_mirror_probe = QPushButton(tr("测速并排序"))
     owner.btn_mirror_probe.setToolTip(tr(
-        "用 git ls-remote 实测每个镜像（含内置）的连通性与延迟，"
-        "把可用镜像按速度写回上面的输入框"))
+        "用 git ls-remote 实测你在上面填的每个镜像的连通性与延迟，"
+        "把可用的按速度排好写回输入框。\n"
+        "内置镜像已移除（实测比直连慢 8 倍）：需要时才自己填，留空就是直连源站。"))
     owner.btn_mirror_probe.clicked.connect(owner._probe_mirrors)
     _mir_lay.addWidget(owner.btn_mirror_probe)
     owner.spin_mirror_timeout = QSpinBox()

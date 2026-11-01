@@ -183,10 +183,10 @@ def run_clone(app, specs, invalid: list[str], root: Path, json_mode: bool,
 
     from gcm.app.engine import SyncEngine
     root.mkdir(parents=True, exist_ok=True)
-    # G69-21：CLI 默认与 GUI 一致（内置国内镜像）；--no-mirror 可显式关闭，
-    # 供对第三方镜像有信任顾虑的脚本/agent 使用。
+    # v9.12.1：内置国内镜像已永久清空（实测比直连慢 8 倍），CLI 一律直连源站。
+    # `--no-mirror` 保留为**兼容开关**（旧脚本仍在传），现在恒等价于默认行为。
     engine = SyncEngine(root=root, db=None, progress_path=None,
-                        mirror_use_presets=not no_mirror)
+                        mirror_use_presets=False)
     results: list = []
     invalid_out: list[dict] = [_error(2, f"无法解析：{line}") for line in invalid]
     if invalid_out and json_mode:
@@ -291,7 +291,7 @@ def _print_help() -> int:
         "  --diag          网络/环境诊断（不克隆）\n"
         "  --serve H:P     启动本地只读 HTTP API（仅允许回环地址）\n"
         "  --allow-mutate  配合 --serve：放行 POST 写操作（默认只读）\n"
-        "  --no-mirror     不使用内置国内镜像（默认使用；有凭据时本就不会走镜像）\n"
+        "  --no-mirror     兼容开关（v9.12.1 起内置国内镜像已移除，默认即直连源站）\n"
         "  --help, -h      显示本帮助\n"
         "\n"
         "输入：<urls.txt> 为地址清单文件；`-` 表示 stdin（每行一个，`#` 开头忽略）。\n"

@@ -46,17 +46,38 @@ class TestNormalize(unittest.TestCase):
         self.assertEqual(got["github.com"], ("https://a",))
         self.assertEqual(got["gitlab.com"], ("https://b", "https://c"))
 
-    def test_mirror_prefixes_user_then_presets(self):
+    def test_user_prefixes_are_the_only_source(self):
+        """v9.12.1：内置预设已永久清空 —— 候选**只**来自用户配置，且不重复。"""
         got = mirrors.mirror_prefixes_for("github.com", {"github.com": ["https://u"]})
-        self.assertEqual(got[0], "https://u")
-        self.assertIn("https://gh-proxy.com", got)
+        self.assertEqual(got, ("https://u",),
+                         "github.com 的候选必须只有用户填的那一个（不再混入第三方镜像）")
         self.assertEqual(got, tuple(dict.fromkeys(got)), "候选不应重复")
 
-    def test_presets_only_for_github_and_can_be_disabled(self):
-        self.assertEqual(
-            mirrors.mirror_prefixes_for("gitlab.com", {}, use_presets=True), ())
-        self.assertEqual(
-            mirrors.mirror_prefixes_for("github.com", {}, use_presets=False), ())
+    def test_no_builtin_presets_at_all(self):
+        """内置镜像列表必须为空 —— 这是 v9.12.1 的硬约定（实测比直连慢 8 倍）。
+
+        这条断言是**故意钉死**的：任何时候只要有人把预设填回去，它就红。
+        """
+        from gcm.app.mirrors import DEFAULT_GITHUB_MIRRORS
+        self.assertEqual(DEFAULT_GITHUB_MIRRORS, (), "内置国内镜像必须保持为空")
+        for flag in (True, False):
+            with self.subTest(use_presets=flag):
+                self.assertEqual(
+                    mirrors.mirror_prefixes_for("github.com", {}, use_presets=flag), (),
+                    "没有用户配置时，候选必须为空（= 直连源站，零探测开销）")
+                self.assertEqual(
+                    mirrors.mirror_prefixes_for("gitlab.com", {}, use_presets=flag), ())
+
+    def test_default_settings_do_not_use_mirrors(self):
+        """默认配置必须是直连：settings 默认 + SyncEngine 默认都不走镜像。"""
+        from gcm.db.settings import Settings
+        from gcm.app.engine import SyncEngine
+        self.assertFalse(Settings().mirror_use_presets,
+                         "默认必须关闭（该字段现为失效字段，也不该是 True）")
+        import inspect
+        sig = inspect.signature(SyncEngine.__init__)
+        self.assertFalse(sig.parameters["mirror_use_presets"].default,
+                         "SyncEngine 的默认值必须是 False")
 
     def test_wildcard_applies_to_all_hosts(self):
         got = mirrors.mirror_prefixes_for("example.com", {"*": "https://w"})
@@ -647,7 +668,8 @@ class TestSettingsRoundTrip(unittest.TestCase):
         self.assertEqual(got.mirror_prefix["github.com"], ["https://a", "https://b"])
         self.assertFalse(got.mirror_use_presets)
         self.assertTrue(got.mirror_fallback)
-        self.assertTrue(Settings().mirror_use_presets, "默认应启用内置镜像")
+        self.assertFalse(Settings().mirror_use_presets,
+                         "v9.12.1：内置镜像已移除，默认必须不走镜像")
         self.assertTrue(Settings().mirror_fallback, "默认应回退源站")
 
 
@@ -702,8 +724,14 @@ class TestMirrorUi(unittest.TestCase):
         self.assertEqual(self.win.edit_mirror.text(), "github.com=https://keep")
 
     def test_probe_skipped_when_global_auth_configured(self):
-        """G69-21 复验：全局 git 认证头存在时，测速也必须跳过（否则凭据发给镜像）。"""
+        """G69-21 复验：全局 git 认证头存在时，测速也必须跳过（否则凭据发给镜像）。
+
+        v9.12.1 注：内置镜像已清空，所以先填一个**用户自定义**镜像 ——
+        否则会先在「没有可测速的镜像」处早退，根本走不到认证头这道门（测试会变成假绿）。
+        """
         import time as _t
+        self.win.edit_mirror.setText("github.com=https://mine.example")
+        self.win.settings_panel._save_mirror()
         with mock.patch("gcm.app.mirror_probe.global_auth_header_configured",
                         return_value=True):
             self.win._probe_mirrors(False)
@@ -750,24 +778,30 @@ class TestMirrorUi(unittest.TestCase):
                       "测速写回不得抹掉其它 host 配置")
         self.assertIn("github.com=https://fast", text)
 
-    def test_probe_writeback_does_not_persist_presets(self):
-        from gcm.app.mirrors import DEFAULT_GITHUB_MIRRORS
+    def test_probe_writeback_with_no_prefixes_keeps_config(self):
+        """没有可写回的镜像时保留原配置（原来这条用来防「预设被固化成用户配置」，
+        v9.12.1 预设已清空 → 「空结果」这条分支仍必须安全）。"""
         sample = "https://github.com/octocat/Hello-World"
         self.win.edit_mirror.setText("")
         self.win.settings.mirror_prefix = {}
-        self.win._on_mirror_probe_done([
-            {"url": f"{p}/{sample}", "ok": True, "ms": 100,
-             "error": "", "is_source": False}
-            for p in DEFAULT_GITHUB_MIRRORS
-        ], sample)
+        self.win._on_mirror_probe_done([], sample)
         self.assertEqual(self.store.load().mirror_prefix, {},
-                         "内置预设不应被固化成用户配置（否则关开关也关不掉）")
+                         "空测速结果不得写入任何配置")
+
+    def test_probe_writeback_persists_user_prefixes(self):
+        """对照组：用户在框里填了镜像时，测速结果必须真的写回并落盘。"""
+        sample = "https://github.com/octocat/Hello-World"
+        self.win.edit_mirror.setText("")
+        self.win._on_mirror_probe_done([
+            {"url": f"https://mine.example/{sample}", "ok": True, "ms": 80,
+             "error": "", "is_source": False}], sample)
+        self.assertEqual(self.store.load().mirror_prefix.get("github.com"),
+                         "https://mine.example",
+                         "用户自己填的镜像必须被写回并落盘")
 
     def test_toggles_persist(self):
-        self.win.settings_panel._save_mirror_presets(False)
         self.win.settings_panel._save_mirror_fallback(False)
         s = self.store.load()
-        self.assertFalse(s.mirror_use_presets)
         self.assertFalse(s.mirror_fallback)
 
 

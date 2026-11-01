@@ -475,7 +475,7 @@ class GitService:
                  token: str = "", submodule: bool = False, rate_limit_kbps: int = 0,
                  host_tokens: Optional[dict[str, str]] = None,
                  mirror_prefix: Optional[dict[str, object]] = None,
-                 mirror_use_presets: bool = True,
+                 mirror_use_presets: bool = False,
                  mirror_fallback: bool = True,
                  mirror_probe_timeout: float = 8.0,
                  host_auth_types: Optional[dict[str, str]] = None,

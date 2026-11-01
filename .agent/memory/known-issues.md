@@ -21,6 +21,14 @@
 | 12 | `requirements.txt` 未锁版本；CI 裸装 ruff/mypy | **已闭环**：`PyQt6==6.11.0`；CI 改读 `requirements-build.txt`；`TestDependencyPinning`（4 例） |
 | 13 | **启动路径漏接线**：`MainWindow.__init__` 手写第二份 settings→engine 列表，漏 `host_concurrency`/`time_budget`/`concurrency_state_path` → 改设置重启后引擎仍读默认值（控件回填却是对的） | **已闭环**：启动期改走 `build_sync_engine`（唯一映射点），`TestStartupEngineReflectsSettings`（4 例）；空闲引擎 `enable_retry_queue=False` 防启动即自动重投污染 host 列 |
 
+## v9.12.1 已收口（2026-11-01）
+
+| 项 | 原问题 | 结论 |
+|---|--------|------|
+| 1 | **内置国内镜像默认开启，实测比直连慢 8 倍**（24.8s vs 3.0s，同一仓库各两轮），且每仓克隆前还要探测候选 | **已闭环**：`DEFAULT_GITHUB_MIRRORS` 清空 + 默认值改 False + UI 开关移除；守卫 `test_no_builtin_presets_at_all`（钉死"必须为空"） |
+| 2 | **X-4**：1366×768 笔记本上「保存清单/载入/导入 Star」被顶部滚动区裁到 10px（`visibleRegion` 86×10/86×42），1080p@150% 下 0×0 | **已闭环**：清单行搬出滚动区（`build_task_list_row`）+ 动作区不可压扁 + 矮窗口让可滚动区让位；守卫 `test_ui_compact_visibility`（9 个尺寸 + 变异自检） |
+| 3 | **X-5**：72 个 `tr()` 键不在字典里 → 英文模式原样显示中文 | **已闭环**：补齐 72 键（含英文翻译）+ `scripts/i18n_coverage.py` + `tests/test_i18n_coverage.py`（三条断言） |
+
 ## 仍然开放（v9.12.0 之后）
 
 | # | 事项 | 状态 |

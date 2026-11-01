@@ -688,6 +688,23 @@ class MainWindow(QMainWindow):
         try:
             from .layout import layout_mode
             compact = layout_mode(self.width(), self.height()) in ("compact", "unsupported")
+            # v9.12.1 / X-4：动作区不许被压扁 —— 构建时 sizeHint 尚未定型（父级会把孩子
+            # 压扁，G78 为 chip 踩过同一个坑），所以每次布局切换按**当前** sizeHint 重设
+            # 最小高度；矮窗口里让「可滚动」的顶部区先让位，而不是切掉常驻按钮。
+            try:
+                _act = getattr(self, "download_actions", None)
+                if _act is not None:
+                    _act.setMinimumHeight(int(_act.sizeHint().height()))
+                if hasattr(self, "download_top_scroll"):
+                    # 顶部区是**可滚动**的，所以它是矮窗口里唯一该让位的东西：
+                    #   ≥ 标准高度  180（完整露出输入区）
+                    #   compact     120
+                    #   极矮(<640)   64（让常驻的动作区三行完整放得下）
+                    _h = int(self.height())
+                    _min = 180 if not compact else (64 if _h < 640 else 120)
+                    self.download_top_scroll.setMinimumHeight(_min)
+            except Exception as exc:  # noqa: BLE001 —— 纯外观修正，不能拖垮布局切换
+                self._emit_log(_fmt_dt(), LogLevel.WARN, f"动作区高度同步失败：{exc}")
             for btn in getattr(self, "_quick_fill_buttons", []):
                 btn.setVisible(not compact)
             # G74：Compact 下把 chip 滚动区收起来（把高度还给进度表）。
@@ -826,6 +843,9 @@ class MainWindow(QMainWindow):
         self.download_top_scroll.setWidget(top)
         self.download_top_scroll.setMinimumHeight(180)
         # G74：主操作区固定在滚动区之外 —— 任何分辨率都能看到「开始/取消」
+        # v9.12.1 / X-4：动作区（清单行 + 开始/取消 + 工具行）必须常驻且不被压扁，
+        # 保存引用供 `_apply_layout_mode` 在每次布局切换后按真实 sizeHint 重设最小高度。
+        self.download_actions = actions
         top_container = QWidget()
         tc = QVBoxLayout(top_container)
         tc.setContentsMargins(0, 0, 0, 0)
@@ -1090,10 +1110,6 @@ class MainWindow(QMainWindow):
     def _save_mirror(self, *args, **kwargs):
         """G45-6 转发 settings_panel.py（行为零变化）。"""
         return self.settings_panel._save_mirror(*args, **kwargs)
-
-    def _save_mirror_presets(self, *args, **kwargs):
-        """G58-2 转发：内置国内镜像开关。"""
-        return self.settings_panel._save_mirror_presets(*args, **kwargs)
 
     def _save_mirror_fallback(self, *args, **kwargs):
         """G58-2 转发：镜像失败回退源站开关。"""

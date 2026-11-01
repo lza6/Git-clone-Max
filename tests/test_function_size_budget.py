@@ -1,7 +1,7 @@
 """函数规模预算守卫（Rev7 C1-5）。
 
 **为什么需要**：本项目只守了「超 800 行的**文件**」（`test_g79_repo_hygiene`），
-但函数层面的膨胀完全没人管 —— 实测已到 **20 个函数超 100 行**，而
+但函数层面的膨胀完全没人管 —— 实测已到 **19 个函数超 100 行**，而
 `CLAUDE.md` §6 还写着「14 个函数超 100 行」。文档与代码同时漂移，且没有任何测试会红。
 
 **口径（与 `scripts/dev_metrics.long_functions()` 完全一致）**：
@@ -43,7 +43,6 @@ _REGISTERED: frozenset[tuple[str, str]] = frozenset({
     ("gcm/http_api.py", "do_GET"),                  # 126 HTTP 路由
     ("gcm/git/service.py", "_env"),                 # 124 git 环境变量装配
     ("gcm/app/engine.py", "_on_result"),            # 113 结果落库/打码/计数
-    ("gcm/ui/download_layout.py", "_drop"),         # 108 拖拽处理
     ("gcm/git/service.py", "_update"),              # 106 更新主流程
     ("gcm/ui/progress_table.py", "_on_worker_result"),  # 103 表格回填
     ("gcm/db/settings.py", "_mask_token"),          # 103 掩码

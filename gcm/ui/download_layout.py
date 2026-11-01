@@ -191,31 +191,6 @@ def build_download_top(owner) -> QWidget:
         QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
     quick_row.addWidget(owner.btn_edit_quick)
 
-    # 任务清单 / Star 导入单独一行，保证 1024 宽也完整可见
-    list_row = QHBoxLayout()
-    list_row.setSpacing(6)
-    # G35-4 任务清单
-    owner.btn_save_list = QPushButton(tr("保存清单"))
-    owner.btn_save_list.setToolTip(
-        tr("把当前输入区的地址保存为命名任务清单（data/lists/*.json）"))
-    owner.btn_save_list.clicked.connect(owner._save_task_list)
-    owner.combo_load_list = QComboBox()
-    owner.combo_load_list.setToolTip(tr("选择已保存的清单一键载入"))
-    owner.combo_load_list.setMinimumWidth(160)
-    owner.btn_load_list = QPushButton(tr("载入"))
-    owner.btn_load_list.setToolTip(tr("把所选清单的地址填入输入区"))
-    owner.btn_load_list.clicked.connect(owner._load_task_list)
-    list_row.addWidget(owner.btn_save_list)
-    list_row.addWidget(owner.combo_load_list, 1)
-    list_row.addWidget(owner.btn_load_list)
-    # G35-10 GitHub Star 列表导入
-    owner.btn_star_import = QPushButton(tr("导入 Star"))
-    owner.btn_star_import.setToolTip(
-        tr("按 GitHub 用户名拉取 Star 列表并填入输入区（需要时在设置页填写令牌）"))
-    owner.btn_star_import.clicked.connect(owner.import_starred)
-    list_row.addWidget(owner.btn_star_import)
-    list_row.addStretch(1)
-
     top = QWidget()
     tv = QVBoxLayout(top)
     tv.setContentsMargins(0, 0, 0, 0)
@@ -252,8 +227,45 @@ def build_download_top(owner) -> QWidget:
     # G74：快捷填充/清单是次要操作，放在下载位置/克隆模式之后；
     # 小高度时先保证核心选项可见。
     tv.addLayout(quick_row)
-    tv.addLayout(list_row)
     return top
+
+
+def build_task_list_row(owner) -> QWidget:
+    """任务清单 / Star 导入一行（**常驻**，不放进顶部滚动区）。
+
+    v9.12.1 / Rev7 X-4：这三四个控件原本是 `build_download_top()` 里的最后一行，
+    属于顶部 `download_top_scroll` 的内容 —— 窗口变矮时它被滚出可视区：
+    实测 1366×768 笔记本（窗口 1240×729）下「保存清单/载入/导入 Star」只露 **10px**
+    （`visibleRegion` 86×10 / 86×42），看起来就是四个**空框**；1080p@150%
+    （1216×684）下完全不可见（0×0）。
+    这与 G74 把「开始/取消」搬出滚动区是同一个判断：**次要操作可以滚，主操作不行**。
+    """
+    wrap = QWidget()
+    list_row = QHBoxLayout(wrap)
+    list_row.setContentsMargins(0, 0, 0, 0)
+    list_row.setSpacing(6)
+    # G35-4 任务清单
+    owner.btn_save_list = QPushButton(tr("保存清单"))
+    owner.btn_save_list.setToolTip(
+        tr("把当前输入区的地址保存为命名任务清单（data/lists/*.json）"))
+    owner.btn_save_list.clicked.connect(owner._save_task_list)
+    owner.combo_load_list = QComboBox()
+    owner.combo_load_list.setToolTip(tr("选择已保存的清单一键载入"))
+    owner.combo_load_list.setMinimumWidth(160)
+    owner.btn_load_list = QPushButton(tr("载入"))
+    owner.btn_load_list.setToolTip(tr("把所选清单的地址填入输入区"))
+    owner.btn_load_list.clicked.connect(owner._load_task_list)
+    list_row.addWidget(owner.btn_save_list)
+    list_row.addWidget(owner.combo_load_list, 1)
+    list_row.addWidget(owner.btn_load_list)
+    # G35-10 GitHub Star 列表导入
+    owner.btn_star_import = QPushButton(tr("导入 Star"))
+    owner.btn_star_import.setToolTip(
+        tr("按 GitHub 用户名拉取 Star 列表并填入输入区（需要时在设置页填写令牌）"))
+    owner.btn_star_import.clicked.connect(owner.import_starred)
+    list_row.addWidget(owner.btn_star_import)
+    list_row.addStretch(1)
+    return wrap
 
 
 def build_download_actions(owner) -> QWidget:
@@ -267,6 +279,9 @@ def build_download_actions(owner) -> QWidget:
     v = QVBoxLayout(wrap)
     v.setContentsMargins(0, 0, 0, 0)
     v.setSpacing(6)
+
+    # v9.12.1 / Rev7 X-4：清单行常驻（原本在顶部滚动区里，1366×768 下被裁成 10px）
+    v.addWidget(build_task_list_row(owner))
 
     row1 = QHBoxLayout()
     owner.btn_start = QPushButton(tr("开始并行下载 / 更新"))
@@ -313,4 +328,9 @@ def build_download_actions(owner) -> QWidget:
     row2.addWidget(owner.btn_diag_bundle)
     row2.addStretch(1)
     v.addLayout(row2)
+    # v9.12.1：动作区**绝不允许被压扁**。清单行搬进来后总共三行，在声明的最小窗口
+    # 1020×560 下 Qt 会按比例压缩这个容器，按钮被切成 31/42px（看起来像被裁）。
+    # 这里把纵向策略钉成 Fixed 并给出最小高度，让**可滚动**的顶部区去吸收压缩。
+    wrap.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+    wrap.setMinimumHeight(wrap.sizeHint().height())
     return wrap

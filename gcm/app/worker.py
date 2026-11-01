@@ -142,7 +142,7 @@ class CloneWorker(QRunnable):
                     mirror=getattr(svc, "_mirror", False),
                     # G58-2：镜像备援配置
                     mirror_prefix=getattr(svc, "mirror_prefix", None) or {},
-                    mirror_use_presets=getattr(svc, "mirror_use_presets", True),
+                    mirror_use_presets=getattr(svc, "mirror_use_presets", False),
                     mirror_fallback=getattr(svc, "mirror_fallback", True),
                     mirror_probe_timeout=getattr(svc, "mirror_probe_timeout", 8.0),
                 )

@@ -59,7 +59,9 @@ GCM = ROOT / "gcm"
 # - v9.12.0 审查轮 +1（except 622 / **pass-only 282，比基线还降 1**）：
 #   engine._host_for 的 url 解析失败兜底（→ warn + 回落 github.com）
 #   同一轮把 `_refresh_stuck` 的静默赋值改成 warn 后，pass-only 反而少了一个。
-BASELINE_EXCEPT = 622
+# - v9.12.1 +1（except 623 / pass-only 282 不变）：
+#   main_window._apply_layout_mode 里「动作区高度同步失败」的兜底（→ emit_log，有出口）
+BASELINE_EXCEPT = 623
 BASELINE_PASS_ONLY = 283
 
 

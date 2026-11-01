@@ -398,11 +398,6 @@ class SettingsPanel(QWidget):
                 out[host] = list(prefixes) if len(prefixes) > 1 else prefixes[0]
         return out
 
-    def _save_mirror_presets(self, checked):
-        """G58-2：是否使用内置国内镜像。"""
-        self.owner.settings.mirror_use_presets = bool(checked)
-        self.owner.settings_store.save(self.owner.settings)
-
     def _save_mirror_fallback(self, checked):
         """G58-2：镜像失败是否回退源站。"""
         self.owner.settings.mirror_fallback = bool(checked)
@@ -427,11 +422,10 @@ class SettingsPanel(QWidget):
         if getattr(owner, "_mirror_probe_busy", False):
             return
         from ..app.mirrors import mirror_prefixes_for
-        # G69-21：尊重「使用内置国内镜像」开关；关闭时不探测预设。
-        use_presets = bool(getattr(owner.settings, "mirror_use_presets", True))
+        # v9.12.1：内置预设已移除，只探测用户自己填的镜像。
         prefixes = mirror_prefixes_for(
             "github.com", getattr(owner.settings, "mirror_prefix", None) or {},
-            use_presets=use_presets)
+            use_presets=False)
         if not prefixes:
             owner._emit_log(_mw._fmt_dt(), LogLevel.WARN, tr("没有可测速的镜像"))
             return
@@ -659,7 +653,6 @@ class SettingsPanel(QWidget):
                 self.owner.accent_combo.findData(fresh.accent_preset) or 0)
             # G69-21：新增的镜像控件也要同步，否则界面还显示旧值、settings 已是默认值。
             from .settings_groups import _mirror_text
-            self.owner.ck_mirror_presets.setChecked(bool(fresh.mirror_use_presets))
             self.owner.ck_mirror_fallback.setChecked(bool(fresh.mirror_fallback))
             self.owner.edit_mirror.setText(_mirror_text(fresh))
             self.owner.spin_mirror_timeout.setValue(int(fresh.mirror_probe_timeout))

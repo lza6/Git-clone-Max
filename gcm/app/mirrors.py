@@ -23,17 +23,25 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-#: 内置 GitHub 镜像（2026-10-18 实测可代理 git；按当时中位延迟排序）。
-#: 注意：这是**第三方服务**，可用性会变化。设置页可关闭或改写。
-DEFAULT_GITHUB_MIRRORS: tuple[str, ...] = (
-    "https://gh.llkk.cc",       # ~2.4s
-    "https://gh-proxy.com",     # ~3.3s
-    "https://ghfast.top",       # ~3.6s
-    "https://ghproxy.net",      # ~8.0s
-)
-
-#: 预设列表的实测日期（写进 UI 提示，避免用户以为是"永久有效"）。
-PRESET_SCANNED_AT = "2026-10-18"
+#: **内置镜像已清空（v9.12.1，2026-11-01）**——不再默认走任何第三方镜像。
+#:
+#: 为什么移除（实测，不是判断）：同一个仓库 `github.com/lza6/Git-clone-Max`，
+#: 本机连续两轮对比（`--cli --json`，各自干净临时目录）：
+#:
+#:     走内置镜像（gh-proxy.com）  24,836 ms / 24,398 ms
+#:     直连源站（--no-mirror）      3,079 ms /  2,971 ms      ← 快 8 倍
+#:
+#: 而且它是**默认开启**的：每个仓库在克隆前还要先 `git ls-remote` 探测一轮候选
+#: （每个最多 mirror_probe_timeout=8s），探完再走一个比直连更慢的第三方代理。
+#: 对有正常 GitHub 访问的网络，这是纯粹的负优化；对第三方镜像的信任本身也是风险面
+#: （请求路径/凭据面）。因此：
+#:
+#:   - 内置预设列表**永久清空**（不是"默认关"——留着就还会有人打开它）；
+#:   - **用户自定义镜像仍然支持**（`settings.mirror_prefix`），需要的人自己填，
+#:     并且「有凭据绝不走镜像」「失败回退源站」两条硬约束不变；
+#:   - `settings.mirror_use_presets` 字段保留但**已失效**（向后兼容旧 settings.json，
+#:     不迁移、不报错；见 `db/settings.py` 注释）。
+DEFAULT_GITHUB_MIRRORS: tuple[str, ...] = ()
 
 
 def _clean_prefix(value: str) -> str:

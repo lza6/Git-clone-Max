@@ -80,7 +80,7 @@ class SyncEngine(QObject):
                  submodule: bool = False, rate_limit_kbps: int = 0,
                  host_tokens: Optional[dict[str, str]] = None,
                  mirror_prefix: Optional[dict[str, object]] = None,
-                 mirror_use_presets: bool = True,
+                 mirror_use_presets: bool = False,
                  mirror_fallback: bool = True,
                  mirror_probe_timeout: float = 8.0,
                  host_auth_types: Optional[dict[str, str]] = None,
@@ -872,7 +872,7 @@ class SyncEngine(QObject):
             ssh_key=getattr(self, "_ssh_key_global", ""),
             host_tokens=getattr(self, "host_tokens", None) or {},  # G38-1
             mirror_prefix=getattr(self, "mirror_prefix", None) or {},  # G38-2
-            mirror_use_presets=getattr(self, "mirror_use_presets", True),  # G58-2
+            mirror_use_presets=getattr(self, "mirror_use_presets", False),  # G58-2
             mirror_fallback=getattr(self, "mirror_fallback", True),        # G58-2
             mirror_probe_timeout=getattr(self, "mirror_probe_timeout", 8.0),  # G58-2
             host_auth_types=getattr(self, "host_auth_types", None) or {},  # G58-5

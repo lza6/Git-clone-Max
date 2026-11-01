@@ -1,7 +1,7 @@
 # Git-clone-Max
 
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
-> **当前版本：v9.12.0**（接线与门禁收口：同平台并发上限与单仓时间预算**真正可配**（此前参数被硬编码覆盖/无 UI 入口）、并发改值不再被自适应顶回、批次流控按线程池派生、替换引擎不再留活定时器、卡死任务有 UI 入口、WAL 批次收尾收缩、文档数字漂移与函数规模双守卫、依赖与 CI 静态检查器锁版本；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）
+> **当前版本：v9.12.1**（默认直连：内置国内镜像已移除，实测同一仓库走镜像 24.8s vs 直连 3.0s；1366×768 笔记本上「保存清单/载入/导入 Star」不再被裁成 10px；英文模式不再回落中文（补 72 个 i18n 键）；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）、并发改值不再被自适应顶回、批次流控按线程池派生、替换引擎不再留活定时器、卡死任务有 UI 入口、WAL 批次收尾收缩、文档数字漂移与函数规模双守卫、依赖与 CI 静态检查器锁版本；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）
 > **v5.0：多平台直克隆** — GitLab / Gitee / Codeberg / Bitbucket / 自建主机（HTTPS/SSH/短格式/子组）同样支持。
 > 克隆目录一律 `host__作者__仓库`（GitHub 为 `作者__仓库`），本地改动永不覆盖。
 
@@ -64,7 +64,7 @@ uv run python -m gcm --portable
 | 指定版本 | `owner/repo@v1.2.0` 语法指定分支/标签（`clone -b`），不改动仓库默认检出 |
 | 仓库级 SSH 私钥 | 仓库详情里可为**单个仓库**指定 SSH 私钥（只记录**路径**，不保存私钥内容）；优先级 仓库级 > 全局设置；清除即回落全局。校验会拒绝「把私钥内容粘进来」、不存在、是目录、非私钥文件 |
 | 按 host 凭据 | 设置页「按平台凭据」`host=token` 逐行注入（github→Bearer / gitlab→PRIVATE-TOKEN / 未登记不发）；`host_tokens` **逐条目加密落盘**，杜绝明文 |
-| 镜像前缀 | **多镜像备援**：内置 4 个实测可用的国内 GitHub 镜像（默认启用），也可在设置页按 `host=镜像1,镜像2` 自定义；克隆前用 `git ls-remote` 短超时探测，取最快的可用镜像，**全部不可用/没有该仓库时自动回退源站**；有令牌/全局认证头时**不走镜像**（防凭据泄漏）；镜像克隆成功后 origin 立即恢复为源站（镜像只作取数通道）；SSH 不拼接；CLI 可用 `--no-mirror` 关闭 |
+| 镜像前缀（可选） | **默认直连源站**。内置国内镜像已于 **v9.12.1 移除**（实测同一仓库走镜像 24.8s vs 直连 3.0s，**慢 8 倍**）。确有需要可自行按 `host=镜像1,镜像2` 填写：克隆前用 `git ls-remote` 短超时探测取最快可用项，全部不可用自动回退源站；有令牌/全局认证头时**绝不走镜像**（防凭据泄漏）；镜像克隆成功后 origin 立即恢复为源站 |
 | 远端预检 | 「克隆前做远端可达性预检（10s）」开关，断网 10s 内明确提示不白等超时 |
 | 浅克隆加速 | 满量 / 浅克隆（可调 depth）/ **单分支浅克隆**（`--depth N --single-branch`）；弱网自动降级 treeless → **depth1 保命模式** |
 | 强制 IPv4 | 「强制 HTTP/1.1」开关，规避部分网络下 HTTP/2 兼容问题 |
@@ -147,7 +147,7 @@ Git-clone-Max/
 ├── skills/                  agent 技能包（gcm-clone/archive/report/diag/resume，各含 SKILL.md）
 ├── scripts/                 启动器（bat/ps1）+ E2E 冒烟 / 健康检查 / 发布 / 基准 / CI 快集
 ├── docs/                    架构 / ADR / 数据模型 / agent 契约 / SOP / 发布清单
-├── tests/                   单元 + 集成 + 真实 git E2E（162 个测试文件）
+├── tests/                   单元 + 集成 + 真实 git E2E（164 个测试文件）
 ├── requirements.txt         运行时依赖（PyQt6）
 └── pyproject.toml           项目元数据 + ruff / mypy 配置
 ```
@@ -266,9 +266,9 @@ python -m coverage run --source=gcm -m unittest discover -s tests
 ## 发布
 
 ```bash
-git tag v9.12.0   # 示例；发版时替换成当次版本（守卫会校验文档里的版本号）
+git tag v9.12.1   # 示例；发版时替换成当次版本（守卫会校验文档里的版本号）
 git push origin main --tags
-python scripts/publish_release.py --tag v9.12.0   # 自动上传 exe 到 GitHub Release
+python scripts/publish_release.py --tag v9.12.1   # 自动上传 exe 到 GitHub Release
 ```
 
 ## License

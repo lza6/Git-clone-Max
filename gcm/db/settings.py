@@ -264,7 +264,9 @@ class Settings:
     host_tokens: dict = field(default_factory=dict)  # G38-1 按 host 映射凭据（如 {"gitlab.com": "glpat-xxx"}；落盘逐条目加密）
     mirror_prefix: dict = field(default_factory=dict)  # G38-2/G58-2 镜像前缀（值可为 str 或 [str,...]）
     # G58-2：镜像多备援。预设 = 内置国内 GitHub 镜像；失败自动回退源站。
-    mirror_use_presets: bool = True   # 使用内置国内镜像（GitHub；受「有凭据不走镜像」约束）
+    # **已失效字段（v9.12.1 起）**：内置国内镜像列表已永久清空（实测比直连慢 8 倍）。
+    # 保留该字段只为旧 settings.json 能无损加载（不迁移、不报错），代码不再消费它。
+    mirror_use_presets: bool = False
     mirror_fallback: bool = True      # 镜像不可用/克隆失败 → 回退源站重试
     mirror_probe_timeout: int = 8     # 镜像探测超时秒数（3..60）
     precheck_remote: bool = False     # G38-3 远端可达性预检（clone/fetch 前 10s ls-remote）

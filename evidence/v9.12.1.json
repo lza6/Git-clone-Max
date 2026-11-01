@@ -1,0 +1,105 @@
+{
+  "task_id": "v9.12.1",
+  "title": "默认直连（移除内置国内镜像）+ X-4 布局裁切 + X-5 i18n 覆盖",
+  "status": "in_progress",
+  "timestamp": "2026-11-02",
+  "version_before": "9.12.0",
+  "version_after": "9.12.1",
+  "user_request": "「现在的 git 速度还是很慢，并且请你去掉国内镜像的下载，我们不需要国内镜像」+ 修完剩余的 X-4 / X-5",
+  "measurements": {
+    "clone_before_with_builtin_mirror": {
+      "repo": "https://github.com/lza6/Git-clone-Max",
+      "runs_ms": [24836, 24398],
+      "channel": "https://gh-proxy.com",
+      "note": "当时是默认行为"
+    },
+    "clone_before_direct": {
+      "runs_ms": [3079, 2971],
+      "channel": "direct",
+      "note": "python -m gcm --cli --json --no-mirror"
+    },
+    "clone_after_default": {
+      "runs_ms": [3180, 3525, 2985],
+      "channel": "direct",
+      "note": "v9.12.1 默认配置（无需任何开关）"
+    },
+    "speedup": "约 8 倍（24.8s → 3.0s）",
+    "x4_before": {
+      "1240x729": "btn_save_list 86x10/86x42、combo 448x6、btn_load_list 60x10、btn_star_import 125x10（截图里是 4 个空框）",
+      "1216x684": "4 个控件全部 0x0（完全不可见）",
+      "source": "clamp_window_size(1240,840,1366,768) 与 (…,1280,720) 的真实窗口尺寸"
+    },
+    "x4_after": {
+      "sizes_checked": ["1920x1080", "1440x900", "1366x768", "1280x800", "1240x729", "1216x684", "1093x614", "1024x768", "1020x560"],
+      "clipped": 0,
+      "note": "含 WINDOW_MIN 1020×560；修复过程中先出现「搬到 1020×560 又被压成 31/42」的二次裁切，已一并解决"
+    },
+    "i18n_before": {"zh_keys": 494, "en_keys": 494, "used_literal_keys": 436, "missing": 72},
+    "i18n_after": {"zh_keys": 566, "en_keys": 566, "used_literal_keys": 436, "missing": 0,
+                   "en_values_still_chinese": 0}
+  },
+  "commands_executed": [
+    {"cmd": "python -m gcm --cli --json --dir <tmp> urls.txt（修复前，默认走镜像）", "exit_code": 0,
+     "raw_output_tail": "2 轮：24836ms / 24398ms；status=success action=cloned mirror_used=https://gh-proxy.com"},
+    {"cmd": "python -m gcm --cli --json --no-mirror --dir <tmp> urls.txt（修复前对照）", "exit_code": 0,
+     "raw_output_tail": "2 轮：3079ms / 2971ms；mirror_used=''（直连）"},
+    {"cmd": "python -m gcm --cli --json --dir <tmp> urls.txt（修复后默认）", "exit_code": 0,
+     "raw_output_tail": "3 轮：3180ms / 3525ms / 2985ms；全部 mirror_used=''（直连源站）"},
+    {"cmd": "./.venv/Scripts/python.exe -m ruff check gcm", "exit_code": 0, "raw_output_tail": "All checks passed!"},
+    {"cmd": "./.venv/Scripts/python.exe -m mypy gcm", "exit_code": 0,
+     "raw_output_tail": "Success: no issues found in 104 source files"},
+    {"cmd": "python scripts/i18n_coverage.py --verbose", "exit_code": 0,
+     "raw_output_tail": "ZH=566 使用中的字面量键=436 → I18N OK"},
+    {"cmd": "python scripts/doc_drift_check.py", "exit_code": 0,
+     "raw_output_tail": "DRIFT 0（本轮它连拦 9 处：行数 / 函数数 / 测试文件数 / 版本号；另 test_function_size_budget 拦下 _drop 降级）"},
+    {"cmd": "python -m unittest tests.test_g58_mirror_failover", "exit_code": 0, "raw_output_tail": "Ran 58 tests / OK"},
+    {"cmd": "python -m unittest tests.test_ui_compact_visibility", "exit_code": 0,
+     "raw_output_tail": "Ran 3 tests / OK（9 尺寸 + clamp 反向自检 + 变异自检）"},
+    {"cmd": "python -m unittest tests.test_i18n_coverage", "exit_code": 0, "raw_output_tail": "Ran 4 tests / OK"}
+  ],
+  "files_changed": [
+    "gcm/app/mirrors.py（DEFAULT_GITHUB_MIRRORS 永久清空 + 实测证据写入 docstring）",
+    "gcm/db/settings.py（mirror_use_presets 默认 False，标注为已失效字段）",
+    "gcm/app/engine.py / gcm/git/service.py / gcm/ui/engine_factory.py / gcm/app/worker.py（构造默认值 False）",
+    "gcm/cli.py（一律直连；--no-mirror 改为兼容开关 + 帮助文案）",
+    "gcm/ui/settings_groups.py（移除「使用内置国内镜像」复选框；镜像相关 tooltip 重写）",
+    "gcm/ui/settings_panel.py（删 _save_mirror_presets；测速不再注入预设）",
+    "gcm/ui/main_window.py（删转发方法；_apply_layout_mode 增加「动作区不可压扁 + 矮窗口让位」）",
+    "gcm/ui/download_layout.py（新增 build_task_list_row；清单行搬出滚动区；动作区策略钉 Fixed）",
+    "gcm/i18n/zh.py / gcm/i18n/en.py（各 +72 键，含英文翻译）",
+    "scripts/i18n_coverage.py（新增：三条断言）",
+    "tests/test_i18n_coverage.py（新增 4 例）",
+    "tests/test_ui_compact_visibility.py（新增 3 例，含变异自检）",
+    "tests/test_g58_mirror_failover.py（预设相关 4 处改写为更强断言；补丁集不再依赖预设）",
+    "tests/test_function_size_budget.py（_drop 拆分后不再超限 → 移除登记）",
+    "tests/test_g67_docs_freshness.py（test_ledger 的历史版本白名单 +9.12.0）",
+    "tests/test_g80_hygiene.py（except 基线 622→623，pass-only 282 未涨）",
+    "CLAUDE.md / README.md / docs/architecture.md / test_ledger.md / .agent/memory/*（版本与数字同步）",
+    "gcm/__init__.py / pyproject.toml / Git-clone-Max.spec / packaging/installer.iss / .claude-plugin/plugin.json / docs/agent-contract.md（版本 9.12.1 单源）"
+  ],
+  "tests": [
+    {"name": "tests/test_g58_mirror_failover.py", "type": "unit+integration", "status": "pass", "count": 58},
+    {"name": "tests/test_ui_compact_visibility.py", "type": "ui-geometry+mutation", "status": "pass", "count": 3},
+    {"name": "tests/test_i18n_coverage.py", "type": "static-guard", "status": "pass", "count": 4},
+    {"name": "tests/test_function_size_budget.py", "type": "static-guard", "status": "pass", "count": 4},
+    {"name": "tests/test_doc_drift_guard.py", "type": "static-guard+mutation", "status": "pass", "count": 8},
+    {"name": "tests/test_g67_docs_freshness.py", "type": "static-guard", "status": "pass", "count": 11},
+    {"name": "tests/test_g56_cli_extra + test_g56_cli_json + test_g56_contract", "type": "contract", "status": "pass", "count": 16}
+  ],
+  "mutation_verification": [
+    {"guard": "test_ui_compact_visibility.test_guard_would_have_caught_x4", "before_fix": "把控件塞回滚动区 → 1240×729 下被裁（守卫报出 btn_star_import）", "after_fix": "恢复正常布局 → 0 裁切"},
+    {"guard": "test_g58_mirror_failover.test_no_builtin_presets_at_all", "note": "钉死 DEFAULT_GITHUB_MIRRORS 必须为空；任何人填回去即红"},
+    {"guard": "scripts/doc_drift_check.py", "before_fix": "本轮改动后报 9 处真实漂移（含 README 版本号 9.12.1 vs __version__ 9.12.0）", "after_fix": "DRIFT 0"},
+    {"guard": "tests/test_function_size_budget.py", "before_fix": "红：实测 19 个 vs 登记 20 个（_drop 已被拆到 100 行以下）", "after_fix": "绿"}
+  ],
+  "visual_evidence": [
+    "reports/ui-v9121-check/download_laptop1366_1240x729.png（清单行完整可见，位于主操作区）",
+    "reports/ui-v9121-check/download_hidpi150_1216x684.png",
+    "reports/ui-v9121-check/settings_mirror_row.png（内置镜像复选框已消失，只留自定义前缀/回退/测速）"
+  ],
+  "limitations": [
+    "C2 剩 5 项（大小列竞态/统一忙态/失败动作按钮/命令面板/批次暂停）与 C3–C6 全部未做",
+    "移除镜像后，确实需要代理的线路会变慢或不可达 —— 有意的取舍，用户可在设置页自定义恢复",
+    "Linux/macOS GUI、真机 125%/150% DPI 目检、慢速网络长时挂机未验证"
+  ]
+}
