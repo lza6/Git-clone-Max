@@ -1,7 +1,7 @@
 # Git-clone-Max
 
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
-> **当前版本：v9.10.3**（G80 契约与安全边界收口 + 用户可见正确性：MCP 真只读 / 出站统一打码 / 检出校验 / 安装包校验 / HTTP 硬化 / 设置声明期校验 / 仓库级 SSH 私钥 / 后台任务面板 / 卡死识别 / winget 清单；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）
+> **当前版本：v9.11.0**（G80 契约与安全边界收口 + 用户可见正确性：MCP 真只读 / 出站统一打码 / 检出校验 / 安装包校验 / HTTP 硬化 / 设置声明期校验 / 仓库级 SSH 私钥 / 后台任务面板 / 卡死识别 / winget 清单；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）
 > **v5.0：多平台直克隆** — GitLab / Gitee / Codeberg / Bitbucket / 自建主机（HTTPS/SSH/短格式/子组）同样支持。
 > 克隆目录一律 `host__作者__仓库`（GitHub 为 `作者__仓库`），本地改动永不覆盖。
 
@@ -145,7 +145,7 @@ Git-clone-Max/
 ├── skills/                  agent 技能包（gcm-clone/archive/report/diag/resume，各含 SKILL.md）
 ├── scripts/                 启动器（bat/ps1）+ E2E 冒烟 / 健康检查 / 发布 / 基准 / CI 快集
 ├── docs/                    架构 / ADR / 数据模型 / agent 契约 / SOP / 发布清单
-├── tests/                   单元 + 集成 + 真实 git E2E（155 个测试文件）
+├── tests/                   单元 + 集成 + 真实 git E2E（159 个测试文件）
 ├── requirements.txt         运行时依赖（PyQt6）
 └── pyproject.toml           项目元数据 + ruff / mypy 配置
 ```
@@ -264,9 +264,9 @@ python -m coverage run --source=gcm -m unittest discover -s tests
 ## 发布
 
 ```bash
-git tag v9.10.3   # 示例；发版时替换成当次版本（守卫会校验文档里的版本号）
+git tag v9.11.0   # 示例；发版时替换成当次版本（守卫会校验文档里的版本号）
 git push origin main --tags
-python scripts/publish_release.py --tag v9.10.3   # 自动上传 exe 到 GitHub Release
+python scripts/publish_release.py --tag v9.11.0   # 自动上传 exe 到 GitHub Release
 ```
 
 ## License
