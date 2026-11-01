@@ -130,6 +130,14 @@ class StatisticsDialog(QDialog):
         self._build_ui()
         self._refresh()
 
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qt 命名
+        """C-2：关闭前等聚合线程收尾（运行中析构 = SIGSEGV 同型缺陷）。"""
+        t = getattr(self, "_agg_thread", None)
+        if t is not None and t.isRunning():
+            t.disconnect()
+            t.wait(3000)
+        super().closeEvent(event)
+
     # ------------------------------------------------------------ UI
     def _build_ui(self) -> None:
         # G74：统计内容（趋势/评分卡/雷达/存储）在 620px 高对话框里放不下，
@@ -308,7 +316,16 @@ class StatisticsDialog(QDialog):
 
     # ------------------------------------------------------------ A5-6/U-3 后台聚合
     def _run_scorecard_async(self) -> None:
-        """评分卡 + 存储看板在后台线程计算，结果回 GUI 线程渲染。"""
+        """评分卡 + 存储看板在后台线程计算，结果回 GUI 线程渲染。
+
+        C-2 生命周期守卫：旧线程先 wait 再替换引用（QThread 运行中被析构 =
+        本项目 CI SIGSEGV 的同型根因，CLAUDE.md §6 已登记）。wait 有上限，
+        超时的旧线程设为 daemon 式放任（Qt 会打警告但不崩）。
+        """
+        old = getattr(self, "_agg_thread", None)
+        if old is not None and old.isRunning():
+            old.disconnect()  # 断开信号：结果不再回渲染（丢弃过期轮次）
+            old.wait(2000)
         db = self.db
         data_dir = getattr(self, "data_dir", None) or getattr(db, "path", None)
 

@@ -245,10 +245,12 @@ class Settings:
     """应用级可持久化配置。"""
 
     concurrency: int = 8              # 并行线程数 1..32
+    host_concurrency: int = 4         # A5-5/R3：同 host 在跑上限（0=不限流）
     auto_clear: bool = True           # 下载完成自动清空输入框
     proxy: str = ""                   # HTTP 代理，形如 http://127.0.0.1:7890
     fetch_timeout: int = 300          # 单次 fetch 超时秒数
     clone_timeout: int = 600          # 单次 clone 超时秒数
+    time_budget_min: int = 0          # A5-3/C-10：单仓库总时间预算（分钟，0=不限）
     retries: int = 2                  # 网络失败自动重试次数
     minimize_to_tray: bool = True     # 最小化时收进系统托盘
     language: str = "zh"              # 保留：zh / en（i18n 备用）

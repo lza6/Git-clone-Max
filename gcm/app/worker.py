@@ -78,12 +78,25 @@ class CloneWorker(QRunnable):
         spec = self.payload.spec
         res = SyncResult(spec=spec, status=SyncStatus.RUNNING)
         # A5-5/R3：per-host 闸门 —— 在线程池线程内取票（不占 GUI 线程），
-        # 直到同 host 有空位才真正开始 git 操作
+        # 直到同 host 有空位才真正开始 git 操作。
+        # 审查 R-3：acquire 带超时循环内查取消标志 —— 无限阻塞会让
+        # cancel_all 对已入池 worker 失效（线程池槽位被占死）。
         if self._host_gate is not None:
+            acquired = False
             try:
-                self._host_gate.acquire()
+                while not acquired:
+                    acquired = self._host_gate.acquire(timeout=0.5)
+                    if not acquired and self.payload.flag is not None \
+                            and self.payload.flag():
+                        break  # 已取消 → 不再等闸门，走正常取消路径
             except Exception:
-                pass  # 闸门失效时降级为不限流（绝不能因此卡死任务）
+                acquired = True  # 闸门失效降级为不限流（绝不卡死任务）
+            if not acquired:
+                self.signals.result.emit(self.index, SyncResult(
+                    spec=spec, status=SyncStatus.CANCELLED,
+                    action=SyncAction.FAILED, message="已取消（排队中）"))
+                self.signals.finished.emit()
+                return
         try:
             # 更新模式下：状态先置“更新中”，避免启动瞬间显示“失败”
             if self._is_update:
@@ -173,8 +186,8 @@ class CloneWorker(QRunnable):
             res.detail = str(e)
             self.signals.result.emit(self.index, res)
         finally:
-            # A5-5/R3：释放 host 闸门（无论成败）
-            if self._host_gate is not None:
+            # A5-5/R3：释放 host 闸门（只在真正 acquire 过才 release —— 取消早退未持票）
+            if self._host_gate is not None and getattr(self, "_gate_held", False):
                 try:
                     self._host_gate.release()
                 except Exception:

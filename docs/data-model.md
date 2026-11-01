@@ -29,7 +29,7 @@ SQLite，文件 `data/repos.db`，WAL 模式。
 | 锁等待 | `PRAGMA busy_timeout=30000` | `_BUSY_TIMEOUT_MS` |
 | 外键 | `PRAGMA foreign_keys=ON` | `Database.__init__` |
 | 连接 | `check_same_thread=False` + 进程内 `RLock`（**单写者**：DB 写入只在引擎主线程） | `Database.__init__` |
-| schema 版本 | `PRAGMA user_version` = **3** | `_SCHEMA_VERSION` |
+| schema 版本 | `PRAGMA user_version` = **4**（A-2-1 修正：v4 起 `sync_queue` 表由 `migrate_to_v4` 创建，DDL 见 `docs/B7-3-持久队列设计.md` §2） | `_SCHEMA_VERSION` |
 
 ### 1.1 迁移链（`_migrate`，幂等）
 

@@ -76,6 +76,7 @@ class SyncEngine(QObject):
                  progress_path: Optional[Path] = None,
                  concurrency: int = 8,
                  fetch_timeout: int = 300, clone_timeout: int = 600,
+                 time_budget: float = 0.0, host_concurrency: int = 4,
                  retries: int = 2, proxy: str = "", token: str = "",
                  submodule: bool = False, rate_limit_kbps: int = 0,
                  host_tokens: Optional[dict[str, str]] = None,
@@ -116,6 +117,8 @@ class SyncEngine(QObject):
 
         self.fetch_timeout = fetch_timeout
         self.clone_timeout = clone_timeout
+        self.time_budget = max(0.0, float(time_budget))
+        self._host_concurrency = max(0, int(host_concurrency))
         self.retries = max(0, retries)
         self.proxy = (proxy or "").strip()
         self.token = (token or "").strip()
@@ -592,6 +595,9 @@ class SyncEngine(QObject):
                 percent=prog.get(idx),
                 detail=detail.get(idx),
             )
+        # A5-6/C-15（审查 R-1）：心跳同时兜底节流落盘 —— 任务级落盘被 2s 节流后，
+        # 「缓冲已空但 dirty 未落」的窗口由这里补齐（否则进程被杀时 progress 陈旧）
+        self._progress_flush_maybe()
 
     def flush_progress(self):
         """把内存进度态原子落盘（周期调用；engine 单线程写文件）。"""
@@ -609,8 +615,8 @@ class SyncEngine(QObject):
     def _progress_flush_maybe(self):
         """任务结束时的节流落盘：距上次落盘不足 2s 只标记 dirty，交给心跳兜底。
 
-        心跳（_flush_progress_buf 每 100ms）在缓冲非空时会 flush_progress；
-        为覆盖「缓冲已空但进度仍 dirty」的窗口，这里到点时直接强制落盘。
+        心跳（_flush_progress_buf 每 100ms）末尾会调用本方法兜底；
+        到点直接落盘，未到点保持 dirty 等下一跳。
         """
         if not self.progress_path or not self._dirty:
             return
@@ -730,6 +736,7 @@ class SyncEngine(QObject):
             cancelled=lambda: self.is_cancelled(),
             fetch_timeout=self.fetch_timeout,
             clone_timeout=self.clone_timeout,
+            time_budget=getattr(self, "time_budget", 0.0),
             retries=self.retries,
             proxy=self.proxy,
             token=self.token,
@@ -953,9 +960,13 @@ class SyncEngine(QObject):
         return gate
 
     def set_host_concurrency(self, n: int) -> None:
-        """运行中调整 per-host 并发上限（新任务生效；已建闸门按 min 生效由 OS 调度）。"""
+        """运行中调整 per-host 并发上限。
+
+        注意：清空闸门后，已在跑的 worker 仍持旧闸门票（release 到旧实例），
+        新 worker 拿新闸门 —— 切换瞬间两代闸门并存，实际并发可能短暂超过
+        新上限（审查 R-2 已知取舍；设置只在启动前改最稳妥）。
+        """
         self._host_concurrency = max(0, int(n))
-        # 已存在的闸门容量不可调（Semaphore 无 set 容量 API），重建之
         self._host_gates.clear()
 
     def _start_worker(self, index: int, spec: RepoSpec, flag: CancelFlag):
@@ -969,7 +980,6 @@ class SyncEngine(QObject):
         self._batch_state.transition(spec.folder_name, "running")
         # G71-8：queued → running（状态机对重复/迟到转换是幂等的）
         # G71-11：与登记 key 一致，使用 folder_name（含 @tag）
-        self._batch_state.transition(spec.folder_name, "running")
         self._publish(EventType.TASK_STARTED,
                       index=index, key=key,
                       folder_name=spec.folder_name, display=spec.display,

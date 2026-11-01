@@ -395,15 +395,18 @@ class RetryQueue:
             if idx is None:
                 for i in range(len(rows) - 1, -1, -1):
                     k = str((rows[i] or {}).get("key") or "")
-                    if k.split("@", 1)[0] == key.split("@", 1)[0] and \
-                            k.startswith(key.split("@", 1)[0]):
+                    BASE = key.split("@", 1)[0]
+                    if k.split("@", 1)[0] == BASE:
                         idx = i
                         break
             if idx is None:
                 return False
             rec = rows.pop(idx)
+            # 审查 R-4：用被匹配记录自身的 key（含 @ref）——调用方传的可能是
+            # 无 ref 旧形态，用它会让重投条目丢 ref → 重投按默认分支克隆
+            entry_key = str(rec.get("key") or key)
             entry = {
-                "key": key,
+                "key": entry_key,
                 "status": "queued",
                 "state": "queued",
                 "attempts": 0,
@@ -426,7 +429,7 @@ class RetryQueue:
                 "last_attempt_at": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "queued_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             }
-            data.setdefault("entries", {})[key] = entry
+            data.setdefault("entries", {})[entry_key] = entry
             data["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
             return True
 

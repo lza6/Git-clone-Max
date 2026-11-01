@@ -485,7 +485,8 @@ class GitService:
                  lfs_enabled: bool = False,
                  mirror: bool = False,
                  post_clone_hook: str = "",
-                 ssh_key: str = ""):
+                 ssh_key: str = "",
+                 time_budget: float = 0.0):
         self.root = Path(root_dir)
         self.root.mkdir(parents=True, exist_ok=True)
         self.on_line = on_line or (lambda c: None)
@@ -493,6 +494,9 @@ class GitService:
         self.fetch_timeout = fetch_timeout
         self.clone_timeout = clone_timeout
         self.retries = max(0, retries)
+        # A5-3/C-10：单仓库总时间预算（秒）。0 = 不限（旧行为）。
+        # 克隆降级链（镜像→源站→treeless→depth1）每档开始前检查剩余预算。
+        self.time_budget = max(0.0, float(time_budget))
         self._backoff = backoff
         self.proxy = proxy.strip()
         self.token = (token or "").strip()
@@ -1348,6 +1352,7 @@ class GitService:
                               # 卡住很常见，若沿用 retries=2×600s，最坏 30 分钟才回源。
                               retries=(0 if clone_url != source_url else self.retries),
                               backoff=self._backoff,
+                              budget=self.time_budget or None,  # A5-3/C-10 单仓预算
                               progress_detail=getattr(
                                   self, "send_progress_detail", None))
         # G58-2：镜像克隆失败 → 回退源站再试一次（探测通过也可能在 clone 阶段失败）
@@ -1362,6 +1367,7 @@ class GitService:
                                   cancelled=self.cancelled, env=self._env(),
                                   timeout=self.clone_timeout, retries=self.retries,
                                   backoff=self._backoff,
+                                  budget=self.time_budget or None,
                                   progress_detail=getattr(
                                       self, "send_progress_detail", None))
         # G81（N-5）：记录实际取数通道（"" = 直连源站）。必须在 origin 恢复前
@@ -1418,6 +1424,7 @@ class GitService:
                     env=(self._mirror_env() if _is_mirror else self._env()),
                                       timeout=self.clone_timeout, retries=0,
                                       backoff=self._backoff,
+                                      budget=self.time_budget or None,
                                       progress_detail=getattr(self, "send_progress_detail", None))
                 # G38-5 降级链终档：treeless 仍失败 → depth1 单分支「保命模式」
                 if rc != 0 and not self.cancelled():
@@ -1438,6 +1445,7 @@ class GitService:
                         env=(self._mirror_env() if clone_url != source_url else self._env()),
                         timeout=self.clone_timeout, retries=0,
                         backoff=self._backoff,
+                        budget=self.time_budget or None,
                         progress_detail=getattr(self, "send_progress_detail", None))
                     if rc == 0:
                         self._emit("[提示] 已用 depth1 单分支克隆，完整历史未拉取；"

@@ -87,7 +87,7 @@
 | 11 | `ScanWorker.progress` 已 emit 未 connect | **已闭环（G76）**：对话框已连并改确定态 | `ui/local_repos_dialog.py:166-168` |
 | 12 | `check_latest_with_sha` 无调用 | **已闭环（G76）**：更新检查已用它拿 sha256 | `ui/update_flow.py:56` |
 | 13 | `is_data_dir_private` / `migrate_data_dir` 无调用 | **已闭环（G76）**：数据目录私密性提示 + 迁移入口 | `ui/settings_actions.py:97-112` |
-| 14 | 5 个只读不写字段 | **4 个已接线**（`clone_timeout` / `minimize_to_tray` / `watchdog_silent` / `sched_report_format`），**仅剩 `retry_backoff_base_sec` 只读**：它被 `engine_factory`/`configure_retry_queue` 消费，但设置页没有写入控件 | `ui/settings_actions.py:64-87`（4 个 save）· `ui/settings_panel.py:245`（仅读） |
+| 14 | 5 个只读不写字段 | **4 个已接线**（`clone_timeout` / `minimize_to_tray` / `watchdog_silent` / `sched_report_format`），`retry_backoff_base_sec` **已闭环（v9.10.3，A-2-6 修正）**：设置页已有写入控件（`ui/settings_groups.py`），三段全通 | `ui/settings_actions.py:64-87`（4 个 save）· `ui/settings_panel.py:245`（仅读） |
 | 15 | ~~`quick_repos` 无编辑入口；`depth` 字段完全无引用~~ **已闭环（v9.10.0）** | — | `quick_repos` 已由 G76 接写入侧；`depth` **已删除**（G79：它是唯一零读取的僵尸字段，随 `asdict` 落盘但永不生效）；顺带修掉 `TestG69_18NoZombieSettingsFields` 的同名局部变量盲区 |
 
 其余仅测试引用的内部函数（`token.py`、`slow_remote_hint`、`backup_to`、`TaskLists.delete` 等）
