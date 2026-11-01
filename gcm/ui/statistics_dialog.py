@@ -128,14 +128,25 @@ class StatisticsDialog(QDialog):
         # G70：不再套导入时生成的静态深色 QSS —— 沿用父窗口当前主题/字号。
         self._days = 30  # G47-4 趋势周期（7/30/90）
         self._build_ui()
+        self.finished.connect(self._shutdown_agg_thread)  # accept/reject 路径
         self._refresh()
 
-    def closeEvent(self, event) -> None:  # noqa: N802 - Qt 命名
-        """C-2：关闭前等聚合线程收尾（运行中析构 = SIGSEGV 同型缺陷）。"""
+    def _shutdown_agg_thread(self) -> None:
+        """C-2：等聚合线程收尾（运行中析构 = SIGSEGV/Abort 6 同型缺陷）。
+
+        注意：QDialog 的 accept()/reject()（关闭按钮路径）**不触发 closeEvent**，
+        必须同时挂 finished 信号 —— macOS CI 实测 close-only 仍崩（ca86ce3）。
+        """
         t = getattr(self, "_agg_thread", None)
         if t is not None and t.isRunning():
-            t.disconnect()
+            try:
+                t.disconnect()
+            except TypeError:
+                pass  # 本就无连接
             t.wait(3000)
+
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qt 命名
+        self._shutdown_agg_thread()
         super().closeEvent(event)
 
     # ------------------------------------------------------------ UI

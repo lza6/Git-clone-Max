@@ -114,6 +114,7 @@ class TestStatisticsDialogMore(unittest.TestCase):
         db = _db_with_history()
         try:
             dlg = StatisticsDialog(db=db)
+            self.addCleanup(dlg.close)  # G82-hotfix: deterministic thread teardown
             self.assertEqual(len(dlg.trend_canvas._data), 30)
             last = dlg.trend_canvas._data[-1]
             self.assertEqual((last["success"], last["failed"], last["conflict"]), (1, 1, 1))
@@ -134,6 +135,7 @@ class TestStatisticsDialogMore(unittest.TestCase):
         db = _db_with_history()
         try:
             dlg = StatisticsDialog(db=db)
+            self.addCleanup(dlg.close)  # G82-hotfix: deterministic thread teardown
             self.assertIn("同步总次数：4", dlg.lbl_summary.text())
             rid3 = db.upsert_repo(_spec("o3", "c"), "/x/o3__c")
             db.add_sync_history(rid3, SyncStatus.SUCCESS, SyncAction.CLONED, "ok",
@@ -152,6 +154,7 @@ class TestStatisticsDialogMore(unittest.TestCase):
         db.stats_usage.return_value = {"clones": 0, "updates": 0, "commits": 0}
         db.stats_daily.return_value = []
         dlg = StatisticsDialog(db=db)
+        self.addCleanup(dlg.close)  # G82-hotfix: deterministic thread teardown
         self.assertIn("仓库总数：0", dlg.lbl_summary.text())
         self.assertIn("平台分布：（暂无仓库）", dlg.lbl_hosts.text())
         self.assertEqual(dlg.trend_canvas._data, [])
@@ -165,6 +168,7 @@ class TestStatisticsDialogMore(unittest.TestCase):
         db.stats_usage.side_effect = RuntimeError("boom")
         db.stats_daily.return_value = []
         dlg = StatisticsDialog(db=db)
+        self.addCleanup(dlg.close)  # G82-hotfix: deterministic thread teardown
         self.assertIn("用量统计：（不可用）", dlg.lbl_usage.text())
         self.assertIn("平台分布：github.com: 2", dlg.lbl_hosts.text())
 
@@ -177,6 +181,7 @@ class TestStatisticsDialogMore(unittest.TestCase):
         db.stats_usage.return_value = {"clones": 1, "updates": 0, "commits": 0}
         db.stats_daily.side_effect = RuntimeError("boom")
         dlg = StatisticsDialog(db=db)
+        self.addCleanup(dlg.close)  # G82-hotfix: deterministic thread teardown
         self.assertEqual(dlg.trend_canvas._data, [])
 
     def test_close_button_accepts(self):
@@ -188,6 +193,7 @@ class TestStatisticsDialogMore(unittest.TestCase):
         db.stats_usage.return_value = {"clones": 0, "updates": 0, "commits": 0}
         db.stats_daily.return_value = []
         dlg = StatisticsDialog(db=db)
+        self.addCleanup(dlg.close)  # G82-hotfix: deterministic thread teardown
         dlg.btn_close.click()
         self.assertEqual(dlg.result(), 1)
 
