@@ -91,6 +91,9 @@ class CloneWorker(QRunnable):
                         break  # 已取消 → 不再等闸门，走正常取消路径
             except Exception:
                 acquired = True  # 闸门失效降级为不限流（绝不卡死任务）
+            # G82-hotfix4：缺失此行导致 finally 永不 release（票泄漏 → 同 host 第 5 个
+            # worker 起永久阻塞，CI slow 死锁 28 分钟实锤）。faulthandler 定位。
+            self._gate_held = acquired
             if not acquired:
                 self.signals.result.emit(self.index, SyncResult(
                     spec=spec, status=SyncStatus.CANCELLED,
