@@ -138,7 +138,7 @@ class ProgressTable(QWidget):
         self.progress_filter.setAccessibleName("按仓库名过滤进度")
         self.progress_filter.textChanged.connect(self._schedule_progress_filter)
         row_tools.addWidget(self.progress_filter, 1)
-        btn_pause_selected = QPushButton("⏸ 暂停选中")
+        btn_pause_selected = QPushButton("暂停选中")
         btn_pause_selected.clicked.connect(self.pause_selected)
         row_tools.addWidget(btn_pause_selected)
         row_tools.addStretch()
@@ -743,6 +743,13 @@ class ProgressTable(QWidget):
     def _reset_buttons(self):
         self.owner.btn_start.setEnabled(True)
         self.owner.btn_cancel.setEnabled(False)
+        # C2-6：批次结束后「暂停」按钮失效并把文案复位（否则会停在「继续」）
+        try:
+            self.owner.btn_pause_batch.setEnabled(False)
+            self.owner.btn_pause_batch.setText(_mw.tr("暂停"))
+        except Exception as e:  # noqa: BLE001 —— 复位是收尾动作，缺按钮不该拖垮收尾
+            from ..app.applog import warn as _warn
+            _warn(f"批次结束后复位「暂停」按钮失败：{e}")
         self.owner.btn_update_all.setEnabled(True)
         self.owner.btn_cancel_manage.setEnabled(False)
         self.owner.repo_input.setEnabled(True)

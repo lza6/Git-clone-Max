@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import weakref
+from functools import partial
 from typing import Any, Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -114,9 +115,13 @@ def aggregate_failures(failed_rows: list[dict[str, Any]]) -> list[dict[str, Any]
 
 
 class FailurePanel(QWidget):
-    """失败聚合面板：表格 + 空态占位 + 按类别重试。"""
+    """失败聚合面板：表格 + 空态占位 + 按类别给出**可点击的下一步**。"""
 
-    retry_category = pyqtSignal(str)   # category key
+    retry_category = pyqtSignal(str)        # category key
+    #: C2-4（Rev7 B2-3）：跳到设置页某个分组（值见 `_SECTION_BY_ACTION`）
+    open_settings_requested = pyqtSignal(str)
+    #: C2-4：导出诊断包（"分类器不认识这类错误，先把现场带走"）
+    diagnostics_requested = pyqtSignal()
 
     def __init__(self, owner, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -156,7 +161,7 @@ class FailurePanel(QWidget):
         _sr.addWidget(self.btn_cancel_stuck)
         self.stuck_row.setVisible(False)
         v.addWidget(self.stuck_row)
-        self.empty_lbl = QLabel(tr("暂无失败记录 🎉"))
+        self.empty_lbl = QLabel(tr("暂无失败记录"))
         self.empty_lbl.setObjectName("muted")
         self.empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         v.addWidget(self.empty_lbl)
@@ -203,15 +208,56 @@ class FailurePanel(QWidget):
             it_s = QTableWidgetItem("\n".join(x for x in lines if x.strip()))
             it_s.setToolTip("\n".join(g["messages"][:5]))
             self.table.setItem(i, 2, it_s)
-            btn = QPushButton(tr("重试该类别"))
-            btn.clicked.connect(
-                lambda _=False, c=g["category"]: self.retry_category.emit(c))
-            self.table.setCellWidget(i, 3, btn)
+            self.table.setCellWidget(
+                i, 3, self._action_widget(g["category"]))
         self.table.setSortingEnabled(was_sorting)
         self.table.resizeRowsToContents()
         self.empty_lbl.setVisible(len(rows) == 0)
         self.table.setVisible(len(rows) > 0)
         return len(rows)
+
+    #: action_kind → (按钮文案, 跳到哪个设置分组)。分组键由 MainWindow 解释。
+    _SECTION_BY_ACTION = {"network": "network", "auth": "network",
+                          "switch_mirror": "network", "local": "network"}
+
+    def _action_widget(self, category: str):
+        """按 `errors.action_kind_for(category)` 渲染该行的「下一步」控件。
+
+        C2-4 / Rev7 B2-3：原来这里只有一个「重试该类别」按钮 —— 对
+        **认证失败 / 仓库已删除 / 磁盘满** 这三类，重试都是**无效动作**
+        （`retryable=False`，点了只是让失败再发生一遍）。现在按类别给真正的下一步：
+        重试 / 去设置改 Token / 导出诊断包 / 无动作（显示 —）。
+        """
+        try:
+            from ..app.errors import action_kind_for
+            kind = action_kind_for(category)
+        except Exception:      # noqa: BLE001 —— 分类器异常退化为"重试"（不比原来更差）
+            kind = "retry"
+        if kind == "retry":
+            btn = QPushButton(tr("重试该类别"))
+            btn.setToolTip(tr("对这一类错误重新入队（仅网络类有效）"))
+            btn.clicked.connect(partial(self._emit_retry, category))
+            return btn
+        if kind in ("open_settings", "switch_mirror"):
+            btn = QPushButton(tr("去设置"))
+            btn.setToolTip(tr("打开设置页的对应分组（认证类要去更新 Token/凭据）"))
+            btn.clicked.connect(
+                partial(self.open_settings_requested.emit,
+                        self._SECTION_BY_ACTION.get(kind, "network")))
+            return btn
+        if kind == "copy_diag":
+            btn = QPushButton(tr("诊断包"))
+            btn.setToolTip(tr("导出含事件流与日志尾部的诊断包（已打码），便于定位"))
+            btn.clicked.connect(partial(self.diagnostics_requested.emit))
+            return btn
+        # kind == "none"：本地确实没有可做的动作，别放一个点了没用的按钮
+        lbl = QLabel("—")      # 占位符，无文案含义，刻意不走 tr()
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl.setToolTip(tr("这类错误在本机没有可执行动作（例如仓库已删除）"))
+        return lbl
+
+    def _emit_retry(self, category: str) -> None:
+        self.retry_category.emit(category)
 
     def _refresh_stuck(self) -> list[str]:
         """刷新「疑似卡死任务」条：有则显示并可一键取消，无则整行隐藏。
@@ -234,7 +280,7 @@ class FailurePanel(QWidget):
         if keys:
             shown = "、".join(keys[:3]) + (f" 等 {len(keys)} 个" if len(keys) > 3 else "")
             self.stuck_lbl.setText(
-                tr("⚠ 发现 {n} 个疑似卡死任务（超过超时阈值仍未结束）：{items}")
+                tr("发现 {n} 个疑似卡死任务（超过超时阈值仍未结束）：{items}")
                 .format(n=len(keys), items=shown))
             self.stuck_row.setVisible(True)
         else:
@@ -272,6 +318,8 @@ class FailureDialog(QDialog):
     """失败聚合对话框（入口：主窗口「失败汇总」按钮）。"""
 
     retry_category = pyqtSignal(str)
+    open_settings_requested = pyqtSignal(str)
+    diagnostics_requested = pyqtSignal()
 
     def __init__(self, owner, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -282,6 +330,8 @@ class FailureDialog(QDialog):
         fit_dialog_to_screen(self, 780, 600, 540, 380)
         self.panel = FailurePanel(owner, self)
         self.panel.retry_category.connect(self.retry_category)
+        self.panel.open_settings_requested.connect(self.open_settings_requested)
+        self.panel.diagnostics_requested.connect(self.diagnostics_requested)
         lay = QVBoxLayout(self)
         lay.addWidget(self.panel)
         self.btn_close = QPushButton(tr("关闭"))

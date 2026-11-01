@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 import weakref
 
-from PyQt6.QtCore import QEvent, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QEvent, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
@@ -34,6 +35,10 @@ class ManagePanel(QWidget):
     import_local_requested = pyqtSignal()
     manage_double_clicked = pyqtSignal(object)
     history_row_clicked = pyqtSignal(int)
+    #: C2-2（Rev7 U-6）：后台线程算完目录大小后用它把结果送回 GUI 线程。
+    #: 不用 `QTimer.singleShot(600, ...)` —— 那是"猜"算完的时间：15 万文件实测 484ms，
+    #: 机械盘/杀软下更久；一旦超过 600ms 读到的就是空列表且不再重试 → 大小列永久空白。
+    sizes_ready = pyqtSignal(object)
 
     def __init__(self, owner, parent=None):
         super().__init__(parent)
@@ -43,7 +48,11 @@ class ManagePanel(QWidget):
         # G69-18：owner 可为 None（测试会单独构造面板验证数据逻辑）。
         # 原先注释这么写、代码却没兜底 —— `self.owner._std_icon(...)` 会
         # AttributeError。这里显式记下来，构造期就不会依赖 owner。
+        #: 目录大小缓存：{path: (计算时刻, 显示文本)}。同一目录 TTL 内不重复递归 stat。
+        self._size_cache: dict[str, tuple[float, str]] = {}
         self._build_ui()
+        # 绑定方法（不用 lambda 捕获 self —— 那会重新成环，见 decisions D-01）
+        self.sizes_ready.connect(self._apply_sizes)
 
     @property
     def owner(self):
@@ -471,8 +480,20 @@ class ManagePanel(QWidget):
             n /= 1024
         return f"{n:.1f} GB"
 
+    #: 目录大小缓存有效期（秒）。仓库大小变化很慢，5 分钟足够；
+    #: 想立刻重算可以点「刷新」（会清空缓存）。
+    _SIZE_TTL_SEC = 300.0
+
     def _start_size_loader(self):
-        """G47-5：后台线程懒加载各仓库目录大小，主线程回填模型（节流防重复）。"""
+        """后台线程算各仓库目录大小，算完用 `sizes_ready` 回填模型。
+
+        C2-2（Rev7 U-6 修复）：原实现起线程后用 `QTimer.singleShot(600, …)` 去读结果 ——
+        那是**猜**算完的时间。实测 15 万文件要 484ms、机械盘/杀软下更久；一旦超过 600ms
+        读到的就是空列表，且**不再重试** → 大小列永久空白（用户以为功能坏了）。
+        现在改为线程算完 `emit`，由 Qt 队列切回 GUI 线程（真正的"完成即回填"）。
+
+        另加 TTL 缓存：同一目录 5 分钟内不重复递归 `scandir`（原来每次刷新都全量重算）。
+        """
         try:
             if getattr(self, "_size_thread", None) is not None and \
                     self._size_thread.is_alive():
@@ -483,28 +504,55 @@ class ManagePanel(QWidget):
             if not targets:
                 return
             db = self.owner.db
+            cache = self._size_cache
+            ttl = self._SIZE_TTL_SEC
+            now = time.time()
 
             def _run():
                 out = []
                 for rid, path in targets:
+                    hit = cache.get(path)
+                    if hit is not None and (now - hit[0]) < ttl:
+                        out.append((rid, hit[1]))
+                        continue
                     try:
-                        out.append((rid, self._human_size(db.dir_size(path))))
-                    except Exception:
-                        out.append((rid, ""))
-                self._pending_sizes = out
+                        text = self._human_size(db.dir_size(path))
+                    except Exception:      # noqa: BLE001 —— 单目录失败只留空，不影响其它行
+                        text = ""
+                    else:
+                        cache[path] = (now, text)
+                    out.append((rid, text))
+                try:
+                    self.sizes_ready.emit(out)   # 跨线程 emit → 排队回 GUI 线程槽
+                except RuntimeError:
+                    pass   # 面板/窗口已销毁：丢弃结果即可
 
-            self._size_thread = threading.Thread(target=_run, daemon=True)
+            self._size_thread = threading.Thread(target=_run, daemon=True,
+                                                 name="gcm-size-loader")
             self._size_thread.start()
-            QTimer.singleShot(600, self._apply_pending_sizes)
         except Exception:
             pass
+
+    def _apply_sizes(self, rows) -> None:
+        """GUI 线程：把线程算好的大小写进模型（`sizes_ready` 的槽）。"""
+        try:
+            for rid, text in rows or []:
+                self.manage_model.set_size(rid, text)
+        except Exception as e:      # noqa: BLE001 —— 回填失败只留痕，不打断 UI
+            from ..app.applog import warn as _warn
+            _warn(f"仓库大小回填失败（列可能为空）：{e}")
 
     def _apply_pending_sizes(self):
+        """兼容旧名（历史测试/外部脚本可能引用）—— 回放 `_pending_sizes`。"""
+        self._apply_sizes(getattr(self, "_pending_sizes", None))
+
+    def invalidate_size_cache(self) -> None:
+        """清空目录大小缓存（「刷新」时调用，让下一次真的重算）。"""
         try:
-            for rid, text in getattr(self, "_pending_sizes", []) or []:
-                self.manage_model.set_size(rid, text)
-        except Exception:
-            pass
+            self._size_cache.clear()
+        except Exception as e:      # noqa: BLE001 —— 清缓存失败只留痕
+            from ..app.applog import warn as _warn
+            _warn(f"清空仓库大小缓存失败：{e}")
 
     def _export_metadata(self):
         """G47-7：导出仓库元数据 JSON。"""

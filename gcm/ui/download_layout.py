@@ -297,10 +297,19 @@ def build_download_actions(owner) -> QWidget:
     owner.btn_cancel.setIcon(owner._std_icon("stop", owner.btn_cancel))
     owner.btn_clear = QPushButton(tr("清空输入区"))  # A5-4/U-18：原名「清空列表」与行为不符
     owner.btn_clear.clicked.connect(owner.confirm_clear_input)
+    # C2-6 / Rev7 B2-2：批次级「暂停/继续」——原来只有"单仓库暂停"和"全部取消"，
+    # 挂机刷几百个仓库时想"先停十分钟再接着跑"做不到，只能取消重来。
+    owner.btn_pause_batch = QPushButton(tr("暂停"))
+    owner.btn_pause_batch.setEnabled(False)
+    owner.btn_pause_batch.setToolTip(tr(
+        "暂停后不再开始新仓库；正在跑的会自然结束。再点一次继续。\n"
+        "与「取消全部」不同：暂停不丢进度、不终止在途任务。"))
+    owner.btn_pause_batch.clicked.connect(owner.toggle_batch_pause)
     # G75：主按钮给足权重但不拉满整行 —— 满宽横幅是模板相，不是"一个主操作"
     owner.btn_start.setMaximumWidth(420)
     row1.addWidget(owner.btn_start)
     row1.addWidget(owner.btn_cancel)
+    row1.addWidget(owner.btn_pause_batch)
     row1.addWidget(owner.btn_clear)
     row1.addStretch(1)
     v.addLayout(row1)

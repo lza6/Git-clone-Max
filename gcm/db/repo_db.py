@@ -14,6 +14,7 @@ from .queue_db import QueueStore, migrate_to_v4
 from .repo_profile import RepoProfileMixin, migrate_to_v5
 from .repo_search import SearchMixin
 from .repo_ssh import SshKeyMixin
+from .txn import write_txn
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS repos (
@@ -161,8 +162,7 @@ class Database(SshKeyMixin, SearchMixin, RepoProfileMixin):
     def upsert_repo(self, spec: RepoSpec, local_path: str, host: str = "github.com",
                     default_branch: str | None = None, head_sha: str | None = None) -> int:
         """插入或更新仓库记录，返回 repo_id。"""
-        with self._lock:
-            self._begin_immediate()
+        with self._lock, write_txn(self):
             self._conn.execute(
                 """
                 INSERT INTO repos
@@ -182,7 +182,6 @@ class Database(SshKeyMixin, SearchMixin, RepoProfileMixin):
                  local_path, host, default_branch, head_sha,
                  time.strftime("%Y-%m-%d %H:%M:%S")),
             )
-            self._conn.commit()
             row = self._conn.execute(
                 "SELECT id FROM repos WHERE owner=? AND repo=? AND host=?",
                 (spec.owner, spec.repo, host),
@@ -234,8 +233,7 @@ class Database(SshKeyMixin, SearchMixin, RepoProfileMixin):
             return len(rows)
 
     def set_repo_head(self, repo_id: int, head_sha: str | None, default_branch: str | None = None):
-        with self._lock:
-            self._begin_immediate()
+        with self._lock, write_txn(self):
             if default_branch is not None:
                 self._conn.execute(
                     "UPDATE repos SET default_branch=?, head_sha=?,"
@@ -246,7 +244,6 @@ class Database(SshKeyMixin, SearchMixin, RepoProfileMixin):
                     "UPDATE repos SET head_sha=?,"
                     " updated_at=datetime('now','localtime') WHERE id=?",
                     (head_sha, repo_id))
-            self._conn.commit()
 
     # ------------------------------------------------------------ G03 标签/收藏/黑名单
     def set_tags(self, repo_id: int, tags: list[str]) -> None:
@@ -305,8 +302,7 @@ class Database(SshKeyMixin, SearchMixin, RepoProfileMixin):
                          head_before: str | None = None, head_after: str | None = None,
                          remote_head: str | None = None, duration_ms: int = 0,
                          started_at: str | None = None, ended_at: str | None = None):
-        with self._lock:
-            self._begin_immediate()
+        with self._lock, write_txn(self):
             self._conn.execute(
                 """
                 INSERT INTO sync_history
@@ -319,7 +315,6 @@ class Database(SshKeyMixin, SearchMixin, RepoProfileMixin):
                  started_at or time.strftime("%Y-%m-%d %H:%M:%S"),
                  ended_at or time.strftime("%Y-%m-%d %H:%M:%S")),
             )
-            self._conn.commit()
             # G33-5：插入后按计数器节奏触发容量清理
             self._maybe_prune_history()
 

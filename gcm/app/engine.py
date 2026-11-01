@@ -206,6 +206,8 @@ class SyncEngine(QObject):
         # `launch` 里赋值，`set_concurrency`→`_top_up_pending` 若早于 launch 被调用
         # 就只能靠 getattr 兜底（审查意见）。
         self._running = 0
+        # C2-6：批次级暂停（暂停=不再补投新任务，在途跑完即止；与「取消」不同）
+        self._paused = False
         self.busy = False
 
         # 进度内存态 + 周期落盘（G22-2：in_progress/failed 全生命周期跟踪）
@@ -301,6 +303,38 @@ class SyncEngine(QObject):
             pool_max = _BATCH_START_LIMIT
         return max(1, min(_BATCH_START_LIMIT, pool_max))
 
+    @property
+    def paused(self) -> bool:
+        """当前是否处于「批次暂停」态（C2-6）。"""
+        return bool(getattr(self, "_paused", False))
+
+    def pause(self) -> bool:
+        """暂停补投新任务（在途任务继续跑完）。返回是否真的进入暂停态。
+
+        与 `cancel_all()` 的区别：暂停**不终止**任何在跑任务，只是不再从待发队列
+        取新的；恢复后接着补投。用户挂机刷几百个仓库时最常要的就是这个中间档
+        （原来只有"全部取消"）。
+        """
+        if self._cancelled or self._pending <= 0:
+            return False
+        if self._paused:
+            return True
+        self._paused = True
+        self._publish(EventType.BATCH_PAUSED,
+                      pending=len(getattr(self, "_pending_queue", []) or []),
+                      running=int(getattr(self, "_running", 0)))
+        return True
+
+    def resume(self) -> bool:
+        """恢复补投（立刻把待发队列补满到当前上限）。"""
+        if not self._paused:
+            return False
+        self._paused = False
+        self._publish(EventType.BATCH_RESUMED,
+                      pending=len(getattr(self, "_pending_queue", []) or []))
+        self._top_up_pending()
+        return True
+
     def _top_up_pending(self) -> None:
         """把待发队列补投到当前上限（并发达上限/已取消/无排队时不做）。
 
@@ -308,7 +342,7 @@ class SyncEngine(QObject):
         `cancel_all()` 为待发项合成终态时**不会**走 `_start_worker`，因此那里的
         `_on_worker_done(count_running=False)` 不递减在跑计数。
         """
-        if getattr(self, "_cancelled", False):
+        if getattr(self, "_cancelled", False) or getattr(self, "_paused", False):
             return
         queue = getattr(self, "_pending_queue", None)
         if not queue:
@@ -1062,6 +1096,7 @@ class SyncEngine(QObject):
         # 仍由 UI 在 launch 后按 specs 预填，PENDING 态等待。
         start_limit = self.batch_start_limit()
         self._running = 0
+        self._paused = False       # 新批次从「未暂停」开始（暂停是批次内状态）
         # 新批次取代旧批次的待发队列（旧批次若被取消，残留项不应混进本批）
         self._pending_queue = []
         for i, spec in enumerate(unique_specs):

@@ -1,0 +1,105 @@
+{
+  "task_id": "v9.13.0",
+  "title": "C2 交互闭环 5/6（大小列/失败动作/命令面板/批次暂停）+ C3-3 数据层写事务",
+  "status": "in_progress",
+  "timestamp": "2026-11-02",
+  "version_before": "9.12.1",
+  "version_after": "9.13.0",
+  "scope": {
+    "done": [
+      "C2-2 / U-6 仓库大小列：线程算完 emit 回填（替代 600ms 猜测定时器）+ 5 分钟 TTL 缓存",
+      "C2-4 / B2-3 失败后给可点的下一步：errors.action_kind + 面板按 kind 渲染真按钮 + ui/settings_nav.py 真跳转",
+      "C2-5 / B2-6 命令面板 Ctrl+K：读真实 QPushButton/QAction，score/rank 纯函数",
+      "C2-6 / B2-2 批次级暂停/继续：engine.pause/resume + batch_paused/resumed 事件 + ui/batch_actions.py",
+      "C3-3 / C-8 DB 写事务异常回滚：抽 gcm/db/txn.py 的 write_txn()，三处写入统一走它",
+      "顺带：repo_db 超 800 行 → 按项目范式抽模块（814 → 788）；main_window 涨 83 行 → 抽两个模块（→+27）",
+      "顺带：清 4 处 emoji/tofu 字形 + 新增 test_c2_ux.TestNoTofuGlyphsInUi 守卫（建好后立刻又抓到 '✗'）"
+    ],
+    "not_done": [
+      "C2-3 统一忙态 BusyToken（C2 完成 5/6）",
+      "C3-1 dir_size 落库缓存（本轮只做内存 TTL 缓存）",
+      "C3-2 prune_history 出 GUI 线程",
+      "C3-4 阶段耗时埋点（需 DB 迁移 v6）",
+      "C3-5 bench_scale.py / C3-6 mem_soak.py",
+      "C4 双路检索（FTS5+LIKE，需 DB 迁移 v6）",
+      "C5 MCP 写工具 / 契约导出 / 事件落盘 / 自校验更新",
+      "C6 卡死真回收 / fsck / 趋势 / 按 task 过滤 / oplog"
+    ]
+  },
+  "commands_executed": [
+    {"cmd": "python -m gcm --cli --json --dir <tmp> urls.txt（修复前默认走镜像）", "exit_code": 0,
+     "raw_output_tail": "24,836ms / 24,398ms；mirror_used=https://gh-proxy.com"},
+    {"cmd": "python -m gcm --cli --json --no-mirror --dir <tmp> urls.txt", "exit_code": 0,
+     "raw_output_tail": "3,079ms / 2,971ms；mirror_used=''（直连）"},
+    {"cmd": "./.venv/Scripts/python.exe -m ruff check gcm", "exit_code": 0, "raw_output_tail": "All checks passed!"},
+    {"cmd": "./.venv/Scripts/python.exe -m mypy gcm", "exit_code": 0,
+     "raw_output_tail": "Success: no issues found in 108 source files"},
+    {"cmd": "python -m unittest tests.test_c2_ux", "exit_code": 0, "raw_output_tail": "Ran 24 tests · OK"},
+    {"cmd": "python -m unittest tests.test_c3_data", "exit_code": 0, "raw_output_tail": "Ran 3 tests · OK"},
+    {"cmd": "python scripts/i18n_coverage.py --verbose", "exit_code": 0,
+     "raw_output_tail": "ZH=578 使用中的字面量键=448 → I18N OK"},
+    {"cmd": "python scripts/doc_drift_check.py", "exit_code": 0, "raw_output_tail": "DRIFT 0"},
+    {"cmd": "cmd /c scripts\\启动Git-clone-Max.bat", "exit_code": 0,
+     "raw_output_tail": "Python 3.14.3 / [INFO] 使用 Python: py / 正在启动 Git-clone-Max ... / Git-clone-Max 已在运行，本实例将退出。 / [INFO] 应用已退出，退出码 0"}
+  ],
+  "files_changed": [
+    "gcm/app/errors.py（+ACTION_KINDS / action_kind_for / ErrorInfo.action_kind）",
+    "gcm/app/engine.py（pause/resume/_paused + batch_paused/resumed 事件 + launch 清暂停）",
+    "gcm/app/event_bus.py（BATCH_PAUSED / BATCH_RESUMED + ALL 登记）",
+    "gcm/db/txn.py（新增 write_txn 上下文）",
+    "gcm/db/repo_db.py（三处写入改走 write_txn；814→788 行）",
+    "gcm/ui/command_palette.py（新增：Ctrl+K 面板）",
+    "gcm/ui/batch_actions.py（新增：暂停/继续）",
+    "gcm/ui/settings_nav.py（新增：设置分组跳转）",
+    "gcm/ui/manage_panel.py（sizes_ready 信号 + 回填 + TTL 缓存）",
+    "gcm/ui/failure_panel.py（按 action_kind 渲染按钮 + 两个新信号 + 去掉 emoji）",
+    "gcm/ui/download_layout.py（暂停按钮）",
+    "gcm/ui/progress_table.py（按钮复位 + 去掉 ⏸ 字形）",
+    "gcm/ui/main_window.py（三个薄转发 + Ctrl+K 快捷键 + 去掉 📦/✗ 字形）",
+    "gcm/ui/settings_groups.py（去掉 ⚠ 字形）",
+    "gcm/ui/help_dialog.py（快捷键表补 Ctrl+K）",
+    "gcm/i18n/zh.py / en.py（+12 键，含英文翻译；删 2 个陈旧键；去重 1 个）",
+    "tests/test_c2_ux.py（新增 24 例）",
+    "tests/test_c3_data.py（新增 3 例）",
+    "tests/test_g80_hygiene.py（except 基线 623→641，pass-only 282 未涨）",
+    "tests/test_g67_docs_freshness.py（README/CLAUDE/test_ledger 登记 9.12.1 历史引用）",
+    "tests/test_g79_repo_hygiene.py（_EXPECTED_TEST_FILES 164→166）",
+    "CLAUDE.md / README.md / docs/architecture.md / test_ledger.md / docs/plans/…（行数与功能表同步）",
+    "gcm/__init__.py / pyproject.toml / spec / installer.iss / plugin.json / agent-contract.md（9.13.0 单源）"
+  ],
+  "tests": [
+    {"name": "tests/test_c2_ux.py", "type": "unit+ui-geometry+static-guard", "status": "pass", "count": 24},
+    {"name": "tests/test_c3_data.py", "type": "unit+failure-injection", "status": "pass", "count": 3},
+    {"name": "tests/test_g49_i18n.py", "type": "static-guard", "status": "pass"},
+    {"name": "tests/test_i18n_coverage.py", "type": "static-guard", "status": "pass", "count": 4},
+    {"name": "tests/test_g80_hygiene.py", "type": "static-guard", "status": "pass", "count": 10},
+    {"name": "tests/test_g79_repo_hygiene.py", "type": "static-guard", "status": "pass", "count": 10},
+    {"name": "tests/test_ui_compact_visibility.py", "type": "ui-geometry+mutation", "status": "pass", "count": 3}
+  ],
+  "mutation_verification": [
+    {"guard": "test_c2_ux.TestNoTofuGlyphsInUi",
+     "before_fix": "红：main_window.py:1965 含字形 '✗'(U+2717) —— 守卫建成后立刻抓到第 5 处",
+     "after_fix": "绿（并把 ⏸/🎉×2/📦/⚠/✗ 六处全部改成纯文字）"},
+    {"guard": "test_c2_ux.TestSizeColumnNoRace.test_no_guessing_timer_left_in_source",
+     "note": "用 AST 找 QTimer.singleShot(600, …) 调用 —— 文本匹配会被自己的注释命中（D-05 教训）"},
+    {"guard": "tests/test_c3_data（连接代理注入失败）",
+     "before_fix": "若无 rollback：失败后同一连接的下一次写入会被悬挂事务挡住",
+     "after_fix": "绿：失败后下一次写立刻成功，且不留下半条记录"},
+    {"guard": "scripts/doc_drift_check.py",
+     "before_fix": "红：repo_db 814 行（超 800）/ main_window 2877（超容差）/ 测试文件数 166",
+     "after_fix": "DRIFT 0"},
+    {"guard": "tests/test_function_size_budget.py",
+     "before_fix": "红：_drop 已降到 100 行以下（应删登记）", "after_fix": "绿"}
+  ],
+  "visual_evidence": [
+    "reports/ui-v9130/download_with_pause_button.png（1240×729 下暂停按钮与主操作行并存）",
+    "reports/ui-v9130/command_palette_search_pause.png（实机 48 个动作，搜「暂停」命中 2 条）",
+    "reports/ui-v9130/command_palette_all.png",
+    "reports/ui-v9130/failure_panel_action_buttons.png（空态；按钮逻辑由 TestFailurePanelRendersAction 覆盖）"
+  ],
+  "limitations": [
+    "C2-3 统一忙态未做；C3 只做 1/6；C4–C6 全部未做",
+    "失败面板截图是空态（构造样例缺 progress.json 要求的 key 字段），按钮渲染靠单测断言而非截图",
+    "Linux/macOS GUI、真机 125%/150% DPI 目检、慢速网络长时挂机未验证"
+  ]
+}

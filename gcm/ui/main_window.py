@@ -209,6 +209,9 @@ class MainWindow(QMainWindow):
             _sc = QShortcut(QKeySequence(f"Ctrl+{_i + 1}"), self)
             _sc.setProperty("tab_index", _i)
             _sc.activated.connect(self._switch_tab_shortcut)
+        # C2-5：命令面板（40+ 功能分散在菜单/页签/右键三层，这是统一搜索入口）
+        QShortcut(QKeySequence("Ctrl+K"), self,
+                  activated=self.open_command_palette)
         # G70：恢复上次页签，并在切换时持久化
         try:
             self.tabs.setCurrentIndex(
@@ -745,6 +748,11 @@ class MainWindow(QMainWindow):
                 nav.setVisible(self.width() >= 1000)
         except Exception:
             pass
+
+    def _goto_settings_section(self, section: str = "network") -> None:
+        """C2-4：切到设置页并滚到对应分组（实现见 `ui/settings_nav.py`）。"""
+        from .settings_nav import goto_section
+        goto_section(self, section)
 
     def _scroll_to_settings_group(self, row: int):
         """G70：左侧导航点击 → 滚动到对应设置分组。"""
@@ -1474,7 +1482,7 @@ class MainWindow(QMainWindow):
         from .download_tools import repo_input_menu as _rim
 
         def _extra(menu):
-            act = menu.addAction("📦 归档下载（zip，免入库）")
+            act = menu.addAction("归档下载（zip，免入库）")
             act.triggered.connect(self._archive_current_line)   # G69-18：绑定方法
         _rim(self, pos, _fmt_dt, extra_actions=_extra)
 
@@ -1954,7 +1962,7 @@ class MainWindow(QMainWindow):
                 "vercel-labs/agent-skills")
             return
         if invalid:
-            shown = "\n".join(f"  ✗ {line}" for line in invalid)
+            shown = "\n".join(f"  - {line}" for line in invalid)
             ret = QMessageBox.question(
                 self, "无效地址（忽略并继续？）",
                 f"{len(invalid)} 行不是有效的 GitHub 仓库地址：\n{shown}\n\n"
@@ -2052,6 +2060,9 @@ class MainWindow(QMainWindow):
             self._emit_log(_fmt_dt(), LogLevel.WARN, f"仪表齿条未能启动：{exc}")
         self.btn_start.setEnabled(False)
         self.btn_cancel.setEnabled(True)
+        # C2-6：批次启动即可暂停（暂无待发任务时点它只会给出提示）
+        self.btn_pause_batch.setEnabled(True)
+        self.btn_pause_batch.setText(tr("暂停"))
         self.btn_update_all.setEnabled(False)
         self.btn_cancel_manage.setEnabled(True)
         self.repo_input.setEnabled(False)
@@ -2360,6 +2371,9 @@ class MainWindow(QMainWindow):
             from .failure_panel import FailureDialog
             dlg = FailureDialog(owner=self, parent=self)
             dlg.retry_category.connect(self._on_failure_category_retry)
+            # C2-4：把「去设置 / 诊断包」两个真实动作接上（原来失败面板只有一句文字建议）
+            dlg.open_settings_requested.connect(self._goto_settings_section)
+            dlg.diagnostics_requested.connect(self._export_diag_bundle)
             dlg.exec()
         except Exception as e:
             self._emit_log(_fmt_dt(), LogLevel.WARN, f"失败汇总打开失败：{e}")
@@ -2540,6 +2554,19 @@ class MainWindow(QMainWindow):
     def _reset_buttons(self):
         """G45-6 转发 progress_table.py（行为零变化）。"""
         return self.progress_panel._reset_buttons()
+
+    def open_command_palette(self):
+        """C2-5：命令面板入口（实现在 `ui/command_palette.py`）。"""
+        try:
+            from .command_palette import open_palette
+            open_palette(self)
+        except Exception as e:  # noqa: BLE001 —— 面板打不开不该影响主流程
+            self._emit_log(_fmt_dt(), LogLevel.WARN, f"命令面板打开失败：{e}")
+
+    def toggle_batch_pause(self):
+        """C2-6：暂停 / 继续本批次（实现见 `ui/batch_actions.py`）。"""
+        from .batch_actions import toggle_batch_pause
+        return toggle_batch_pause(self)
 
     def cancel_all(self):
         # A5-4/U-26：运行中取消整批不可恢复，二次确认（默认 No）；空闲时直接放行。

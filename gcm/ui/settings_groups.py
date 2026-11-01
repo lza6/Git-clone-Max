@@ -264,7 +264,7 @@ def _network_rows_basic(owner: MainWindow, settings: Settings, f3: QFormLayout) 
     owner.edit_post_hook.setPlaceholderText(
         tr("例如 npm install（%PATH% = 仓库路径；留空不执行）"))
     owner.edit_post_hook.setToolTip(
-        tr("⚠ 每个仓库克隆成功后在该仓库目录执行这条命令（可执行任意程序）。只填你自己写的脚本。"))
+        tr("重要：每个仓库克隆成功后在该仓库目录执行这条命令（可执行任意程序）。只填你自己写的脚本。"))
     owner.edit_post_hook.editingFinished.connect(
         owner.settings_panel.wiring.save_post_clone_hook)
     f3.addRow(tr("克隆后钩子："), owner.edit_post_hook)

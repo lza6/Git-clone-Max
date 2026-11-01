@@ -59,12 +59,15 @@ class EventType:
     RETRY_STARTED = "retry_started"
     RETRY_DROPPED = "retry_dropped"
     BATCH_FINISHED = "batch_finished"
+    #: C2-6：批次暂停/恢复（暂停 = 不再补投新任务，在途的跑完即止；不是取消）
+    BATCH_PAUSED = "batch_paused"
+    BATCH_RESUMED = "batch_resumed"
     SYSTEM = "system"
 
     ALL: frozenset[str] = frozenset({
         BATCH_STARTED, TASK_QUEUED, TASK_STARTED, TASK_PROGRESS,
         TASK_RESULT, TASK_ERROR, TASK_STUCK, RETRY_QUEUED, RETRY_STARTED,
-        RETRY_DROPPED, BATCH_FINISHED, SYSTEM,
+        RETRY_DROPPED, BATCH_FINISHED, BATCH_PAUSED, BATCH_RESUMED, SYSTEM,
     })
 
 

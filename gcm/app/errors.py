@@ -86,6 +86,37 @@ _CATEGORY_TEXT = {
     ),
 }
 
+#: 类别 → 「下一步可以点哪个按钮」（C2-4 / Rev7 B2-3）。
+#:
+#: 为什么需要：三段式文案里的「怎么办」只是**文字**，用户看完还得自己去找按钮
+#: （关闭面板 → 打开设置页 → 翻到网络组 → 改 Token → 回来重试）。这里把常见类别
+#: 直接映射成 UI 能渲染的**真按钮**，省掉这一步。
+#:
+#: 取值必须是下面这个白名单里的（`ui/failure_panel` 只认这些，未知值按 `none` 处理）：
+#:   retry          重试这一类（复用现有 retry_category 通路）
+#:   open_settings  跳到设置页对应分组
+#:   switch_mirror  提示去改镜像/代理（同样落在设置页网络组）
+#:   copy_diag      复制/导出诊断包（信息不足时让用户能把现场带走）
+#:   none           确实没有本地可做的动作（例如仓库被删除）
+ACTION_KINDS = ("retry", "open_settings", "switch_mirror", "copy_diag", "none")
+
+_CATEGORY_ACTION_KIND = {
+    CAT_NETWORK: "retry",          # 429/5xx/超时：重试最有效，也可先调代理
+    CAT_AUTH: "open_settings",     # 401/403：必须先去更新 Token
+    CAT_PLATFORM: "none",          # Windows 非法文件名：本机无解，只能换环境/跳过
+    CAT_LOCAL: "copy_diag",        # 磁盘满/占用：先看现场（诊断包里有路径与错误）
+    CAT_NOT_FOUND: "none",         # 404：仓库没了，重试无意义
+    CAT_CANCELLED: "none",
+    CAT_OTHER: "copy_diag",        # 分类器不认识：把现场带走
+}
+
+
+def action_kind_for(category: str) -> str:
+    """该类别建议的下一步动作（永远返回白名单内的值）。"""
+    kind = _CATEGORY_ACTION_KIND.get(category, "none")
+    return kind if kind in ACTION_KINDS else "none"
+
+
 _DISK_KEYWORDS = (
     "no space left on device", "disk full", "insufficient disk space",
     "not enough space", "quota exceeded", "cannot write", "write error",
@@ -140,6 +171,8 @@ class ErrorInfo:
     cause: str
     action: str
     retryable: bool
+    #: 建议的下一步动作（`ACTION_KINDS` 之一），UI 据此渲染真按钮
+    action_kind: str = "none"
     label: str = ""
     http_status: Optional[int] = None
     raw: str = ""
@@ -154,6 +187,7 @@ class ErrorInfo:
             "cause": self.cause,
             "action": self.action,
             "retryable": self.retryable,
+            "action_kind": self.action_kind,
             "label": self.label or category_label(self.category),
         }
         if self.http_status is not None:
@@ -187,6 +221,7 @@ def _make(category: str, code: str, *, retryable: bool,
         cause=cause,
         action=action,
         retryable=bool(retryable),
+        action_kind=action_kind_for(category),
         label=category_label(category),
         http_status=http_status,
         raw=redact(raw)[:2000],

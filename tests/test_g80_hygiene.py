@@ -61,7 +61,12 @@ GCM = ROOT / "gcm"
 #   同一轮把 `_refresh_stuck` 的静默赋值改成 warn 后，pass-only 反而少了一个。
 # - v9.12.1 +1（except 623 / pass-only 282 不变）：
 #   main_window._apply_layout_mode 里「动作区高度同步失败」的兜底（→ emit_log，有出口）
-BASELINE_EXCEPT = 623
+# - v9.13.0 +18（except 641 / **pass-only 282，比基线还降 1**）：
+#   C2 四项 + C3-3 新增的防御分支 —— command_palette 的控件枚举/执行/关窗、
+#   settings_nav 的导航与滚动、batch_actions 的状态切换、manage_panel 的大小回填
+#   与缓存清理、progress_table 的按钮复位。**全部改为 applog.warn 留痕**
+#   （本轮先写成 pass，随后按红线改掉 —— pass-only 因此没有上涨）。
+BASELINE_EXCEPT = 641
 BASELINE_PASS_ONLY = 283
 
 

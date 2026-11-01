@@ -70,15 +70,15 @@
 | ADR-003 | 凭据加密落盘（DPAPI/Keyring/XOR 降级）+ redact 全出口打码 |
 | ADR-004 | 生态 agent 化：CLI --json 契约 + MCP 只读 + HTTP API 默认只读（显式 enable 才可写） |
 
-## 4. 模块规模基线（2026-11-02 v9.12.1 实测，`python scripts/dev_metrics.py` 可一键复测）
+## 4. 模块规模基线（2026-11-02 v9.13.0 实测，`python scripts/dev_metrics.py` 可一键复测）
 
 | 模块 | 行数 | 职责 |
 |------|------|------|
-| `gcm/ui/main_window.py` | 2794 | 主窗编排（已登记技术债；引擎构造在 `engine_factory.py`、顶栏齿条在 `status_strip.py`） |
+| `gcm/ui/main_window.py` | 2821 | 主窗编排（已登记技术债；引擎构造在 `engine_factory.py`、顶栏齿条在 `status_strip.py`） |
 | `gcm/git/service.py` | 1899 | Git 操作全链路（`_update` 已拆为 `_update_bare_mirror`/`_fetch_remote`/`_merge_remote`） |
-| `gcm/app/engine.py` | 1586 | 调度/并发/进度/重试/会话/事件发布 |
-| `gcm/ui/progress_table.py` | 790 | 进度表（delegate→`progress_delegate.py`、批次总览→`batch_overview.py`、结果文案→`result_labels.py`） |
-| `gcm/db/repo_db.py` | 793 | SQLite 数据层 |
+| `gcm/app/engine.py` | 1621 | 调度/并发/进度/重试/会话/事件发布 |
+| `gcm/ui/progress_table.py` | 796 | 进度表（delegate→`progress_delegate.py`、批次总览→`batch_overview.py`、结果文案→`result_labels.py`） |
+| `gcm/db/repo_db.py` | 788 | SQLite 数据层 |
 | `gcm/ui/settings_panel.py` | 791 | 设置 UI（分组构建器在 `settings_groups.py`） |
 | `gcm/ui/settings_groups.py` | 786 | 设置分组构建器（7 个组） |
 | `gcm/ui/theme.py` | 314 | 主题状态（当前主题/强调色）+ 日志模型 + 兼容再导出 |
