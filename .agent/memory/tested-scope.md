@@ -22,7 +22,9 @@
 | 本地 HTTP API | `--serve 127.0.0.1:8901` + 5 个 GET | 全 200；非回环绑定 exit 2（边界未破） |
 | MCP | `GCM_MCP_ENABLE=1` + initialize/tools-list | `serverInfo 9.12.0`，4 个只读工具；未启用 exit 3 |
 | 截图审计 | `python scripts/ui_screenshot_audit.py reports/ui-v9120` | 34 PNG；新设置两行 `visibleRegion == rect` |
-| 打包 E2E | — | **本轮见 docs/验证记录-2026-11-01-v9.12.0.md §7（构建与健康检查）** |
+| 打包 E2E | `PyInstaller` → `build_portable_zip.py` → `health_check.py --json` | exe 41,677,729 B / zip 80,311,847 B · **7/7 项 OK** · exe 真克隆 exit 0 |
+| CI 三平台 | 提交 `6a10fcc` | **7/7 job success**（3×test + slow + fast-smoke + e2e-smoke + perf-baseline） |
+| Release | `publish_release.py --tag v9.12.0` | 已发布；从 Release 独立下载复验 sha256 一致 + 下载版 exe 真跑 exit 0 |
 
 **本轮教训（勿重犯）**：①**视觉验收抓到了单测抓不到的缺陷** —— 新文案里的 Markdown `**` 在 QLabel 里原样显示成星号，27 条单测全绿；已加 `TestNoMarkdownInUserFacingText`。
 ②**不要在跑全量快集期间改代码/改版本号** —— 本轮有两次运行被自己的修改污染（版本 bump 让 `test_g67`/`test_g81` 假红），必须冻结后再跑。
