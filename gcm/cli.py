@@ -291,7 +291,7 @@ def _print_help() -> int:
         "  --diag          网络/环境诊断（不克隆）\n"
         "  --serve H:P     启动本地只读 HTTP API（仅允许回环地址）\n"
         "  --allow-mutate  配合 --serve：放行 POST 写操作（默认只读）\n"
-        "  --no-mirror     兼容开关（v9.12.1 起内置国内镜像已移除，默认即直连源站）\n"
+        "  --no-mirror     兼容开关（内置国内镜像已移除，默认即直连源站）\n"
         "  --help, -h      显示本帮助\n"
         "\n"
         "输入：<urls.txt> 为地址清单文件；`-` 表示 stdin（每行一个，`#` 开头忽略）。\n"

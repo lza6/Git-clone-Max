@@ -551,7 +551,7 @@ EN = {
     '把这些任务的取消标志置位，让它们在下一个检查点尽快收敛。\n不会超发并发（槽位仍等 worker 真正退出才释放）。': 'Sets the cancel flag on those tasks so they converge at their next checkpoint.\nDoes not over-issue concurrency (slots are released only when the worker really exits).',
     '报表输出目录：': 'Report output directory:',
     '报表间隔(分钟)：': 'Report interval (min):',
-    '按需填写镜像前缀（仅 https 克隆生效；SSH 不拼）。一个主机可写多个镜像，按顺序尝试；全部失败自动回退源站。\n留空 = 直连源站（默认；内置国内镜像已于 v9.12.1 移除，实测它比直连慢 8 倍）。': 'Optional mirror prefixes (https clones only; SSH is never rewritten). One host may list several mirrors, tried in order; if all fail it falls back to the origin.\nLeave empty to connect directly (default; the built-in domestic mirrors were removed in v9.12.1 — measured 8× slower than direct).',
+    '按需填写镜像前缀（仅 https 克隆生效；SSH 不拼）。一个主机可写多个镜像，按顺序尝试；全部失败自动回退源站。\n留空 = 直连源站（默认；内置国内镜像已移除 —— 实测它比直连慢 8 倍）。': 'Optional mirror prefixes (https clones only; SSH is never rewritten). One host may list several mirrors, tried in order; if all fail it falls back to the origin.\nLeave empty to connect directly (default; the built-in domestic mirrors were have been removed — measured 8× slower than direct).',
     '提示': 'Notice',
     '提示：以上两项对「下一个开始的任务」生效；已在跑的仓库保持启动时的设置不变。': 'Note: both settings apply to the next task that starts; repos already running keep the settings they started with.',
     '搜索设置项': 'Search settings',

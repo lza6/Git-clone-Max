@@ -365,7 +365,7 @@ def _network_rows_mirror(owner: MainWindow, settings: Settings, f3: QFormLayout)
     owner.edit_mirror.setToolTip(tr(
         "按需填写镜像前缀（仅 https 克隆生效；SSH 不拼）。"
         "一个主机可写多个镜像，按顺序尝试；全部失败自动回退源站。\n"
-        "留空 = 直连源站（默认；内置国内镜像已于 v9.12.1 移除，实测它比直连慢 8 倍）。"))
+        "留空 = 直连源站（默认；内置国内镜像已移除 —— 实测它比直连慢 8 倍）。"))
     owner.edit_mirror.editingFinished.connect(owner._save_mirror)
     f3.addRow(tr("镜像前缀："), owner.edit_mirror)
 
