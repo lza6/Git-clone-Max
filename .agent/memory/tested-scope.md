@@ -7,12 +7,23 @@
 
 ---
 
-## 0. 最新一次真实运行（2026-10-23 · G75+G76 收口，v9.9.0）
-
-> 下次改这几块前先看这一节，别重复跑。
+## 0. 最新一次真实运行（2026-11-01 · G82 A 批收口，v9.11.0）
 
 | 项 | 命令 | 结果（实测） |
 |---|---|---|
+| 质量闸 | `ruff check gcm` / `mypy gcm` | All checks passed / Success（103 文件） |
+| 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | 见 docs/验证记录-2026-11-01-G82.md（v9.11.0 终局串行跑） |
+| A5 批定向 | test_g48/g52/g73/g43/g53/a52/a53/a54/a55 等 | 全绿（先红后绿证据在 evidence/G82-A-batch.json） |
+| 源码级 git E2E | `scripts/e2e_smoke.py` | `E2E_SMOKE_RESULT: PASS` |
+| 打包 E2E | dist exe `--cli --json`（真实克隆） | `EXE E2E PASS`（action=fetched） |
+| health_check | `--exe --zip --json` | version 9.11.0 / started_ok=true / 3760ms |
+| 截图审计 | `scripts/ui_screenshot_audit.py reports/ui-g82` | 38 PNG，1 缺陷（按钮裁切）修复并复验 |
+| MCP 握手 | initialize（GCM_MCP_ENABLE=1） | serverInfo 9.11.0 ✅；禁用退出码 3 ✅ |
+
+**本轮教训（勿重犯）**：改共享函数（如 `_reset_defaults`）必须跑**全部调用方**的既有测试——
+A5-4 加确认框后 test_g46_settings 老测试没 mock 弹框，快集卡死 20 分钟才暴露。
+
+---
 | 质量闸 | `ruff check gcm` / `mypy gcm` | All checks passed / Success（**86 文件**） |
 | 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | **Ran 1415 · failures=0 · errors=0 · skipped=4** |
 | 覆盖率 | `coverage report --include="gcm/*"` | **TOTAL 82%**（门禁 Windows 81 / POSIX 80） |
