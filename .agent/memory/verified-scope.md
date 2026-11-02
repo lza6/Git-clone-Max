@@ -80,3 +80,13 @@ owner: Verifier
 ## G73（2026-10-20）
 - DLQ 字段保留与重新入队：`tests.test_g73_dlq.TestDlqQueue`。
 - 面板 DLQ 切换/单条 redrive：`TestDlqPanel`。
+
+## 2026-11-03 G83 补充验收（v9.17.0 发布后深验）
+
+| 项 | 方式 | 结果 |
+|---|---|---|
+| UI 截图审计 | `scripts/ui_screenshot_audit.py`（34 张：4 主题×5 尺寸+8 对话框） | 无 tofu/裁切；3 条 MINOR（向导「上一步」未禁用/事件流摘要三段拼接/已跳过行残留进度条）→ beads 留档 |
+| MCP stdio E2E | 真实三跳握手 + tools/list + tools/call | HANDSHAKE_OK；4 工具；未启用 exit 3 契约 |
+| SSE E2E + 压测 | 真实订阅 + 18 并发 | Last-Event-ID/replay 200；16 上限精确 503 |
+| 自适应间隔全周期 | 真实 MainWindow 5 轮 | 2→3→5→7 退避曲线 + 变更恢复 2 · FULL_CYCLE_OK |
+| 对抗审查 | 迟到 finished/空库 tick/引擎替换 | 语义正确，无误结算 |

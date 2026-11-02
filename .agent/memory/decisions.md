@@ -205,3 +205,19 @@ AST 只统计 `Attribute` / `Name` / `getattr(obj, "名字")`，注释与字符�
   ②验证「用户改了设置有没有用」必须走**改→落盘→重启→读引擎**全链，不能只断言运行中生效；
   ③合并两处映射时要显式处理「只在某一侧成立的前置条件」（本次是 `_last_batch_ctx`：
   空闲引擎不能挂重投队列，否则启动即自动重投、污染 host 列，见 G67-3）。
+
+## G83（v9.17.0）三条决策
+
+**D-G83-1 自适应间隔不新增设置项**：退避只作用于既有 `auto_update_minutes`，
+无变更才退（1.5×，封顶 4×），有变更行为与旧版完全一致。回滚 = 删
+`gcm/app/adaptive_interval.py` + main_window 三处接线。曾考虑按 host 分组退避
+（beads-planning-xpg），当前全局单一 streak 已覆盖主场景。
+
+**D-G83-2 零断言守卫复用 `_gcm_audit` 扫描器**，不重写：AST 分析已验证，
+接入为 `scripts/zero_assert_scan.py` + `tests/test_g83_zero_assert.py`。
+修复 8 个零断言测试时坚持「补真实断言」而非 skipTest——变异自检锁死。
+
+**D-G83-3 版本残留教训 → bump_version.py 立项**：v9.17.0 一次 bump 漏了
+3 处（contract schema / plugin.json / 重写 _restart_auto_update_timer 丢 stop），
+全被守卫抓出（守卫有效但发现滞后）。教训：改共享方法必须跑全部调用方模块
+（`test_g374_376` 锁 timer 行为）；版本载体 7+ 处手改必漏。
