@@ -78,6 +78,9 @@ class StatusStrip(QWidget):
         self._started_at = None
         self._final_elapsed = None
         self._total = 0
+        # C6-3：sparkline 分钟桶
+        self._bucket_count = 0
+        self._bucket_started = self._clock()
 
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 2, 0, 2)
@@ -102,6 +105,11 @@ class StatusStrip(QWidget):
         self.success_lbl = self._mk(row)
         self.failed_lbl = self._mk(row)
         self.elapsed_lbl = self._mk(row)
+        # Rev8 C6-3：24h 迷你趋势（5 分钟/点，纯内存 ring buffer，进程退出即丢）
+        from .sparkline import Sparkline
+        self.sparkline = Sparkline(self)
+        self.sparkline.hide()          # 有批次开始才显示（空态不占视觉预算）
+        row.addWidget(self.sparkline)
         row.addStretch(1)
 
         self._timer = QTimer(self)
@@ -139,6 +147,7 @@ class StatusStrip(QWidget):
         self._final_elapsed = None
         if not self._timer.isActive():
             self._timer.start()
+        self.sparkline.show()          # C6-3：批次开始才亮趋势图
         self.refresh()
 
     def note_active(self, active: int) -> None:
@@ -157,6 +166,7 @@ class StatusStrip(QWidget):
         self._success, self._failed = success, failed
         if self._active is not None and self._active > 0:
             self._active -= 1
+        self._bucket_count += 1        # C6-3：本桶完成数（含失败，反映吞吐）
         self.refresh()
 
     def end(self) -> None:
@@ -208,6 +218,12 @@ class StatusStrip(QWidget):
     def _tick(self) -> None:
         self.elapsed_lbl.setText(
             tr("用时 {v}").format(v=format_elapsed(self.elapsed_seconds())))
+        # C6-3：5 分钟一桶推一个点（tick 每秒跑，这里做桶边界检测）
+        from .sparkline import BUCKET_SECONDS
+        if self._clock() - self._bucket_started >= BUCKET_SECONDS:
+            self.sparkline.push(float(self._bucket_count))
+            self._bucket_count = 0
+            self._bucket_started = self._clock()
 
     @staticmethod
     def _palette() -> dict:

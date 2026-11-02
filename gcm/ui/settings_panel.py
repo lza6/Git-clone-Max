@@ -53,6 +53,10 @@ def build_log_box(owner: MainWindow) -> QGroupBox:
     owner.btn_clear_log.clicked.connect(owner.clear_log)
     tb.addWidget(owner.btn_save_log)
     tb.addWidget(owner.btn_clear_log)
+    # Rev8 C6-4：关键字过滤（显示层；模型永远全量，清空即重放恢复）
+    # 逻辑在 log_filter.py（本文件贴 800 行硬上限）
+    from .log_filter import build_log_filter_row
+    build_log_filter_row(owner, tb)
     l2.addLayout(tb)
     owner.log_view = QPlainTextEdit()
     owner.log_view.setObjectName("console")

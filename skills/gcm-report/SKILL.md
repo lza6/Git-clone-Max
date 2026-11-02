@@ -1,5 +1,6 @@
 ---
 name: gcm-report
+version: 1.0.0
 description: >
   Export repository and sync-history data to CSV (Excel-friendly, utf-8-sig)
   or Markdown, reading the database in read-only mode. Use when an agent or a

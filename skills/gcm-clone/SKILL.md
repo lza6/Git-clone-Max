@@ -1,5 +1,6 @@
 ---
 name: gcm-clone
+version: 1.0.0
 description: >
   Batch-clone GitHub / GitLab / Gitee / Codeberg / Bitbucket / self-hosted
   repositories from a URL list or stdin into a target directory, emitting

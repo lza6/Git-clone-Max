@@ -135,6 +135,30 @@ class _ApiHandler(BaseHTTPRequestHandler):
         self._error(403, "拒绝：Host/Origin 非回环（防 DNS rebinding）", status=403)
         return True
 
+    def _auth_rejected(self) -> bool:
+        """Rev8 C5-4：可选 Bearer 鉴权。`data/api_token` 存在时必须携带正确
+        `Authorization: Bearer <token>`；不存在（默认）则放行 —— 回环 + Host
+        校验仍是第一道边界，token 是**加涩**而非替代。/version 不设限（探活）。"""
+        from urllib.parse import urlparse
+        server: GcmApiServer = self.server  # type: ignore[assignment]
+        token = getattr(server, "api_token", None)
+        if not token:
+            return False
+        if urlparse(self.path).path == "/version":
+            return False
+        auth = (self.headers.get("Authorization") or "").strip()
+        if not auth.startswith("Bearer "):
+            self._error(401, "需要 Authorization: Bearer <token>（data/api_token 已启用鉴权）",
+                        status=401)
+            return True
+        supplied = auth[len("Bearer "):].strip()
+        # 常数时间比较，避免 timing oracle
+        import hmac
+        if not hmac.compare_digest(supplied, token):
+            self._error(401, "token 不正确", status=401)
+            return True
+        return False
+
     def _error(self, code: int, message: str, status: int = 400) -> None:
         self._send_json({"error": {"code": code, "message": message,
                                    "redacted": redact(message)}}, status=status)
@@ -323,6 +347,8 @@ class _ApiHandler(BaseHTTPRequestHandler):
         server: GcmApiServer = self.server  # type: ignore[assignment]
         if self._reject_cross_origin():   # G69-8
             return
+        if self._auth_rejected():         # Rev8 C5-4：可选 Bearer 鉴权
+            return
         self._audit("GET", self.path)
         from urllib.parse import parse_qs, urlparse
         parsed = urlparse(self.path)
@@ -449,6 +475,8 @@ class _ApiHandler(BaseHTTPRequestHandler):
         server: GcmApiServer = self.server  # type: ignore[assignment]
         if self._reject_cross_origin():   # G69-8
             return
+        if self._auth_rejected():         # Rev8 C5-4：可选 Bearer 鉴权
+            return
         if not server.allow_mutate:
             self._error(403, "写操作被拒绝：当前为只读模式（--allow-mutate 显式开启）", status=403)
             return
@@ -500,6 +528,7 @@ class GcmApiServer(ThreadingHTTPServer):
     root: Path = Path.cwd()
     data_dir: Path = Path.cwd()
     allow_mutate: bool = False
+    api_token: str = ""               # Rev8 C5-4：非空 = 启用 Bearer 鉴权
     event_bus: Any = None             # G71-1：可注入（测试隔离）；None = 进程级单例
     sse_max: int = 16                 # G72：并发 SSE 订阅上限（超限 503 + Retry-After）
     request_queue_size = 128          # 默认 5 太小：并发调用会被内核直接拒绝
@@ -518,10 +547,31 @@ class GcmApiServer(ThreadingHTTPServer):
         super().server_close()
 
 
+def load_api_token(data_dir: Path | str | None) -> str:
+    """Rev8 C5-4：读 `data/api_token`（存在即启用鉴权）。读取失败 = 不启用。
+
+    token 文件应 0600；内容取首行非空白（生成方式见 docs/agent-contract.md）。
+    """
+    if not data_dir:
+        return ""
+    try:
+        p = Path(data_dir) / "api_token"
+        if not p.is_file():
+            return ""
+        for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if line:
+                return line
+    except Exception:  # noqa: BLE001 - 读不到就不启用，不影响服务可用性
+        pass
+    return ""
+
+
 def create_server(bind: str = "127.0.0.1:8765", root: Path | str = Path.cwd(),
                   data_dir: Path | str | None = None,
                   allow_mutate: bool = False,
-                  event_bus: Any = None) -> GcmApiServer:
+                  event_bus: Any = None,
+                  api_token: str | None = None) -> GcmApiServer:
     """创建本地 HTTP 服务器（默认只读）；测试可直接关闭释放端口。
 
     G66-6 安全加固：本服务**无鉴权**（设计如此：仅面向本机 agent 集成）。
@@ -551,6 +601,9 @@ def create_server(bind: str = "127.0.0.1:8765", root: Path | str = Path.cwd(),
     httpd.data_dir = Path(data_dir) if data_dir else Path(root)
     httpd.allow_mutate = bool(allow_mutate)
     httpd.event_bus = event_bus        # None → SSE 使用进程级单例
+    # Rev8 C5-4：api_token 显式传入优先；否则自动探测 data/api_token
+    httpd.api_token = (api_token if api_token is not None
+                       else load_api_token(httpd.data_dir))
     return httpd
 
 

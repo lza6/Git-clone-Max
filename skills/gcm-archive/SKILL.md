@@ -1,5 +1,6 @@
 ---
 name: gcm-archive
+version: 1.0.0
 description: >
   Produce zip snapshots of repository HEADs via shallow clone plus
   `git archive`, without downloading full git history. Use when only the source

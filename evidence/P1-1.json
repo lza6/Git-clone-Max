@@ -1,0 +1,30 @@
+{
+  "task_id": "P1-1",
+  "status": "done",
+  "timestamp": "2026-11-02",
+  "summary": "半成品判定单一来源（gcm/app/halfclone.py）+ 两级分类（not_checked_out 可 git checkout -f 秒修 / unborn_head 需重克隆）+ 进度表右键「检出修复」入口",
+  "commands_executed": [
+    {"cmd": "python -m unittest tests.test_p11_halfclone_repair tests.test_g80_halfclone_ui", "exit_code": 0, "raw_output_tail": "Ran 22 tests ... OK"},
+    {"cmd": "python -m unittest tests.test_g80_boundaries tests.test_g69_regressions tests.test_p11_halfclone_repair tests.test_g80_halfclone_ui", "exit_code": 0, "raw_output_tail": "Ran 84 tests ... OK"},
+    {"cmd": "ruff check gcm", "exit_code": 0, "raw_output_tail": "All checks passed!"},
+    {"cmd": "mypy gcm", "exit_code": 0, "raw_output_tail": "Success: no issues found in 115 source files"},
+    {"cmd": "变异自检（把 classify_repo 分支改坏 → 守卫红；恢复 → 绿）", "exit_code": "1→0", "raw_output_tail": "变异后退出码: 1（守卫有效）；恢复后退出码: 0"}
+  ],
+  "files_changed": [
+    "gcm/app/halfclone.py (新)",
+    "gcm/app/scanner.py (判定委托 + RepoInfo.halfclone_kind)",
+    "gcm/ui/halfclone_actions.py (looks_halfcloned 改委托别名)",
+    "gcm/ui/progress_menu.py (右键加「检出修复」项)",
+    "gcm/ui/progress_table.py (_repair_halfcloned_row)",
+    "tests/test_p11_halfclone_repair.py (新, 14 例)",
+    "tests/test_g80_boundaries.py (git 子进程白名单登记 halfclone.py)"
+  ],
+  "tests": [
+    {"name": "TestSingleSource(3)", "type": "unit", "status": "pass"},
+    {"name": "TestClassifyTwoLevels(5)", "type": "unit+real-git", "status": "pass"},
+    {"name": "TestRepair(4)", "type": "unit+real-git", "status": "pass"},
+    {"name": "TestWiring(2)", "type": "unit", "status": "pass"}
+  ],
+  "seams_touched": ["S47: 半成品判定单一来源(app/halfclone)", "S48: 扫描 halfclone_kind → UI 修复入口"],
+  "limitations": ["分类依赖本地 git 可用；git 缺失时兜底回旧语义（有 .git 即 unborn_head）"]
+}

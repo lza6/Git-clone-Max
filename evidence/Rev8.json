@@ -1,0 +1,64 @@
+{
+  "task_id": "Rev8-P1-1+P1-4+P2-2+C5+C6",
+  "status": "done",
+  "timestamp": "2026-11-02",
+  "summary": "参考计划指南全部开放批次落地：半成品两级修复、技能包可安装化、安装器打磨、C5 agent 生态（MCP 写工具/契约导出/事件落盘/API 鉴权）、C6 自愈（fsck 体检/sparkline/日志过滤）",
+  "batches": {
+    "P1-1 半成品单一来源+两级修复": {
+      "files": ["gcm/app/halfclone.py(新)", "gcm/app/scanner.py", "gcm/ui/halfclone_actions.py", "gcm/ui/progress_menu.py", "gcm/ui/progress_table.py"],
+      "tests": "tests/test_p11_halfclone_repair.py (14 例，含真实 git 克隆/破坏/修复 E2E + 变异自检)",
+      "evidence": "evidence/P1-1.json"
+    },
+    "P1-4 技能包可安装化": {
+      "files": ["skills/*/SKILL.md(+version 1.0.0)", "skills/*/scripts/*.py(+--selftest)"],
+      "tests": "tests/test_p14_skill_versioning.py (4 例，含真跑 selftest)"
+    },
+    "P2-2 安装器打磨": {
+      "files": ["packaging/installer.iss(+CloseApplications=yes + 卸载数据询问页)"],
+      "verified": "ISCC 实际编译成功 → dist/installer/Git-clone-Max-setup-9.15.0.exe"
+    },
+    "C5-1 MCP 写工具": {
+      "files": ["gcm/mcp_server.py(clone_batch，仅 --allow-mutate 暴露)"],
+      "tests": "tests/test_c5_agent_contract.py::TestMcpWriteTool (4 例，含本地裸仓真克隆 E2E)"
+    },
+    "C5-2 契约 schema 导出": {
+      "files": ["scripts/export_contract.py(新)", "docs/contract/*.schema.json(3 个)"],
+      "tests": "TestContractExport (3 例，含 --check 过期必红)"
+    },
+    "C5-3 事件落盘": {
+      "files": ["gcm/app/event_sink.py(新，按天轮转+20MB 切分+7 天清理+永不抛)"],
+      "tests": "TestEventSink (5 例)"
+    },
+    "C5-4 API 可选鉴权": {
+      "files": ["gcm/http_api.py(data/api_token + Bearer，/version 豁免，hmac 常数比较)"],
+      "tests": "TestApiAuth (4 例)；默认无 token 行为不变（既有守卫不回退）"
+    },
+    "C6-1 卡死真回收": {
+      "verdict": "已闭环(判定)：cancel_stuck_tasks 置位 CancelFlag → run_git_ui 主线程 100ms 轮询秒级 kill_tree；UI 入口 C1-3 已接。无新增代码必要",
+      "evidence": "gcm/git/service.py:354-375 轮询取消 + gcm/app/engine.py:1270"
+    },
+    "C6-2 fsck 健康体检": {
+      "files": ["gcm/ui/repo_detail_dialog.py(+健康体检按钮，后台线程，只显式触发)"],
+      "tests": "tests/test_c6_health_check.py (4 例，含真实坏对象检测 + 引擎零 fsck 静态断言)"
+    },
+    "C6-3 sparkline": {
+      "files": ["gcm/ui/sparkline.py(新)", "gcm/ui/status_strip.py(+挂载+5min 桶)"],
+      "tests": "tests/test_c6_sparkline.py (6 例)"
+    },
+    "C6-4 日志过滤": {
+      "files": ["gcm/ui/log_buffer.py(+filter_text/replay_all)", "gcm/ui/log_filter.py(新)", "gcm/ui/settings_panel.py"],
+      "tests": "tests/test_c6_log_filter.py (4 例)"
+    }
+  },
+  "gates": [
+    {"cmd": "ruff check gcm", "result": "All checks passed!"},
+    {"cmd": "mypy gcm", "result": "Success: no issues found in 118 source files"},
+    {"cmd": "scripts/doc_drift_check.py", "result": "DRIFT 0（期间抓出 6 处文档漂移并修正）"},
+    {"cmd": "边界守卫 tests.test_g80_boundaries", "result": "OK（halfclone.py 白名单登记）"}
+  ],
+  "limitations": [
+    "C5-5 自更新 / C5-6 winget 未做（T3 级影响分析未批 + 无 winget 上架凭证），属显式不做",
+    "事件落盘为进程内 attach，独立 --serve 进程事件互不相通（既有边界，落盘不改变它）",
+    "sparkline 数据进程退出即丢（设计如此；跨重启审计走 C5-3 事件落盘）"
+  ]
+}

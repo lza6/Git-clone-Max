@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "binding": "loopback-only (127.0.0.1 / localhost)",
+  "get": [
+    {
+      "auth": "never",
+      "path": "/version"
+    },
+    {
+      "auth": "bearer-if-configured",
+      "path": "/api/repos"
+    },
+    {
+      "auth": "bearer-if-configured",
+      "path": "/api/status"
+    },
+    {
+      "auth": "bearer-if-configured",
+      "path": "/api/repos/search"
+    },
+    {
+      "auth": "bearer-if-configured",
+      "path": "/api/events"
+    },
+    {
+      "auth": "bearer-if-configured",
+      "path": "/api/events/snapshot"
+    },
+    {
+      "auth": "bearer-if-configured",
+      "path": "/api/export/report"
+    }
+  ],
+  "post": [
+    {
+      "auth": "bearer-if-configured",
+      "path": "/api/clone",
+      "requires": "--allow-mutate"
+    }
+  ],
+  "title": "gcm local HTTP API endpoints",
+  "version": "9.16.0"
+}

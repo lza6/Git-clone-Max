@@ -15,15 +15,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
-def looks_halfcloned(path: Path) -> bool:
-    """是否疑似半成品仓库（有 .git 但工作树除 .git 外零条目）。"""
-    try:
-        if path is None or not path.is_dir() or not (path / ".git").exists():
-            return False
-        return not any(c.name != ".git" for c in path.iterdir())
-    except OSError:
-        return False
+# Rev8 P1-1：判定**唯一事实源**下沉到 `app/halfclone.py`（两级分类 + 修复）。
+# 本模块只保留删除与行解析（真正含 UI 语义的部分）；`looks_halfcloned` 变成
+# 委托别名，调用方无感。
+from ..app.halfclone import (  # noqa: F401
+    classify_repo as classify_repo,
+)
+from ..app.halfclone import (
+    is_halfcloned as looks_halfcloned,
+)
+from ..app.halfclone import (
+    repair_halfclone as repair_halfclone,
+)
 
 
 def delete_halfcloned(path: Path) -> bool:
@@ -52,3 +55,55 @@ def row_repo_dir(panel, row: int):
         return _P(spec.local_path)
     return (_P(panel.owner.target_edit.text().strip()
                or str(panel.owner.data_dir / "clones")) / spec.folder_name)
+
+
+def repair_halfcloned_row(panel, row: int) -> None:
+    """Rev8 P1-1：检出修复（`git checkout -f HEAD`，零网络、不动引用）。
+
+    只对 not_checked_out 生效；判定与修复在 `app/halfclone.py` 单一事实源。
+    逻辑放本模块（progress_table 已贴 800 线硬上限），面板只做一行转发。
+    """
+    from ..app.halfclone import repair_halfclone
+
+    p = row_repo_dir(panel, row)
+    ok, msg = repair_halfclone(p)
+    if ok:
+        panel.owner.statusBar().showMessage(f"已检出修复：{p.name}")
+        from . import main_window as _mw
+        panel.owner._emit_log(_mw._fmt_dt(), _level_info(),
+                              f"半成品检出修复成功：{p}（{msg}）")
+    else:
+        from PyQt6.QtWidgets import QMessageBox
+        QMessageBox.warning(panel.owner, "无法修复", f"{p}\n\n{msg}")
+
+
+def delete_halfcloned_row(panel, row: int) -> None:
+    """删除半成品目录（**二次确认**；判定不过则不动手）。
+
+    从 progress_table 迁入（800 线瘦身）：判定与删除本就归本模块，
+    UI 只负责「让用户点两次确认」。
+    """
+    from . import main_window as _mw
+    from .theme import LogLevel
+    QMessageBox = _mw.QMessageBox  # 兼容既有测试经 main_window.QMessageBox mock
+
+    p = row_repo_dir(panel, row)
+    if not looks_halfcloned(p):
+        QMessageBox.information(panel.owner, "无需清理",
+                                "该目录不是半成品（有工作树内容）。")
+        return
+    sure = QMessageBox.question(
+        panel.owner, "删除半成品目录",
+        f"将删除该仓库的整个目录（其中只有 .git，没有工作树内容）：\n{p}\n\n继续？",
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+    if sure != QMessageBox.StandardButton.Yes:
+        return
+    delete_halfcloned(p)
+    panel.owner.statusBar().showMessage(f"已删除半成品目录：{p.name}")
+    panel.owner._emit_log(_mw._fmt_dt(), LogLevel.WARN,
+                          f"用户确认删除半成品目录：{p}")
+
+
+def _level_info():
+    from .theme import LogLevel
+    return LogLevel.INFO

@@ -38,6 +38,23 @@ _SENSITIVE_COLS = ("token", "host_tokens", "ssh_key", "url")
 # 只读工具定义（工具列表即契约，docs/agent-contract.md 同步）
 _TOOLS: list[dict[str, Any]] = [
     {
+        "name": "clone_batch",
+        "description": (
+            "批量克隆仓库到数据目录（**写操作**：触网 + 写盘；仅 --allow-mutate "
+            "时暴露）。复用 CLI --json 子进程，返回与 CLI 相同的顶层契约。"),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "urls": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "仓库地址列表（每项一个 URL）",
+                },
+            },
+            "required": ["urls"],
+        },
+    },
+    {
         "name": "list_repos",
         "description": "列出数据库中的仓库（只读；支持 host 过滤）",
         "inputSchema": {
@@ -227,9 +244,14 @@ def _export_report(db, fmt: str, out_dir: str | None) -> str:
     return f"已导出 {rows} 行到 {base / 'repos_report.md'}"
 
 
+def _readonly_tools() -> list[dict[str, Any]]:
+    """未授权 mutate 时暴露的工具集（clone_batch 不存在 —— 不是"存在但报错"）。"""
+    return [t for t in _TOOLS if t["name"] != "clone_batch"]
+
+
 def _handle_call(msg_id: Any, params: dict[str, Any], data_dir: Path,
-                 allow_export: bool) -> dict[str, Any]:
-    """处理 tools/call：只读工具 + 显式开关的 export_report。"""
+                 allow_export: bool, allow_mutate: bool = False) -> dict[str, Any]:
+    """处理 tools/call：只读工具 + 显式开关的 export_report / clone_batch。"""
     name = str(params.get("name") or "")
     args = params.get("arguments") or {}
     try:
@@ -254,6 +276,29 @@ def _handle_call(msg_id: Any, params: dict[str, Any], data_dir: Path,
                 return _error(msg_id, -32602, f"不支持的格式：{fmt}")
             out = _export_report(db, fmt, args.get("out_dir"))
             return _result(msg_id, {"message": out})
+        if name == "clone_batch":
+            if not allow_mutate:
+                return _error(msg_id, -32000,
+                              "clone_batch 需要显式启用（GCM_MCP_ENABLE=1 + --allow-mutate）")
+            urls = args.get("urls") or []
+            if not isinstance(urls, list) or not urls:
+                return _error(msg_id, -32602, "urls 必须是非空字符串数组")
+            body = "\n".join(str(u) for u in urls) + "\n"
+            import subprocess as _sp
+            cmd = [sys.executable, "-m", "gcm", "--cli", "--json",
+                   "--dir", str(data_dir)]
+            try:
+                proc = _sp.run(cmd, input=body, capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", timeout=3600)
+            except Exception as e:  # noqa: BLE001
+                return _error(msg_id, -32603, f"克隆调度失败：{e}")
+            try:
+                payload = json.loads(proc.stdout or "{}")
+            except ValueError:
+                payload = {"error": {"code": -32603, "message": "克隆输出非 JSON",
+                                     "redacted": redact(proc.stdout or "")}}
+            return _result(msg_id, {"clone_result": payload,
+                                    "cli_exit_code": proc.returncode})
         return _error(msg_id, -32601, f"未知工具：{name}")
     except ValueError as e:
         # G69-18 修复：参数类错误（如 out_dir 越界）必须转成 **JSON-RPC 错误**返回。
@@ -267,7 +312,8 @@ def _handle_call(msg_id: Any, params: dict[str, Any], data_dir: Path,
         db.close()
 
 
-def run_stdio(data_dir: Path, allow_export: bool) -> int:
+def run_stdio(data_dir: Path, allow_export: bool,
+              allow_mutate: bool = False) -> int:
     """stdio 循环：逐行读 JSON-RPC，写响应；Ctrl-C/EOF 退出 0。"""
     out = sys.stdout
     try:
@@ -296,10 +342,14 @@ def run_stdio(data_dir: Path, allow_export: bool) -> int:
             elif method == "notifications/initialized":
                 pass  # 客户端确认，无响应体
             elif method == "tools/list":
-                out.write(json.dumps(_result(msg_id, {"tools": _TOOLS}), ensure_ascii=False) + "\n")
+                # Rev8 C5-1：未授权 mutate 时 clone_batch **不出现在列表里**
+                tools = _TOOLS if allow_mutate else _readonly_tools()
+                out.write(json.dumps(_result(msg_id, {"tools": tools}),
+                                     ensure_ascii=False) + "\n")
                 out.flush()
             elif method == "tools/call":
-                resp = _handle_call(msg_id, req.get("params") or {}, data_dir, allow_export)
+                resp = _handle_call(msg_id, req.get("params") or {}, data_dir,
+                                    allow_export, allow_mutate)
                 out.write(json.dumps(resp, ensure_ascii=False) + "\n")
                 out.flush()
             else:
@@ -316,6 +366,9 @@ def main(argv: list[str] | None = None) -> int:
     allow_export = "--allow-export" in args
     if "--allow-export" in args:
         args.remove("--allow-export")
+    allow_mutate = "--allow-mutate" in args
+    if "--allow-mutate" in args:
+        args.remove("--allow-mutate")
     if str(os.environ.get("GCM_MCP_ENABLE") or "").strip() != "1":
         _log(f"MCP 默认不启用：设置 GCM_MCP_ENABLE=1 后再运行（退出码 {_MCP_DISABLED_RC}）")
         return _MCP_DISABLED_RC
@@ -325,7 +378,7 @@ def main(argv: list[str] | None = None) -> int:
     # 里的真实库 → MCP 客户端看到的是另一份（甚至新建的空）库。
     from .__main__ import get_data_dir
     data_dir = Path(os.environ.get("GCM_DATA_DIR") or get_data_dir())
-    return run_stdio(data_dir, allow_export)
+    return run_stdio(data_dir, allow_export, allow_mutate)
 
 
 if __name__ == "__main__":

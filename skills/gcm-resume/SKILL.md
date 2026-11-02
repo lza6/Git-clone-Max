@@ -1,5 +1,6 @@
 ---
 name: gcm-resume
+version: 1.0.0
 description: >
   Resume an interrupted batch clone or run routine incremental updates by
   re-running the CLI over the same URL list — repositories already completed

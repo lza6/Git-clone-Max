@@ -72,8 +72,12 @@ GCM = ROOT / "gcm"
 # - v9.15.0 +17（except 667 / **pass-only 282 未涨**）：
 #   C3-4 stage_stats / C4 repo_fts+migrate / repo_search 双路的防御分支，
 #   全部有 applog.warn 或明确降级出口（FTS 不可用 → 退 LIKE）。
-BASELINE_EXCEPT = 667
-BASELINE_PASS_ONLY = 283
+# - Rev8 +13（except 680 / pass-only 286 +3）：
+#   halfclone 分类（git 缺失兜底）、event_sink（落盘永不抛）、
+#   sparkline（主题缺失退化）—— 全部是「绝不影响主流程」类防御分支；
+#   pass-only +3 中 log_buffer.stop 的既有 1 处非本批，event_sink 已收敛 2 处。
+BASELINE_EXCEPT = 680
+BASELINE_PASS_ONLY = 286
 
 
 def _py_files() -> list[Path]:

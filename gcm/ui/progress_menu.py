@@ -38,6 +38,17 @@ def build_progress_menu(panel, row: int):
     # G80-B4-1b：只对「已取回但未检出」的行提供清理入口（二次确认）。
     # 菜单里**只显示**，不主动执行 —— 用户得自己点，点完还要再确认一次。
     if panel._row_is_halfcloned(row):
+        # Rev8 P1-1：两级修复 —— not_checked_out 可 `git checkout -f` 秒级零网络
+        # 修复，优先给"修"而不是"删"；unborn_head 数据没取回来，只能删了重克隆。
+        from ..app.halfclone import classify_repo
+        from .halfclone_actions import row_repo_dir
+        p = row_repo_dir(panel, row)
+        kind = classify_repo(p) if p is not None else "not_repo"
+        if kind == "not_checked_out":
+            act_repair = menu.addAction("检出修复（恢复工作树）")
+            act_repair.setToolTip("数据已取回只是未检出：git checkout -f 恢复，零网络、秒级")
+            act_repair.triggered.connect(
+                lambda _=False, r=row: panel._repair_halfcloned_row(r))
         act_clean = menu.addAction("删除半成品目录…")
         act_clean.setToolTip("该仓库已取回但未检出：删除目录后重新克隆")
         act_clean.triggered.connect(

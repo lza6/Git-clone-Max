@@ -62,6 +62,8 @@ class RepoDetailDialog(QDialog):
 
     # G37-2 远端检查结果回主线程（worker 线程 emit → 主线程 queued 槽，线程安全）
     remote_checked = pyqtSignal(str)
+    # Rev8 C6-2：健康体检结果回主线程（同范式）
+    health_checked = pyqtSignal(str)
 
     def __init__(self, repo: dict, history: list, parent=None):
         super().__init__(parent)
@@ -76,6 +78,7 @@ class RepoDetailDialog(QDialog):
         fit_dialog_to_screen(self, 860, 560, 680, 420)
 
         self.remote_checked.connect(self._finish_remote_check)
+        self.health_checked.connect(self._finish_health_check)
         self._build_ui()
 
     # ------------------------------------------------------------ UI
@@ -374,6 +377,11 @@ class RepoDetailDialog(QDialog):
         self.btn_check_remote.clicked.connect(self.check_remote)
         btns.addWidget(self.btn_check_remote)
 
+        # Rev8 C6-2：健康体检（git fsck，只在此显式点击时跑，不进自动批次）
+        self.btn_health = QPushButton("健康体检")
+        self.btn_health.clicked.connect(self.run_health_check)
+        btns.addWidget(self.btn_health)
+
         # G37-2 远端检查结果（只读、muted 样式；后台线程经 singleShot 回主线程更新）
         self.lbl_remote = QLabel("")
         self.lbl_remote.setObjectName("muted")
@@ -457,6 +465,58 @@ class RepoDetailDialog(QDialog):
         """主线程收尾：写入结果并恢复按钮（remote_checked 的槽，主线程执行）。"""
         self.lbl_remote.setText(text)
         self.btn_check_remote.setEnabled(True)
+
+    # ------------------------------------------------------------ Rev8 C6-2 健康体检
+    def run_health_check(self) -> None:
+        """健康体检：后台线程跑 `git fsck --connectivity-only` + `count-objects -vH`。
+
+        **只由用户显式点击触发**（fsck 对大仓可达数秒，绝不进自动批次/扫描）。
+        结果经 `health_checked` 信号回主线程更新（与 check_remote 同范式）。
+        """
+        path = str(self.repo.get("local_path") or "")
+        if not path or not os.path.isdir(path):
+            self.lbl_remote.setText("无法体检（本地目录不存在）")
+            return
+        self.btn_health.setEnabled(False)
+        self.lbl_remote.setText("体检中…")
+
+        def _worker() -> None:
+            text = self._compute_health_text()
+            self.health_checked.emit(text)
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+        self._health_thread = t  # 持引用防 GC
+
+    def _compute_health_text(self) -> str:
+        """同步执行 fsck + count-objects（工作线程内调用）。永不抛。"""
+        path = str(self.repo.get("local_path") or "")
+        try:
+            fsck = subprocess.run(
+                ["git", "-C", path, "fsck", "--connectivity-only"],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=120)
+            count = subprocess.run(
+                ["git", "-C", path, "count-objects", "-vH"],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=30)
+        except Exception as e:  # noqa: BLE001
+            return f"体检失败：{e}"
+        size_line = ""
+        for line in (count.stdout or "").splitlines():
+            if line.startswith("size-pack"):
+                size_line = line.split(":", 1)[1].strip()
+                break
+        if fsck.returncode != 0 or (fsck.stderr or "").strip():
+            err = (fsck.stderr or fsck.stdout or "").strip().splitlines()
+            first = err[0] if err else f"rc={fsck.returncode}"
+            return f"对象库异常：{first[:120]}"
+        return f"健康（对象库 {size_line or '正常'}）"
+
+    def _finish_health_check(self, text: str) -> None:
+        """主线程收尾（health_checked 的槽）。"""
+        self.lbl_remote.setText(text)
+        self.btn_health.setEnabled(True)
 
     def _compute_remote_text(self, url: str, local_sha: str | None) -> str:
         """同步执行 ``git ls-remote <url> HEAD`` 并比较本地 HEAD（工作线程内调用）。

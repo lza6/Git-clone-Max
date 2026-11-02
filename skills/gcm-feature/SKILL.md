@@ -1,5 +1,6 @@
 ---
 name: gcm-feature
+version: 1.0.0
 description: >
   Standard operating procedure for adding a feature, command, API endpoint, UI
   panel, or data field to Git-clone-Max, including the mandatory

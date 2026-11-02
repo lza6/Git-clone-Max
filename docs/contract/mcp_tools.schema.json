@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "always_available": [
+    {
+      "description": "列出数据库中的仓库（只读；支持 host 过滤）",
+      "inputSchema": {
+        "properties": {
+          "host": {
+            "description": "host 过滤（如 github.com）",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "list_repos"
+    },
+    {
+      "description": "按关键字搜索仓库（owner/repo/host/tag/note，只读）",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "description": "搜索关键字",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "name": "search_repos"
+    },
+    {
+      "description": "导出报表 CSV/Markdown（只读数据源，写产出文件）",
+      "inputSchema": {
+        "properties": {
+          "format": {
+            "description": "导出格式",
+            "enum": [
+              "csv",
+              "markdown"
+            ]
+          },
+          "out_dir": {
+            "description": "输出目录（默认数据目录/reports）",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "export_report"
+    },
+    {
+      "description": "读取全局统计概览（仓库数/同步次数/成功失败，只读）",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "status"
+    }
+  ],
+  "requires_allow_mutate": [
+    {
+      "description": "批量克隆仓库到数据目录（**写操作**：触网 + 写盘；仅 --allow-mutate 时暴露）。复用 CLI --json 子进程，返回与 CLI 相同的顶层契约。",
+      "inputSchema": {
+        "properties": {
+          "urls": {
+            "description": "仓库地址列表（每项一个 URL）",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "urls"
+        ],
+        "type": "object"
+      },
+      "name": "clone_batch"
+    }
+  ],
+  "title": "gcm MCP tools"
+}

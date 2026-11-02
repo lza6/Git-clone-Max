@@ -26,7 +26,7 @@ from ..i18n import tr
 from ..models import RepoSpec, SyncResult, SyncStatus
 from ..util.openfolder import open_folder
 from . import main_window as _mw  # 兼容测试对 main_window.QMessageBox 等模块级 patch
-from .halfclone_actions import delete_halfcloned, looks_halfcloned, row_repo_dir
+from .halfclone_actions import looks_halfcloned, row_repo_dir
 from .progress_delegate import DETAIL_ROLE, ProgressDelegate
 from .progress_menu import build_progress_menu
 from .theme import LogLevel, current_palette
@@ -369,28 +369,18 @@ class ProgressTable(QWidget):
     def _row_is_halfcloned(self, row: int) -> bool:
         return looks_halfcloned(self._row_dir(row))
 
+    def _repair_halfcloned_row(self, row: int) -> None:
+        """Rev8 P1-1：检出修复（逻辑在 halfclone_actions，本面板只转发）。"""
+        from .halfclone_actions import repair_halfcloned_row
+        repair_halfcloned_row(self, row)
+
     def _row_dir(self, row: int):
         return row_repo_dir(self, row)
 
     def _delete_halfcloned_row(self, row: int) -> None:
-        """删除半成品目录（**二次确认**；判定不过则不动手）。
-
-        判定与删除都在 `halfclone_actions` 里，UI 只负责「让用户点两次确认」。
-        """
-        p = self._row_dir(row)
-        if not self._row_is_halfcloned(row):
-            _mw.QMessageBox.information(self.owner, "无需清理", "该目录不是半成品（有工作树内容）。")
-            return
-        sure = _mw.QMessageBox.question(
-            self.owner, "删除半成品目录",
-            f"将删除该仓库的整个目录（其中只有 .git，没有工作树内容）：\n{p}\n\n继续？",
-            _mw.QMessageBox.StandardButton.Yes | _mw.QMessageBox.StandardButton.No)
-        if sure != _mw.QMessageBox.StandardButton.Yes:
-            return
-        delete_halfcloned(p)
-        self.owner.statusBar().showMessage(f"已删除半成品目录：{p.name}")
-        self.owner._emit_log(_mw._fmt_dt(), LogLevel.WARN,
-                             f"用户确认删除半成品目录：{p}")
+        """删除半成品目录（二次确认；判定/删除在 halfclone_actions，面板只转发）。"""
+        from .halfclone_actions import delete_halfcloned_row
+        delete_halfcloned_row(self, row)
 
     def _row_engine_index(self, row: int) -> int:
         """从表格行读回 engine index（UserRole+1；排序/过滤后仍精确）。"""

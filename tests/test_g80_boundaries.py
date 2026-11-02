@@ -30,6 +30,7 @@ QT_IN_APP = {
 # 每条都必须写清"为什么现在不进 git 层" —— 没有正当理由就该在 B6 之后收敛。
 GIT_SUBPROCESS_OUTSIDE = {
     "gcm/app/diag.py": "git --version 环境自检（只读探测，无同步语义）",
+    "gcm/app/halfclone.py": "半成品分类/checkout -f 修复（只读 rev-parse + 本地 checkout，零网络；Rev8 P1-1）",
     "gcm/app/host_probe.py": "ls-remote 匿名可读性探测（host 识别用，非克隆）",
     "gcm/app/mirror_probe.py": "镜像测速 ls-remote（自带独立超时/缓存/单飞，语义不同于同步）",
     "gcm/app/scanner.py": "扫描时读 origin/HEAD（纯文件/只读 git 查询，非同步）",

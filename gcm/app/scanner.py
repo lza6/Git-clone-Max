@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..models import RepoSpec
+from .halfclone import is_halfcloned  # Rev8 P1-1：单一事实源
 
 # 无需深入的无意义目录
 _SKIP_DIRS = {"node_modules", ".venv", "venv", "dist", "build",
@@ -48,6 +49,9 @@ class RepoInfo:
     # 这类目录在参考库里实测过 101 个 / 7.4GB —— 目录看着像仓库，实际用不了；
     # 扫描时标出来并在导入对话框里默认不勾选，避免用户把僵尸目录当健康仓库入库。
     needs_attention: bool = False
+    # Rev8 P1-1：半成品细分（"healthy"/"not_checked_out"/"unborn_head"/"not_repo"）。
+    # not_checked_out 可 `git checkout -f` 秒级修复；unborn_head 只能重新克隆。
+    halfclone_kind: str = ""
 
     @property
     def key(self) -> str:
@@ -276,26 +280,19 @@ def _make_info(root: Path, dirpath: Path, depth: int) -> RepoInfo:
         from ..app.url_lib import host_of
         host = host_of(url_https)
     display = f"{owner}/{repo}" if owner else name
+    from .halfclone import classify_repo
+    halfclone_kind = classify_repo(dirpath)
     return RepoInfo(
         folder_name=name, display=display, path=str(dirpath), has_git=True,
         remote_url=remote, owner=owner, repo=repo, url_https=url_https,
         host=host, head_sha=_head_sha(dirpath), depth=depth,
         needs_attention=_looks_halfcloned(dirpath),
+        halfclone_kind=halfclone_kind,
     )
 
 
-def _looks_halfcloned(dirpath: Path) -> bool:
-    """疑似半成品：有 .git，但工作树里除 .git 外**零条目**。
-
-    刻意保守：只认"完全空的工作树"，不去猜"文件太少"；裸仓库（.git 是目录名后缀）
-    在 _iter_git_candidates 就被单独处理，不会走到这里。
-    """
-    try:
-        if not (dirpath / ".git").exists():
-            return False
-        return not any(p.name != ".git" for p in dirpath.iterdir())
-    except OSError:
-        return False
+# Rev8 P1-1：单一事实源别名（不在包装成函数 —— 调用方语义不变）。
+_looks_halfcloned = is_halfcloned
 
 
 def _iter_git_candidates(root: Path, max_depth: int):

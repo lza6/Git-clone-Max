@@ -1,5 +1,6 @@
 ---
 name: gcm-diag
+version: 1.0.0
 description: >
   Diagnose git / network / proxy readiness before cloning — git binary
   presence, TCP 443 reachability, GitHub API responsiveness, proxy

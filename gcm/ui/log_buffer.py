@@ -29,6 +29,9 @@ class LogBuffer(QObject):
         self._batch: list = []
         self.log_view: Optional[QPlainTextEdit] = log_view
         self.log_count = log_count
+        # Rev8 C6-4：显示层关键字过滤（空串 = 不过滤）。模型永远全量，
+        # 清空过滤后可 replay_all() 恢复完整视图。
+        self.filter_text: str = ""
         self.timer = QTimer(self)
         self.timer.setInterval(interval_ms)
         # G69-18 修复：改为**单次**定时器 + 有积压才武装。
@@ -70,7 +73,10 @@ class LogBuffer(QObject):
             return
         # 优先级前缀（与历史 UI 文案一致）
         from .theme import LogLevel
+        kw = (self.filter_text or "").strip().lower()
         for ev in batch:
+            if kw and kw not in ev.text.lower():
+                continue
             prefix = {
                 LogLevel.WARN: "[警告] ",
                 LogLevel.ERROR: "[错误] ",
@@ -88,3 +94,30 @@ class LogBuffer(QObject):
 
     def has_pending(self) -> bool:
         return bool(self._batch)
+
+    def replay_all(self) -> None:
+        """Rev8 C6-4：从 LogModel 重放全量（清空过滤后恢复完整视图）。
+
+        依赖 parent.log（LogModel）；不可得时静默跳过（纯 LogBuffer 单测场景）。
+        """
+        model = getattr(self.parent(), "log", None)
+        if model is None:
+            return
+        cur = self.log_view
+        if cur is None:
+            return
+        cur.clear()
+        entries = model.snapshot()
+        if not entries:
+            return
+        from .theme import LogLevel
+        kw = (self.filter_text or "").strip().lower()
+        for ev in entries:
+            if kw and kw not in ev.text.lower():
+                continue
+            prefix = {
+                LogLevel.WARN: "[警告] ",
+                LogLevel.ERROR: "[错误] ",
+                LogLevel.SYSTEM: "[系统] ",
+            }.get(ev.level, "")
+            cur.appendPlainText(f"[{ev.time}] {prefix}{ev.text}")

@@ -1,13 +1,13 @@
 ; G49-5 Inno Setup 安装器脚本（可选产物，不替代便携版）
 ; 编译：iscc packaging/installer.iss   （Inno Setup 6 命令行）
-; 产物：dist\installer\Git-clone-Max-setup-9.15.0.exe
+; 产物：dist\installer\Git-clone-Max-setup-9.16.0.exe
 ; 说明：默认安装到 Program Files；数据目录默认走 %APPDATA%/Git-clone-Max
 ;       （G49-2 非便携语义），卸载不清数据，重装/升级无感。
 ; 需要先构建 dist\Git-clone-Max.exe（见 README 打包段）。
 
 #define MyAppName "Git-clone-Max"
 ; G66-2：与 gcm/__init__.py 的 __version__ 一致（tests/test_g66_patch.py 强制校验）。
-#define MyAppVersion "9.15.0"
+#define MyAppVersion "9.16.0"
 #define MyAppExeName "Git-clone-Max.exe"
 #define MyAppPublisher "lza6"
 #define MyAppURL "https://github.com/lza6/Git-clone-Max"
@@ -35,6 +35,9 @@ MinVersion=10.0.19041
 UninstallDisplayIcon={app}\{#MyAppExeName}
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
+; Rev8 P2-2：升级/卸载时若 exe 正在运行，提示用户关闭而不是装完要求重启。
+CloseApplications=yes
+RestartApplications=no
 
 [Languages]
 ; 中文向导集成（可选）：从 https://jrsoftware.org/files/istrans/ 下载
@@ -64,3 +67,35 @@ Root: HKCU; Subkey: "Software\Classes\GitCloneMaxList\shell\open\command"; Value
 [UninstallDelete]
 ; 卸载不删 %APPDATA%/Git-clone-Max（数据/凭据/日志属于用户数据）
 Type: filesandordirs; Name: "{app}\__pycache__"
+
+; Rev8 P2-2：卸载结束时**询问**是否删除用户数据（默认保留 —— 凭据/清单是用户资产，
+; 但给想彻底清理的用户一个入口）。用 [Code] 的卸载向导页实现，不用静默删。
+[Code]
+var
+  UninstallDataPage: TInputOptionWizardPage;
+
+procedure InitializeUninstallProgressForm;
+begin
+  UninstallDataPage := CreateInputOptionPage(wpWelcome,
+    '用户数据', '是否删除用户数据？',
+    'Git-clone-Max 的清单、设置与令牌保存在 %APPDATA%\Git-clone-Max。' #13#10 +
+    '保留它们可以在重装后继续使用；删除后无法恢复。', False, False);
+  UninstallDataPage.Add('保留用户数据（推荐）');
+  UninstallDataPage.Add('一并删除用户数据（清单/设置/令牌/日志）');
+  UninstallDataPage.Values[0] := True;   // 默认保留
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  DataDir: String;
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    if UninstallDataPage.Values[1] then
+    begin
+      DataDir := ExpandConstant('{userappdata}\Git-clone-Max');
+      if DirExists(DataDir) then
+        DelTree(DataDir, True, True, True);
+    end;
+  end;
+end;
