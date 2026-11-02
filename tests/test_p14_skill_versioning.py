@@ -58,8 +58,16 @@ class TestSelftestRuns(unittest.TestCase):
 
     def test_clone_skill_selftest_passes(self):
         import subprocess
+        import sys
+        # G83 修复：`.venv/Scripts/python.exe` 是 Windows 布局，Linux/macOS CI
+        # 上不存在（.venv/bin/python）→ FileNotFoundError。本地优先用 venv，
+        # 缺失时回退当前解释器（selftest 不依赖 venv 特有内容）。
+        venv_py = ROOT / ".venv/Scripts/python.exe"
+        venv_py_posix = ROOT / ".venv/bin/python"
+        exe = str(venv_py if venv_py.is_file() else
+                  (venv_py_posix if venv_py_posix.is_file() else sys.executable))
         r = subprocess.run(
-            [str(ROOT / ".venv/Scripts/python.exe"),
+            [exe,
              str(ROOT / "skills/gcm-clone/scripts/gcm_smoke.py"), "--selftest"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=120, cwd=str(ROOT))
