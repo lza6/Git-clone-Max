@@ -107,7 +107,7 @@ def bench(n: int) -> dict:
 def bench_prune(rows: int = 100000) -> dict:
     """`prune_history` 在最坏规模下的耗时（C3-2 把它从"每 100 条"挪到"每批一次"）。"""
     from gcm.db.repo_db import Database
-    from gcm.models import RepoSpec, SyncAction, SyncStatus
+    from gcm.models import RepoSpec
     tmp = Path(tempfile.mkdtemp(prefix="gcm_bench_prune_"))
     db = Database(tmp / "repos.db")
     try:

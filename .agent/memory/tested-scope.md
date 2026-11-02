@@ -1,6 +1,33 @@
+---
+topic: tested-scope
+updated: 2026-11-03
+owner: Verifier
+---
 # 已测试范围（tested-scope）
 
-## 0. 最新一次真实运行（2026-11-02 · v9.15.0 C3 收官 + C4 检索）
+## 0. 最新一次真实运行（2026-11-03 · v9.17.0 G83 批）
+
+| 项 | 命令 | 结果（实测） |
+|---|---|---|
+| 质量闸 | `ruff check gcm` / `mypy gcm` | All checks passed / Success（**119** 源文件） |
+| 新守卫三件套 | `vulture gcm --min-confidence 90` / `zero_assert_scan.py tests` / `memory_check.py` | **0 发现 / 0 零断言 / 0 问题**（首轮分别抓出 1 死参数、8 零断言测试、7 缺 frontmatter——全部已修） |
+| 自适应间隔 | `tests.test_g83_adaptive_interval` + `test_g83_adaptive_wiring` | 13 用例全绿（纯函数 7 + 主窗接线 6） |
+| 定向回归 | g79/g53/g75/g69/c1/c6/doc_drift/g374/g37/g81 | 全绿（修复了先前已存在的根目录白名单红灯） |
+| 版本契约 | `test_g66_patch.TestPackagingVersionSync` + `TestContractVersionSingleSource` + `test_g81_changelog` | 20 用例 OK（9.17.0 六载体同步） |
+| 变异自检 | 零断言守卫抓注入用例 / memory_check 抓坏 change-index 路径 | 两次 **MUTATION_OK** |
+| 文档漂移 | `doc_drift_check.py` | **DRIFT 0** |
+| 全量快集 | `coverage run --source=gcm scripts/ci_run_fast.py` | 见 evidence/G83-batch.json（后台跑，完成后回填） |
+| 打包 exe E2E | 未跑 | 发布时按 RELEASE_CHECKLIST 执行 |
+
+**G83 教训**：
+①自适应退避的纯函数 `next_interval_minutes` 里 `None`（无历史）与 `0`（有变更）
+语义不同，`not streak` 会把两者合并——分别判。
+② MainWindow 默认 `auto_update_minutes=0`（关），接线测试必须先显式开启，
+否则 `_note_batch_change` 的提前 return 会让 streak 永远是 None。
+③ ruff 的 `scripts/` 检查是本地宽口径（CI 只查 gcm）——引入新脚本时别
+把 CI 范围外的存量 E501 当成自己的回归。
+
+## 历史（2026-11-02 · v9.15.0 C3 收官 + C4 检索）
 
 | 项 | 命令 | 结果（实测） |
 |---|---|---|

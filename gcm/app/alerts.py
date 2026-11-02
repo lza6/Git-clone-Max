@@ -212,7 +212,6 @@ def scan_alerts(all_repos: list[dict[str, Any]],
                 data_dir: Optional[Path] = None,
                 stale_days: int = 30,
                 repo_fail_rate_pct: int = 50,
-                global_fail_rate_pct: int = 30,
                 disk_min_gb: int = 5,
                 now: Optional[float] = None) -> list[dict[str, Any]]:
     """扫描全部阈值告警；返回告警列表（空=无）。"""

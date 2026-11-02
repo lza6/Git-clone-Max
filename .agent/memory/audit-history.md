@@ -1,3 +1,8 @@
+---
+topic: audit-history
+updated: 2026-11-03
+owner: Auditor
+---
 # 审计历史（audit-history）
 
 | 日期 | 范围 | 结论 | 产出 |

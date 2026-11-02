@@ -1,3 +1,8 @@
+---
+topic: verified-scope
+updated: 2026-11-03
+owner: Verifier
+---
 # 已验证范围（verified-scope）
 
 ## 最新（2026-11-01，v9.12.0 / Rev7 C1 批与终局收口）

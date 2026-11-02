@@ -333,7 +333,11 @@ class TestWalCheckpointOnBatchFinish(unittest.TestCase):
                     mock.patch.object(e, "_publish"), \
                     mock.patch.object(e, "_stop_buffers"), \
                     mock.patch.object(e, "_release_tasks"):
-                e._on_worker_done()   # 不得抛
+                try:
+                    e._on_worker_done()   # 不得抛
+                except Exception as exc:  # noqa: BLE001
+                    self.fail(f"WAL 收缩失败把批次收尾带崩了：{exc!r}")
+            db.wal_checkpoint.assert_called_once_with()
         finally:
             e.shutdown()
 

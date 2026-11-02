@@ -1,3 +1,8 @@
+---
+topic: change-index
+updated: 2026-11-03
+owner: memory-keeper
+---
 # 变更索引（change-index）
 
 > 「改这块之前先看这里」。按模块记录最近一次重要变更与连带影响。
@@ -106,3 +111,10 @@
 | `gcm/ui/download_layout.py::btn_edit_quick` | 设 `QSizePolicy.Fixed`，防止隐藏滚动区后继承伸缩空间被拉成通栏 | v9.10.2（G79b） | 同上 |
 | `tests/test_extra.py::TestUpdaterExtra` | 版本类断言统一按真实 `__version__` / `_newer_tag()` 动态构造 | v9.10.2（G79b） | 任何写死版本号的断言都会在下个 minor 版炸一次 |
 
+
+| `gcm/ui/main_window.py` | **G83 自适应自动更新间隔接线**（_current_auto_update_minutes/_note_batch_change；结果槽记录变更、批次结束退避重排） | v9.17.0 | 连带 `gcm/app/adaptive_interval.py`；改 `_on_engine_finished`/`_on_worker_result` 必跑 `tests.test_g83_adaptive_wiring`（引用环敏感区） |
+| `gcm/app/adaptive_interval.py` | **新增**：NewsNow 式动态抓取间隔纯函数（1.5× 退避封顶 4×） | v9.17.0 | 唯一消费点 main_window；None=无历史 ≠ 0=有变更 |
+| `gcm/app/alerts.py` | G83 删除死参数 `global_fail_rate_pct` | v9.17.0 | 无调用方受影响（vulture 确认）；连带 `tests.test_g53_*` |
+| `scripts/zero_assert_scan.py` | **新增**：零断言测试 AST 扫描（源自 `_gcm_audit`）+ 守卫 `tests/test_g83_zero_assert.py` | v9.17.0 | 新测试文件若零断言会被拦 |
+| `scripts/memory_check.py` | **新增**：`.agent/memory/` 治理校验（frontmatter/180 天过期/路径有效性） | v9.17.0 | 改记忆文件必须带 topic/updated/owner frontmatter |
+| `docs/agent-contract.md` | 新增 §10 工具风险分级与治理（Tier/隔离区词汇） | v9.17.0 | 纯文档；`test_g80_contract` 若锁章节结构需同步 |

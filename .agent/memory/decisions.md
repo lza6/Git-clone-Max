@@ -1,3 +1,8 @@
+---
+topic: decisions
+updated: 2026-11-03
+owner: memory-keeper
+---
 # 关键决策与理由（decisions）
 
 > 记录「为什么这样做」，避免下一个人推翻后重犯。

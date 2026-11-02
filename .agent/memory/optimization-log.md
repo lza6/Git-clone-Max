@@ -1,3 +1,8 @@
+---
+topic: optimization-log
+updated: 2026-11-03
+owner: Builder
+---
 # 优化记录与基线（optimization-log）
 
 ## 测试耗时基线

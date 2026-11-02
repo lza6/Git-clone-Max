@@ -269,6 +269,9 @@ class MainWindow(QMainWindow):
         # 改为：向导函数返回后再调用（见 _maybe_show_onboarding 末尾）。
         QTimer.singleShot(500, self._maybe_apply_system_theme)
         # G37-4 自动更新定时器（分钟级；engine 非 busy 时触发一键更新）
+        # G83 P1-1：自适应退避状态（连续无变更轮数；None=尚无历史）
+        self._auto_update_no_change_streak = None
+        self._auto_update_batch_had_changes = False
         self._auto_update_timer = QTimer(self)
         self._auto_update_timer.timeout.connect(self._on_auto_update_tick)
         self._restart_auto_update_timer()
@@ -402,13 +405,17 @@ class MainWindow(QMainWindow):
             self._emit_log(_fmt_dt(), LogLevel.WARN, f"定时报表启动失败：{exc}")
 
     def _restart_auto_update_timer(self):
-        try:
-            self._auto_update_timer.stop()
-            mins = int(getattr(self.settings, "auto_update_minutes", 0) or 0)
-            if mins > 0:
-                self._auto_update_timer.start(mins * 60 * 1000)
-        except Exception:
-            pass
+        """G83：重排自动更新定时器（自适应间隔）。可能失败点只有 QTimer 已销毁。"""
+        mins = self._current_auto_update_minutes()
+        if mins > 0 and self._auto_update_timer is not None:
+            self._auto_update_timer.start(mins * 60 * 1000)
+
+    def _current_auto_update_minutes(self) -> int:
+        """G83 P1-1：自适应间隔 —— 基础值来自设置，连续无变更轮按 1.5× 退避（封顶 4×）。"""
+        from ..app.adaptive_interval import next_interval_minutes
+        base = int(getattr(self.settings, "auto_update_minutes", 0) or 0)
+        streak = getattr(self, "_auto_update_no_change_streak", None)
+        return next_interval_minutes(base, streak)
 
     def _on_auto_update_tick(self):
         """G37-4 定时触发：engine 非 busy 时一键更新全部（busy 跳过顺延下轮）。"""
@@ -416,11 +423,24 @@ class MainWindow(QMainWindow):
             self._emit_log(_fmt_dt(), LogLevel.INFO, "自动更新跳过：任务运行中")
             return
         self._emit_log(_fmt_dt(), LogLevel.SYSTEM,
-                       f"自动更新触发（每 {self.settings.auto_update_minutes} 分钟）")
+                       f"自动更新触发（间隔 {self._current_auto_update_minutes()} 分钟，"
+                       f"基础 {self.settings.auto_update_minutes}）")
+        # 每轮结束重算间隔：本轮是否有变更由 _note_batch_change 在结果槽中记录
         try:
             self.update_all()
         except Exception as e:
             self._emit_log(_fmt_dt(), LogLevel.WARN, f"自动更新失败：{e}")
+
+    def _note_batch_change(self, had_changes: bool) -> None:
+        """G83 P1-1：批次结束按是否有变更更新退避计数并重排定时器。"""
+        if not bool(getattr(self.settings, "auto_update_minutes", 0)):
+            return  # 功能关闭时不维护退避状态
+        if had_changes:
+            self._auto_update_no_change_streak = 0
+        else:
+            self._auto_update_no_change_streak = \
+                int(getattr(self, "_auto_update_no_change_streak", 0) or 0) + 1
+        self._restart_auto_update_timer()
 
     # ------------------------------------------------------------ G36-1 首次运行向导
     def _checklist_status(self) -> dict:
@@ -2258,6 +2278,16 @@ class MainWindow(QMainWindow):
     @pyqtSlot(int, SyncResult)
     def _on_worker_result(self, index, res: SyncResult):
         """G45-6 转发 progress_table.py（行为零变化）。"""
+        # G83 P1-1：记录本批次是否出现过真实变更（updated/cloned），
+        # 批次结束后用于自适应退避（不改变任何既有转发行为）。
+        # SyncAction 是确定的枚举导入，这里唯一可能失败的是测试桩缺 action ——
+        # 用 AttributeError 窄异常，不进裸吞预算。
+        try:
+            from ..models import SyncAction
+            if res.action in (SyncAction.UPDATED, SyncAction.CLONED):
+                self._auto_update_batch_had_changes = True
+        except AttributeError:
+            pass
         return self.progress_panel._on_worker_result(index, res)
 
     def _animate_result_row(self, index: int, status: SyncStatus):
@@ -2562,6 +2592,12 @@ class MainWindow(QMainWindow):
 
     def _on_engine_finished(self):
         """G45-6 转发 progress_table.py（行为零变化；G52-3 复位看门狗）。"""
+        # G83 P1-1：批次结束 → 结算本轮变更并重排自适应定时器。
+        # _note_batch_change 内部全部为 getattr/int 运算 + QTimer.start（有 None 防护），
+        # 无可抛外部调用 —— 不加 try（except 预算不回涨）。
+        had = bool(getattr(self, "_auto_update_batch_had_changes", False))
+        self._auto_update_batch_had_changes = False
+        self._note_batch_change(had)
         try:
             if getattr(self, "watchdog", None) is not None:
                 self.watchdog.reset()

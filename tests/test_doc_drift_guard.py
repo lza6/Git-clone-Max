@@ -75,10 +75,13 @@ class TestGuardCatchesDrift(unittest.TestCase):
         return problems
 
     def test_catches_module_line_drift_in_claude_md(self):
-        self._corrupt_first_line_count("CLAUDE.md", ddc.check_claude_md)
+        problems = self._corrupt_first_line_count("CLAUDE.md", ddc.check_claude_md)
+        self.assertTrue(problems, "CLAUDE.md 行数被改坏后 check_claude_md 未报出任何问题")
 
     def test_catches_module_line_drift_in_architecture_md(self):
-        self._corrupt_first_line_count("docs/architecture.md", ddc.check_architecture_md)
+        problems = self._corrupt_first_line_count(
+            "docs/architecture.md", ddc.check_architecture_md)
+        self.assertTrue(problems, "architecture.md 行数被改坏后未报出任何问题")
 
     def test_catches_long_function_count_drift(self):
         import re as _re

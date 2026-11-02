@@ -58,7 +58,10 @@ class TestSparklineWidget(unittest.TestCase):
         from gcm.ui.sparkline import Sparkline
         w = Sparkline()
         w.resize(80, 28)
-        w.repaint()
+        try:
+            w.repaint()
+        except Exception as exc:  # noqa: BLE001
+            self.fail(f"空数据 paintEvent 崩溃：{exc!r}")
         w.deleteLater()
 
 

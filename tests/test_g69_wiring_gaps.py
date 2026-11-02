@@ -294,15 +294,27 @@ class TestSettingsCallbacks(_WindowCase):
 
     def test_apply_alert_config_swallows_scanner_error(self):
         class _Boom:
+            def __init__(self) -> None:
+                self.reconfigured = False
+
             def reconfigure(self, **kw):
+                self.reconfigured = True
                 raise RuntimeError("boom")
 
-        self.win.alert_scanner = _Boom()
-        self.win.settings_panel._apply_alert_config()   # 不得抛出
+        boom = _Boom()
+        self.win.alert_scanner = boom
+        try:
+            self.win.settings_panel._apply_alert_config()
+        except Exception as exc:  # noqa: BLE001
+            self.fail(f"scanner 异常未被吞掉，冒泡到了调用方：{exc!r}")
+        self.assertTrue(boom.reconfigured, "reconfigure 未被调用，测试无效")
 
     def test_apply_alert_config_noop_without_scanner(self):
         self.win.alert_scanner = None
-        self.win.settings_panel._apply_alert_config()
+        try:
+            self.win.settings_panel._apply_alert_config()
+        except Exception as exc:  # noqa: BLE001
+            self.fail(f"无 scanner 时不应抛异常：{exc!r}")
 
 
 class TestStarImportThread(_WindowCase):

@@ -1,6 +1,6 @@
 # Git-clone-Max Agent 契约（G56-5）
 
-> 适用版本：v9.16.0。本文档是所有 agent 接入点
+> 适用版本：v9.17.0。本文档是所有 agent 接入点
 > （CLI `--json` / MCP server / 本地 HTTP API / `skills/gcm-*`）的统一契约。
 > 任何实现与本文档冲突时，以实际输出为准（测试 `tests/test_g56_contract.py` 抽样断言）。
 
@@ -27,7 +27,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ```json
 {
-  "version": "9.16.0",
+  "version": "9.17.0",
   "ok": true,
   "counts": {"success": 2, "failed": 0, "other": 0, "total": 2},
   "results": [
@@ -109,7 +109,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ```
 → {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{}}}
-← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"gcm","version":"9.16.0"}}}
+← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"gcm","version":"9.17.0"}}}
 → {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
 ← {"jsonrpc":"2.0","id":2,"result":{"tools":[{...list_repos...}, ...]}}
 → {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_repos","arguments":{}}}
@@ -240,3 +240,34 @@ curl http://127.0.0.1:8765/api/status
 - `tests/test_g56_mcp.py`：stdio 三跳握手 + `list_repos` 只读 + 默认禁用退出码 3 + 报表未放行不写盘。
 - `tests/test_g56_contract.py`：契约文档与实现抽样断言 + HTTP API 只读边界冒烟。
 - 运行命令：`.venv\Scripts\python.exe -m unittest tests.test_g56_cli_json tests.test_g56_mcp tests.test_g56_contract -v`
+
+## 10. 工具风险分级与治理（G83）
+
+本节引入标准化的治理词汇（对齐 OWASP MCP Governance 的 Tier 分级与
+mcpproxy 的隔离区模型），让 agent 生态的接入方一眼看懂本工具的写保护姿态。
+
+### 10.1 工具 Tier 分级
+
+| Tier | 定义 | 本工具对应能力 |
+|------|------|----------------|
+| Tier 0 | 纯读，无副作用 | 仓库查询 / 状态 / 报表（MCP `list_repos`、HTTP GET） |
+| Tier 1 | 导出，写本地文件 | 报表导出（需 `--allow-export`） |
+| Tier 2 | 写本地数据 | 克隆 / 更新写盘（CLI 本身即写意图；HTTP POST 需 `--allow-mutate`） |
+
+**本工具不提供 Tier 3+（远程副作用 / 不可逆操作）能力，未来新增也禁止绕过本表。**
+
+### 10.2 放行即审批（quarantine 语义）
+
+- 一切写能力**默认处于"隔离区"**：不设环境变量 / 不传开关时，
+  写端点返回 403、MCP 拒绝导出、退出码语义不变。
+- "放行"是**显式、每次启动、按入口**的：`--allow-mutate` / `--allow-export` /
+  `GCM_MCP_ENABLE=1` 三者互不隐含。没有"一次放行、永久生效"的路径。
+- 放行后的写操作**必须审计**（事件入总线前 redact，app.log 落盘打码）——
+  治理与可观测绑定，不允许"放行但无声"。
+
+### 10.3 接入方自查清单（agent 接入前过一遍）
+
+1. 你需要的最低 Tier 是什么？只用 Tier 0 就不要请求放行。
+2. 放行环境变量写在谁那里？进程级而非用户级，避免泄漏到其它会话。
+3. 读取的仓库内容是否会被你外发？本工具的 redact 只保护**本工具的出站**，
+   agent 消费后的外发责任在接入方。

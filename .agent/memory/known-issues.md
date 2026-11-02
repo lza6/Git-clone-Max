@@ -1,3 +1,8 @@
+---
+topic: known-issues
+updated: 2026-11-03
+owner: memory-keeper
+---
 # 已知问题与边界（known-issues）
 
 > 只记录**真实存在**且尚未解决的问题。修掉一个就删一条。

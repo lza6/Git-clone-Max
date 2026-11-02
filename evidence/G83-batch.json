@@ -1,0 +1,43 @@
+{
+  "task_id": "G83",
+  "status": "in-progress-awaiting-fast-suite",
+  "timestamp": "2026-11-03",
+  "commands_executed": [
+    {"cmd": "python -m pip install vulture==2.14 pympler==1.1", "exit_code": 0},
+    {"cmd": "python -m vulture gcm --min-confidence 90", "exit_code": 0, "note": "clean after removing dead param global_fail_rate_pct"},
+    {"cmd": "python scripts/zero_assert_scan.py tests", "exit_code": 0, "note": "8 zero-assertion tests found, all fixed, now 0"},
+    {"cmd": "python scripts/memory_check.py", "exit_code": 0, "note": "0 problems after frontmatter added to 7 memory files"},
+    {"cmd": "python -m unittest tests.test_g83_adaptive_interval tests.test_g83_adaptive_wiring", "exit_code": 0, "note": "13 tests OK"},
+    {"cmd": "python -m unittest tests.test_g79_repo_hygiene tests.test_g53_* ... (targeted regression)", "exit_code": 0, "note": "OK skipped=1"},
+    {"cmd": "python -m ruff check gcm", "exit_code": 0},
+    {"cmd": "python -m mypy gcm", "exit_code": 0, "note": "Success 119 source files"},
+    {"cmd": "python scripts/doc_drift_check.py", "exit_code": 0, "note": "DRIFT 0"},
+    {"cmd": "coverage run --source=gcm scripts/ci_run_fast.py", "exit_code": null, "note": "running in background, result pending"}
+  ],
+  "files_changed": [
+    "gcm/app/alerts.py (dead param removed)",
+    "gcm/app/adaptive_interval.py (new)",
+    "gcm/ui/main_window.py (adaptive wiring: _current_auto_update_minutes/_note_batch_change/_on_worker_result/_on_engine_finished)",
+    "scripts/zero_assert_scan.py (new, from _gcm_audit)",
+    "scripts/memory_check.py (new)",
+    "tests/test_g83_zero_assert.py (new guard)",
+    "tests/test_g83_adaptive_interval.py (new)",
+    "tests/test_g83_adaptive_wiring.py (new)",
+    "tests/test_c1_wiring.py, test_c6_sparkline.py, test_doc_drift_guard.py, test_g69_wiring_gaps.py, test_g75_visual_system.py (zero-assert fixes)",
+    "tests/test_g79_repo_hygiene.py (root whitelist + count 176)",
+    "docs/agent-contract.md (§10 governance)",
+    ".agent/memory/*.md (frontmatter x7)",
+    "changelog.d/g83-adaptive-guards.added.md + _changelog_data.py (9.17.0)",
+    "pyproject.toml, gcm/__init__.py, Git-clone-Max.spec, packaging/installer.iss, README.md (version 9.17.0)",
+    "CLAUDE.md, docs/architecture.md (drift sync 2877/176)"
+  ],
+  "mutation_checks": [
+    "zero-assert guard catches injected zero-assert test: MUTATION_OK",
+    "memory_check catches broken change-index path: MUTATION_OK"
+  ],
+  "limitations": [
+    "快集全量结果待后台任务完成后回填",
+    "exe 打包 E2E 未跑（发布前按 RELEASE_CHECKLIST 执行）",
+    "CI 三平台未验（本机 Windows）"
+  ]
+}

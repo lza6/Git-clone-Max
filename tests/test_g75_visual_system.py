@@ -99,7 +99,10 @@ class TestTypeScale(unittest.TestCase):
 
     def test_apply_type_tolerates_non_widget(self):
         # 非 QWidget（无 setFont）不得抛异常
-        apply_type(object(), "body", 1.0)
+        try:
+            apply_type(object(), "body", 1.0)
+        except Exception as exc:  # noqa: BLE001
+            self.fail(f"apply_type 对非 QWidget 抛了异常：{exc!r}")
 
 
 class TestFontFamilies(unittest.TestCase):
@@ -339,8 +342,14 @@ class TestProgressTicks(unittest.TestCase):
         opt = QStyleOptionViewItem()
         opt.rect = QRect(0, 0, 240, 28)
         idx = table.model().index(0, 1)
-        d.paint(painter, opt, idx)      # 不抛异常即为通过
+        try:
+            d.paint(painter, opt, idx)      # 不抛异常即为通过
+        except Exception as exc:  # noqa: BLE001
+            self.fail(f"paint 抛异常：{exc!r}")
         painter.end()
+        # 画过就应有像素变化（纯黑底上画了进度条）
+        self.assertNotEqual(pm.toImage().pixelColor(120, 14).name(), "#000000",
+                            "paint 后中心像素仍是背景色，绘制疑似未发生")
         table.deleteLater()
 
 

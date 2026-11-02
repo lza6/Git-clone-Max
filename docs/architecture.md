@@ -70,11 +70,11 @@
 | ADR-003 | 凭据加密落盘（DPAPI/Keyring/XOR 降级）+ redact 全出口打码 |
 | ADR-004 | 生态 agent 化：CLI --json 契约 + MCP 只读 + HTTP API 默认只读（显式 enable 才可写） |
 
-## 4. 模块规模基线（2026-11-02 v9.16.0 实测，`python scripts/dev_metrics.py` 可一键复测）
+## 4. 模块规模基线（2026-11-03 v9.17.0 实测，`python scripts/dev_metrics.py` 可一键复测）
 
 | 模块 | 行数 | 职责 |
 |------|------|------|
-| `gcm/ui/main_window.py` | 2839 | 主窗编排（已登记技术债；引擎构造在 `engine_factory.py`、顶栏齿条在 `status_strip.py`） |
+| `gcm/ui/main_window.py` | 2877 | 主窗编排（已登记技术债；引擎构造在 `engine_factory.py`、顶栏齿条在 `status_strip.py`） |
 | `gcm/git/service.py` | 1932 | Git 操作全链路（`_update` 已拆为 `_update_bare_mirror`/`_fetch_remote`/`_merge_remote`） |
 | `gcm/app/engine.py` | 1661 | 调度/并发/进度/重试/会话/事件发布 |
 | `gcm/ui/progress_table.py` | 787 | 进度表（delegate→`progress_delegate.py`、批次总览→`batch_overview.py`、结果文案→`result_labels.py`） |

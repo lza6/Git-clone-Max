@@ -1,7 +1,7 @@
 # Git-clone-Max
 
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
-> **当前版本：v9.16.0**（C3 收口：分阶段耗时埋点 + 目录大小落库缓存 + 历史治理出热路径；C4 检索：≥3 字走 FTS5、<3 字退回 LIKE，中文两字词终于搜得到；内置国内镜像已移除、默认直连；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）/ 历史治理挪出热路径 / 规模与泄漏基线脚本；内置国内镜像已移除、默认直连；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）、并发改值不再被自适应顶回、批次流控按线程池派生、替换引擎不再留活定时器、卡死任务有 UI 入口、WAL 批次收尾收缩、文档数字漂移与函数规模双守卫、依赖与 CI 静态检查器锁版本；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）
+> **当前版本：v9.17.0**（C3 收口：分阶段耗时埋点 + 目录大小落库缓存 + 历史治理出热路径；C4 检索：≥3 字走 FTS5、<3 字退回 LIKE，中文两字词终于搜得到；内置国内镜像已移除、默认直连；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）/ 历史治理挪出热路径 / 规模与泄漏基线脚本；内置国内镜像已移除、默认直连；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）、并发改值不再被自适应顶回、批次流控按线程池派生、替换引擎不再留活定时器、卡死任务有 UI 入口、WAL 批次收尾收缩、文档数字漂移与函数规模双守卫、依赖与 CI 静态检查器锁版本；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）
 > **v5.0：多平台直克隆** — GitLab / Gitee / Codeberg / Bitbucket / 自建主机（HTTPS/SSH/短格式/子组）同样支持。
 > 克隆目录一律 `host__作者__仓库`（GitHub 为 `作者__仓库`），本地改动永不覆盖。
 
@@ -151,7 +151,7 @@ Git-clone-Max/
 ├── skills/                  agent 技能包（gcm-clone/archive/report/diag/resume，各含 SKILL.md）
 ├── scripts/                 启动器（bat/ps1）+ E2E 冒烟 / 健康检查 / 发布 / 基准 / CI 快集
 ├── docs/                    架构 / ADR / 数据模型 / agent 契约 / SOP / 发布清单
-├── tests/                   单元 + 集成 + 真实 git E2E（173 个测试文件）
+├── tests/                   单元 + 集成 + 真实 git E2E（176 个测试文件）
 ├── requirements.txt         运行时依赖（PyQt6）
 └── pyproject.toml           项目元数据 + ruff / mypy 配置
 ```
@@ -270,9 +270,9 @@ python -m coverage run --source=gcm -m unittest discover -s tests
 ## 发布
 
 ```bash
-git tag v9.16.0   # 示例；发版时替换成当次版本（守卫会校验文档里的版本号）
+git tag v9.17.0   # 示例；发版时替换成当次版本（守卫会校验文档里的版本号）
 git push origin main --tags
-python scripts/publish_release.py --tag v9.16.0   # 自动上传 exe 到 GitHub Release
+python scripts/publish_release.py --tag v9.17.0   # 自动上传 exe 到 GitHub Release
 ```
 
 ## License
