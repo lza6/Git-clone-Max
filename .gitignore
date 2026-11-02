@@ -32,3 +32,8 @@ reports/ui-v9*/
 
 # 工作流状态文件：按约定不入库（test_g79 白名单守卫会拦）
 workflow_status.md
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+.beads-credential-key
+.beads/proxieddb/

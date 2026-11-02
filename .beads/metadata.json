@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "Git_clone_Max",
+  "project_id": "6bb6158c-c00e-4e97-abe5-6db19eed16df"
+}
