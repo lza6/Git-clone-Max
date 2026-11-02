@@ -406,6 +406,8 @@ class MainWindow(QMainWindow):
 
     def _restart_auto_update_timer(self):
         """G83：重排自动更新定时器（自适应间隔）。可能失败点只有 QTimer 已销毁。"""
+        # 0（关）必须先 stop —— 原实现无条件 stop，回归测试 test_restart_zero_stops 锁定
+        self._auto_update_timer.stop()
         mins = self._current_auto_update_minutes()
         if mins > 0 and self._auto_update_timer is not None:
             self._auto_update_timer.start(mins * 60 * 1000)
