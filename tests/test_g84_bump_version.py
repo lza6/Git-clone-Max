@@ -97,14 +97,16 @@ class TestVersionCarrierCoverage(unittest.TestCase):
 
 class TestBumpBehaviour(unittest.TestCase):
     def test_compute_next(self):
-        self.assertEqual(bump.compute_next("9.17.0", "patch", None), "9.17.1")
-        self.assertEqual(bump.compute_next("9.17.9", "minor", None), "9.18.0")
-        self.assertEqual(bump.compute_next("9.17.0", "major", None), "10.0.0")
-        self.assertEqual(bump.compute_next("9.17.0", None, "10.0.0"), "10.0.0")
+        # 用中性版本号（1.2.3…）：测试里出现**真实**版本字面量会被
+        # `test_every_file_with_version_literal_is_in_carrier_table` 判成"漏登记的载体"。
+        self.assertEqual(bump.compute_next("1.2.3", "patch", None), "1.2.4")
+        self.assertEqual(bump.compute_next("1.2.9", "minor", None), "1.3.0")
+        self.assertEqual(bump.compute_next("1.2.3", "major", None), "2.0.0")
+        self.assertEqual(bump.compute_next("1.2.3", None, "2.0.0"), "2.0.0")
         with self.assertRaises(RuntimeError):
-            bump.compute_next("9.17.0", None, "10")
+            bump.compute_next("1.2.3", None, "2")
         with self.assertRaises(RuntimeError):
-            bump.compute_next("9.17.0", None, None)
+            bump.compute_next("1.2.3", None, None)
 
     def test_dry_run_writes_nothing(self):
         before = {p: p.read_text(encoding="utf-8") for p in

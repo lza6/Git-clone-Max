@@ -30,6 +30,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+# `python scripts/bump_version.py` 的 sys.path[0] 是 scripts/，不是仓库根 ——
+# 不自插的话 `from gcm import ...` 会 ModuleNotFoundError（实测踩过）。
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 #: 版本载体表：(相对路径, 正则, 替换模板)。
 #: 每条都带足够上下文，保证只会命中"当前版本"这一个位置。
@@ -192,16 +196,22 @@ def is_dirty() -> bool:
 
 
 def verify(new: str) -> int:
-    from gcm import __version__  # noqa: PLC0415 - 必须在改盘后重新导入
-
-    if __version__ != new:
-        print(f"✗ 自证失败：gcm.__version__ = {__version__}，期望 {new}")
+    """改盘后自证：先**从文件读**版本（不 import —— 那个模块可能已被缓存成旧值），
+    再跑版本守卫测试（子进程带 PYTHONPATH，避免 `-m unittest` 找不到 gcm）。"""
+    text = (ROOT / "gcm" / "__init__.py").read_text(encoding="utf-8")
+    m = re.search(r'(?m)^__version__ = "([^"]+)"$', text)
+    got = m.group(1) if m else "?"
+    if got != new:
+        print(f"✗ 自证失败：gcm/__init__.py 里是 {got}，期望 {new}")
         return 1
+    import os
+
+    env = dict(os.environ, PYTHONPATH=str(ROOT))
     rc = subprocess.run(
         [sys.executable, "-m", "unittest",
          "tests.test_g66_patch.TestPackagingVersionSync",
          "tests.test_g84_bump_version"],
-        cwd=ROOT, text=True, encoding="utf-8", errors="replace").returncode
+        cwd=ROOT, text=True, encoding="utf-8", errors="replace", env=env).returncode
     if rc != 0:
         print("✗ 版本守卫未通过（见上）")
         return rc
