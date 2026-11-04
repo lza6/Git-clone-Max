@@ -76,7 +76,14 @@ GCM = ROOT / "gcm"
 #   halfclone 分类（git 缺失兜底）、event_sink（落盘永不抛）、
 #   sparkline（主题缺失退化）—— 全部是「绝不影响主流程」类防御分支；
 #   pass-only +3 中 log_buffer.stop 的既有 1 处非本批，event_sink 已收敛 2 处。
-BASELINE_EXCEPT = 680
+# - G84（本轮 / 9.17.x，except 680→704 / **pass-only 286 未涨**）：
+#   B0–B9 新增的防御分支 —— bump_version（改后自证失败回滚）、event_sink 生产入口、
+#   batch_plan（纯函数无 except）、backup（checkpoint/fsync/清理 tmp 三处**全部 warn 留痕**）、
+#   settings（fsync 不支持时只告警一次）、mcp_server（通知/kill_tree/terminate 三处 _log）、
+#   manage_panel（标记"计算中"失败 warn）、download_tools（状态栏提示失败 warn）。
+#   续批再加 11 处（G84-19..23：exc_dump 打码、diag 收 error.log、MCP 资源/提示词读取、kill_tree 的 taskkill/killpg 兜底、关窗反馈）—— 同样**全部带日志出口**，
+#   pass-only 仍是 286。
+BASELINE_EXCEPT = 728
 BASELINE_PASS_ONLY = 286
 
 

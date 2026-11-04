@@ -175,3 +175,71 @@ def open_target(owner) -> None:
         return
     if not open_folder(path):
         _msgbox().warning(owner, tr("无法打开目录"), path)
+
+
+def _read_text_any(path: str) -> str:
+    """按 utf-8 → gb18030 → latin-1 依次尝试读取文本。
+
+    审查发现：只按 `utf-8 errors=replace` 读，遇到常见的中文 GBK README 会变成
+    满屏替换符（然后"识别出 0 个链接"，用户以为功能坏了）。gb18030 是 GBK 的超集，
+    覆盖绝大多数中文文本；latin-1 保证任何字节都能读出（最后兜底，不抛）。
+    """
+    last: Exception | None = None
+    for enc in ("utf-8", "gb18030", "latin-1"):
+        try:
+            with open(path, encoding=enc) as fh:
+                return fh.read()
+        except UnicodeDecodeError as e:
+            last = e
+            continue
+    raise OSError(f"无法解码该文件：{last}")
+
+
+def import_readme_list(owner) -> None:
+    """G84-18：从 README / awesome 清单 / 收藏页文本里批量导入仓库地址。
+
+    为什么值得做：本产品的核心场景是「挂着刷几百个仓库」，而用户的第一批
+    仓库地址几乎都躺在某个 README 或清单里 —— 手抄是最劝退的一步。
+    实现只读本地文件、不联网（`extract_repo_urls` + `url_lib.parse_urls`），
+    风险面为零；徽章/图片地址会被 `parse_urls` 判为无效并**明确回显条数**，
+    不静默丢弃。
+    """
+    from ..app.url_lib import extract_repo_urls, parse_urls
+    QFileDialog = _fd()
+    mb = _msgbox()
+    path, _ = QFileDialog.getOpenFileName(
+        owner, tr("从清单导入仓库地址"), "",
+        tr("清单/文本 (*.md *.markdown *.txt *.rst);;所有文件 (*.*)"))
+    if not path:
+        return
+    try:
+        text = _read_text_any(path)
+    except OSError as e:
+        mb.warning(owner, tr("导入清单"), tr("读取失败：{err}").format(err=e))
+        return
+    urls = extract_repo_urls(text)
+    specs, invalid = parse_urls("\n".join(urls))
+    if not specs:
+        mb.information(
+            owner, tr("导入清单"),
+            tr("这份文件里没有识别出仓库地址（共发现 {n} 个链接）。").format(n=len(urls)))
+        return
+    # 去重口径与执行器一致：按 **folder_name**（目标目录）比，而不是按原始 URL 文本。
+    # 实测坑：输入区里的 `.../skills` 与解析出的 `.../skills.git` 是同一个仓库，
+    # 按文本比会重复导入一条，用户看到"导入了但没变化"。
+    existing = owner.repo_input.toPlainText()
+    seen_names = {sp.folder_name for sp in parse_urls(existing)[0]}
+    add = [sp.url_https for sp in specs if sp.folder_name not in seen_names]
+    if not add:
+        mb.information(owner, tr("导入清单"), tr("这些地址已经在输入区里了，无需重复导入。"))
+        return
+    owner.repo_input.appendPlainText("\n".join(add) + "\n")
+    msg = tr("已导入 {n} 个仓库地址").format(n=len(add))
+    if invalid:
+        msg += tr("（另有 {k} 个链接不是仓库，已跳过）").format(k=len(invalid))
+    try:
+        owner.statusBar().showMessage(msg)
+    except Exception as e:      # noqa: BLE001 —— 状态栏提示失败不影响导入结果
+        from ..app.applog import warn as _warn
+        _warn(f"导入清单：状态栏提示失败（导入已成功）：{e}")
+    mb.information(owner, tr("导入清单"), msg)

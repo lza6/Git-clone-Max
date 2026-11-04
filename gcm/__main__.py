@@ -72,6 +72,24 @@ def _strip_global_flags(argv) -> list:
     return [a for a in argv if a not in _GUI_ONLY_FLAGS]
 
 
+def _enable_event_sink(portable: bool = False) -> None:
+    """G84-5：把事件落盘挂到全局总线（GUI / CLI / --serve 三形态唯一入口）。
+
+    `app/event_sink.py` 是 Rev8 C5-3 的产物，实现完整但**此前没有任何生产调用点**
+    （全仓只有测试引用）→ 用户机器上「事件跨重启可审计」从未成立。
+    这里统一挂载；失败只记日志，绝不影响启动与克隆。
+    """
+    try:
+        from gcm.app.event_sink import enable_event_sink
+        enable_event_sink(get_data_dir(portable=portable))
+    except Exception as e:      # noqa: BLE001 —— 观测增强，失败不得拖垮入口
+        try:
+            from gcm.app.applog import warn as _warn
+            _warn(f"事件落盘挂载失败（不影响启动与克隆）：{e}")
+        except Exception:       # 日志系统自身不可用 → 只能放弃提示，但显式返回
+            return
+
+
 def main(argv=None) -> int:
     flags = _parse_flags(argv)
 
@@ -79,6 +97,9 @@ def main(argv=None) -> int:
     if flags["help"]:
         from gcm.cli import _print_help
         return _print_help()
+
+    # G84-5：事件落盘在**唯一入口**挂载，三种形态（GUI / --cli / --cli --serve）都覆盖
+    _enable_event_sink(portable=flags["portable"])
 
     # G49-3：CLI 批量克隆模式（离屏，不创建 GUI 窗口）
     if flags["cli"]:
@@ -113,10 +134,19 @@ def main(argv=None) -> int:
     db = Database(data_dir / "repos.db")
     settings = SettingsStore(data_dir / "settings.json")
     # G49-1：按 settings.language 初始化 i18n（设置页切换后重启生效）
+    # 注意：`load()` 必须在这一步就发生 —— 下面的"凭据解不开"告警依赖它记账
+    # （审查发现：先问 `undecryptable_fields()` 再 `load()`，恒为空 → 永不告警）。
     try:
         from gcm.i18n import set_language
         lang = str(getattr(settings.load(), "language", "zh") or "zh")
         set_language(lang)
+        # 启动后如实告知"有凭据解不开"（换机器/DPAPI 后端缺失）：用户需要知道
+        # 自己要重填哪个字段，而不是等到某个私有仓克隆失败才猜。
+        unreadable = settings.undecryptable_fields()
+        if unreadable:
+            from gcm.app.applog import warn as _warn
+            _warn("以下设置项的密文无法解密，已按原值保留（不会覆盖）："
+                  + "、".join(unreadable))
     except Exception:
         pass
 

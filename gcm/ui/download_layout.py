@@ -264,6 +264,12 @@ def build_task_list_row(owner) -> QWidget:
         tr("按 GitHub 用户名拉取 Star 列表并填入输入区（需要时在设置页填写令牌）"))
     owner.btn_star_import.clicked.connect(owner.import_starred)
     list_row.addWidget(owner.btn_star_import)
+    # G84-18：从 README / awesome 清单批量导入地址（纯本地解析，零网络）
+    owner.btn_readme_import = QPushButton(tr("导入清单…"))
+    owner.btn_readme_import.setToolTip(
+        tr("从 README / awesome 清单 / 收藏页文本里批量提取仓库地址并填入输入区"))
+    owner.btn_readme_import.clicked.connect(owner.import_readme_list)
+    list_row.addWidget(owner.btn_readme_import)
     list_row.addStretch(1)
     return wrap
 

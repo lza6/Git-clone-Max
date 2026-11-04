@@ -1,0 +1,3 @@
+# 独立审查两轮整改：MCP 异步作业死锁、预览说反、写锁失效等 11 项
+第 1 轮审查（只读代理，有罪推定）判 Request Changes：① clone_batch(async) 因先读 stderr 后读 stdout、Windows 管道 4KB，20 仓以上永久死锁 → 改独立线程排空 stdout；② 批次预览把「目录被占」说成不会覆盖，而执行器在 local_path 为空时 shutil.rmtree 重建 → 新增 replace 档并抽纯函数双路径可测；③ _WRITE_LOCK 只锁通知、主循环 7 处裸写 → 统一 _write_message 唯一入口。另有 8 项 Required（作业超时与收尸、取消状态机、备份校验前置、空库资源、事件落盘改每进程单文件、关窗异常判别、密文记账可删除、tools/list 泄漏内部字段）与 5 条建议全部落地。整改中 mcp_server 越过 800 行上限 → 作业机制拆到 gcm/mcp_jobs.py。第 2 轮 Verdict：Approve；其列出的 7 项非阻塞（含「启动凭据告警因先于 load 而永不触发」的真 bug）也已修完。
+@verify 快集 1973 例 0 失败 · 覆盖率 81% · 新守卫 test_large_stdout_job_finishes（可注入假 CLI 复现死锁）/ test_expanding_replace 系列 / test_stdio_writes_all_locked · TestShutdownClearsInProgress 20 轮 20/20 · 审查员独立复核 C1/C2/C3（其反向验证：旧读顺序 39.9s 卡死、stdout 0 字符）

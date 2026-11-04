@@ -24,12 +24,14 @@ import json
 import os
 import sqlite3
 import sys
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from gcm import __version__ as CONTRACT_VERSION
 
+from .mcp_jobs import cancel_job, job_snapshot, start_job
 from .util.redact import redact, redact_row
 
 _MCP_DISABLED_RC = 3  # 与 gcm/cli.py ECODE_MCP_DISABLED 一致
@@ -39,9 +41,11 @@ _SENSITIVE_COLS = ("token", "host_tokens", "ssh_key", "url")
 _TOOLS: list[dict[str, Any]] = [
     {
         "name": "clone_batch",
+        "mutate": True,
         "description": (
             "批量克隆仓库到数据目录（**写操作**：触网 + 写盘；仅 --allow-mutate "
-            "时暴露）。复用 CLI --json 子进程，返回与 CLI 相同的顶层契约。"),
+            "时暴露）。复用 CLI --json 子进程，返回与 CLI 相同的顶层契约。"
+            "传 dry_run=true 则只返回本地预检计划（不联网、不写盘）。"),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -49,6 +53,18 @@ _TOOLS: list[dict[str, Any]] = [
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "仓库地址列表（每项一个 URL）",
+                },
+                # G84-13：让 agent 能"先看看会发生什么"再决定要不要写盘。
+                # 与 CLI --dry-run 共用同一份实现（app/batch_plan.py），不是第二套判定。
+                "dry_run": {
+                    "type": "boolean",
+                    "description": "true = 只返回预览计划（将克隆/将更新/目录被占/"
+                                   "重复/无效），不执行克隆",
+                },
+                "async": {
+                    "type": "boolean",
+                    "description": "true = 立即返回 job_id 并在后台执行（用 "
+                                   "job_status 查询、job_cancel 取消）；默认同步等待",
                 },
             },
             "required": ["urls"],
@@ -87,8 +103,143 @@ _TOOLS: list[dict[str, Any]] = [
         "description": "读取全局统计概览（仓库数/同步次数/成功失败，只读）",
         "inputSchema": {"type": "object", "properties": {}},
     },
+    {
+        # G84-13：异步作业的状态查询（只读，任何时候都可用）
+        "name": "job_status",
+        "description": ("查询 clone_batch(async=true) 启动作业的进度/结果（只读）。"
+                        "未完成时 finished=false；完成后 result 与同步版返回同形。"),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"job_id": {"type": "string", "description": "作业 ID"}},
+            "required": ["job_id"],
+        },
+    },
+    {
+        # G84-13：取消作业（写操作 → 与 clone_batch 同一条放行门槛）
+        "name": "job_cancel",
+        "mutate": True,
+        "description": ("取消一个正在跑的 clone_batch 作业（终止子进程树）。"
+                        "需 GCM_MCP_ENABLE=1 + --allow-mutate。"),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"job_id": {"type": "string", "description": "作业 ID"}},
+            "required": ["job_id"],
+        },
+    },
 ]
 
+
+#: MCP 资源（G84-23）：把「只读事实」直接暴露成可寻址的 URI，
+#: 让 agent 不必先调工具再自己拼装。**全部只读、全部过 redact**。
+_RESOURCES: list[dict[str, Any]] = [
+    {
+        "uri": "gcm://status",
+        "name": "统计概览",
+        "description": "仓库数/同步次数/成功失败（与 status 工具同源）",
+        "mimeType": "application/json",
+    },
+    {
+        "uri": "gcm://repos",
+        "name": "仓库清单",
+        "description": "全部仓库元数据（已剔除 token/host_tokens/ssh_key 敏感列）",
+        "mimeType": "application/json",
+    },
+    {
+        "uri": "gcm://report/markdown",
+        "name": "Markdown 报表",
+        "description": "人类可读的仓库报表（内存生成，不写盘）",
+        "mimeType": "text/markdown",
+    },
+]
+
+#: MCP 提示词（G84-23）：把「怎么用这个服务」写进协议，而不是让人去翻文档。
+_PROMPTS: list[dict[str, Any]] = [
+    {
+        "name": "clone-batch",
+        "description": "把一批仓库地址交给 Git-clone-Max 克隆（会先给出预览计划）",
+        "arguments": [
+            {"name": "urls", "description": "仓库地址，逗号或换行分隔", "required": True},
+        ],
+    },
+    {
+        "name": "diagnose-failure",
+        "description": "针对某个仓库的同步失败，给出排查顺序（基于错误分类与诊断项）",
+        "arguments": [
+            {"name": "repo", "description": "owner/repo 或 host/owner/repo",
+             "required": True},
+        ],
+    },
+]
+
+
+def _resource_read(uri: str, data_dir: Path) -> dict[str, Any]:
+    """读取一个 `gcm://` 资源，返回 MCP `resources/read` 的 contents 条目。
+
+    **只读**：只查库/内存生成报表，不写盘、不触网；文本出站前过 `redact`。
+    未知 URI 抛 ValueError（由调用方转成 JSON-RPC 错误码 -32602）。
+    """
+    db = _open_db(data_dir)
+    try:
+        if uri == "gcm://status":
+            payload = json.dumps(db.stats_overview(), ensure_ascii=False, indent=2)
+            return {"uri": uri, "mimeType": "application/json",
+                    "text": redact(payload)}
+        if uri == "gcm://repos":
+            rows = _list_repos(db, host=None)
+            payload = json.dumps({"repos": rows, "count": len(rows)},
+                                 ensure_ascii=False, indent=2)
+            return {"uri": uri, "mimeType": "application/json",
+                    "text": redact(payload)}
+        if uri == "gcm://report/markdown":
+            if isinstance(db, _EmptyDB):
+                return {"uri": uri, "mimeType": "text/markdown",
+                        "text": "# Git-clone-Max 报表\n\n暂无数据（该数据目录还没有仓库记录）。\n"}
+            import tempfile
+
+            from .reports import export_markdown
+            with tempfile.TemporaryDirectory() as td:
+                out = Path(td) / "r.md"
+                export_markdown(db, out)
+                text = out.read_text(encoding="utf-8", errors="replace")
+            return {"uri": uri, "mimeType": "text/markdown", "text": redact(text)}
+    finally:
+        db.close()
+    raise ValueError(f"未知资源：{uri}（可用：{', '.join(r['uri'] for r in _RESOURCES)}）")
+
+
+def _prompt_get(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """取一条提示词（MCP `prompts/get`）：把「怎么用」写进协议而不是文档。"""
+    if name == "clone-batch":
+        urls = str(arguments.get("urls") or "").strip()
+        if not urls:
+            raise ValueError("clone-batch 需要 urls 参数")
+        steps = (
+            "步骤：① 先调 clone_batch 且 dry_run=true 看预览（将克隆/将更新/目录被占/"
+            "重复/无效）；② 预览没问题再调 clone_batch（长批次用 async=true + "
+            "job_status 轮询）；③ 完成后调 status 或读 gcm://repos 确认入库。"
+        )
+        text = "用 Git-clone-Max 批量克隆下面这些仓库：" + "\n" + urls + "\n" + steps
+        return {"description": "批量克隆（先预览再执行）",
+                "messages": [{"role": "user",
+                              "content": {"type": "text", "text": redact(text)}}]}
+    if name == "diagnose-failure":
+        repo = str(arguments.get("repo") or "").strip()
+        if not repo:
+            raise ValueError("diagnose-failure 需要 repo 参数")
+        steps = "".join([
+            "1) 读 gcm://repos 确认它是否入库、本地路径是否存在；" + "\n",
+            "2) 看 status 的失败计数与最近错误分类（network/auth/platform/local/"
+            "not_found/cancelled）；" + "\n",
+            "3) auth 类 → 检查设置页「按平台凭据」是否给该 host 配了 token；" + "\n",
+            "4) network 类 → 用 CLI `--diag` 跑环境体检，再考虑镜像/代理；" + "\n",
+            "5) not_found → 大概率是仓库改名或私有仓无权限；" + "\n",
+            "6) 仍然不明 → 导出诊断包（已打码）再分析。",
+        ])
+        text = "仓库 `" + repo + "` 同步失败时的排查顺序：" + "\n" + steps
+        return {"description": "失败排查顺序",
+                "messages": [{"role": "user",
+                              "content": {"type": "text", "text": redact(text)}}]}
+    raise ValueError(f"未知提示词：{name}（可用：{', '.join(p['name'] for p in _PROMPTS)}）")
 
 @dataclass
 class McpRequest:
@@ -246,7 +397,43 @@ def _export_report(db, fmt: str, out_dir: str | None) -> str:
 
 def _readonly_tools() -> list[dict[str, Any]]:
     """未授权 mutate 时暴露的工具集（clone_batch 不存在 —— 不是"存在但报错"）。"""
-    return [t for t in _TOOLS if t["name"] != "clone_batch"]
+    return [t for t in _TOOLS if not t.get("mutate")]
+
+
+# ---------------------------------------------------------------- G84-13 异步作业
+# 背景（G84 实测）：`clone_batch` 原来在 stdio 循环里**同步** `subprocess.run(timeout=3600)`
+# —— 克隆几百个仓库时，整个 MCP 通道最长 1 小时不响应：没有 progress、不能取消、
+# 连 `ping` 都不回。客户端只能超时断开，而进程其实还在跑（没人能停它）。
+#
+# 修法（契约只增不改）：
+#   * `clone_batch` 增加 `async` 参数：true 时立即返回 `{job_id,status:"running"}`；
+#   * 新增只读工具 `job_status` 与写工具 `job_cancel`（都需显式放行才出现在列表里）；
+#   * 默认行为（不传 async）**完全不变**，老客户端与既有契约测试不受影响。
+
+_WRITE_LOCK = threading.Lock()
+
+
+def _write_message(obj: dict[str, Any], out: Any = None) -> None:
+    """**唯一的 stdout 写入口**（C3 修复）。
+
+    原实现只有 `_emit_notification` 加锁，主循环的 8 处 `out.write(...)` 一处都没加
+    —— 作业线程发进度通知与主循环回响应会并发写同一个 stdout，而 `write()` 与
+    `flush()` 还是两次调用；一旦交错，客户端收到的是非法 JSON-RPC 帧。
+    现在所有写出都经过这里，`_WRITE_LOCK` 才真正覆盖「作业线程 vs 主循环」。
+    """
+    target = out if out is not None else sys.stdout
+    line = json.dumps(obj, ensure_ascii=False) + "\n"
+    with _WRITE_LOCK:
+        target.write(line)
+        target.flush()
+
+
+def _emit_notification(kind: str, payload: dict[str, Any]) -> None:
+    """从工作线程安全地写一条 JSON-RPC 通知（与主循环共用同一个写锁）。"""
+    try:
+        _write_message({"jsonrpc": "2.0", "method": kind, "params": payload})
+    except Exception as e:      # noqa: BLE001 —— 通知失败不得影响作业本身
+        _log(f"进度通知发送失败（不影响作业）：{e}")
 
 
 def _handle_call(msg_id: Any, params: dict[str, Any], data_dir: Path,
@@ -284,6 +471,24 @@ def _handle_call(msg_id: Any, params: dict[str, Any], data_dir: Path,
             if not isinstance(urls, list) or not urls:
                 return _error(msg_id, -32602, "urls 必须是非空字符串数组")
             body = "\n".join(str(u) for u in urls) + "\n"
+            if bool(args.get("dry_run")):
+                # G84-13：预览不落盘、不触网（连子进程都不起），与 CLI --dry-run 同源
+                from .app.batch_plan import plan_batch
+                plan = plan_batch(body, data_dir)
+                return _result(msg_id, {"dry_run": True, "plan": plan.to_dict()})
+            if bool(args.get("async")):
+                # G84-13：异步作业 —— 立即返回 job_id，通道不再被阻塞 1 小时
+                token = (params.get("_meta") or {}).get("progressToken")
+
+                def _on_progress(n: int, text: str) -> None:
+                    # 只有客户端给了 progressToken 才发（MCP 规范；无 token 会污染读流）
+                    if token is not None and n % 2 == 0:
+                        _emit_notification("notifications/progress",
+                                           {"progressToken": token,
+                                            "progress": n, "message": text})
+
+                started = start_job(data_dir, body, token, on_progress=_on_progress)
+                return _result(msg_id, started)
             import subprocess as _sp
             cmd = [sys.executable, "-m", "gcm", "--cli", "--json",
                    "--dir", str(data_dir)]
@@ -299,6 +504,21 @@ def _handle_call(msg_id: Any, params: dict[str, Any], data_dir: Path,
                                      "redacted": redact(proc.stdout or "")}}
             return _result(msg_id, {"clone_result": payload,
                                     "cli_exit_code": proc.returncode})
+        if name == "job_status":
+            job_id = str(args.get("job_id") or "")
+            snap = job_snapshot(job_id)
+            if snap is None:
+                return _error(msg_id, -32602, f"未知 job_id：{job_id}")
+            return _result(msg_id, snap)
+        if name == "job_cancel":
+            if not allow_mutate:
+                return _error(msg_id, -32000,
+                              "job_cancel 需要显式启用（GCM_MCP_ENABLE=1 + --allow-mutate）")
+            job_id = str(args.get("job_id") or "")
+            out = cancel_job(job_id)
+            if out is None:
+                return _error(msg_id, -32602, f"未知 job_id：{job_id}")
+            return _result(msg_id, out)
         return _error(msg_id, -32601, f"未知工具：{name}")
     except ValueError as e:
         # G69-18 修复：参数类错误（如 out_dir 越界）必须转成 **JSON-RPC 错误**返回。
@@ -329,29 +549,53 @@ def run_stdio(data_dir: Path, allow_export: bool,
             msg_id = req.get("id")
             method = req.get("method")
             if method == "initialize":
-                out.write(json.dumps(_result(msg_id, {
+                _write_message(_result(msg_id, {
                     "protocolVersion": "2025-03-26",
                     "capabilities": {
                         "tools": {"listChanged": False},
-                        "resources": {},
-                        "prompts": {},
+                        # G84-23：resources/prompts 此前是空对象（agent 只能人读文档）
+                        "resources": {"subscribe": False, "listChanged": False},
+                        "prompts": {"listChanged": False},
                     },
                     "serverInfo": {"name": "gcm", "version": CONTRACT_VERSION},
-                }), ensure_ascii=False) + "\n")
-                out.flush()
+                }), out)
             elif method == "notifications/initialized":
                 pass  # 客户端确认，无响应体
             elif method == "tools/list":
                 # Rev8 C5-1：未授权 mutate 时 clone_batch **不出现在列表里**
                 tools = _TOOLS if allow_mutate else _readonly_tools()
-                out.write(json.dumps(_result(msg_id, {"tools": tools}),
-                                     ensure_ascii=False) + "\n")
-                out.flush()
+                # R10：`mutate` 是内部授权标记，MCP `Tool` 对象没有这个字段；
+                # 严格校验 additionalProperties=false 的客户端会因此拒绝整份列表。
+                tools = [{k: v for k, v in t.items() if k != "mutate"} for t in tools]
+                _write_message(_result(msg_id, {"tools": tools}), out)
             elif method == "tools/call":
                 resp = _handle_call(msg_id, req.get("params") or {}, data_dir,
                                     allow_export, allow_mutate)
-                out.write(json.dumps(resp, ensure_ascii=False) + "\n")
-                out.flush()
+                _write_message(resp, out)
+            elif method == "resources/list":
+                _write_message(_result(msg_id, {"resources": _RESOURCES}), out)
+            elif method == "resources/read":
+                uri = str((req.get("params") or {}).get("uri") or "")
+                try:
+                    content = _resource_read(uri, data_dir)
+                    resp = _result(msg_id, {"contents": [content]})
+                except ValueError as e:
+                    resp = _error(msg_id, -32602, str(e))
+                except Exception as e:      # noqa: BLE001 —— 不能把 stdio 通道带崩
+                    resp = _error(msg_id, -32603, f"读取资源失败：{e}")
+                _write_message(resp, out)
+            elif method == "prompts/list":
+                _write_message(_result(msg_id, {"prompts": _PROMPTS}), out)
+            elif method == "prompts/get":
+                params = req.get("params") or {}
+                try:
+                    resp = _result(msg_id, _prompt_get(str(params.get("name") or ""),
+                                                       params.get("arguments") or {}))
+                except ValueError as e:
+                    resp = _error(msg_id, -32602, str(e))
+                except Exception as e:      # noqa: BLE001 —— 同上，通道优先
+                    resp = _error(msg_id, -32603, f"读取提示词失败：{e}")
+                _write_message(resp, out)
             else:
                 _log(f"忽略未知方法：{method}")
     except KeyboardInterrupt:

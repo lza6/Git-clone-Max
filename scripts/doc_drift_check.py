@@ -13,7 +13,8 @@ repo_db 799 实测 793；settings_panel 779 实测 798），`CLAUDE.md` 写「14
 检查项（每一项都必须能单独报错并给出**该改成什么**）：
 1. 模块行数表：`CLAUDE.md` §6 与 `docs/architecture.md` §4 里声明的行数 vs 实测（容差 ±5）；
 2. 超 100 行函数数：`CLAUDE.md` 声称值 vs 实测（精确）；
-3. 测试文件数：`README.md` / `CLAUDE.md` / `tests/test_g79_repo_hygiene._EXPECTED_TEST_FILES` 三处 = 实测；
+3. 测试文件数：`README.md` / `CLAUDE.md` /
+   `tests/test_g79_repo_hygiene._EXPECTED_TEST_FILES` 三处 = 实测；
 4. 技能包数：`README.md` 声称值 vs `skills/gcm-*/` 实际目录数；且每个技能包必须有 `SKILL.md`；
 5. 版本号：`README.md` 的「当前版本：vX.Y.Z」= `gcm.__version__`。
 
@@ -209,6 +210,80 @@ def check_schema_version() -> list[str]:
     return []
 
 
+#: README 功能表必须提到的「已交付能力」：能力文件 → README 里应出现的关键词。
+#: 每一项都是**真的交付过但门面漏写**的类型（G84 实测：sparkline / 日志过滤 / 体检
+#: 三项在 v9.16.0 交付，README 功能表一个字都没提）。
+README_CAPABILITY_MARKERS: tuple[tuple[str, str], ...] = (
+    ("gcm/ui/status_strip.py", "齿条"),
+    ("gcm/ui/sparkline.py", "趋势"),
+    ("gcm/ui/command_palette.py", "命令面板"),
+    ("gcm/ui/radar_chart.py", "雷达"),
+    ("gcm/app/adaptive_interval.py", "自适应"),
+    ("gcm/app/halfclone.py", "半成品"),
+)
+
+
+def check_readme_banner() -> list[str]:
+    """README 抬头不许「腐烂」：版本只写一次、`__changelog__` 指引只出现一次。
+
+    G84 实测：`README.md:4` 那句「逐版本历史见 `gcm/__init__.py` 的 `__changelog__`」
+    被重复拼接了 5 次、括号错位，内容还停在 C3/C4 —— 而当时没有任何检查会红
+    （`check_version` 只校验版本号数字，不校验这句话出现了几次）。
+    """
+    head = "\n".join(_read("README.md").splitlines()[:12])
+    problems: list[str] = []
+    n_changelog = head.count("__changelog__")
+    if n_changelog > 1:
+        problems.append(
+            f"README.md 前 12 行里 `__changelog__` 出现 {n_changelog} 次"
+            "（应 ≤1，重复拼接说明横幅被反复追加）→ 只保留一句「逐版本历史见 …」")
+    n_version = head.count("当前版本")
+    if n_version != 1:
+        problems.append(
+            f"README.md 前 12 行里「当前版本」出现 {n_version} 次（应恰好 1 次）")
+    return problems
+
+
+def check_ci_pins() -> list[str]:
+    """CI 的依赖版本必须只有一处真值：`requirements-build.txt`。
+
+    G84 实测两件事，都是「文件里有锁 ≠ CI 已锁」的变体：
+    - `ci.yml` 曾硬编码 `coverage==7.16.0`，而 `requirements-build.txt` 钉的是
+      `7.16.2`；因为紧跟一行会装 `-r requirements-build.txt`，实际生效是对的，
+      但那两行**会误导维护者**（改一边以为生效了）；
+    - `CLAUDE.md` §6 至今还写着「CI 的 Lint/Type 是裸 `pip install ruff`」——
+      代码早就改成读锁文件了，文档比代码旧。
+    这里锚住**代码事实**：lint 工具来自锁文件、且 `ci.yml` 不再硬编码工具版本。
+    """
+    ci = _read(".github/workflows/ci.yml")
+    problems: list[str] = []
+    if "-r requirements-build.txt" not in ci:
+        problems.append(".github/workflows/ci.yml 不再安装 requirements-build.txt"
+                        "（ruff/mypy/coverage 版本失去单源）")
+    hardcoded = re.findall(r"pip install[^\n]*\b(?:coverage|ruff|mypy)==", ci)
+    if hardcoded:
+        problems.append(
+            f".github/workflows/ci.yml 有 {len(hardcoded)} 处硬编码 coverage/ruff/mypy 版本"
+            "（唯一真值应是 requirements-build.txt）")
+    return problems
+
+
+def check_readme_capability_markers() -> list[str]:
+    """交付过的高价值 UI/逻辑能力，必须在 README 功能表里被提到。
+
+    只查「文件存在但 README 一个字不提」这一种情形：它说明**用户不知道有这个功能**。
+    README 具体怎么措辞不归这里管（不做文本风格检查）。
+    """
+    readme = _read("README.md")
+    missing: list[str] = []
+    for rel, keyword in README_CAPABILITY_MARKERS:
+        if not (ROOT / rel).is_file():
+            continue                      # 能力被删了就是别的检查的事
+        if keyword not in readme:
+            missing.append(f"{rel} 已交付，但 README 里没有「{keyword}」→ 用户发现不了")
+    return missing
+
+
 def check_version() -> list[str]:
     """README「当前版本：vX.Y.Z」= gcm.__version__。"""
     real = dev_metrics.version()
@@ -235,6 +310,9 @@ def main(argv: list[str]) -> int:
         ("技能包数", check_skills),
         ("版本号", check_version),
         ("数据库 schema 版本", check_schema_version),
+        ("README 横幅不腐烂", check_readme_banner),
+        ("CI 依赖版本单源", check_ci_pins),
+        ("已交付能力进 README", check_readme_capability_markers),
     ]
     problems: list[str] = []
     for label, fn in checks:

@@ -28,19 +28,38 @@ def _fmt_env() -> str:
     return "\n".join(lines)
 
 
+def _redact_text(text: str) -> str:
+    """落盘前打码（G84-19）。
+
+    `error.log` 曾是**唯一没打码的持久化出口**：`applog` 有 `RedactingFormatter`，
+    但未捕获异常走的是这里 —— 而 traceback 天然带 URL（含 `user:pass@`）、
+    命令行参数（`-c http.extraHeader=Authorization: Bearer …`）、以及我们自己的
+    `context=`（可能含 token）。用户把 error.log 贴进 issue 就等于泄露凭据。
+    """
+    try:
+        from gcm.util.redact import redact
+        return redact(text, userprofile=True)
+    except Exception:      # 打码器自身不可用：宁可不写，也不写明文
+        return "(打码失败，已省略该段)\\n"
+
+
 def write_error_log(log_path: Path, exc: BaseException,
                     context: Optional[dict] = None) -> None:
-    """把未捕获异常写入 log_path（追加），含 traceback 与环境信息。"""
+    """把未捕获异常写入 log_path（追加），含 traceback 与环境信息。
+
+    **所有内容落盘前过 `redact`**（G84-19）：traceback 与 context 都可能带凭据。
+    """
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
+        body = "\n" + "=" * 60 + "\n" + _fmt_env() + "\n"
+        if context:
+            body += _redact_text("context=" + repr(context) + "\n")
+        body += _redact_text("".join(traceback.format_exception(
+            type(exc), exc, exc.__traceback__)))
         with open(log_path, "a", encoding="utf-8") as f:
-            f.write("\n" + "=" * 60 + "\n")
-            f.write(_fmt_env() + "\n")
-            if context:
-                f.write("context=" + repr(context) + "\n")
-            traceback.print_exception(type(exc), exc, exc.__traceback__, file=f)
+            f.write(body)
     except Exception:
-        pass  # 兜底失败不致命
+        pass  # 兜底失败不致命（此时连日志都没法写）
 
 
 _installed = {"hook": False}

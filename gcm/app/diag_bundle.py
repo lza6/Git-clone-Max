@@ -10,6 +10,7 @@
 - `events.jsonl`    EventBus 最近事件（默认 500 条；黑匣子）
 - `app.log`         `app.log` 末尾若干行
 - `notify.log`      通知审计末尾若干行（若存在）
+- `error.log`       未捕获异常栈末尾若干行（G84-19 起纳入；落盘前已打码）
 - `manifest.json`   版本/时间/文件清单/事件统计
 
 **不包含**：settings.json（含加密凭据）、仓库内容、数据库文件。
@@ -143,12 +144,16 @@ def build_diag_bundle(out_path: str | Path, *,
     events_text, event_count, events_truncated = _events_jsonl(event_bus)
     app_log = _redact_text(_tail_text(data / app_log_name))
     notify_log = _redact_text(_tail_text(data / notify_log_name))
+    # G84-19：error.log 也收进来（它现在**落盘时已打码**，这里再过一遍 redact 是双保险）。
+    # 不收它的话，用户报"崩溃了"时诊断包里恰恰没有崩溃栈。
+    error_log = _redact_text(_tail_text(data / "error.log"))
 
     payloads: dict[str, str] = {
         "report.txt": report,
         "events.jsonl": events_text,
         "app.log": app_log,
         "notify.log": notify_log,
+        "error.log": error_log,
     }
     # 空文件也保留（明确「没有」而不是「忘了放」）
     files = {name: len(text.encode("utf-8")) for name, text in payloads.items()}

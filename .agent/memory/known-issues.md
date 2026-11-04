@@ -34,16 +34,23 @@ owner: memory-keeper
 | 2 | **X-4**：1366×768 笔记本上「保存清单/载入/导入 Star」被顶部滚动区裁到 10px（`visibleRegion` 86×10/86×42），1080p@150% 下 0×0 | **已闭环**：清单行搬出滚动区（`build_task_list_row`）+ 动作区不可压扁 + 矮窗口让可滚动区让位；守卫 `test_ui_compact_visibility`（9 个尺寸 + 变异自检） |
 | 3 | **X-5**：72 个 `tr()` 键不在字典里 → 英文模式原样显示中文 | **已闭环**：补齐 72 键（含英文翻译）+ `scripts/i18n_coverage.py` + `tests/test_i18n_coverage.py`（三条断言） |
 
-## 仍然开放（v9.12.0 之后）
+## 仍然开放（2026-11-04 G84 逐条复核后）
+
+> 复核纪律：每条都必须能指到**现在的代码**。已完成的三条曾在这里挂了两个版本
+> （C2/C3/C4/C5 早已交付），因为没有任何守卫盯「这条还成立吗」—— 现在由
+> `tests/test_g84_wiring.py` 守「写好的必须有调用点」这一类，但**叙事型条目仍需人复核**。
 
 | # | 事项 | 状态 |
 |---|------|------|
-| 1 | **1366×768 笔记本上「保存清单/载入/导入 Star」被裁到 10px**（实测 `visibleRegion` 86×10/86×42；1080p@150% 下完全不可见） | 待 C2 批（Rev7 §3.1 X-4） |
-| 2 | 管理页「仓库大小」列可能永久空白（`dir_size` 15 万文件实测 484ms > 600ms 单次定时器） | 待 C2 批（U-6） |
-| 3 | `prune_history` 全表窗口函数跑在 GUI 线程（10 万行 164ms）；DB 写方法异常路径无 rollback；无分阶段耗时埋点（C-8/C-9/C-29） | 待 C3 批 |
-| 4 | 检索仍是 LIKE 单路（中文两字词可用、无相关性排序/高亮）；**注意** FTS5 `trigram` 对两字中文查询零命中，必须双路 | 待 C4 批（Rev7 §2.1） |
-| 5 | MCP 仍只有 4 个只读工具；事件不落盘；本地 API 无 token | 待 C5 批 |
-| 6 | A-3-2 engine_factory mypy 标注 / A-3-3 `time.sleep` 治理 / A-3-4 i18n 覆盖率守卫（英文模式仍有 58 个 tr 键回退中文） | 待后续批 |
+| 1 | ~~1366×768「保存清单/载入/导入 Star」被裁到 10px~~ | **已闭环**（v9.12.1 X-4：清单行搬出滚动区 + `test_ui_compact_visibility` 9 尺寸） |
+| 2 | ~~管理页「仓库大小」列永久空白（600ms 定时器猜算完时间）~~ | **已闭环**：C2-2 改「线程算完 emit 回填」+ C3-1 两级缓存；**G84 补上最后一环**——`invalidate_size_cache`/`clear_dir_sizes` 此前零生产调用点（刷新按钮没接），现已接到「刷新列表」并有守卫 |
+| 3 | ~~`prune_history` 全表窗口函数跑在 GUI 线程；无分阶段耗时埋点~~ | **已闭环**：C3-2 改为批次收尾 `prune_history_if_due`；C3-4 `stage_json` 四段埋点（v9.14/v9.15） |
+| 4 | ~~检索 LIKE 单路；trigram 对两字中文零命中~~ | **已闭环**：C4 双路（≥3 字 FTS5 bm25 / <3 字 LIKE），`test_c4_search` 24 例 |
+| 5 | ~~MCP 仅 4 个只读工具；事件不落盘；本地 API 无 token~~ | **已部分闭环**：`clone_batch`（`--allow-mutate`）+ `api_token` Bearer + **G84 把 `event_sink` 接上生产入口**（此前只有测试调用）。仍未做：MCP 长任务 `progress`/`cancel`、MCP 审计行、`resources`/`prompts` |
+| 6 | 英文模式 tr 键回退中文（历史登记 58 键） | **待复核**：`i18n_coverage.py` 已 OK（ZH/EN 键集相等且 EN 无中文残留），但"运行时是否仍有回退"未跑真实英文路径 → 标 `待验证` |
+| 7 | **MCP `clone_batch` 在 stdio 循环里同步跑子进程（timeout=3600）**：最长 1 小时无 progress、不可取消 | **新增（G84 实测）**：`gcm/mcp_server.py:288-294` |
+| 8 | **`backup_to()` 备份非原子**：`wal_checkpoint(TRUNCATE)` + `shutil.copy2`，无 tmp+replace/无覆盖保护/无 `quick_check` → 中途崩溃得到半个备份 | **新增（G84 实测）**：`gcm/db/repo_db.py:594-613` |
+| 9 | 管理页「健康 5/5」无解释（ToolTip 只挂 col 0/2/3/4）；`mirror_used`/`degrade_path` 只到 CLI，GUI 看不到 | **新增（G84 实测）**：`manage_model.py:214`、`gcm/ui/` 零命中 |
 
 ## 未闭环功能
 

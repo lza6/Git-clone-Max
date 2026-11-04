@@ -1,0 +1,94 @@
+{
+  "task_id": "G84",
+  "status": "done",
+  "timestamp": "2026-11-04",
+  "scope": "接线缺口 / 数据安全 / 执行前预览 / MCP 长任务与资源 / 质量门禁 / UI 可解释性",
+  "baseline": {
+    "commit_at_start": "b705df1",
+    "version_at_start": "9.17.0",
+    "fast_suite_at_start": "Ran 1868 · failures=1 (test_g79_repo_hygiene)"
+  },
+  "commands_executed": [
+    {"cmd": "./.venv/Scripts/python.exe -m ruff check gcm", "exit_code": 0, "raw_output_tail": "All checks passed!"},
+    {"cmd": "./.venv/Scripts/python.exe -m mypy gcm", "exit_code": 0, "raw_output_tail": "Success: no issues found in 121 source files"},
+    {"cmd": "./.venv/Scripts/python.exe -m vulture gcm scripts/vulture_whitelist.py --min-confidence 80", "exit_code": 0, "raw_output_tail": "(no output = 0 findings)"},
+    {"cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m coverage run --source=gcm scripts/ci_run_fast.py", "exit_code": 0, "raw_output_tail": "[ci_run_fast] 合计：Ran 1965 tests · failures=0 errors=0 skipped=4 / EXIT=0"},
+    {"cmd": "./.venv/Scripts/python.exe -m coverage report --include=\"gcm/*\"", "exit_code": 0, "raw_output_tail": "TOTAL 17205 2908 4392 776 81%"},
+    {"cmd": "./.venv/Scripts/python.exe scripts/doc_drift_check.py", "exit_code": 0, "raw_output_tail": "DRIFT 0"},
+    {"cmd": "./.venv/Scripts/python.exe scripts/i18n_coverage.py", "exit_code": 0, "raw_output_tail": "I18N OK (ZH/EN 596 keys each)"},
+    {"cmd": "./.venv/Scripts/python.exe scripts/memory_check.py", "exit_code": 0, "raw_output_tail": "memory_check: 0 个问题，全部通过"},
+    {"cmd": "./.venv/Scripts/python.exe scripts/zero_assert_scan.py tests", "exit_code": 0, "raw_output_tail": "GRAND TOTAL: 183 files, 2006 tests, 4587 asserts, ratio 2.29"},
+    {"cmd": "./.venv/Scripts/python.exe scripts/quality_delta.py", "exit_code": 0, "raw_output_tail": "WORSE 0"},
+    {"cmd": "./.venv/Scripts/python.exe scripts/changelog.py check", "exit_code": 0, "raw_output_tail": "[OK] changelog 一致：84 条历史，3 条待发布碎片"},
+    {"cmd": "PYTHONPATH=. ./.venv/Scripts/python.exe scripts/export_contract.py --out docs/contract --check", "exit_code": 0, "raw_output_tail": "CONTRACT OK"},
+    {"cmd": "./.venv/Scripts/python.exe scripts/e2e_smoke.py", "exit_code": 0, "raw_output_tail": "E2E_SMOKE_RESULT: PASS"},
+    {"cmd": "./.venv/Scripts/python.exe scripts/bench_scale.py", "exit_code": 0, "raw_output_tail": "3000 仓：分页 0.68ms / LIKE 4.94ms / dir_stats 命中 4.62ms / prune@100k 291ms"}
+  ],
+  "files_changed": [
+    ".gitignore", ".github/workflows/ci.yml", "CLAUDE.md", "README.md", "requirements-build.txt",
+    "Git-clone-Max.spec", "packaging/installer.iss", ".claude-plugin/plugin.json",
+    "docs/agent-contract.md", "docs/architecture.md", "docs/contract/*.json",
+    "docs/验证记录-2026-11-04.md", "docs/plan 引用修正 x3",
+    "gcm/__main__.py", "gcm/cli.py", "gcm/mcp_server.py", "gcm/app/event_sink.py",
+    "gcm/app/exc_dump.py", "gcm/app/diag_bundle.py", "gcm/app/batch_plan.py (新增)",
+    "gcm/db/backup.py (新增)", "gcm/db/repo_db.py", "gcm/db/settings.py",
+    "gcm/git/service.py", "gcm/ui/main_window.py", "gcm/ui/manage_model.py",
+    "gcm/ui/manage_panel.py", "gcm/ui/settings_actions.py", "gcm/ui/download_layout.py",
+    "gcm/ui/download_tools.py", "gcm/app/url_lib.py", "gcm/i18n/zh.py", "gcm/i18n/en.py",
+    "scripts/bump_version.py (新增)", "scripts/quality_delta.py (新增)",
+    "scripts/select_tests.py (新增)", "scripts/vulture_whitelist.py (新增)",
+    "scripts/doc_drift_check.py", "scripts/export_contract.py",
+    "tests/test_g79_repo_hygiene.py", "tests/test_g80_hygiene.py",
+    "tests/test_g84_*.py (新增 10 个)", "evidence/quality_baseline.json (新增)"
+  ],
+  "tests": [
+    {"name": "tests.test_g84_wiring", "type": "unit+e2e", "status": "pass", "evidence": "9 例：孤儿模块守卫 + 调用点 + 事件真实落盘 + 打码"},
+    {"name": "tests.test_g84_settings_safety", "type": "unit", "status": "pass", "evidence": "8 例，含「清掉保护机制就丢凭据」的反向自检"},
+    {"name": "tests.test_g84_backup_atomic", "type": "unit", "status": "pass", "evidence": "5 例：中断不留半个 db、旧备份不被破坏、坏备份被拒"},
+    {"name": "tests.test_g84_batch_plan", "type": "unit", "status": "pass", "evidence": "11 例：五档判定 + 无副作用 + 与执行器同源"},
+    {"name": "tests.test_g84_mcp_jobs", "type": "unit", "status": "pass", "evidence": "13 例：只读面/写门禁/作业表上限/取消"},
+    {"name": "tests.test_g84_mcp_resources", "type": "e2e", "status": "pass", "evidence": "7 例：真 stdio 握手，resources/prompts/错误码/打码"},
+    {"name": "tests.test_g84_exc_redact", "type": "unit", "status": "pass", "evidence": "6 例：error.log 三处打码 + 诊断包"},
+    {"name": "tests.test_g84_shutdown_and_cancel", "type": "unit+e2e", "status": "pass", "evidence": "8 例：真子进程整树终止、真 MainWindow 关窗反馈、预算 ≤4s"},
+    {"name": "tests.test_g84_bump_version", "type": "unit", "status": "pass", "evidence": "9 例：载体覆盖/模板命中/脏树拒绝/逐字节回滚"},
+    {"name": "tests.test_g84_readme_import", "type": "unit", "status": "pass", "evidence": "10 例：抽取去重/跨平台/无效链接回显/按钮接线"},
+    {"name": "tests.test_g84_quality_gates", "type": "unit", "status": "pass", "evidence": "11 例：vulture 真跑、棘轮反向自检、选测图"},
+    {"name": "fast suite (1965 例)", "type": "full", "status": "pass", "evidence": "0 失败 0 错误，EXIT=0"}
+  ],
+  "coverage_summary": {"fast_suite_total_pct": 81, "gate": {"windows": 81, "posix": 80}},
+  "seams_touched": [
+    "S02 引擎→git 子进程（子模块 budget、进程组终止）",
+    "S05 设置控件→落盘（fsync、密文保回）",
+    "S07 后台线程→GUI（关窗反馈、大小列回填）",
+    "S11 Agent 接入面（MCP 异步作业 / 资源 / 提示词 / 契约 schema）",
+    "S12 打包→发布（bump_version 10 载体）",
+    "新增 S：事件总线→落盘（event_sink 生产入口）",
+    "新增 S：UI→DB 备份（backup_to 原子化 + UI 入口）"
+  ],
+  "mock_scenarios_covered": [
+    "fsync 不支持（OSError）→ 只告警一次，不阻断保存",
+    "备份中途 OSError → 不留半个文件、旧备份不破坏",
+    "解密失败密文 → 原样保回，且用户重填能覆盖",
+    "MCP 未知 URI / 缺参数 → -32602，不带崩 stdio",
+    "MCP 作业表超上限 → 只丢已完成的",
+    "killpg 同组 → 跳过（防自杀）"
+  ],
+  "browser_validation": "N/A（桌面 PyQt6 应用，无浏览器路径；等价验证 = 真 MainWindow 离屏冒烟 + health_check 真实拉起 exe）",
+  "stress": {
+    "http_api": {"repos": 800, "concurrency": 32, "requests": 1280, "qps": 285.1, "p50_ms": 24.8, "p95_ms": 310.2, "p99_ms": 327.8, "errors": 0},
+    "data_layer_3000_repos": {"list_repos_page50_ms": 0.68, "search_like_ms": 4.94, "dir_stats_hit_ms": 4.62, "prune_100k_ms": 291}
+  },
+  "smoke": {
+    "sse": "PASS（retry/connected/id/event/data 帧齐全，关闭后端口释放）",
+    "diag_bundle": "PASS（含 manifest.json/events.jsonl/error.log；不含 settings.json；token/密文/URL 口令均无明文）",
+    "cli_dry_run": "PASS（exit 0，目标目录未创建）",
+    "mcp_async_clone": "PASS（octocat/Hello-World 6.6s exit 0，产物落盘，全程通道可响应）",
+    "gui_window": "PASS（真 MainWindow 1366x768 与 1024x768，分割器 [420,223] / [354,289]）"
+  },
+  "limitations": [
+    "未做代码签名（缺凭证）→ 分发链路升级（scoop/自更新）阻塞",
+    "桌面单机工具无服务端 → 无生产部署/热更新环节；等价交付链 = 打包 → health_check → GitHub Release（policy.md §4）",
+    "L3 台账/撤销/prune 三态需 schema v9 迁移，本轮未做（已登记 beads）",
+    "p95 310ms 属 Python ThreadingHTTPServer + SQLite 单写者读路径的正常量级，仅本机回环实测"
+  ]
+}

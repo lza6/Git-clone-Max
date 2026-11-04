@@ -23,15 +23,27 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def export_mcp_tools() -> dict:
-    """MCP 工具列表（含授权差异：clone_batch 仅 --allow-mutate 暴露）。"""
-    from gcm.mcp_server import _TOOLS, _readonly_tools
+    """MCP 工具 / 资源 / 提示词清单（含授权差异：写工具仅 --allow-mutate 暴露）。"""
+    from gcm.mcp_server import _PROMPTS, _RESOURCES, _TOOLS, _readonly_tools
+
+    def _public(tools: list[dict]) -> list[dict]:
+        """剥掉内部授权标记（`mutate`），与运行时 `tools/list` 输出保持一致。
+
+        审查发现：运行时已经剥了，导出却没剥 → 契约文件里留着 MCP `Tool` 没有的字段，
+        严格校验 additionalProperties=false 的客户端会拒绝。
+        """
+        return [{k: v for k, v in t.items() if k != "mutate"} for t in tools]
+
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "title": "gcm MCP tools",
-        "always_available": _readonly_tools(),
-        "requires_allow_mutate": [
+        "title": "gcm MCP surface",
+        "always_available": _public(_readonly_tools()),
+        "requires_allow_mutate": _public([
             t for t in _TOOLS if t["name"] not in
-            {x["name"] for x in _readonly_tools()}],
+            {x["name"] for x in _readonly_tools()}]),
+        # G84-23：资源与提示词也是契约的一部分（此前 initialize 里是空对象）
+        "resources": _RESOURCES,
+        "prompts": _PROMPTS,
     }
 
 

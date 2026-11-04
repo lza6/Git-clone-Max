@@ -55,6 +55,14 @@ class SettingsWiring(QObject):
         if owner is None:
             return False
         setattr(owner.settings, name, value)
+        # R9（审查发现）：用户**显式清空**凭据时要先撤掉"密文保回"的记账，
+        # 否则 save() 会把解不开的旧密文又写回去 —— 等于永远删不掉。
+        if name in ("token", "notify_webhook_token", "alert_im_token") and not value:
+            try:
+                owner.settings_store.forget_undecryptable(name)
+            except Exception as e:      # noqa: BLE001 —— 清理记账失败不影响保存
+                from ..app.applog import warn as _warn
+                _warn(f"清理凭据记账失败（该字段可能仍保留旧密文）：{e}")
         owner.settings_store.save(owner.settings)
         # G80-B7-1：设置改了之后刷新后台任务登记（间隔/开关要立刻反映到面板）
         try:
@@ -141,6 +149,11 @@ class SettingsWiring(QObject):
         if panel is not None:
             migrate_data_dir_flow(panel)
 
+    def backup_database(self):
+        panel = self._panel
+        if panel is not None:
+            backup_database(panel)
+
 
 def add_data_dir_section(owner, layout, row: int) -> int:
     """数据目录：私密性状态 + 一键迁移。返回下一可用行号。
@@ -167,7 +180,52 @@ def add_data_dir_section(owner, layout, row: int) -> int:
         tr("把设置/数据库/日志搬到用户私有目录；不覆盖同名文件，源目录保留，迁移后需重启"))
     owner.btn_migrate_data_dir.clicked.connect(owner.settings_panel.wiring.migrate_data_dir)
     layout.addWidget(owner.btn_migrate_data_dir, row + 1, 0)
+    # G84-11：`Database.backup_to()`（G33-3）此前**零生产调用点** ——
+    # 而排错文案却在教用户"备份旧仓库"（`help_dialog` / 错误动作里都有这句），
+    # 用户按提示去找按钮会发现根本没有。这里补上入口。
+    owner.btn_backup_db = QPushButton(tr("备份数据库"))
+    owner.btn_backup_db.setToolTip(tr(
+        "把 repos.db 备份到数据目录的 backups 子目录（原子写 + quick_check 校验，"
+        "不会产生半个坏文件）"))
+    owner.btn_backup_db.clicked.connect(owner.settings_panel.wiring.backup_database)
+    layout.addWidget(owner.btn_backup_db, row + 1, 1)
     return row + 2
+
+
+def backup_database(panel) -> None:
+    """把 `repos.db` 备份到 `<数据目录>/backups/repos-<时间戳>.db`。
+
+    为什么写在 UI 层：`backup_to` 是纯数据层能力（含 checkpoint），
+    但"备份到哪、怎么告诉用户"是交互决策。文件名带时间戳 = 不会互相覆盖；
+    目录固定在数据目录下 = 与「打开数据目录」按钮同一个地方能找到。
+    """
+    from datetime import datetime
+
+    owner = getattr(panel, "owner", None)
+    if owner is None:
+        return
+    db = getattr(owner, "db", None)
+    data_dir = str(getattr(owner, "data_dir", "") or "")
+    if db is None or not data_dir:
+        QMessageBox.warning(owner, tr("备份数据库"), tr("数据库或数据目录不可用，已取消。"))
+        return
+    from pathlib import Path
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    dest = Path(data_dir) / "backups" / f"repos-{stamp}.db"
+    from .busy import busy
+
+    try:
+        with busy(owner, "backup_db", buttons=("btn_backup_db",),
+                  cancellable="non_cancellable"):
+            n = db.backup_to(dest)
+    except Exception as e:      # noqa: BLE001 —— 失败必须可见，不能静默
+        QMessageBox.warning(owner, tr("备份数据库"),
+                            tr("备份失败：{err}").format(err=e))
+        return
+    QMessageBox.information(
+        owner, tr("备份数据库"),
+        tr("已备份 {n} 个仓库到：\n{dest}\n\n（已通过 quick_check 校验）").format(
+            n=n, dest=dest))
 
 
 def save_post_clone_hook(panel) -> None:

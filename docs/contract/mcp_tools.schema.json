@@ -57,13 +57,61 @@
         "type": "object"
       },
       "name": "status"
+    },
+    {
+      "description": "查询 clone_batch(async=true) 启动作业的进度/结果（只读）。未完成时 finished=false；完成后 result 与同步版返回同形。",
+      "inputSchema": {
+        "properties": {
+          "job_id": {
+            "description": "作业 ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "type": "object"
+      },
+      "name": "job_status"
+    }
+  ],
+  "prompts": [
+    {
+      "arguments": [
+        {
+          "description": "仓库地址，逗号或换行分隔",
+          "name": "urls",
+          "required": true
+        }
+      ],
+      "description": "把一批仓库地址交给 Git-clone-Max 克隆（会先给出预览计划）",
+      "name": "clone-batch"
+    },
+    {
+      "arguments": [
+        {
+          "description": "owner/repo 或 host/owner/repo",
+          "name": "repo",
+          "required": true
+        }
+      ],
+      "description": "针对某个仓库的同步失败，给出排查顺序（基于错误分类与诊断项）",
+      "name": "diagnose-failure"
     }
   ],
   "requires_allow_mutate": [
     {
-      "description": "批量克隆仓库到数据目录（**写操作**：触网 + 写盘；仅 --allow-mutate 时暴露）。复用 CLI --json 子进程，返回与 CLI 相同的顶层契约。",
+      "description": "批量克隆仓库到数据目录（**写操作**：触网 + 写盘；仅 --allow-mutate 时暴露）。复用 CLI --json 子进程，返回与 CLI 相同的顶层契约。传 dry_run=true 则只返回本地预检计划（不联网、不写盘）。",
       "inputSchema": {
         "properties": {
+          "async": {
+            "description": "true = 立即返回 job_id 并在后台执行（用 job_status 查询、job_cancel 取消）；默认同步等待",
+            "type": "boolean"
+          },
+          "dry_run": {
+            "description": "true = 只返回预览计划（将克隆/将更新/目录被占/重复/无效），不执行克隆",
+            "type": "boolean"
+          },
           "urls": {
             "description": "仓库地址列表（每项一个 URL）",
             "items": {
@@ -78,7 +126,43 @@
         "type": "object"
       },
       "name": "clone_batch"
+    },
+    {
+      "description": "取消一个正在跑的 clone_batch 作业（终止子进程树）。需 GCM_MCP_ENABLE=1 + --allow-mutate。",
+      "inputSchema": {
+        "properties": {
+          "job_id": {
+            "description": "作业 ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "type": "object"
+      },
+      "name": "job_cancel"
     }
   ],
-  "title": "gcm MCP tools"
+  "resources": [
+    {
+      "description": "仓库数/同步次数/成功失败（与 status 工具同源）",
+      "mimeType": "application/json",
+      "name": "统计概览",
+      "uri": "gcm://status"
+    },
+    {
+      "description": "全部仓库元数据（已剔除 token/host_tokens/ssh_key 敏感列）",
+      "mimeType": "application/json",
+      "name": "仓库清单",
+      "uri": "gcm://repos"
+    },
+    {
+      "description": "人类可读的仓库报表（内存生成，不写盘）",
+      "mimeType": "text/markdown",
+      "name": "Markdown 报表",
+      "uri": "gcm://report/markdown"
+    }
+  ],
+  "title": "gcm MCP surface"
 }

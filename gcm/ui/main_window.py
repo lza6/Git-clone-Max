@@ -756,17 +756,28 @@ class MainWindow(QMainWindow):
             except Exception as exc:  # noqa: BLE001 —— 纯外观修正，不能拖垮布局切换
                 self._emit_log(_fmt_dt(), LogLevel.WARN, f"快捷填充高度同步失败：{exc}")
             # G74：Compact 把高度还给进度表（1366×768 下原来只能看到 3 行）
+            # G84-16：**按视口高度派生**，不再用写死的 380/420。
+            # 原来两档固定值在 768 高的机器上只能露出 4~5 行、日志区被挤没；
+            # 现在顶区不超过视口的 55%，其余全部给进度表（下限 120px 保可用）。
             try:
-                if (hasattr(self, "download_splitter")
-                        and getattr(self, "_last_compact", None) != compact):
-                    self._last_compact = compact
-                    self.download_splitter.setSizes(
-                        [380, 380] if compact else [420, 380])
-                    # 尺寸变化后把顶部滚回起点，避免只露出「下载位置」下半截
-                    try:
-                        self.download_top_scroll.verticalScrollBar().setValue(0)
-                    except Exception:
-                        pass
+                if hasattr(self, "download_splitter"):
+                    _h = self.download_splitter.height() or self.height() or 0
+                    _top = 380 if compact else 420
+                    if _h > 200:
+                        _top = max(240, min(_top, int(_h * 0.55)))
+                        _rest = max(120, _h - _top)
+                    else:
+                        _rest = 380
+                    if (getattr(self, "_last_compact", None) != compact
+                            or getattr(self, "_last_split_h", None) != _h):
+                        self._last_compact = compact
+                        self._last_split_h = _h
+                        self.download_splitter.setSizes([_top, _rest])
+                        # 尺寸变化后把顶部滚回起点，避免只露出「下载位置」下半截
+                        try:
+                            self.download_top_scroll.verticalScrollBar().setValue(0)
+                        except Exception:
+                            pass
             except Exception:
                 pass
             nav = getattr(self, "settings_nav", None)
@@ -1978,6 +1989,11 @@ class MainWindow(QMainWindow):
         self._emit_log(_fmt_dt(), LogLevel.INFO, f"已载入任务清单：{name}（{len(items)} 行）")
         self.statusBar().showMessage(f"已载入清单：{name}")
 
+    def import_readme_list(self):
+        """G84-18：从清单文件导入仓库地址（本地解析，不联网）。"""
+        from .download_tools import import_readme_list as _ir
+        _ir(self)
+
     def choose_target(self):
         from .download_tools import choose_target as _ct
         _ct(self)
@@ -2797,6 +2813,57 @@ class MainWindow(QMainWindow):
             return False
 
     # ------------------------------------------------------------ 关闭
+    def _closing_feedback(self) -> None:
+        """G84-22：关窗收尾的可见反馈（先画出来，再阻塞）。
+
+        顺序很重要：`setEnabled(False)` → 状态栏文案 → `processEvents()` 一次 →
+        隐藏窗口。前两步让用户知道"它在停"，第三步把它真的画出来，最后隐藏，
+        这样之后的阻塞等待发生在**看不见的窗口**上，不会再被误读成"卡死"。
+        任何一步失败都不影响关闭本身。
+        """
+        try:
+            self.setEnabled(False)
+            self.statusBar().showMessage(tr("正在停止后台任务…"))
+            from PyQt6.QtWidgets import QApplication
+            app = QApplication.instance()
+            if app is not None:
+                app.processEvents()      # 让"正在停止"真的画出来
+            self.hide()
+        except Exception as e:      # noqa: BLE001 —— 反馈失败绝不能拦住关闭
+            from ..app.applog import warn as _warn
+            _warn(f"关窗反馈渲染失败（继续正常关闭）：{e}")
+
+    def _shutdown_engine_on_close(self) -> None:
+        """关窗时的引擎收尾（G84-22 / R7 / R8；从 `closeEvent` 抽出以守住 100 行）。
+
+        三件事：
+        1. 先给可见反馈（`_closing_feedback`：置灰 + 状态栏 + 隐藏），再阻塞；
+        2. 用 `inspect.signature` 判一次能否传预算，**不靠 `except TypeError` 猜**
+           （TypeError 也可能来自 shutdown 内部，那样会跑第二遍 shutdown）；
+        3. 预算 1.5s(drain) + 4s(waitForDone) = 5.5s：不敢再短 —— 取消后的 worker
+           不收敛就析构 QThreadPool 会以 `0xC0000409` 崩溃（G69-21 实测）；
+           反馈已把窗口藏起来，用户不会再把阻塞读成"卡死"。
+        """
+        try:
+            if not hasattr(self, "engine") or self.engine is None:
+                return
+            self._closing_feedback()
+            import inspect
+
+            try:
+                params = set(inspect.signature(self.engine.shutdown).parameters)
+            except (TypeError, ValueError):
+                params = set()
+            if {"drain_ms", "wait_ms"} <= params:
+                self.engine.shutdown(drain_ms=1500, wait_ms=4000)
+            else:
+                self.engine.shutdown()
+        except Exception as err:      # noqa: BLE001 —— 关闭路径任何异常都不许拦住退出
+            # 注意别用 `e`：closeEvent 的形参就叫 `e`（QCloseEvent），在 except 里
+            # 遮蔽它会让后面 `e.accept()` 读到"已删除变量"（mypy 抓到过）。
+            from ..app.applog import warn as _warn
+            _warn(f"引擎收尾异常（继续关闭，进度文件由 G52-2 续跑兜底）：{err}")
+
     def closeEvent(self, e: QCloseEvent):
         if self.busy:
             ret = QMessageBox.question(
@@ -2857,11 +2924,12 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         # 引擎统一收尾：取消剩余任务、flush 进度、清空未启动队列
-        try:
-            if hasattr(self, "engine") and self.engine is not None:
-                self.engine.shutdown()
-        except Exception:
-            pass
+        # G84-22：先给**可见反馈**再阻塞。原来直接进 `shutdown()`（drain 4s +
+        # waitForDone 8s），GUI 线程被占满 12s —— 用户看到的是"点了叉没反应"，
+        # 于是再点几次，甚至去任务管理器强杀（那才是真的会留下半成品目录）。
+        # 现在：先把窗口藏起来 + 状态栏写"正在停止…"，泵一次事件让它真的画出来，
+        # 再把预算收紧到 drain 1500 + wait 4000（合计 5.5s，见 _shutdown_engine_on_close）。
+        self._shutdown_engine_on_close()
         try:
             # G36-4 记忆窗口几何（尺寸+位置），重启恢复
             self.settings.geometry = self._serialize_geometry()

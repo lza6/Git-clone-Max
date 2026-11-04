@@ -1610,8 +1610,14 @@ class SyncEngine(QObject):
         except Exception:
             pass
 
-    def shutdown(self):
+    def shutdown(self, drain_ms: int = 4000, wait_ms: int = 8000):
         """取消剩余任务并落盘，供窗口关闭时调用。
+
+        G84-22：预算改为**可传参**。原来写死 `drain(4000)` + `waitForDone(8000)`
+        —— 关窗时 GUI 线程最多阻塞 12s，用户看到的是"窗口卡死"，而不是"正在停止"。
+        调用方（`MainWindow.closeEvent`）现在会先给出可见反馈再把预算收紧到
+        `drain 1500 + wait 2500`（合计 ≤4s）；**下限不能太低**：取消后的 worker
+        若不收敛就析构 QThreadPool，会以 `0xC0000409` 崩溃（G69-21 实测）。
 
         G67-22 修复：原实现 `cancel_all()` 之后**不等 worker 收敛**就清空
         `in_progress` 并落盘 —— 但在跑的 worker 稍后仍会回调 `_on_result`
@@ -1630,7 +1636,7 @@ class SyncEngine(QObject):
         # G67-22：先等在跑 worker 到达终态（drain 内部会泵事件、等 pool），
         # 否则清空后会被晚到的 `_on_result` 重新写回。
         try:
-            self.drain(4000)
+            self.drain(drain_ms)
         except Exception:
             pass
         # G69-21：drain 超时也必须把线程池**真正等干净**再返回。
@@ -1642,7 +1648,7 @@ class SyncEngine(QObject):
         # 再阻塞等线程池排空（取消后通常毫秒级，这里给足 8s 上限）。
         self._disconnect_worker_signals()
         try:
-            self.pool.waitForDone(8000)
+            self.pool.waitForDone(wait_ms)
         except Exception:
             pass
         # G22-2：用户主动优雅退出时清空待完成清单，避免下次启动误报「上次未完成」

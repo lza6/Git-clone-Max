@@ -246,8 +246,36 @@ def _kill_tree(proc: subprocess.Popen) -> None:
             )
             if r.returncode == 0 and proc.poll() is not None:
                 return
-        except Exception:
-            pass
+        except Exception as e:      # noqa: BLE001 —— 杀软拦截时退化为 proc.kill
+            try:
+                from ..app.applog import warn as _warn
+                _warn(f"taskkill 整树终止失败（退化为 proc.kill）：{e}")
+            except Exception:
+                return
+    else:
+        # G84-21：POSIX 侧按**进程组**终止（Popen 已带 start_new_session=True）。
+        # 绝不对自己的进程组动手：只有 pgid != 本进程 pgid 时才 killpg。
+        try:
+            import signal
+            pgid = os.getpgid(proc.pid)
+            if pgid and pgid != os.getpgid(0):
+                os.killpg(pgid, signal.SIGTERM)
+                # 与 mcp_server._kill_tree 对齐：2s 内不退出就 SIGKILL 整组，
+                # 否则"取消"只是礼貌请求，忽略 TERM 的孙进程照样在写盘。
+                try:
+                    proc.wait(timeout=2)
+                except Exception:      # noqa: BLE001 —— 超时即强杀
+                    try:
+                        os.killpg(pgid, getattr(signal, "SIGKILL", signal.SIGTERM))
+                    except Exception as e2:   # noqa: BLE001 —— 组已消失
+                        from ..app.applog import warn as _warn
+                        _warn(f"SIGKILL 进程组失败（可能已退出）：{e2}")
+        except Exception as e:      # noqa: BLE001 —— 无权限/已退出时退化为 proc.kill
+            try:
+                from ..app.applog import warn as _warn
+                _warn(f"killpg 整组终止失败（退化为 proc.kill）：{e}")
+            except Exception:
+                return
     try:
         proc.kill()
     except Exception:
@@ -295,6 +323,10 @@ def run_git_ui(cmd: Iterable[str], cwd: str, on_line: LineCallback,
             cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding="utf-8", errors="replace", bufsize=1,
             creationflags=_CREATE_FLAGS, env=env,
+            # G84-21：POSIX 上让 git 自成进程组，取消时才能**整组**终止。
+            # 否则只杀父进程，`ssh` / `git-remote-https` / 凭据助手会变孤儿继续跑，
+            # 下一次同步撞「不完整目录」。Windows 侧靠 taskkill /T 解决，无需此参数。
+            start_new_session=(os.name != "nt"),
         )
         start = time.time()
         log: list[str] = []
@@ -1423,10 +1455,16 @@ class GitService:
         if self._submodule and rc == 0:
             # G08-1 拉取子模块（clone --recurse-submodules 之外的补充 update --init）
             self._emit(f"拉取子模块 {spec.display} …")
+            # G84-20：子模块更新也必须吃**单仓时间预算**。
+            # 原实现只传 timeout/retries：默认 time_budget_min=0（不限）时，一个卡住的
+            # 子模块（私有仓要凭据 / 巨大历史）能把整仓拖到 retries×600s，而外层预算
+            # 根本管不到它 —— 用户看到的是"这一批跑了一晚上还没结束"。
+            # 子模块失败本来就不影响主仓（见下方 warn），所以 retries 收为 0。
             sm_rc, _ = run_git_ui(
                 ["git", "-C", str(repo_dir), "submodule", "update", "--init", "--recursive"],
                 str(self.root), self.on_line, cancelled=self.cancelled, env=self._env(),
-                timeout=self.clone_timeout, retries=self.retries, backoff=self._backoff,
+                timeout=self.clone_timeout, retries=0, backoff=self._backoff,
+                budget=self.time_budget or None,
             )
             if self.cancelled():
                 res.status = SyncStatus.CANCELLED

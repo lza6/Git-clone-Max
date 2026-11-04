@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from pathlib import Path
@@ -31,6 +32,11 @@ class EventSink:
         self._dir = Path(data_dir) / "events"
         self._keep_days = max(1, int(keep_days))
         self._max_bytes = max(1024, int(max_bytes))
+        # R6（审查发现）：GUI 进程 + N 个 `gcm --cli` 子进程会同时 append 同一个
+        # 文件，而这里只有线程锁 —— 跨进程交错写会产生半行 JSON，正好毁掉这个
+        # 功能存在的唯一理由（可审计）。修法不是加跨进程锁（逐事件加锁代价高），
+        # 而是**每个进程写自己的文件**（文件名带 pid），单写者天然无竞态。
+        self._pid = os.getpid()
         self._lock = threading.Lock()
         self._day = ""
         self._fh: Any = None
@@ -69,12 +75,14 @@ class EventSink:
             n = 0
             while True:
                 suffix = f"_{n}" if n else ""
-                p = self._dir / f"events_{day}{suffix}.jsonl"
+                p = self._dir / f"events_{day}_{self._pid}{suffix}.jsonl"
                 if not p.exists() or p.stat().st_size < self._max_bytes:
                     break
                 n += 1
             self._path = p
-            self._fh = open(p, "a", encoding="utf-8")  # noqa: SIM115 - 常驻句柄，close 在 _rotate
+            # buffering=1 → 行缓冲：每写完一行就 flush，崩溃时最多丢半行而不是整段
+            self._fh = open(p, "a", encoding="utf-8",  # noqa: SIM115 - 常驻句柄，close 在 _rotate
+                            buffering=1)
             self._day = day
             self._cleanup()
         except Exception:  # noqa: BLE001
@@ -86,6 +94,7 @@ class EventSink:
             cutoff = time.strftime(
                 "%Y%m%d", time.localtime(time.time() - self._keep_days * 86400))
             for p in self._dir.glob("events_*.jsonl"):
+                # 形如 events_20261104_<pid>[_n].jsonl → 第一段是日期
                 d = p.name[len("events_"):-len(".jsonl")].split("_")[0]
                 if d < cutoff:
                     p.unlink(missing_ok=True)
@@ -119,3 +128,58 @@ def attach_sink(bus: Any, data_dir: Path) -> EventSink:
     except (AttributeError, TypeError):  # 非 EventBus 兼容对象 → 只跳过挂载
         pass
     return sink
+
+
+# ---------------------------------------------------------------- G84-5 生产接线
+# 背景（本轮实测）：`attach_sink` 写好了、测试也过了，但**全仓没有任何生产调用点**
+# （`grep -rn "attach_sink" gcm/` 只命中本文件与 `tests/test_c5_agent_contract.py`）。
+# 于是 v9.16.0 changelog 宣称的「事件落盘」在用户机器上从未发生 ——
+# 撞 CLAUDE.md §5「新增模块/函数必须有生产调用点」与「禁止伪闭环」两条红线。
+# 修法：加一个**唯一的幂等入口**，由 `gcm/__main__.py` 在 GUI / CLI / --serve
+# 三种形态启动时统一调用（MCP 是独立进程且不发布引擎事件，故不挂）。
+
+_ENABLED: EventSink | None = None
+
+
+def enable_event_sink(data_dir: Any) -> EventSink | None:
+    """把落盘 sink 挂到全局事件总线。**幂等、永不抛**（与 publish 同语义）。
+
+    返回已挂载的 sink；任何失败（目录不可写 / 总线不可用）只记一条 warn 并
+    返回 None —— 事件落盘是**观测增强**，绝不允许它影响克隆。
+    """
+    global _ENABLED
+    if _ENABLED is not None:
+        return _ENABLED
+    try:
+        from .event_bus import get_event_bus
+
+        bus = get_event_bus()
+        existing = getattr(bus, "_event_sink", None)
+        if existing is not None:      # 已被别的入口挂过（GUI 内嵌 serve 场景）
+            _ENABLED = existing
+            return _ENABLED
+        _ENABLED = attach_sink(bus, Path(data_dir))
+        # R6：进程退出时把尾部事件 flush 掉（原来没人调用 close()）
+        try:
+            import atexit
+            atexit.register(_ENABLED.close)
+        except Exception as e:      # noqa: BLE001 —— 注册失败不影响落盘本身
+            try:
+                from .applog import warn as _warn
+                _warn(f"事件落盘退出时关闭注册失败（尾部事件可能丢）：{e}")
+            except Exception:
+                pass
+        return _ENABLED
+    except Exception as e:            # noqa: BLE001 —— 观测增强失败不得拖垮启动
+        try:
+            from .applog import warn as _warn
+            _warn(f"事件落盘未启用（不影响克隆）：{e}")
+        except Exception:             # pragma: no cover - 日志系统自身不可用
+            return None
+        return None
+
+
+def reset_event_sink_for_tests() -> None:
+    """仅测试使用：清掉模块级「已启用」标记，让下一条总线能重新挂载。"""
+    global _ENABLED
+    _ENABLED = None

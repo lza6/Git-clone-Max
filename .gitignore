@@ -29,11 +29,20 @@ reports/ui-audit-final/
 # v9.12.0 起：截图审计产物一律可重建（python scripts/ui_screenshot_audit.py <dir>），不入库
 reports/ui-v9120*/
 reports/ui-v9*/
+# G84-2：`reports/ui-audit/` 此前漏在忽略规则之外（只忽略 ui-audit-final/），
+# 导致 G83 的 34 张截图一直是未跟踪产物，任何 `git add -A` 都会把它们带进提交。
+reports/ui-audit/
 
 # 工作流状态文件：按约定不入库（test_g79 白名单守卫会拦）
 workflow_status.md
+# G84-1：`参考的结果计划指南.md` 是**过程状态文件**，按工作流要求「未经允许不提交」。
+# 此前只登记了 workflow_status.md，漏了这一份 → b705df1 顺手把它 add 进索引，
+# 使 test_g79_repo_hygiene 的根目录卫生守卫变红（注释与索引状态互相矛盾）。
+参考的结果计划指南.md
 
 # Beads / Dolt files (added by bd init)
 .dolt/
 .beads-credential-key
 .beads/proxieddb/
+# bd 的自动导入缓存（只有 size/mtime 标记，随时可重建，不入库）
+.beads/.auto-import-issues.jsonl

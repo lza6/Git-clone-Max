@@ -463,3 +463,31 @@ def apply_mirror_prefix(url: str, prefix: str) -> str:
     if url.lower().startswith("https://"):
         return f"{prefix}/{url}"
     return url
+
+
+# ---------------------------------------------------------------- G84-18 清单导入
+# 目标场景：用户手里有一份 README / awesome 清单 / 收藏页导出的 markdown，
+# 里面混着链接 `[名字](https://github.com/o/r)`、裸地址、图片地址、徽章地址。
+# 手抄 200 条不现实，所以先把"所有像地址的 token"抽出来去重，再交给
+# `parse_urls` 做真正的主机/格式校验 —— 两件事分开，各自可测。
+
+_URL_TOKEN = re.compile(r"https?://[^\s<>\"'\)\]\}）】，。；]+")
+_TRAILING = ".,;:!?、。；）)】\"'"
+
+
+def extract_repo_urls(text: str) -> list[str]:
+    """从任意文本（markdown/纯文本/README）抽出地址，按出现顺序去重。
+
+    只做"抽取 + 去重"，**不判断是不是仓库**（那是 `parse_urls` 的职责）。
+    常见的图片/徽章地址会被后续 `parse_urls` 过滤掉；这里保留是为了可测、
+    也为了将来"导出所有链接"这类用途。
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in _URL_TOKEN.findall(text or ""):
+        url = raw.rstrip(_TRAILING)
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        out.append(url)
+    return out

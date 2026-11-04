@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import sqlite3
 import threading
 import time
@@ -10,6 +9,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ..models import RepoSpec, SyncAction, SyncStatus
+from .backup import BackupMixin
 from .dir_stats import DirStatsMixin, migrate_to_v6
 from .history_prune import HistoryPruneMixin
 from .queue_db import QueueStore, migrate_to_v4
@@ -99,8 +99,8 @@ def _migrate(conn):
     conn.commit()
 
 
-class Database(SshKeyMixin, SearchMixin, RepoProfileMixin, DirStatsMixin,
-               HistoryPruneMixin, StageStatsMixin, RepoFtsMixin):
+class Database(BackupMixin, SshKeyMixin, SearchMixin, RepoProfileMixin,
+               DirStatsMixin, HistoryPruneMixin, StageStatsMixin, RepoFtsMixin):
     """线程安全 SQLite 封装。"""
 
     def __init__(self, db_path: str | Path, readonly: bool = False):
@@ -590,27 +590,6 @@ class Database(SshKeyMixin, SearchMixin, RepoProfileMixin, DirStatsMixin,
                 self._conn.execute(f"PRAGMA wal_autocheckpoint={pages};")
         except Exception:
             pass
-
-    # ------------------------------------------------------------ G33-3 备份
-    def backup_to(self, dest: str | Path) -> int:
-        """备份数据库到 dest，返回备份时的仓库总数（self.count()）。
-
-        WAL 模式下直接拷贝主库会漏掉未检查点的数据：这里先在同连接执行
-        PRAGMA wal_checkpoint(TRUNCATE) 把 WAL 落盘并截断，commit 后再
-        shutil.copy2 拷贝主库文件，保证备份包含全部已提交数据。
-        checkpoint 会短暂阻塞其它写者，建议 UI 空闲时调用（内部已加锁门闩）。
-        """
-        dest = Path(dest)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        with self._lock:
-            try:
-                self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
-            except Exception:
-                pass  # 非 WAL / 其它异常：跳过 checkpoint，主库文件本身完整可拷
-            self._conn.commit()
-            shutil.copy2(self.path, dest)
-            return self.count()
-
 
 # ---------------------------------------------------------------------------
 

@@ -292,6 +292,8 @@ def _print_help() -> int:
         "  --serve H:P     启动本地只读 HTTP API（仅允许回环地址）\n"
         "  --allow-mutate  配合 --serve：放行 POST 写操作（默认只读）\n"
         "  --no-mirror     兼容开关（内置国内镜像已移除，默认即直连源站）\n"
+        "  --dry-run       只做本地预检：打印\"将克隆/将更新/目录被占/重复/无效\"，\n"
+        "                  不联网、不写盘（配 --json 输出完整计划）\n"
         "  --help, -h      显示本帮助\n"
         "\n"
         "输入：<urls.txt> 为地址清单文件；`-` 表示 stdin（每行一个，`#` 开头忽略）。\n"
@@ -344,6 +346,10 @@ def main(argv: list[str] | None = None) -> int:
     no_mirror = "--no-mirror" in args
     if no_mirror:
         args.remove("--no-mirror")
+    # G84-12：--dry-run 只算「这一批会发生什么」，不碰网络也不写盘。
+    dry_run = "--dry-run" in args
+    if dry_run:
+        args.remove("--dry-run")
     # M7：--dir <目录> 指定克隆输出根目录（默认当前目录/clones）
     root = Path.cwd() / "clones"
     if "--dir" in args:
@@ -380,6 +386,21 @@ def main(argv: list[str] | None = None) -> int:
             print("[CLI] 未提供仓库地址（文件为空或 stdin 无输入）")
         return 2
     specs, invalid = build_specs(lines)
+    if dry_run:
+        # G84-12：预览分支必须在**任何写盘/联网之前**返回（agent 用它做"先看看"）。
+        from gcm.app.batch_plan import plan_batch
+        plan = plan_batch("\n".join(lines), root)
+        if json_mode:
+            # `mode: "dry_run"` 是给消费者的判别位：这份 JSON **不是**克隆结果，
+            # `ok` 只表示"预览算出来了"，不代表任何仓库成功（契约漂移防线）。
+            doc = {"version": __version__, "ok": True, "mode": "dry_run",
+                   "plan": plan.to_dict()}
+            print(json.dumps(doc, ensure_ascii=False, indent=2))
+        else:
+            for line in plan.summary_lines():
+                print(f"[CLI] {line}")
+            print("[CLI] 这是预览（--dry-run）：未联网、未写盘。")
+        return 0
     if json_mode:
         _eprint(f"[CLI] 开始并行克隆 {len(specs)} 个仓库（目标根：{root}）…")
     else:

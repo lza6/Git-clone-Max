@@ -13,6 +13,8 @@ from PyQt6.QtWidgets import (
     QStyleOptionButton,
 )
 
+from ..i18n import tr
+
 
 @dataclass
 class ManageRow:
@@ -211,6 +213,13 @@ class ManageModel(QAbstractItemModel):
                      (r.local_path if col == 2 else
                       (r.last_sync_at if col == 3 else
                        (r.head_sha if col == 4 else "")))))
+        # G84-17：健康/大小两列此前**没有任何解释** —— 表里只有 `5/5` 和空串，
+        # 用户既不知道 5/5 怎么来的，也不知道空白是"还在算"还是"算不出来"。
+        if role == Qt.ItemDataRole.ToolTipRole and col == 6:
+            return tr("健康分 0–5 = 最近 20 次同步成功率 50% + 陈旧度 25% + 冲突惩罚 25%"
+                      "（空历史默认 3）。6 维明细见「统计中心」的雷达图。")
+        if role == Qt.ItemDataRole.ToolTipRole and col == 7:
+            return r.size or tr("尚未算出（点「刷新列表」强制重算；大仓库首次需要几秒）")
         if role == Qt.ItemDataRole.ToolTipRole and col in (0, 2, 3, 4):
             if col == 2:
                 return r.local_path or ""
@@ -268,6 +277,25 @@ class ManageModel(QAbstractItemModel):
                 idx = self.index(row, 7)
                 self.dataChanged.emit(idx, idx, [Qt.ItemDataRole.DisplayRole])
                 return
+
+    def mark_sizes_pending(self, repo_ids, text: str) -> int:
+        """G84-17：把一批行的"大小"置为占位文本（如「计算中…」），返回改动行数。
+
+        空白与"计算中"在界面上长得一样，用户无法判断是坏了还是在跑 —— 这个
+        三态（计算中… / 具体值 / 未知）是本次修复的核心。
+        """
+        wanted = set(repo_ids)
+        changed = 0
+        for r in self._rows:
+            if r.repo_id in wanted and not str(r.size or ""):
+                r.size = str(text)
+                changed += 1
+        if changed:
+            idx = self.index(0, 7)
+            self.dataChanged.emit(idx, self.index(len(self._rows) - 1, 7),
+                                  [Qt.ItemDataRole.DisplayRole])
+        return changed
+
 class HistoryButtonDelegate(QStyledItemDelegate):
     """G03-7 末列「查看」按钮委托：每行独立可点击（替代共享按钮）。
 

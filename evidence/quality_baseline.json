@@ -1,0 +1,504 @@
+{
+  "acks": {},
+  "generated_by": "scripts/quality_delta.py --update-baseline",
+  "line_cap": 800,
+  "oversized": [
+    "gcm/app/engine.py",
+    "gcm/git/service.py",
+    "gcm/ui/main_window.py"
+  ],
+  "per_file": {
+    "gcm/__init__.py": {
+      "excepts": 0,
+      "lines": 21
+    },
+    "gcm/__main__.py": {
+      "excepts": 4,
+      "lines": 170
+    },
+    "gcm/_changelog_data.py": {
+      "excepts": 0,
+      "lines": 109
+    },
+    "gcm/app/adaptive_interval.py": {
+      "excepts": 0,
+      "lines": 32
+    },
+    "gcm/app/alerts.py": {
+      "excepts": 12,
+      "lines": 370
+    },
+    "gcm/app/applog.py": {
+      "excepts": 5,
+      "lines": 105
+    },
+    "gcm/app/autostart.py": {
+      "excepts": 5,
+      "lines": 116
+    },
+    "gcm/app/background_jobs.py": {
+      "excepts": 0,
+      "lines": 138
+    },
+    "gcm/app/batch_plan.py": {
+      "excepts": 0,
+      "lines": 158
+    },
+    "gcm/app/batch_state.py": {
+      "excepts": 0,
+      "lines": 123
+    },
+    "gcm/app/clipboard_watcher.py": {
+      "excepts": 4,
+      "lines": 109
+    },
+    "gcm/app/diag.py": {
+      "excepts": 8,
+      "lines": 141
+    },
+    "gcm/app/diag_bundle.py": {
+      "excepts": 6,
+      "lines": 194
+    },
+    "gcm/app/engine.py": {
+      "excepts": 54,
+      "lines": 1667
+    },
+    "gcm/app/errors.py": {
+      "excepts": 0,
+      "lines": 290
+    },
+    "gcm/app/event_bus.py": {
+      "excepts": 11,
+      "lines": 416
+    },
+    "gcm/app/event_sink.py": {
+      "excepts": 9,
+      "lines": 185
+    },
+    "gcm/app/exc_dump.py": {
+      "excepts": 5,
+      "lines": 90
+    },
+    "gcm/app/gh_api.py": {
+      "excepts": 1,
+      "lines": 99
+    },
+    "gcm/app/halfclone.py": {
+      "excepts": 5,
+      "lines": 131
+    },
+    "gcm/app/host_probe.py": {
+      "excepts": 2,
+      "lines": 58
+    },
+    "gcm/app/im_notify.py": {
+      "excepts": 0,
+      "lines": 38
+    },
+    "gcm/app/knowledge.py": {
+      "excepts": 4,
+      "lines": 315
+    },
+    "gcm/app/mirror_probe.py": {
+      "excepts": 3,
+      "lines": 278
+    },
+    "gcm/app/mirrors.py": {
+      "excepts": 1,
+      "lines": 171
+    },
+    "gcm/app/notify.py": {
+      "excepts": 8,
+      "lines": 243
+    },
+    "gcm/app/proxy.py": {
+      "excepts": 1,
+      "lines": 45
+    },
+    "gcm/app/queue_runner.py": {
+      "excepts": 2,
+      "lines": 123
+    },
+    "gcm/app/queue_scheduler.py": {
+      "excepts": 0,
+      "lines": 74
+    },
+    "gcm/app/retry_queue.py": {
+      "excepts": 3,
+      "lines": 469
+    },
+    "gcm/app/scanner.py": {
+      "excepts": 15,
+      "lines": 431
+    },
+    "gcm/app/sched_reports.py": {
+      "excepts": 2,
+      "lines": 81
+    },
+    "gcm/app/single_instance.py": {
+      "excepts": 14,
+      "lines": 158
+    },
+    "gcm/app/system_theme.py": {
+      "excepts": 3,
+      "lines": 62
+    },
+    "gcm/app/updater.py": {
+      "excepts": 5,
+      "lines": 163
+    },
+    "gcm/app/url_lib.py": {
+      "excepts": 2,
+      "lines": 493
+    },
+    "gcm/app/watchdog.py": {
+      "excepts": 4,
+      "lines": 123
+    },
+    "gcm/app/worker.py": {
+      "excepts": 8,
+      "lines": 209
+    },
+    "gcm/cli.py": {
+      "excepts": 5,
+      "lines": 427
+    },
+    "gcm/db/backup.py": {
+      "excepts": 5,
+      "lines": 86
+    },
+    "gcm/db/dir_stats.py": {
+      "excepts": 1,
+      "lines": 93
+    },
+    "gcm/db/history.py": {
+      "excepts": 3,
+      "lines": 70
+    },
+    "gcm/db/history_prune.py": {
+      "excepts": 3,
+      "lines": 89
+    },
+    "gcm/db/lists.py": {
+      "excepts": 2,
+      "lines": 97
+    },
+    "gcm/db/progress_file.py": {
+      "excepts": 2,
+      "lines": 93
+    },
+    "gcm/db/progress_gc.py": {
+      "excepts": 2,
+      "lines": 157
+    },
+    "gcm/db/queue_db.py": {
+      "excepts": 4,
+      "lines": 154
+    },
+    "gcm/db/repo_db.py": {
+      "excepts": 15,
+      "lines": 750
+    },
+    "gcm/db/repo_fts.py": {
+      "excepts": 4,
+      "lines": 144
+    },
+    "gcm/db/repo_profile.py": {
+      "excepts": 2,
+      "lines": 92
+    },
+    "gcm/db/repo_query.py": {
+      "excepts": 0,
+      "lines": 93
+    },
+    "gcm/db/repo_search.py": {
+      "excepts": 2,
+      "lines": 172
+    },
+    "gcm/db/repo_ssh.py": {
+      "excepts": 1,
+      "lines": 46
+    },
+    "gcm/db/runtime_sessions.py": {
+      "excepts": 2,
+      "lines": 265
+    },
+    "gcm/db/settings.py": {
+      "excepts": 19,
+      "lines": 593
+    },
+    "gcm/db/stage_stats.py": {
+      "excepts": 5,
+      "lines": 112
+    },
+    "gcm/db/txn.py": {
+      "excepts": 2,
+      "lines": 41
+    },
+    "gcm/db/validators.py": {
+      "excepts": 2,
+      "lines": 85
+    },
+    "gcm/git/archive.py": {
+      "excepts": 0,
+      "lines": 29
+    },
+    "gcm/git/service.py": {
+      "excepts": 46,
+      "lines": 1970
+    },
+    "gcm/http_api.py": {
+      "excepts": 20,
+      "lines": 646
+    },
+    "gcm/i18n/__init__.py": {
+      "excepts": 0,
+      "lines": 29
+    },
+    "gcm/i18n/en.py": {
+      "excepts": 0,
+      "lines": 621
+    },
+    "gcm/i18n/zh.py": {
+      "excepts": 0,
+      "lines": 619
+    },
+    "gcm/mcp_jobs.py": {
+      "excepts": 16,
+      "lines": 287
+    },
+    "gcm/mcp_server.py": {
+      "excepts": 16,
+      "lines": 629
+    },
+    "gcm/models.py": {
+      "excepts": 0,
+      "lines": 94
+    },
+    "gcm/reports.py": {
+      "excepts": 3,
+      "lines": 209
+    },
+    "gcm/ui/background_jobs_panel.py": {
+      "excepts": 1,
+      "lines": 212
+    },
+    "gcm/ui/batch_actions.py": {
+      "excepts": 1,
+      "lines": 57
+    },
+    "gcm/ui/batch_overview.py": {
+      "excepts": 0,
+      "lines": 74
+    },
+    "gcm/ui/busy.py": {
+      "excepts": 4,
+      "lines": 81
+    },
+    "gcm/ui/checklist.py": {
+      "excepts": 1,
+      "lines": 99
+    },
+    "gcm/ui/command_palette.py": {
+      "excepts": 6,
+      "lines": 210
+    },
+    "gcm/ui/diag_dialog.py": {
+      "excepts": 1,
+      "lines": 98
+    },
+    "gcm/ui/download_layout.py": {
+      "excepts": 0,
+      "lines": 351
+    },
+    "gcm/ui/download_tools.py": {
+      "excepts": 9,
+      "lines": 245
+    },
+    "gcm/ui/engine_factory.py": {
+      "excepts": 1,
+      "lines": 94
+    },
+    "gcm/ui/event_panel.py": {
+      "excepts": 5,
+      "lines": 228
+    },
+    "gcm/ui/failure_panel.py": {
+      "excepts": 4,
+      "lines": 345
+    },
+    "gcm/ui/halfclone_actions.py": {
+      "excepts": 0,
+      "lines": 109
+    },
+    "gcm/ui/help_dialog.py": {
+      "excepts": 0,
+      "lines": 95
+    },
+    "gcm/ui/layout.py": {
+      "excepts": 3,
+      "lines": 87
+    },
+    "gcm/ui/local_repos_dialog.py": {
+      "excepts": 6,
+      "lines": 353
+    },
+    "gcm/ui/log_buffer.py": {
+      "excepts": 1,
+      "lines": 123
+    },
+    "gcm/ui/log_filter.py": {
+      "excepts": 0,
+      "lines": 52
+    },
+    "gcm/ui/main_window.py": {
+      "excepts": 113,
+      "lines": 2945
+    },
+    "gcm/ui/manage_model.py": {
+      "excepts": 2,
+      "lines": 352
+    },
+    "gcm/ui/manage_panel.py": {
+      "excepts": 19,
+      "lines": 656
+    },
+    "gcm/ui/onboarding.py": {
+      "excepts": 0,
+      "lines": 208
+    },
+    "gcm/ui/palettes.py": {
+      "excepts": 2,
+      "lines": 211
+    },
+    "gcm/ui/progress_delegate.py": {
+      "excepts": 2,
+      "lines": 96
+    },
+    "gcm/ui/progress_menu.py": {
+      "excepts": 0,
+      "lines": 57
+    },
+    "gcm/ui/progress_table.py": {
+      "excepts": 23,
+      "lines": 787
+    },
+    "gcm/ui/qss_build.py": {
+      "excepts": 1,
+      "lines": 262
+    },
+    "gcm/ui/qss_validate.py": {
+      "excepts": 0,
+      "lines": 306
+    },
+    "gcm/ui/radar_chart.py": {
+      "excepts": 2,
+      "lines": 151
+    },
+    "gcm/ui/repo_detail_dialog.py": {
+      "excepts": 10,
+      "lines": 543
+    },
+    "gcm/ui/result_labels.py": {
+      "excepts": 0,
+      "lines": 59
+    },
+    "gcm/ui/retry_panel.py": {
+      "excepts": 15,
+      "lines": 471
+    },
+    "gcm/ui/scan_worker.py": {
+      "excepts": 2,
+      "lines": 99
+    },
+    "gcm/ui/settings_actions.py": {
+      "excepts": 9,
+      "lines": 334
+    },
+    "gcm/ui/settings_groups.py": {
+      "excepts": 1,
+      "lines": 782
+    },
+    "gcm/ui/settings_local_api.py": {
+      "excepts": 0,
+      "lines": 49
+    },
+    "gcm/ui/settings_nav.py": {
+      "excepts": 4,
+      "lines": 63
+    },
+    "gcm/ui/settings_network.py": {
+      "excepts": 0,
+      "lines": 76
+    },
+    "gcm/ui/settings_panel.py": {
+      "excepts": 33,
+      "lines": 795
+    },
+    "gcm/ui/sparkline.py": {
+      "excepts": 1,
+      "lines": 102
+    },
+    "gcm/ui/statistics_dialog.py": {
+      "excepts": 12,
+      "lines": 438
+    },
+    "gcm/ui/status_pill.py": {
+      "excepts": 0,
+      "lines": 165
+    },
+    "gcm/ui/status_strip.py": {
+      "excepts": 3,
+      "lines": 238
+    },
+    "gcm/ui/theme.py": {
+      "excepts": 4,
+      "lines": 314
+    },
+    "gcm/ui/tray.py": {
+      "excepts": 7,
+      "lines": 187
+    },
+    "gcm/ui/typography.py": {
+      "excepts": 1,
+      "lines": 113
+    },
+    "gcm/ui/update_flow.py": {
+      "excepts": 7,
+      "lines": 205
+    },
+    "gcm/util/__init__.py": {
+      "excepts": 0,
+      "lines": 1
+    },
+    "gcm/util/atomic_io.py": {
+      "excepts": 9,
+      "lines": 159
+    },
+    "gcm/util/dpapi.py": {
+      "excepts": 2,
+      "lines": 100
+    },
+    "gcm/util/filelock.py": {
+      "excepts": 7,
+      "lines": 144
+    },
+    "gcm/util/hashfile.py": {
+      "excepts": 1,
+      "lines": 55
+    },
+    "gcm/util/openfolder.py": {
+      "excepts": 3,
+      "lines": 55
+    },
+    "gcm/util/redact.py": {
+      "excepts": 0,
+      "lines": 137
+    },
+    "gcm/util/sshkey.py": {
+      "excepts": 2,
+      "lines": 54
+    }
+  }
+}

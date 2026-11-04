@@ -89,7 +89,7 @@ class ManagePanel(QWidget):
         self.btn_cancel_manage.clicked.connect(lambda _=False: self.cancel_all_requested.emit())
         self.btn_cancel_manage.setIcon(self.owner._std_icon("stop", self.btn_cancel_manage))
         self.btn_refresh = QPushButton("刷新列表")
-        self.btn_refresh.clicked.connect(self._refresh_manage)
+        self.btn_refresh.clicked.connect(self._on_refresh_clicked)
         self.btn_refresh.setIcon(self.owner._std_icon("refresh", self.btn_refresh))
         # G74：主操作与搜索同一行（宽度充足且不会被 9 个按钮挤爆）
         top = QHBoxLayout()
@@ -510,6 +510,14 @@ class ManagePanel(QWidget):
             cache = self._size_cache
             ttl = self._SIZE_TTL_SEC
             now = time.time()
+            # G84-17：开算之前先把"还没算出来"的行标成**计算中…**
+            # （原来这些行就是空白 —— 用户无法区分"在算" / "算不出来" / "没算过"）
+            try:
+                self.manage_model.mark_sizes_pending(
+                    [rid for rid, _p in targets], tr("计算中…"))
+            except Exception as e:      # noqa: BLE001 —— 纯展示，失败不影响计算
+                from ..app.applog import warn as _warn
+                _warn(f"标记「大小计算中」失败（列会短暂留空）：{e}")
             # GUI 线程批量读库内缓存（一次查询，不在工作线程碰 DB）
             db_hits: dict[str, int] = {}
             reader = getattr(db, "get_dir_sizes", None)
@@ -568,7 +576,7 @@ class ManagePanel(QWidget):
                     rid, path, text, size = row[0], None, row[1], None
                 else:                      # pragma: no cover - 防御
                     continue
-                self.manage_model.set_size(rid, text)
+                self.manage_model.set_size(rid, text or tr("未知（点刷新重试）"))
                 if path and size is not None:
                     fresh.append((str(path), int(size)))
         except Exception as e:      # noqa: BLE001 —— 回填失败只留痕，不打断 UI
@@ -586,6 +594,26 @@ class ManagePanel(QWidget):
     def _apply_pending_sizes(self):
         """兼容旧名（历史测试/外部脚本可能引用）—— 回放 `_pending_sizes`。"""
         self._apply_sizes(getattr(self, "_pending_sizes", None))
+
+    def _on_refresh_clicked(self) -> None:
+        """G84-6：「刷新列表」= **强制重算体积**，而不是复用缓存。
+
+        此前按钮直接连 `_refresh_manage`（只重拉行 + 走缓存），而
+        `invalidate_size_cache()` 的 docstring 写着「想立刻重算可以点刷新（会清空
+        缓存）」—— 承诺与实现不符，且该函数**全仓只有测试调用**（撞「新增函数必须
+        有生产调用点」红线）。这里两级缓存都清：进程内 `_size_cache` + 库内
+        `dir_stats`（30 分钟 TTL），否则用户点了刷新还是看到旧数字。
+        """
+        self.invalidate_size_cache()
+        try:
+            db = getattr(self.owner, "db", None)
+            clear = getattr(db, "clear_dir_sizes", None)
+            if callable(clear):
+                clear()
+        except Exception as e:      # noqa: BLE001 —— 库内缓存清不掉不影响刷新
+            from ..app.applog import warn as _warn
+            _warn(f"清空库内目录大小缓存失败（按未命中处理）：{e}")
+        self._refresh_manage()
 
     def invalidate_size_cache(self) -> None:
         """清空目录大小缓存（「刷新」时调用，让下一次真的重算）。"""

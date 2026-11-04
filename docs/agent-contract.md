@@ -62,6 +62,34 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 | `results[].degrade_path` | string | **G81 起新增（加性字段）**。弱网降级链：`""` = 常规克隆；`treeless` = `--filter=blob:none` 部分克隆；`depth1` = 单分支浅克隆（完整历史未拉取）。回答「为什么历史不完整」。 |
 | `invalid[]` | array | 无效输入行条目，见 §3 错误 schema |
 
+### 2.1b `--dry-run` 的 JSON 形态（G84 新增，与常规结果**不同形**）
+
+```json
+{
+  "version": "9.17.0",
+  "ok": true,
+  "mode": "dry_run",
+  "plan": {
+    "root": "/abs/out",
+    "dry_run": true,
+    "counts": {"clone": 2, "update": 1, "replace": 0, "blocked": 0,
+               "duplicate": 0, "invalid": 1},
+    "writable": 3,
+    "rows": [{"url": "...", "folder": "o__r", "target": "/abs/out/o__r",
+              "action": "clone", "reason": "目标目录不存在"}],
+    "limits": "本预览只做本地判定：不说『已是最新』（需远端 ls-remote）..."
+  }
+}
+```
+
+- **`mode` 字段是判别位**：有它就不是克隆结果，`ok` 只表示"预览算出来了"，
+  与任何仓库是否成功无关。消费方必须先判 `mode` 再读 `counts`。
+- `action` 六档语义（与执行器逐条对齐）：
+  `clone` 新克隆 · `update` 增量更新 · **`replace`（会先删除目标目录再克隆）** ·
+  `blocked`（`local_path` 来自导入元数据 → 执行器不删除，非空非 git 会失败） ·
+  `duplicate` 本批内同目录 · `invalid` 解析失败。
+  ⚠️ `replace` 是**破坏性**动作，agent 必须显式告知用户。
+
 ### 2.2 退出码
 
 | 码 | 含义 |
@@ -94,14 +122,49 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 - 启用：`GCM_MCP_ENABLE=1` 后才启动（否则退出码 3，见 §6）。
 - 数据目录：`GCM_DATA_DIR` 覆盖，默认 `<repo>/data`（repos.db）。
-- 工具清单（`tools/list`，均为只读）：
+- 工具清单（`tools/list`）。**默认只暴露只读工具**；带 `mutate` 标记的工具只有
+  显式放行（`GCM_MCP_ENABLE=1` + `--allow-mutate`）时才**出现在列表里**（不是"存在但报错"）：
 
-| 工具 | 参数 | 返回 |
-|------|------|------|
-| `list_repos` | `host?` | `{repos: [...], count}`，行含 `owner/repo/host/folder_name/local_path` 及元数据，剔敏感列 |
-| `search_repos` | `query` | 按 owner/repo/host/folder_name/tags/note 关键字过滤 |
-| `status` | – | `{status: {...stats_overview}}` |
-| `export_report` | `format: csv\|markdown`, `out_dir?` | 写产出文件（默认拒绝，需 `GCM_MCP_ENABLE=1` + `--allow-export`） |
+| 工具 | 门禁 | 参数 | 返回 |
+|------|------|------|------|
+| `list_repos` | 只读 | `host?` | `{repos: [...], count}`，行含 `owner/repo/host/folder_name/local_path` 及元数据，剔敏感列 |
+| `search_repos` | 只读 | `query` | 按 owner/repo/host/folder_name/tags/note 关键字过滤 |
+| `status` | 只读 | – | `{status: {...stats_overview}}` |
+| `job_status` | 只读 | `job_id` | `{job_id,status,finished,result}`（异步作业进度/结果） |
+| `export_report` | `--allow-export` | `format: csv\|markdown`, `out_dir?` | 写产出文件（默认拒绝） |
+| `clone_batch` | `--allow-mutate` | `urls[]`, `dry_run?`, `async?` | 同步：CLI 顶层契约；`dry_run=true`：预览计划；`async=true`：`{job_id,status}` |
+| `job_cancel` | `--allow-mutate` | `job_id` | `{job_id,status:"cancelling"}`，终止子进程树 |
+
+### 4.1 预览与异步作业（G84 新增，加性）
+- `clone_batch` 传 `dry_run: true` → **不联网、不写盘、不起子进程**，返回
+  `{dry_run:true, plan:{counts, writable, rows[], limits}}`。判定口径：
+  `clone`（目标目录不存在）/ `update`（含 `.git`）/ `blocked`（目录被占，不会覆盖）/
+  `duplicate`（本批内同目录）/ `invalid`（解析失败）。**`limits` 字段自曝边界**：
+  本地预检不说"已是最新"（需远端 `ls-remote`）。
+- `clone_batch` 传 `async: true` → 立即返回 `{job_id, status:"running"}`，作业在后台线程
+  跑 `--cli --json` 子进程；用 `job_status` 轮询、`job_cancel` 取消（杀整棵进程树）。
+  不传 `async` 时行为与旧版**完全一致**（同步等待，契约不变）。
+- 进度：客户端在 `tools/call` 的 `params._meta.progressToken` 里给 token 时，
+  服务端才会发 `notifications/progress`（无 token 不发，避免污染客户端读流）。
+- 作业表上限 20 个：超出按插入顺序丢**已完成**的；运行中的作业不会被静默遗忘。
+
+### 4.2 资源与提示词（G84 新增，加性）
+`initialize` 的能力声明不再是空对象：`resources: {subscribe:false, listChanged:false}`、
+`prompts: {listChanged:false}`。
+
+| 资源 URI | MIME | 内容 |
+|----------|------|------|
+| `gcm://status` | application/json | 统计概览（与 `status` 工具同源） |
+| `gcm://repos` | application/json | 仓库清单（剔敏感列 + 打码） |
+| `gcm://report/markdown` | text/markdown | 内存生成的报表（不写盘） |
+
+| 提示词 | 参数 | 用途 |
+|--------|------|------|
+| `clone-batch` | `urls` | 引导「先 dry_run 预览 → 再执行 → 用 job_status 轮询」 |
+| `diagnose-failure` | `repo` | 按错误分类给出排查顺序（auth/network/not_found…） |
+
+- 未知 URI / 缺参数一律返回 JSON-RPC `-32602`，**不会把 stdio 通道带崩**。
+- 资源文本出站前过 `redact`：库里历史行若残留 URL 内嵌凭据，不会原样吐出。
 
 - 退出码：`GCM_MCP_ENABLE` 未启用 → `3`（区别于 CLI 0/1/2）。
 

@@ -4,4 +4,6 @@ PyGithub==2.10.0
 pyinstaller==6.22.3
 ruff==0.17.3
 mypy==2.4.1
+# G84-14：死代码/未接线扫描（CI 门禁，阈值 ≥80；本机实测 2.14 在 ≥80 下 0 发现）
+vulture==2.14
 coverage==7.16.2

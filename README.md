@@ -1,7 +1,7 @@
 # Git-clone-Max
 
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
-> **当前版本：v9.17.0**（C3 收口：分阶段耗时埋点 + 目录大小落库缓存 + 历史治理出热路径；C4 检索：≥3 字走 FTS5、<3 字退回 LIKE，中文两字词终于搜得到；内置国内镜像已移除、默认直连；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）/ 历史治理挪出热路径 / 规模与泄漏基线脚本；内置国内镜像已移除、默认直连；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）、并发改值不再被自适应顶回、批次流控按线程池派生、替换引擎不再留活定时器、卡死任务有 UI 入口、WAL 批次收尾收缩、文档数字漂移与函数规模双守卫、依赖与 CI 静态检查器锁版本；逐版本历史见 `gcm/__init__.py` 的 `__changelog__`）
+> **当前版本：v9.17.0** · 逐版本历史见 `gcm/__init__.py` 的 `__changelog__`。
 > **v5.0：多平台直克隆** — GitLab / Gitee / Codeberg / Bitbucket / 自建主机（HTTPS/SSH/短格式/子组）同样支持。
 > 克隆目录一律 `host__作者__仓库`（GitHub 为 `作者__仓库`），本地改动永不覆盖。
 
@@ -105,6 +105,9 @@ uv run python -m gcm --portable
 | 可靠性 | token 加密落盘（有 DPAPI/keyring 时真加密；否则可逆混淆并在日志显式告警）、单实例锁、全局异常兜底 `error.log`、settings 备份恢复、数据库自动迁移备份 |
 | 数据库 | SQLite `repos.db`（WAL）记录元数据 + `sync_history` 全量同步快照健康治理 |
 | 一键更新 | 「仓库管理 → ⟳ 一键更新全部」对库中所有仓库增量同步（黑名单排除） |
+| 齿条与批次总览 | 顶部状态条用自绘**齿条**显示最近 24h 的成功/失败**趋势**（5 分钟一档 sparkline，不弹窗就能看出"今天是不是变差了"）+ 批次总览条（排队/开始/完成/失败/耗时） |
+| 半成品检出 | 目录里只有 `.git`、没有工作树（克隆中断的典型残留）会被判为**半成品**并给出「修复/重新克隆」入口，而不是当成"已存在"直接跳过 |
+| 日志过滤与体检 | 日志关键字过滤（实时跟随 + 高亮）；仓库详情可对单个仓库跑 `git fsck` 体检与 `count-objects`，回答"这个库是不是坏了" |
 | 黑匣子日志 | 实时 git 原生输出 + 关键字高亮 + 导出 txt（结构化 app.log + error.log 兜底；**日志落盘即打码**，token/URL 凭据不落明文） |
 
 ## 本仓库的 AI 协作约定
@@ -152,7 +155,7 @@ Git-clone-Max/
 ├── skills/                  agent 技能包（gcm-clone/archive/report/diag/resume，各含 SKILL.md）
 ├── scripts/                 启动器（bat/ps1）+ E2E 冒烟 / 健康检查 / 发布 / 基准 / CI 快集
 ├── docs/                    架构 / ADR / 数据模型 / agent 契约 / SOP / 发布清单
-├── tests/                   单元 + 集成 + 真实 git E2E（176 个测试文件）
+├── tests/                   单元 + 集成 + 真实 git E2E（187 个测试文件）
 ├── requirements.txt         运行时依赖（PyQt6）
 └── pyproject.toml           项目元数据 + ruff / mypy 配置
 ```

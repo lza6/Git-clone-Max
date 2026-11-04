@@ -26,6 +26,39 @@ _REPLACE_BACKOFF_SEC = 0.05
 # 关键目标：settings.json 中 token 永不明文。
 _ENC_PREFIX = "enc:v1:"          # 加密值前缀（明示已加密）
 _MASK_PREFIX = "mask:"           # 降级掩码值前缀
+
+
+_FSYNC_WARNED = False
+
+
+def _fsync_fd(fh) -> None:
+    """尽力 fsync；不支持的文件系统（部分网络盘/FUSE）跳过并**只告警一次**。"""
+    global _FSYNC_WARNED
+    try:
+        fh.flush()
+        os.fsync(fh.fileno())
+    except OSError as e:
+        if not _FSYNC_WARNED:      # 每次保存都告警会刷屏，但完全沉默等于不知道
+            _FSYNC_WARNED = True
+            try:
+                from ..app.applog import warn as _warn
+                _warn(f"文件系统不支持 fsync（本次起不再重复提示）：{e}")
+            except Exception:
+                return
+
+
+def _write_bytes_synced(path: str | Path, data: bytes) -> None:
+    """写字节并 fsync（G84-9：`.bak` 也要能扛掉电）。"""
+    with open(path, "wb") as fh:
+        fh.write(data)
+        _fsync_fd(fh)
+
+
+def _write_text_synced(path: str | Path, text: str) -> None:
+    """写文本并 fsync（G84-9：settings.json 的 tmp 必须内容落盘后才能 replace）。"""
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+        _fsync_fd(fh)
 _enc_backend = None              # 惰性探测的后端名（dpapi/keyring/none）
 
 
@@ -340,6 +373,47 @@ class SettingsStore:
         self.path = Path(path)
         self._lock = threading.RLock()
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        # G84-8：解密失败的字段 → 磁盘上的原始密文。
+        # 为什么要记住它：`_decrypt_token` 对损坏密文返回空串（避免把垃圾当凭据用，
+        # 是有意的）；但如果 load()→save() 走一趟（用户只是改了个并发数），
+        # 空串会被**当成新值加密落盘**，用户原本还能恢复的密文就此永久消失。
+        # 记下来，save() 时对「明文为空且磁盘上是有效密文」的字段保留原密文。
+        self._undecryptable: dict[str, str] = {}
+
+    def forget_undecryptable(self, field: str | None = None) -> None:
+        """丢弃"密文解不开"的记账，让该字段下次保存时**可以真的写成空**。
+
+        为什么需要这个口子（R9 / 审查发现）：记账保护的本意是"别把用户还能救的
+        密文覆盖成空"，但它同时意味着**解不开的凭据永远删不掉**（用户清空 token
+        后又被原密文写回）。上层在收到用户**显式清除**的动作时调用本方法即可。
+        `field=None` 表示清空全部记账。
+        """
+        if field is None:
+            self._undecryptable.clear()
+        else:
+            self._undecryptable.pop(field, None)
+
+    def undecryptable_fields(self) -> tuple[str, ...]:
+        """当前有哪些字段"密文解不开"（供 UI/诊断如实提示，而不是假装没这回事）。"""
+        return tuple(sorted(self._undecryptable))
+
+    def _decrypt_tracked(self, field: str, raw: str) -> str:
+        """解密并**记账**：解不出来但磁盘上是有效密文时，记住原值以便 save() 保回。
+
+        与 `_decrypt_token` 的差别只在记账，不改语义（掩码/损坏仍返回空串）。
+        """
+        out = _decrypt_token(raw)
+        if out or not raw:
+            return out
+        if raw.startswith(_ENC_PREFIX):        # 有效密文却解不开（换机器/后端缺失）
+            self._undecryptable[field] = raw
+            try:
+                from ..app.applog import warn as _warn
+                _warn(f"设置项 {field} 的密文无法解密（可能换了机器或系统密钥变更）——"
+                      f"本次沿用磁盘原值，不会覆盖；如需重填请在设置页重新输入")
+            except Exception:
+                pass
+        return out
 
     def load(self) -> Settings:
         with self._lock, cross_process_lock(self.path, label="settings.json"):
@@ -362,18 +436,18 @@ class SettingsStore:
                         pass
             s = Settings(**merged)
             # G06-1：token 读回解密（掩码/损坏 → 空串，不崩）
-            s.token = _decrypt_token(s.token)
+            s.token = self._decrypt_tracked("token", s.token)
             # G38-1：host_tokens 逐条目解密（损坏条目→空，不崩）
             ht = getattr(s, "host_tokens", None) or {}
             if isinstance(ht, dict):
-                s.host_tokens = {str(k): _decrypt_token(str(v))
-                                 for k, v in ht.items()}
+                s.host_tokens = {str(k): self._decrypt_tracked(f"host_tokens.{k}", str(v))
+                             for k, v in ht.items()}
             # G49-7：Webhook token 读回解密（掩码/损坏 → 空串）
             nwt = getattr(s, "notify_webhook_token", "") or ""
-            s.notify_webhook_token = _decrypt_token(str(nwt))
+            s.notify_webhook_token = self._decrypt_tracked("notify_webhook_token", str(nwt))
             # G59-7：企业 IM webhook token 读回解密
             ait = getattr(s, "alert_im_token", "") or ""
-            s.alert_im_token = _decrypt_token(str(ait))
+            s.alert_im_token = self._decrypt_tracked("alert_im_token", str(ait))
             # G58-3：HTTP 代理串可能内嵌 `user:pass@` —— 读回解密；
             # 历史明文**原样保留**（否则升级会把用户代理设置静默清空）。
             s.proxy = _decrypt_or_keep(str(getattr(s, "proxy", "") or ""))
@@ -426,6 +500,23 @@ class SettingsStore:
             # 都已加密，唯独 proxy 漏了）。
             if payload.get("proxy"):
                 payload["proxy"] = _encrypt_token(payload["proxy"])
+            # G84-8：**解密失败的密文必须原样保回**（本函数末尾之前的最后一步，
+            # 因为上面各步会对值做 `_encrypt_token`，而它不幂等 —— 对已是密文的值
+            # 再加密一次就彻底废了）。触发场景：换机器/系统密钥变更/DPAPI 后端缺失
+            # → `load()` 把该字段读成空串 → 用户只是改了个并发数 → save() 把空串
+            # 加密落盘 → 用户原本还能手工救回的密文永久消失。
+            for _field, _cipher in self._undecryptable.items():
+                if _field.startswith("host_tokens."):
+                    _key = _field.split(".", 1)[1]
+                    _ht = payload.get("host_tokens") or {}
+                    # R9（审查发现）：只有**该 host 仍存在且值为空**才保留原密文。
+                    # 用户在「按平台凭据」里整行删掉某个 host = 明确要删除它，
+                    # 原实现会把这个 key 又塞回去（等于删不掉）。
+                    if isinstance(_ht, dict) and _key in _ht and not str(_ht.get(_key) or ""):
+                        _ht[_key] = _cipher
+                        payload["host_tokens"] = _ht
+                elif not str(payload.get(_field) or ""):
+                    payload[_field] = _cipher
             # G67-23：tmp 文件名**必须含 pid+线程 id**。
             # 原实现固定用 `settings.json.tmp`：同进程多线程并发保存时，两个线程
             # 会同时 open 同一个 tmp 路径 —— 后开者截断前者的内容，先完成者
@@ -436,10 +527,13 @@ class SettingsStore:
             # 用户表现为「刚改的设置没保存」。
             tmp = self.path.with_name(
                 f"{self.path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-            tmp.write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+            # G84-9：写完必须 flush+fsync **再** replace。
+            # 原来只有 `write_text` → `os.replace`：`replace` 只保证「目录项原子」，
+            # 不保证「内容已经落盘」。掉电/蓝屏时可能出现目录项已指向新 inode、
+            # 但文件内容仍是零长度的情形 —— 而 settings.json 里装着全部凭据，
+            # 这一次丢失等于全丢。这里补上 `atomic_io` 早就有的那半个语义。
+            _write_text_synced(
+                tmp, json.dumps(payload, ensure_ascii=False, indent=2))
             # G06-8：备份当前磁盘上的旧文件到 .bak（读入内存再写，避免 replace 后取不到旧内容）
             old = b""
             try:
@@ -450,7 +544,7 @@ class SettingsStore:
             if old:
                 try:
                     bak = self.path.with_suffix(".json.bak")
-                    bak.write_bytes(old)
+                    _write_bytes_synced(bak, old)
                 except Exception:
                     pass
             # G67-23：`os.replace` 在 Windows 上会因**目标文件被他人打开读取**而报

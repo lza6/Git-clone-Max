@@ -43,7 +43,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install PyQt6==6.11.0 coverage==7.16.0
+          # G84-3：coverage 版本由 requirements-build.txt 统一钉住（7.16.2）；
+          # 这里此前重复写了 coverage==7.16.0，被下一行覆盖 → 冗余且会误导维护者。
+          python -m pip install PyQt6==6.11.0
           python -m pip install -r requirements-build.txt
 
       # G50-3 Linux runner 缺 Qt 系统库（libEGL.so.1 等）→ 装最小离屏运行依赖
@@ -102,6 +104,29 @@ jobs:
       - name: Type check (mypy)
         run: |
           mypy gcm
+
+      # G84-15：质量棘轮 —— 只拦「这次改动让什么变坏」（行数暴涨 / except 增多 /
+      # 新增第 4 个超 800 行模块）。基线在 evidence/quality_baseline.json。
+      # 只在 PR 上跑：push 构建没有可比基线，跑等于白跑（基线漂移由
+      # test_g79_repo_hygiene 的集合断言 + test_g84_quality_gates 守）。
+      - name: Quality ratchet (only catches regressions)
+        if: github.event_name == 'pull_request'
+        run: |
+          python scripts/quality_delta.py --base "origin/${{ github.base_ref }}"
+
+      # G84-14：死代码 / 未接线静态扫描（vulture ≥80 只吃高置信项）。
+      # 白名单是 scripts/vulture_whitelist.py（真 Python 模块 —— 符号消失时它自己会报错，
+      # 豁免不会悄悄腐烂）。阈值先取 80：Qt 槽/信号在更低置信度上假阳性太多。
+      - name: Dead code / unwired scan (vulture >=80)
+        run: |
+          python -m vulture gcm scripts/vulture_whitelist.py --min-confidence 80
+
+      # G84-14：改哪块 → 必跑哪些测试（信息性输出，不进 job summary 门禁）。
+      # 单独跑一次的意义：把"爆炸半径"写进 CI 日志，人工评审时有据可查。
+      - name: Which tests does this change touch (advisory)
+        continue-on-error: true
+        run: |
+          python scripts/select_tests.py --changed-from-git --base origin/${{ github.base_ref || 'main' }}
 
       # G29-6 模块级覆盖率表格输出到 job summary（pwsh 三平台预装）
       # G66-5 修复：原实现写到 Path.home() 而 upload-artifact 取工作区相对路径
@@ -247,7 +272,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install PyQt6==6.11.0 coverage==7.16.0
+          # G84-3：coverage 版本由 requirements-build.txt 统一钉住（7.16.2）；
+          # 这里此前重复写了 coverage==7.16.0，被下一行覆盖 → 冗余且会误导维护者。
+          python -m pip install PyQt6==6.11.0
           python -m pip install -r requirements-build.txt
 
       - name: Install Qt system deps (Linux)
