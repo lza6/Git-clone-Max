@@ -38,7 +38,9 @@ class _TmpCase(unittest.TestCase):
 
 
 class TestUndecryptableIsPreserved(_TmpCase):
-    GARBAGE = "enc:v1:bm90LWEtcmVhbC1jaXBoZXJ0ZXh0"
+    # 必须是**任何后端都解不开**的密文：原来用合法 base64，POSIX 的 xorfixed
+    # 后端能把它"解"成垃圾串（非空）→ 不进入"解不开"分支 → CI 上 4 例全红。
+    GARBAGE = "enc:v1:%%%not-base64%%%"
 
     def test_load_returns_empty_for_undecryptable(self):
         self._write_payload({"token": self.GARBAGE})
@@ -91,7 +93,9 @@ class TestUndecryptableIsPreserved(_TmpCase):
 class TestCredentialDeletion(_TmpCase):
     """R9（审查发现）：记账保护不能变成"永远删不掉"。"""
 
-    GARBAGE = "enc:v1:bm90LWEtcmVhbC1jaXBoZXJ0ZXh0"
+    # 必须是**任何后端都解不开**的密文：原来用合法 base64，POSIX 的 xorfixed
+    # 后端能把它"解"成垃圾串（非空）→ 不进入"解不开"分支 → CI 上 4 例全红。
+    GARBAGE = "enc:v1:%%%not-base64%%%"
 
     def test_host_row_removal_actually_deletes(self):
         """在「按平台凭据」里整行删掉某个 host = 明确要删除，不能被塞回去。"""
@@ -121,6 +125,31 @@ class TestCredentialDeletion(_TmpCase):
         store = S.SettingsStore(self.path)
         store.load()
         self.assertEqual(store.undecryptable_fields(), ("token",))
+
+
+class TestBackendIndependence(_TmpCase):
+    """同一套语义必须在两种后端下都成立（Windows=dpapi / POSIX=xorfixed）。
+
+    CI 实测教训：只在 Windows 上跑过的密钥相关测试会在 POSIX 上红。
+    """
+
+    def test_preserve_holds_under_xorfixed_backend(self):
+        from unittest import mock as _mock
+
+        with _mock.patch.object(S, "_get_backend", return_value="xorfixed"):
+            enc = S._encrypt_token("real-secret")
+            self.assertTrue(enc.startswith("enc:v1:"))
+            self.assertEqual(S._decrypt_token(enc), "real-secret")
+            # 坏密文在 xor 后端下同样解不开
+            self.assertEqual(S._decrypt_token("enc:v1:%%%not-base64%%%"), "")
+            # 记账保护同样生效
+            self._write_payload({"token": "enc:v1:%%%not-base64%%%"})
+            store = S.SettingsStore(self.path)
+            loaded = store.load()
+            self.assertEqual(loaded.token, "")
+            self.assertIn("token", store.undecryptable_fields())
+            store.save(loaded)
+            self.assertEqual(self._read_payload()["token"], "enc:v1:%%%not-base64%%%")
 
 
 class TestAtomicDurability(_TmpCase):
