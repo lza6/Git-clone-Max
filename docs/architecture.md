@@ -70,7 +70,7 @@
 | ADR-003 | 凭据加密落盘（DPAPI/Keyring/XOR 降级）+ redact 全出口打码 |
 | ADR-004 | 生态 agent 化：CLI --json 契约 + MCP 只读 + HTTP API 默认只读（显式 enable 才可写） |
 
-## 4. 模块规模基线（2026-11-03 v9.17.0 实测，`python scripts/dev_metrics.py` 可一键复测）
+## 4. 模块规模基线（2026-11-04 v9.18.0 实测，`python scripts/dev_metrics.py` 可一键复测）
 
 | 模块 | 行数 | 职责 |
 |------|------|------|

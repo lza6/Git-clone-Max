@@ -26,6 +26,7 @@ import argparse
 import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -82,6 +83,15 @@ CARRIERS: tuple[tuple[str, str, str], ...] = (
      r"releases/download/v{old}/", "releases/download/v{new}/"),
     ("packaging/winget/lza6.Git-clone-Max.locale.zh-CN.yaml",
      r"PackageVersion: {old}", "PackageVersion: {new}"),
+    # 9.5 带日期的"实测/最后更新"抬头 —— 这两处**同时**被 doc_freshness 守卫
+    #     要求版本号等于 __version__，以前放在"历史快照"豁免里 → 每次 bump 必漏。
+    #     现在由本脚本连日期一起改（{date} = 执行当天）。
+    ("docs/architecture.md",
+     r"模块规模基线（[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}} v{old} 实测",
+     "模块规模基线（{date} v{new} 实测"),
+    ("test_ledger.md",
+     r"\*\*最后更新\*\*：[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}（v{old}：",
+     "**最后更新**：{date}（v{new}："),
     # 10. README（版本横幅 + 功能表/发布示例里出现的 vX.Y.Z）
     ("README.md", r"\*\*当前版本：v{old}\*\*", "**当前版本：v{new}**"),
     ("README.md", r"v{old}", "v{new}"),
@@ -91,9 +101,7 @@ CARRIERS: tuple[tuple[str, str, str], ...] = (
 #: 新增排除项必须写清理由，否则守卫（tests/test_g84_bump_version.py）会拦。
 ALLOWED_HISTORICAL = {
     "gcm/_changelog_data.py": "逐版本历史条目，改写等于篡改历史",
-    "CLAUDE.md": "带日期的实测快照（'2026-11-03 v9.17.0 实测'），重测时才改",
-    "test_ledger.md": "带日期的接缝台账抬头，重测时才改",
-    "docs/architecture.md": "带日期的模块规模基线，重测时才改",
+    "CLAUDE.md": "带日期的实测快照（不含版本字面量，重测时才改）",
     "docs/agent-contract.md": "本文件另有 2 处必须跟随（见载体表），此处仅兜底",
     ".beads/issues.jsonl": "议题标题里的版本是历史记录",
 }
@@ -142,7 +150,8 @@ def _fmt(pattern: str, old: str, new: str) -> str:
     o = old.split(".")
     n = new.split(".")
     return pattern.format(old=old, new=new, maj=o[0], min=o[1], pat=o[2],
-                          newmaj=n[0], newmin=n[1], newpat=n[2])
+                          newmaj=n[0], newmin=n[1], newpat=n[2],
+                          date=time.strftime("%Y-%m-%d"))
 
 
 @dataclass
