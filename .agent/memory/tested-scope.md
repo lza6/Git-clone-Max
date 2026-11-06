@@ -12,7 +12,9 @@ owner: Verifier
 | 文档漂移 | `scripts/doc_drift_check.py` | `DRIFT 0` |
 | i18n 棘轮 | `scripts/i18n_coverage.py` | `I18N OK`（未走 `tr()` 的中文字面量 1517 → **1418**） |
 | 发布台账 | `scripts/changelog.py check` | 86 条历史 / 0 条待发布碎片（9.18.8 已聚合） |
-| 全快集 | `scripts/ci_run_fast.py` | 2126 例 · failures=3（3 红=版本/changelog 台账）→ 聚合后 `test_g66_patch`+`test_g81_changelog` **75 例 OK** |
+| 全快集 | `scripts/ci_run_fast.py` | **2128 例 · failures=0 · errors=0 · skipped=4**（9.18.9 发布前终验） |
+| exe 真启动 | `scripts/health_check.py --json` | `started_ok=true` · `repos_db_created=true`（9.18.8 3972ms / 9.18.9 7299ms） |
+| i18n | `scripts/i18n_coverage.py` | **I18N OK**（未走 `tr()` 中文字面量 1517 → **1355**，排除发布说明口径 1269）；英文模式三页签可见中文 **0** |
 | 小屏几何 | 自建探针（9 尺寸 × 3 字号） | 27 组合 + 900×480 **零裁切**（含「更多 ▸」） |
 | 真实 GUI E2E | 离屏真窗口点「开始」（真网络） | 第1轮 `成功/新建克隆/克隆完成/2.1s`；第2轮 `已跳过/—/已完成，跳过` + 状态栏「跳过 1」 |
 | DPI 矩阵 | `scripts/check_dpi_matrix.py` | 1.25/1.5/1.75/2.0 四档 `exit 0` · **0 裁切**（`evidence/rev14-dpi.json`） |
