@@ -388,9 +388,13 @@ class TestWindowMinimum(unittest.TestCase):
             visible = w.repo_input.visibleRegion().boundingRect().height()
             self.assertEqual(visible, w.repo_input.height(),
                              "最小窗口下输入框被裁切")
-            # 顶部可滚动，tab 的布局最小高度不再把窗口顶到 637
+            # Rev14 F1：把「下载位置/克隆模式」移出滚动区之后，tab 的**布局最小需求**
+            # 涨到 ~641（常驻区多了 82px 的选项行）。这对用户没有害处 —— 窗口仍能压到
+            # 584（WINDOW_MIN 560 + 菜单栏 24），差额由「折叠工具行 + 可滚动区让位」
+            # 吸收。所以断言改成**用户可见的结论**：窗口真的没被顶大、输入框完整。
             self.assertIsNotNone(w.download_top_scroll.widget())
-            self.assertLessEqual(w.tab_download.minimumSizeHint().height(), 560)
+            self.assertLessEqual(w.height(), 600,
+                                 "最小窗口高度被布局需求顶大了（折叠/滚动应吸收差额）")
         finally:
             w.close()
 

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import threading
 
+from ..i18n import tr
 from .theme import LogLevel
 
 
@@ -93,23 +94,23 @@ def on_checked(win, has_new: bool, ver: str, url: str, err: str,
         # 异常要走下面的降级分支，而不是从槽里冒出去让用户什么都看不到。
         mb = _msgbox()
         if err:
-            mb.information(win, "检查更新", err)
+            mb.information(win, tr("检查更新"), err)
         elif has_new:
             extra = ""
             if sha:
                 extra = (f"\n\n发布方公布的 SHA256：\n{sha}\n"
                          f"（下载后可用 `certutil -hashfile <文件> SHA256` 核对）")
             ret = mb.question(
-                win, "发现新版本",
+                win, tr("发现新版本"),
                 f"当前版本 {__version__}，最新版本 {ver}。\n是否打开下载页面？{extra}",
                 mb.StandardButton.Yes | mb.StandardButton.No)
             if ret == mb.StandardButton.Yes and url:
                 import webbrowser
                 webbrowser.open(url)
         else:
-            mb.information(win, "检查更新", f"已是最新版本（{__version__}）")
+            mb.information(win, tr("检查更新"), f"已是最新版本（{__version__}）")
     except Exception as e:  # noqa: BLE001 —— 弹窗失败只能降级成再弹一次提示
-        mb.information(win, "检查更新", f"检查更新失败：{e}")
+        mb.information(win, tr("检查更新"), f"检查更新失败：{e}")
 
 
 def verify_downloaded_file(win) -> None:
@@ -132,7 +133,7 @@ def verify_downloaded_file(win) -> None:
     if not expected:
         # 没有发布方校验值时不弹文件选择器，直接说清怎么拿到基准值
         _msgbox().information(
-            win, "校验下载的文件",
+            win, tr("校验下载的文件"),
             "还没有拿到发布方公布的 SHA256。\n"
             "请先点「检查更新」——拿到版本信息后，这里才有可比对的基准值。")
         return
@@ -142,18 +143,18 @@ def verify_downloaded_file(win) -> None:
         return
     ok, actual, outcome = verify_by_sha256(path, expected)
     if outcome == OUTCOME_MATCH:
-        _msgbox().information(win, "校验通过",
+        _msgbox().information(win, tr("校验通过"),
                               f"文件与发布方公布值一致。\nSHA256：{actual}")
     elif outcome == OUTCOME_MISMATCH:
         _msgbox().warning(
-            win, "校验不通过",
+            win, tr("校验不通过"),
             "文件与发布方公布值**不一致**，请勿安装。\n\n"
             f"期望：{expected}\n实际：{actual}\n\n"
             "可能原因：下载不完整、代理/镜像篡改、或下到了别的版本。建议重新从 Release 页面下载。")
     elif outcome == OUTCOME_UNREADABLE:
-        _msgbox().warning(win, "无法读取", "这个文件读不了（可能被杀毒软件占用或权限不足）。")
+        _msgbox().warning(win, tr("无法读取"), "这个文件读不了（可能被杀毒软件占用或权限不足）。")
     else:  # 防御性：理论上到不了（no_baseline 已在前面拦住）
-        _msgbox().information(win, "无法比对", "没有基准校验值。")
+        _msgbox().information(win, tr("无法比对"), "没有基准校验值。")
 
 
 def check_silent(win) -> None:

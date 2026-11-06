@@ -58,3 +58,19 @@
 | 原子写/诊断包 | `TestAtomicHardening/TestDiagHardening` + `tests.test_g67_closure` |
 | 重试 jitter/批量 | `TestRetryJitter` + `tests.test_g52_retry_queue_extra` |
 | SSE 续传/背压 | `TestSseG72` + `tests.test_g71_event_stream` |
+
+## Rev14 新增改动面（2026-11-06）
+| 改动面 | 必跑 |
+|--------|------|
+| 下载页布局 / 折叠阈值 / splitter 分配 | `test_ui_compact_visibility`（9 尺寸契约，含 `repo_input/target_edit/mode_combo/depth_spin`）+ `test_rev13_adapt`（折叠往返/字号联动）+ `test_g70_ui_upgrade` |
+| 断点续传跳过 / 批次小结 | `test_rev14_skipped`（3 例）+ `test_g43_engine` + `test_g67_closure`；真实两轮 E2E |
+| 无障碍命名 / 焦点 / 键盘 | `test_rev14_a11y` + `test_rev14_keyboard`（含**真实按键**断言）+ `scripts/a11y_audit.py` |
+| 设计 token / 动效 / QSS | `test_rev14_feedback`（token 无死项、无裸 `setDuration(数字)`）+ `test_g75_visual_system`（24 组 QSS）+ `test_rev11_visual`（accent 预算 9） |
+| 管理页列宽持久化 | `test_rev14_feedback.TestManageColumnPersistence` + `TestG69_18WiringClosure`（`ui_state` 写读两侧） |
+| 截图/视觉 | `ui_screenshot_audit.py <dir>` + `pixel_diff.py <基线> <新>`（阈值 0.5%，自带 2px 反向自检） |
+| DPI / 缩放 | `scripts/check_dpi_matrix.py`（4 档子进程，判据：零裁切 + 屏幕受支持时最小窗装得下） |
+| 引擎 `launch()` 签名 | `test_g43_engine` + `test_g67_closure` + `test_rev14_skipped`；CLI 契约不变断言（`results[]`/退出码） |
+
+> **数据洞教训（Rev14）**：截图种子必须**覆盖每一列的数据形态**（真实目录 + `head_sha` + `duration_ms`）。
+> 此前种子不建目录，于是「HEAD / 大小 / 耗时」三列在所有截图里永远空白 —— 四轮 UI 迭代都"看过"截图，
+> 却没人发现它们可能根本没渲染。**截图只证明布局，证明不了数据。**

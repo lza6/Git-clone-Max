@@ -47,10 +47,19 @@ owner: memory-keeper
 | 3 | ~~`prune_history` 全表窗口函数跑在 GUI 线程；无分阶段耗时埋点~~ | **已闭环**：C3-2 改为批次收尾 `prune_history_if_due`；C3-4 `stage_json` 四段埋点（v9.14/v9.15） |
 | 4 | ~~检索 LIKE 单路；trigram 对两字中文零命中~~ | **已闭环**：C4 双路（≥3 字 FTS5 bm25 / <3 字 LIKE），`test_c4_search` 24 例 |
 | 5 | ~~MCP 仅 4 个只读工具；事件不落盘；本地 API 无 token~~ | **已部分闭环**：`clone_batch`（`--allow-mutate`）+ `api_token` Bearer + **G84 把 `event_sink` 接上生产入口**（此前只有测试调用）。仍未做：MCP 长任务 `progress`/`cancel`、MCP 审计行、`resources`/`prompts` |
-| 6 | 英文模式 tr 键回退中文（历史登记 58 键） | **待复核**：`i18n_coverage.py` 已 OK（ZH/EN 键集相等且 EN 无中文残留），但"运行时是否仍有回退"未跑真实英文路径 → 标 `待验证` |
-| 7 | **MCP `clone_batch` 在 stdio 循环里同步跑子进程（timeout=3600）**：最长 1 小时无 progress、不可取消 | **新增（G84 实测）**：`gcm/mcp_server.py:288-294` |
-| 8 | **`backup_to()` 备份非原子**：`wal_checkpoint(TRUNCATE)` + `shutil.copy2`，无 tmp+replace/无覆盖保护/无 `quick_check` → 中途崩溃得到半个备份 | **新增（G84 实测）**：`gcm/db/repo_db.py:594-613` |
-| 9 | 管理页「健康 5/5」无解释（ToolTip 只挂 col 0/2/3/4）；`mirror_used`/`degrade_path` 只到 CLI，GUI 看不到 | **新增（G84 实测）**：`manage_model.py:214`、`gcm/ui/` 零命中 |
+| 6 | 英文模式 tr 键回退中文（历史登记 58 键） | **已复核（2026-11-05 Rev14 收尾轮，真实运行）**：`set_language("en")` + 真实建窗，页签已显示 `Download Center / Repos / Settings & Log`，窗口标题已英文；**仍有 10 条按钮文案是中文**（`一键更新全部 / 取消全部 / 刷新列表 / 导出元数据 …`）—— 它们是 `QPushButton("中文")` **构造参数从未走 `tr()`**，属 R14-18 i18n 长尾，不是回退缺陷 |
+| 7 | ~~MCP `clone_batch` 在 stdio 循环里同步跑子进程（timeout=3600），最长 1 小时无 progress、不可取消~~ | **已闭环（Rev14 复核，代码为准）**：`gcm/mcp_jobs.py` 已存在，`clone_batch(async=true)` + `job_status` 轮询 + `job_cancel` 杀进程树（`mcp_server.py:108,119,219` 有工具声明与使用指引）。原登记指向的 `mcp_server.py:288-294` 已不是同步长跑路径 |
+| 8 | ~~`backup_to()` 备份非原子：`wal_checkpoint(TRUNCATE)` + `shutil.copy2`，无 tmp+replace/无覆盖保护/无 `quick_check`~~ | **已闭环（Rev14 复核，代码为准）**：实现已抽到 `gcm/db/backup.py`（G84-10 强化），顺序是 checkpoint → tmp → fsync → **先 `quick_check` 再 `os.replace`**，失败清理 tmp 并上抛。UI 文案「原子写 + quick_check 校验」与实现一致（`settings_actions.py:186-189`） |
+| 9 | ~~管理页「健康 5/5」无解释（ToolTip 只挂 col 0/2/3/4）~~ | **已闭环（Rev14 复核）**：`manage_model.py:216-221` 已给 col 6（健康分口径：近 20 次成功率 50% + 陈旧度 25% + 冲突惩罚 25%）与 col 7（大小未算出的原因）挂 `ToolTipRole`。**仍未做**：`mirror_used`/`degrade_path` 只到 CLI、GUI 看不到 |
+
+## Rev14 收尾轮新发现（2026-11-05，全部有真实运行证据）
+
+| # | 事项 | 状态 |
+|---|------|------|
+| 10 | **断点续传跳过的仓库不产生终态**：用户把已下过的仓库再贴一次点「开始」→ 行永远停在「等待中」、`本次/详情/耗时` 被抹成「—」、通知「成功 0」、状态栏一直「并行同步中」（GUI 实测复现）。根因 `engine.launch()` 的 `_precheck_skip` 命中后只 `_emit_line` + `_mark_done` + `continue`，不 emit result；全跳过时 `finished.emit()` 但零结果 | **已闭环（Rev14 F2，同日）**：引擎新增 `skipped` 信号 + `launch(report_skipped=)`；GUI 行到终态、小结报「跳过 N」；守卫 `tests/test_rev14_skipped`（3 例） |
+| 11 | **小屏「下载位置 / 克隆模式 / 层数」被裁到 6–23px**（几何断言：1024×768 下 `target_edit` 可见 352×6/352×34；1366×768 同样；1440×900 无裁切） | **已闭环（Rev14 F1，同日）**：三个控件移出滚动区成常驻行；契约清单已补入，27 组合 + 900×480 **零裁切**；折叠阈值重扫为 720/740/760 |
+| 12 | **验收工具的数据洞**：`ui_screenshot_audit.py` 的种子不建真实目录、不给 `head_sha`/`duration_ms` → 管理页 HEAD/大小两列与进度页耗时列**永远空**，截图验收看不见它们坏没坏（已用真实数据证明三列本身能渲染） | **开放（P2）**，见 §3.B.5 |
+| 13 | **`--diag` 单独用会静默走 GUI 单实例路径**（`-m gcm --diag` → 打印「已在运行」并 exit 0）；帮助里写的是 `--cli --diag` | **开放（P3）**：help 未说明必须配 `--cli` |
 
 ## 未闭环功能
 

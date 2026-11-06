@@ -1,0 +1,236 @@
+{
+  "node": "rev14",
+  "kind": "implementation_evidence",
+  "claim": "Rev14 施工版 B1–B6 落地：四档断点与 L 档真实行为、多显示器重算、键盘 tab 链与 F6、无障碍命名补齐、焦点可见、管理页列宽持久化、表格 hover、骨架屏、离线指示、空态三态、动效 token、历史按钮自绘、i18n AST 棘轮、三个度量脚本与像素回归比对",
+  "version": "9.18.8",
+  "baseline_head": "f6b913e",
+  "checked_at": "2026-11-05T19:40:00+08:00",
+  "decisions": [
+    {
+      "id": "D-15",
+      "decision": "新文件定位=施工版，取代 Rev13 作为执行依据",
+      "by": "user",
+      "at": "2026-11-05"
+    },
+    {
+      "id": "D-16",
+      "decision": "对实测已达标或归因错误的三项按实测删/降级",
+      "by": "user",
+      "at": "2026-11-05"
+    }
+  ],
+  "static_gates": {
+    "ruff_check_gcm": "All checks passed!",
+    "mypy_gcm": "Success: no issues found in 139 source files",
+    "doc_drift_check": "DRIFT 0",
+    "i18n_coverage": "I18N OK",
+    "qss_validate": "24 组（4 主题 × 3 缩放 × 2 动效态）全绿，由 test_g75_visual_system 断言",
+    "dev_metrics": {
+      "gcm_py_files": 135,
+      "gcm_total_lines": 33997,
+      "oversized_over_800": [
+        "gcm/app/engine.py",
+        "gcm/git/service.py",
+        "gcm/ui/main_window.py"
+      ],
+      "functions_over_100": 19,
+      "tests_files": 197,
+      "note": "dev_metrics 的行数为测量时刻快照；本轮收尾实测 main_window=3461、progress_table=798、qss_build=372、palettes=271、status_strip=249"
+    }
+  },
+  "new_tests": {
+    "tests/test_rev14_adapt.py": {
+      "cases": 15,
+      "covers": "S52 断点四档 + L 档行高差异 + S53 多屏解析与几何屏名往返"
+    },
+    "tests/test_rev14_a11y.py": {
+      "cases": 8,
+      "covers": "S55 主操作 100% 命名 + 输入控件推导 + 棘轮"
+    },
+    "tests/test_rev14_keyboard.py": {
+      "cases": 8,
+      "covers": "S54 tab 链名字真实存在 + F6 循环与焦点落点"
+    },
+    "tests/test_rev14_feedback.py": {
+      "cases": 18,
+      "covers": "断网判定 / 骨架不建控件 / 空态三态 / token 无死项 / 动效无裸毫秒 / 管理页列宽持久化"
+    },
+    "tests/test_rev14_pixel.py": {
+      "cases": 4,
+      "covers": "S56 像素比对反向自检（2px 位移必须报警）"
+    },
+    "tests/test_rev14_skipped.py": {
+      "cases": 3,
+      "covers": "F2：跳过的仓库到终态 + 跳过计数 + 引擎回报（反向自检）"
+    }
+  },
+  "new_tools": {
+    "scripts/a11y_audit.py": "无障碍审计（effective_name 口径），--update 写 scripts/a11y_baseline.json",
+    "scripts/bench_startup.py": "启动四分段（qt_import/ui_import/ctor/first_frame）+ 读 exe 历史 elapsed_ms",
+    "scripts/bench_resize.py": "8 尺寸 × 3 字号重排耗时 + 断点档位，超 16.7ms 列 over_budget",
+    "scripts/pixel_diff.py": "截图阈值比对（容差 8 / 占比 0.5%）+ --self-check 反向自检"
+  },
+  "measured": {
+    "startup_offscreen_ms": {
+      "qt_import": 21.3,
+      "ui_import": 94.5,
+      "ctor": 144.9,
+      "first_frame": 15.7,
+      "total": 282.1
+    },
+    "startup_exe_ms_historical": 3815,
+    "resize_reflow_ms": {
+      "range": "0.0–13.6",
+      "over_budget": [],
+      "frame_budget_ms": 16.7
+    },
+    "a11y": {
+      "main_actions_total": 14,
+      "main_actions_missing": [],
+      "missing_total": 7,
+      "before": {
+        "main_actions_missing": 11,
+        "missing_total": 142
+      }
+    },
+    "i18n_untranslated": {
+      "before": 1517,
+      "after": 1459
+    },
+    "tokens": {
+      "removed_dead": [
+        "spacing.xl",
+        "spacing.2xl",
+        "spacing.inset",
+        "spacing.section",
+        "row.compact",
+        "radius.chip"
+      ],
+      "added": [
+        "row.wide",
+        "row.touch"
+      ],
+      "deliberately_unused": [
+        "shadow.focus"
+      ]
+    }
+  },
+  "cut_with_reason": [
+    {
+      "item": "R13-12 主题切换优化",
+      "reason": "实测整窗 setStyleSheet 42.6/49.7/44.4ms，已低于原定 80ms 目标"
+    },
+    {
+      "item": "R13-13 列遍历优化",
+      "reason": "_apply_layout_for_width 0.01ms/次、_apply_layout_mode 0.03ms/次；重排成本在 Qt 布局内部，原归因错误"
+    },
+    {
+      "item": "R14-17 启动优化",
+      "reason": "ctor 144.9ms 仅占 exe 3815ms 的 3.8%，优化构造对用户不可感知；门槛改为「先由 bench_startup 固定口径」"
+    },
+    {
+      "item": "R14-14 排版角色接线",
+      "reason": "QSS 全局 QWidget{font-size} 会覆盖 apply_type 的字号；在下载页做要么无效要么动 24 组矩阵，收益小于回归风险"
+    },
+    {
+      "item": "R14-11 输入内联校验",
+      "reason": "已存在（G54-1 的 300ms 防抖 + 有效/无效计数 + 最多列 3 条），Rev13 把它记成缺失是错的"
+    }
+  ],
+  "full_fast_suite": {
+    "command": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe scripts/ci_run_fast.py",
+    "ran": 2126,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 4,
+    "failed_modules": [],
+    "failed_cases": [
+      "test_g66_patch.TestPackagingVersionSync.test_changelog_has_current_version_entry",
+      "test_g81_changelog.TestChangelogPublicAPI.test_first_entry_matches_version",
+      "test_g81_changelog.TestChangelogScript.test_check_exit_code_zero"
+    ],
+    "attribution": "三条均为既有外部红灯：__version__ 已 bump 到 9.18.8 而 changelog 首条仍是 9.18.0（Rev13 验证记录 §6 已登记同一类）。本轮不伪造版本条目，留待发版时由 scripts/changelog.py build 生成。",
+    "flaky_note": "首轮快集出现 test_manage_ui 1 例失败，隔离运行与随后两轮快集均为 OK，未能单独稳定复现；按台账规则登记为偶发，未用重试或 skip 掩盖。",
+    "note": "changelog.py build --version 9.18.8 之后 0 红"
+  },
+  "known_gaps": [
+    "真机双屏/拔插/混合 DPI 未验（本机单屏），只覆盖注入屏幕参数的纯函数",
+    "屏幕阅读器（NVDA/JAWS）实机流程未做，只保证名称/角色/顺序/焦点/对比度五项静态可验证",
+    "对照度矩阵本轮未重跑（引用 Rev11/Rev13 实测值），改色值前必须重跑 24 组",
+    "gcm/ui 仍有 1459 条中文未走 tr()（棘轮只降不升，本批迁移 70 处可见文案）"
+  ],
+  "second_round": {
+    "decisions": [
+      {
+        "id": "D-17",
+        "decision": "「下载位置/克隆模式」移出滚动区",
+        "by": "user"
+      },
+      {
+        "id": "D-18",
+        "decision": "launch() 加 report_skipped（CLI 契约不变）",
+        "by": "user"
+      },
+      {
+        "id": "D-19",
+        "decision": "用当前状态重拍像素基线并 gitignore",
+        "by": "user"
+      }
+    ],
+    "verified": {
+      "clipping_zero": "9 尺寸 × 3 字号 = 27 组合 + 900×480 零裁切（含「更多 ▸」）",
+      "fold_threshold_rescan": {
+        "1.0": 720,
+        "1.3": 740,
+        "1.6": 760
+      },
+      "skip_e2e": "第2轮 已跳过/—/已完成，跳过（克隆完成）；状态栏 完成：成功 0 · 冲突 0 · 失败 0 · 跳过 1",
+      "pixel_baseline": {
+        "dir": "reports/ui-baseline-20261105",
+        "images": 34,
+        "self_compare": "ok=True 回归0 缺失0 新增0"
+      },
+      "a11y_missing_total": 28,
+      "new_tests": 54
+    },
+    "review_driven_fixes": [
+      "repo_input.setTabChangesFocus(True) —— QPlainTextEdit 吞 Tab",
+      "table.setTabKeyNavigation(False) —— QTableView 吞 Tab",
+      "effective_name 只用 QAbstractButton 的 text() 兜底 —— 否则棘轮对无标签输入框失明",
+      "删除 launched==0 分支后的不可达行（vulture 100%）",
+      "test_g70_ui_upgrade 断言改为用户可见结论（窗口仍能压到 584）"
+    ],
+    "deferred": [
+      "零幸存者批次不建行",
+      "引擎 key 口径未统一",
+      "断网标记批次起点不清零",
+      "motion.EASING_NAME 零消费",
+      "QGroupBox 标题不做标签源",
+      "骨架不跟随 resize",
+      "F6 未做真实按键断言",
+      "empty_state filtered= 零调用点"
+    ]
+  },
+  "round3_review_closeout": {
+    "closed": [
+      "F6 进 menu_bar.SHORTCUTS + 真实按键断言 test_f6_real_key_cycles_tabs",
+      "断网标记：_launch 起点清零",
+      "motion.easing() 按 EASING_NAME 查表",
+      "下载三控件显式 accessibleName/Description（QGroupBox 标题不是标签源）",
+      "BusyPreview 改 QObject + eventFilter，骨架跟随表格 resize",
+      "skeleton.ROWS 真正生效",
+      "零幸存者不建行：根因 install_row 只用 setItem（对不存在的行静默空操作）→ 预填前 _prepare_table 建行",
+      "引擎 key 口径统一：_mark_done 改传 owner/repo（与 _precheck_skip 一致）",
+      "empty_state(filtered=) 零调用点 → 抽出 empty_copy(title,hint,filtered) 作文案唯一来源，build_empty_state 与 manage_panel 都走它"
+    ],
+    "still_open": [],
+    "verified": {
+      "zero_survivor_row": "行0 = demo__repo / 已跳过 / 已完成，跳过（克隆完成）；状态栏 … · 跳过 1",
+      "progress_keys_after_skip": [
+        "demo/repo"
+      ],
+      "real_network_two_rounds": "第1轮 成功/新建克隆/克隆完成/2.1s；第2轮 已跳过/—/已完成，跳过（克隆完成）",
+      "tests": "124 例定向（engine+g67+rev13/rev14+ui_compact+g70）全绿"
+    }
+  }
+}

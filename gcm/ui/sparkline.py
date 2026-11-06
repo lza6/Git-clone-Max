@@ -17,6 +17,8 @@ from PyQt6.QtCore import QPointF
 from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import QWidget
 
+from ..i18n import tr
+
 BUCKET_SECONDS = 300          # 5 分钟一桶
 CAPACITY = 288                # 288 × 5min = 24h
 
@@ -63,7 +65,7 @@ class Sparkline(QWidget):
         super().__init__(parent)
         self.ring = ThrottleRing(capacity)
         self.setFixedSize(120, 28)
-        self.setToolTip("最近吞吐趋势（5 分钟/点）")
+        self.setToolTip(tr("最近吞吐趋势（5 分钟/点）"))
 
     def push(self, v: float) -> None:
         self.ring.push(v)

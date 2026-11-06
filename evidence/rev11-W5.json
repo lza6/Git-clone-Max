@@ -1,0 +1,75 @@
+{
+  "node": "Rev11-W5",
+  "kind": "closure",
+  "checked_at": "2026-11-04T12:28+08:00",
+  "items": {
+    "V-23_form_colons": {
+      "verdict": "DONE(零改动需求)",
+      "evidence": "grep addRow(tr(\"xxx：\") 全库统一全角冒号 —— G75 P3-2 登记的问题在后续迭代中已被顺手解决",
+      "status": "DONE"
+    },
+    "V-24_onboarding_kicker": {
+      "change": "onboarding.py 标题上方加 kicker 铭牌（mono + small + 字距，text_dim）；i18n 双语补 'SETUP · 首次配置'",
+      "status": "DONE"
+    },
+    "seam_registry": {
+      "change": "test_ledger.md 新增 S47（批次信号→结论条三态）/ S48（表格列结构→消费方）/ S49（排序模式⟷拖拽可用性）",
+      "status": "DONE"
+    },
+    "doc_sync": {
+      "changes": [
+        "CLAUDE.md / docs/architecture.md 行数表（main_window 2987、progress_table 794、palettes 238、qss_build 273、result_labels 82）",
+        "测试文件数三处同源 190（README / CLAUDE.md / test_g79_repo_hygiene._EXPECTED_TEST_FILES）",
+        "长函数数 19（_build_tools_row 拆出后回落）",
+        "doc_drift_check → DRIFT 0"
+      ],
+      "status": "DONE"
+    },
+    "changelog": {
+      "fragment": "changelog.d/rev11-visual-instrument.added.md",
+      "status": "DONE"
+    }
+  },
+  "fast_suite": {
+    "cmd": "coverage run --source=gcm scripts/ci_run_fast.py",
+    "result": "Ran 2031 tests · failures=9（均为快集启动早于后续文档修正的陈旧快照）",
+    "stale_failures_recheck": "7 失败模块定向复跑 —— test_doc_drift_guard / test_function_size_budget 前台已 OK；其余 5 模块后台复跑中（结果回填）",
+    "note": "9 failures 逐条定性：文档数字类（test_g80_hygiene/g84_wiring 等）由 doc 数字同步已修复；接线断言类（test_c1_wiring/g76_wiring）待复跑确认"
+  },
+  "label": "已验证",
+  "stale_failures_final": {
+    "verdict": "全部转绿（逐一定向复跑）",
+    "detail": [
+      {
+        "module": "test_doc_drift_guard",
+        "result": "OK（文档数字同步后）"
+      },
+      {
+        "module": "test_function_size_budget",
+        "result": "OK（_build_tools_row 拆出，集合回到 19）"
+      },
+      {
+        "module": "test_g80_hygiene",
+        "result": "OK（异常预算棘轮：新模块 pass-only 清零、窄 except 以 LBYL 消化，731→≤728；转绿）"
+      },
+      {
+        "module": "test_g84_bump_version + test_g84_wiring",
+        "result": "OK（test_ledger 抬头恢复 bump 正则锚点；empty_state 接线后孤儿清零）"
+      },
+      {
+        "module": "test_c1_wiring",
+        "result": "OK（quick_repos_editor hint 去 Markdown 粗体）"
+      },
+      {
+        "module": "test_g76_wiring",
+        "result": "OK（3 例 mock 从 QInputDialog.getText 迁移到 QDialog.exec —— V-20 行为契约不变的同步）"
+      }
+    ],
+    "final_group_rerun": "Ran 94 tests OK（bump+wiring+hygiene+c1+g76 五模块合并）"
+  },
+  "ratchet_incident": {
+    "what": "test_g80_hygiene 异常预算棘轮抓到本轮新增 except（except 总数 728→741、pass-only 286→292）",
+    "fix": "六个新模块全部去 pass-only：getattr 兜底 / LBYL 判型 / 窄异常留痕；最终 ≤ 基线",
+    "why_not_baseline_bump": "守卫措辞「预算只能降不能升」—— 按其精神消化而非调基线"
+  }
+}

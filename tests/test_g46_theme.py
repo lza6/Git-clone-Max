@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """G46 主题设计系统测试：token 层 / 状态 QSS / HC 对比度 / 强调色 / reduced-motion / 字体栈。"""
 from __future__ import annotations
 
@@ -58,7 +57,7 @@ class TestStateQss(unittest.TestCase):
                       "focus 环未用 accent 色")
 
     def test_font_stack(self):
-        from gcm.ui.theme import qss_for_theme, FONT_STACK
+        from gcm.ui.theme import FONT_STACK, qss_for_theme
         q = qss_for_theme("deep")
         self.assertIn("Microsoft YaHei UI", q)
         self.assertIn("PingFang SC", q)
@@ -75,13 +74,15 @@ class TestHcTheme(unittest.TestCase):
         self.assertIn("hc", THEMES)
 
     def test_hc_contrast_aaa(self):
-        from gcm.ui.theme import hc_contrast_ratio, PALETTES
+        from gcm.ui.theme import PALETTES, hc_contrast_ratio
         self.assertGreaterEqual(hc_contrast_ratio(PALETTES["hc"]), 7.0,
                                 "HC 文本/背景对比度应 ≥7:1")
 
     def test_accent_presets(self):
         from gcm.ui.theme import ACCENT_PRESETS, PALETTES, contrast_ratio, theme_with_accent
-        self.assertEqual(set(ACCENT_PRESETS), {"teal", "blue", "violet"})
+        # Rev11（D-8）：预设 3→6 档（cyan/indigo/magenta），既有 3 档必须保留
+        self.assertEqual(set(ACCENT_PRESETS),
+                         {"teal", "blue", "violet", "cyan", "indigo", "magenta"})
         deep = PALETTES["deep"]
         # G75：预设改成"深底/浅底成对"——同一十六进制不可能同时满足深底够亮、浅底够暗
         for name, spec in ACCENT_PRESETS.items():
@@ -120,7 +121,7 @@ class TestFontScaleFloor(unittest.TestCase):
         self.assertEqual(FONT_SCALE_MIN_UI, 0.9)
 
     def test_theme_qss_scale(self):
-        from gcm.ui.theme import qss_for_theme, FONT_BASE_PX
+        from gcm.ui.theme import FONT_BASE_PX, qss_for_theme
         q = qss_for_theme("deep", 1.5)
         self.assertIn(f"font-size: {round(FONT_BASE_PX * 1.5)}px;", q)
 

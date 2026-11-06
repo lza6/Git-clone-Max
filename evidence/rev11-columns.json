@@ -1,0 +1,45 @@
+{
+  "node": "Rev11-V03",
+  "kind": "column-index-inventory",
+  "checked_at": "2026-11-04",
+  "summary": "进度表列索引（0..4）的硬编码消费点全量盘点。加「耗时」列必须加在末尾(index=5)，中间插列会使下列全部错位。",
+  "progress_table_columns": {
+    "current": ["0=仓库", "1=进度", "2=状态", "3=本次", "4=详情"],
+    "header_source": "gcm/ui/progress_table.py:82 setHorizontalHeaderLabels"
+  },
+  "producers": [
+    {"file": "gcm/ui/progress_table.py", "lines": [205, 212, 216, 220, 223], "note": "_add_table_row 五列 setItem"},
+    {"file": "gcm/ui/progress_table.py", "lines": [352, 387, 489, 524, 552, 567, 572, 606, 651, 692], "note": "结果/进度/状态更新槽按列号取 item"}
+  ],
+  "tests_touching_progress_table_columns": [
+    {"file": "tests/test_g35_ui.py", "lines": [86, 127, 210], "col": "0,2"},
+    {"file": "tests/test_g36_ui.py", "lines": [83, 89], "col": "2"},
+    {"file": "tests/test_g52_progress_table_extra.py", "lines": [62, 78], "col": "2,4"},
+    {"file": "tests/test_g67_closure.py", "lines": [177, 187], "col": "2"},
+    {"file": "tests/test_g69_regressions.py", "lines": [272, 277, 281], "col": "0,2"},
+    {"file": "tests/test_g70_coverage.py", "lines": [147, 151], "col": "2"},
+    {"file": "tests/test_g70_ui_upgrade.py", "lines": [168, 177], "col": "0,1"},
+    {"file": "tests/test_g74_ui_layout.py", "lines": [87, 181], "col": "2,4"},
+    {"file": "tests/test_g75_visual_system.py", "lines": [478], "col": "2"},
+    {"file": "tests/test_ui.py", "lines": [134, 135, 168], "col": "2,3"},
+    {"file": "tests/test_progress_ui.py", "lines": [95, 118], "col": "1"}
+  ],
+  "tests_touching_other_tables": [
+    {"file": "tests/test_g47_data.py", "lines": [136], "table": "repo_detail_dialog"},
+    {"file": "tests/test_g80_background_jobs.py", "lines": [173, 175], "table": "background_jobs"},
+    {"file": "tests/test_g80_halfclone_ui.py", "lines": [86, 148], "table": "halfclone"},
+    {"file": "tests/test_local_dialog.py", "lines": [191, 222], "table": "local_repos_dialog"},
+    {"file": "tests/test_v7_fixes.py", "lines": [87, 135], "table": "manage_table"}
+  ],
+  "manage_panel_columns": {
+    "hardcoded_widths": "gcm/ui/manage_panel.py:161 (3,150),(4,78),(5,70),(6,64),(7,84); :204 setColumnWidth(5,70)",
+    "delegate_col": "gcm/ui/manage_model.py:334 index.column() == 5（历史按钮委托列）",
+    "tooltip_cols": "gcm/ui/manage_model.py:206,214 ToolTipRole 只挂 col 0/2/3/4"
+  },
+  "other_setColumnWidth": [
+    {"file": "gcm/ui/retry_panel.py", "lines": [130, 133], "note": "重试队列 4 处定宽"},
+    {"file": "gcm/ui/repo_detail_dialog.py", "lines": [327, 330], "note": "详情对话框 4 处定宽"}
+  ],
+  "verdict": "末尾加列（index=5）不影响上述任何既有索引；V-16 执行时同时更新 headers、_add_table_row、以及需要新列读数的槽。委托列（setItemDelegateForColumn 1/2）不动。",
+  "label": "已验证"
+}

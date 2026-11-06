@@ -1,0 +1,73 @@
+{
+  "node": "Rev11-W2-W3",
+  "kind": "components-and-ia",
+  "checked_at": "2026-11-04",
+  "items": {
+    "V-09_batch_conclusion": {
+      "new_module": "gcm/ui/batch_conclusion.py（约 230 行）",
+      "wiring": [
+        "main_window._build_download_tab：插在齿条下、滚动区上（panelPrimary 权重）",
+        "_launch → batch_conclusion.begin(n)；_on_worker_result → note_result(status)；_on_engine_finished → finish()",
+        "review_btn → _open_failure_dialog（有失败才显示）"
+      ],
+      "guard": "tests/test_rev11_w2.TestBatchConclusionBar（8 例：三态/空态/动效关闭/effect 释放）",
+      "status": "DONE"
+    },
+    "V-10_ready_data": {
+      "verdict": "BLOCKED(部分)",
+      "reason": "就绪清单（x 将克隆 · y 将更新）依赖 Rev10 的 app/batch_plan.py；按 D-4 排期 Rev10 未执行。按计划 §4 V-10 约束：不得自建第二份计划逻辑（decisions.md D-39）。当前 idle 态显示 — 与 detail 空，不编数据",
+      "unblock": "Rev10 交付 batch_plan 后接 build_plan 的 action 计数",
+      "status": "BLOCKED"
+    },
+    "V-11_edge_ruler": {
+      "new_module": "gcm/ui/edge_ruler.py（约 100 行）",
+      "wiring": "progress_table._build_ui：itemDelegateForColumn(0) = EdgeRulerDelegate",
+      "guard": "TestEdgeRuler（3 例：色语义/不改数据/生产接线）",
+      "status": "DONE"
+    },
+    "V-13_motion": {
+      "detail": "running 切入 220ms bar 动画 + finished 180ms opacity 脉冲（effect 用完即释放）；motion=False 全跳过",
+      "guard": "TestBatchConclusionBar.test_motion_off_skips_animations / test_pulse_releases_effect",
+      "status": "DONE"
+    },
+    "V-14_3to1_ratio": {
+      "verdict": "CUT(本轮)",
+      "reason": "V-04/W0 截图复核：输入区高度由滚动区吸收，1440 下已接近 3:1 观感；强行改拉伸因子会把「下载位置/克隆模式」挤到次屏。收益 < 回归，且结论条置顶已解决焦点问题（治 V8 的主手段）",
+      "status": "CUT"
+    },
+    "V-16_duration_column": {
+      "changes": [
+        "progress_table: 5→6 列，耗时列加在末尾（index=5，既有 0-4 索引零影响，evidence/rev11-columns.json 口径）",
+        "_format_duration：ms → 12.3s / m:ss；0/None → —（不显假 0）",
+        "数据写入 _on_worker_result 读 SyncResult.duration_ms（既有字段）",
+        "耗时列 mono + 右对齐（§2.4 原则三）"
+      ],
+      "guard": "TestFormatDuration(3) + TestDurationColumnWiring(2)",
+      "status": "DONE"
+    }
+  },
+  "regressions_caught_and_fixed": [
+    {
+      "issue": "1020×560 下动作区 4 按钮被裁 21px（test_ui_compact_visibility 红）",
+      "root_cause": "结论条占顶部 26px 后 splitter 两侧 minHint 之和（238+222=460）> 可用 436",
+      "fix": "紧凑模式：结论条收 24px 单行（set_compact）+ 进度表 minH 120→94（可滚动区先让位原则）+ _apply_layout_mode 接线",
+      "guards_now_green": "test_ui_compact_visibility(9 尺寸) + test_g70_ui_upgrade.TestWindowMinimum"
+    }
+  ],
+  "visual_review": {
+    "screenshots": "reports/ui-rev11-w3（34 张）",
+    "checked": ["download_deep_1440x900", "download_light_1440x900", "download_deep_1024x768"],
+    "findings": [
+      "耗时列等宽右对齐 ✓；左缘刻度尺可见 ✓；页签中性下划线 ✓；pill 变淡 ✓",
+      "1024×768 紧凑模式零裁切 ✓",
+      "结论条空态显示 —（V-10 BLOCKED 的诚实呈现，不编数据）"
+    ]
+  },
+  "verification": [
+    {"cmd": "unittest 14 个测试模块合跑", "result": "Ran 280 tests OK (skipped=1)"},
+    {"cmd": "ruff check gcm", "result": "All checks passed"},
+    {"cmd": "i18n_coverage", "result": "I18N OK（石青/靛蓝/品红双语补齐）"},
+    {"cmd": "ui_screenshot_audit → reports/ui-rev11-w3", "result": "34 张"}
+  ],
+  "label": "已验证"
+}

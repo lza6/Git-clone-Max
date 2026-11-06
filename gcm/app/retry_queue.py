@@ -355,6 +355,33 @@ class RetryQueue:
 
         self._rmw(_mutate)
 
+    def restore_entries(self, entries: list[dict[str, Any]]) -> int:
+        """把一批条目写回队列（Rev12 U-05：`clear()` 的逆操作，供撤销使用）。
+
+        `clear()` 只清 `entries`，所以逆做也只补 `entries` —— 已存在的 key 不覆盖
+        （用户可能已经重新排过该仓库，撤销不该把他的新状态冲掉）。
+        返回真正补回的条数。
+        """
+        added = 0
+
+        def _mutate(data: dict[str, Any]) -> None:
+            nonlocal added
+            cur = data.setdefault("entries", {})
+            if not isinstance(cur, dict):
+                cur = {}
+                data["entries"] = cur
+            for rec in entries:
+                key = str(rec.get("key") or "")
+                if not key or key in cur:
+                    continue
+                cur[key] = dict(rec)
+                added += 1
+            if added:
+                data["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+
+        self._rmw(_mutate)
+        return added
+
     # ------------------------------------------------------------ 查询
     def count(self) -> int:
         return len(self.load().get("entries", {}))

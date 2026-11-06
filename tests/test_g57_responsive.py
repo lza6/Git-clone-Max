@@ -44,24 +44,87 @@ class TestWindowLayoutBand(unittest.TestCase):
         self.assertFalse(hasattr(owner, "manage_table"))
 
     def test_narrow_hides_secondary_columns(self):
-        """窄窗（<768）必须隐藏次要列；宽窗必须全部恢复显示。"""
+        """窄窗（< `layout.NARROW_WIDTH`）隐藏次要列；宽窗全部恢复。
+
+        **Rev13 R13-03 契约变更（有理由，不是为了让测试变绿）**：
+        原断言要求隐藏「标签」列，但真实模型 8 列里**没有**「标签」这一列
+        （仓库/作者·仓库/本地路径/上次同步/HEAD/历史/健康/大小），
+        原实现按表头文本匹配 —— 它匹配的列根本不存在，而且用错了 API
+        （`QTableView.horizontalHeaderItem` 不存在），所以这项功能从来没生效过。
+        契约收敛为：只隐藏「大小 / 健康」，阈值改用可达的 `NARROW_WIDTH`。
+        新增的真实模型回归在 `TestNarrowFoldOnRealModel`。
+        """
         import gcm.ui.main_window as mw
+        from gcm.ui.layout import NARROW_WIDTH
         from PyQt6.QtWidgets import QTableWidget
         table = QTableWidget(0, 4)
-        table.setHorizontalHeaderLabels(["地址", "大小", "健康", "标签"])
+        table.setHorizontalHeaderLabels(["地址", "大小", "健康", "备注"])
         owner = type("O", (), {})()
         owner.manage_table = table
 
-        mw.MainWindow._apply_layout_for_width(owner, 600)
+        mw.MainWindow._apply_layout_for_width(owner, NARROW_WIDTH - 1)
         self.assertTrue(table.isColumnHidden(1), "窄窗应隐藏『大小』")
         self.assertTrue(table.isColumnHidden(2), "窄窗应隐藏『健康』")
-        self.assertTrue(table.isColumnHidden(3), "窄窗应隐藏『标签』")
         self.assertFalse(table.isColumnHidden(0), "主列『地址』不得隐藏")
+        self.assertFalse(table.isColumnHidden(3),
+                         "非次要列（备注）不得隐藏 —— 防止又回到按文本乱猜")
 
-        mw.MainWindow._apply_layout_for_width(owner, 1200)
+        mw.MainWindow._apply_layout_for_width(owner, NARROW_WIDTH + 200)
         for col in range(4):
             self.assertFalse(table.isColumnHidden(col),
                              f"宽窗应恢复显示第 {col} 列")
+
+
+class TestNarrowFoldOnRealModel(unittest.TestCase):
+    """Rev13 R13-03 反向自检：真实模型上折叠**真的**发生（旧实现是死分支）。"""
+
+    @classmethod
+    def setUpClass(cls):
+        from PyQt6.QtWidgets import QApplication
+        cls._app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        from gcm.db.settings import SettingsStore
+        from gcm.ui.main_window import MainWindow
+        self._tmp = Path(tempfile.mkdtemp())
+        store = SettingsStore(self._tmp / "settings.json")
+        s = store.load()
+        s.first_run_done = True
+        s.checklist_prompted = True
+        s.animations = False
+        store.save(s)
+        self.win = MainWindow(data_dir=self._tmp)
+
+    def tearDown(self):
+        try:
+            self.win.close()
+            self.win.deleteLater()
+        except Exception:
+            pass
+
+    def test_real_model_hides_size_and_health_when_narrow(self):
+        from PyQt6.QtCore import Qt
+        from gcm.ui.layout import NARROW_WIDTH
+        table = self.win.manage_table
+        model = table.model()
+        names = [model.headerData(i, Qt.Orientation.Horizontal) for i in range(model.columnCount())]
+        self.assertIn("大小", names)
+        self.assertIn("健康", names)
+        self.assertNotIn("标签", names,
+                         "守卫前提：真实模型没有『标签』列（原实现匹配的就是它）")
+
+        self.win._apply_layout_for_width(NARROW_WIDTH - 1)
+        for i, n in enumerate(names):
+            if n in ("大小", "健康"):
+                self.assertTrue(table.isColumnHidden(i), f"窄窗应隐藏 {n}（第 {i} 列）")
+            else:
+                self.assertFalse(table.isColumnHidden(i), f"{n}（第 {i} 列）不得隐藏")
+
+        self.win._apply_layout_for_width(NARROW_WIDTH + 200)
+        for i in range(model.columnCount()):
+            self.assertFalse(table.isColumnHidden(i), f"宽窗应恢复第 {i} 列")
 
 
 if __name__ == "__main__":

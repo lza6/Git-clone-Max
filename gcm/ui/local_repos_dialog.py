@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
 
 from ..app.scanner import RepoInfo, known_keys_from_db, to_spec
 from ..db.repo_db import Database
+from ..i18n import tr
 from .scan_worker import ScanWorker
 
 
@@ -35,7 +36,7 @@ class LocalReposDialog(QDialog):
     def __init__(self, parent=None, root_paths=None, db: Optional[Database] = None,
                  max_depth: int = 2):
         super().__init__(parent)
-        self.setWindowTitle("导入本地已有仓库")
+        self.setWindowTitle(tr("导入本地已有仓库"))
         from .layout import fit_dialog_to_screen
         fit_dialog_to_screen(self, 860, 560, 720, 420)
         self._db = db
@@ -64,7 +65,7 @@ class LocalReposDialog(QDialog):
         top = QHBoxLayout()
         top.addWidget(QLabel("扫描目录："))
         self.root_combo = QLineEdit()
-        self.root_combo.setPlaceholderText("目录间用 ; 分隔（默认：克隆根目录）")
+        self.root_combo.setPlaceholderText(tr("目录间用 ; 分隔（默认：克隆根目录）"))
         top.addWidget(self.root_combo, 1)
         btn_scan = QPushButton("重新扫描")
         btn_scan.clicked.connect(self._start_scan)
@@ -83,7 +84,7 @@ class LocalReposDialog(QDialog):
         v.addWidget(self.table, 1)
 
         self.filter_edit = QLineEdit()
-        self.filter_edit.setPlaceholderText("筛选仓库名…")
+        self.filter_edit.setPlaceholderText(tr("筛选仓库名…"))
         self.filter_edit.textChanged.connect(self._apply_filter)
         v.addWidget(self.filter_edit)
 
@@ -156,7 +157,7 @@ class LocalReposDialog(QDialog):
             return
         roots = [Path(p.strip()) for p in self.root_combo.text().split(";") if p.strip()]
         if not roots:
-            QMessageBox.information(self, "提示", "请先填写要扫描的目录。")
+            QMessageBox.information(self, tr("提示"), tr("请先填写要扫描的目录。"))
             return
         self._roots = roots
         self._set_scanning(True)
@@ -191,7 +192,7 @@ class LocalReposDialog(QDialog):
     def _on_scan_failed(self, err: str):
         self._set_scanning(False)
         self.status.setText(f"扫描失败：{err}")
-        QMessageBox.warning(self, "扫描失败", err)
+        QMessageBox.warning(self, tr("扫描失败"), err)
 
     def _set_scanning(self, on: bool):
         self.progress.setVisible(on)
@@ -301,7 +302,7 @@ class LocalReposDialog(QDialog):
     def _on_import(self):
         sel = self._checked()
         if not sel:
-            QMessageBox.information(self, "提示", "请至少勾选一个仓库。")
+            QMessageBox.information(self, tr("提示"), tr("请至少勾选一个仓库。"))
             return
         self._selected = sel
         self.accept()
@@ -310,7 +311,7 @@ class LocalReposDialog(QDialog):
         """勾选 → 入库 → accept（供手动调用，未绑定时测试直达）。"""
         sel = self._checked()
         if not sel:
-            QMessageBox.information(self, "提示", "请至少勾选一个仓库。")
+            QMessageBox.information(self, tr("提示"), tr("请至少勾选一个仓库。"))
             return
         self._selected = sel
         self.accept()

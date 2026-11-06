@@ -11,13 +11,15 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, QTimer, pyqtSlot
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
+    QApplication as _QApp,
+)
+from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
     QPushButton,
     QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -26,9 +28,18 @@ from ..i18n import tr
 from ..models import RepoSpec, SyncResult, SyncStatus
 from ..util.openfolder import open_folder
 from . import main_window as _mw  # 兼容测试对 main_window.QMessageBox 等模块级 patch
-from .halfclone_actions import looks_halfcloned, row_repo_dir
+from .halfclone_actions import (
+    delete_halfcloned_row,
+    looks_halfcloned,
+    repair_halfcloned_row,
+    row_repo_dir,
+)
 from .progress_delegate import DETAIL_ROLE, ProgressDelegate
 from .progress_menu import build_progress_menu
+from .result_labels import (
+    format_duration as _format_duration,  # Rev11 V-16（本文件曾超 800 行，口径抽到 result_labels）
+)
+from .sort_mode import apply_sort_mode  # Rev11 V-21（状态机规格：计划书 §5.3）
 from .theme import LogLevel, current_palette
 
 
@@ -77,9 +88,10 @@ class ProgressTable(QWidget):
         self.batch_total_lbl = self.batch_overview.label   # 兼容既有引用/测试
         self.batch_bar = self.batch_overview.bar
         v.addWidget(self.batch_overview)
-        # 进度表
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["仓库", "进度", "状态", "本次", "详情"])
+        # 进度表（Rev11 V-16：末尾加「耗时」列 → 6 列；既有 0-4 列索引全部不变）
+        self.table = QTableWidget(0, 6)
+        self.table.setHorizontalHeaderLabels(
+            ["仓库", "进度", "状态", "本次", "详情", "耗时"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         for col in (1, 2, 3):
             self.table.horizontalHeader().setSectionResizeMode(
@@ -88,15 +100,22 @@ class ProgressTable(QWidget):
         # 一句长错误把表格撑出视口（右侧被裁且很难发现横向滚动条）。
         self.table.horizontalHeader().setSectionResizeMode(
             4, QHeaderView.ResizeMode.Stretch)
+        # Rev11 V-16：耗时列 ResizeToContents + 等宽右对齐（数据列走 mono，§2.4）
+        self.table.horizontalHeader().setSectionResizeMode(
+            5, QHeaderView.ResizeMode.ResizeToContents)
         self.table.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.table.setWordWrap(False)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        # Rev14 R14-03 修正：QAbstractItemView 默认 `tabKeyNavigation=True` 会把 Tab
+        # 吃掉在单元格之间跳 —— 于是「Tab 顺序跟随视觉顺序」在表格这里根本不成立
+        # （500 行 × 6 列要按 3000 次才走得到工具行）。表内用方向键，Tab 交给焦点链。
+        self.table.setTabKeyNavigation(False)
         self.table.setMinimumHeight(120)
-        self.table.setAccessibleName("下载进度表")
+        self.table.setAccessibleName(tr("下载进度表"))
         self.table.setAccessibleDescription(
-            "每行一个仓库：仓库名、进度、状态、本次动作、详情")
+            tr("每行一个仓库：仓库名、进度、状态、本次动作、详情、耗时"))
         # G70：进度列改用 delegate 自绘（不再为每行创建 QProgressBar）
         self._progress_delegate = ProgressDelegate(
             self.table, values=self._progress_values)
@@ -107,6 +126,11 @@ class ProgressTable(QWidget):
         from .status_pill import StatusPillDelegate
         self._status_delegate = StatusPillDelegate(self.table)
         self.table.setItemDelegateForColumn(2, self._status_delegate)
+        # Rev11（V-11）：左缘刻度尺 —— 第 0 列的装饰 delegate，按行状态着色的
+        # 3px 竖带 + 每 10 行一个刻度缺口。几百行滚动时用余光感知进度分布。
+        from .edge_ruler import EdgeRulerDelegate
+        self._ruler_delegate = EdgeRulerDelegate(self.table)
+        self.table.setItemDelegateForColumn(0, self._ruler_delegate)
         self.table.verticalHeader().setDefaultSectionSize(
             int(TOKENS["row"]["default"]))
         # G75：仪表齿条用的"当前活跃任务"集合（按 engine index 记，排序/过滤无关）
@@ -114,35 +138,68 @@ class ProgressTable(QWidget):
         # G02-2 表头点击排序（状态列优先级：运行>等待>成功>冲突>失败>取消>跳过）
         self.table.setSortingEnabled(True)
         self.table.horizontalHeader().sortIndicatorChanged.connect(self._on_sort_changed)
+        # Rev11（V-21 / D-6，规格见 计划书 §5.3）：「自动排序」切换按钮 ——
+        # 选中 = 自动排序（现状行为，默认）；未选中 = 手动模式（可拖拽）。
+        # 五条不变量：S1 UserRole 唯一真相 / S2 仅手动可拖 / S3 切自动即弃手动序 /
+        # S4 运行中禁拖 / S5 禁止视觉位置推断。状态机在 `sort_mode.py`。
+        self.btn_auto_sort = QPushButton(tr("自动排序"))
+        self.btn_auto_sort.setCheckable(True)
+        self.btn_auto_sort.setChecked(True)
+        self.btn_auto_sort.setToolTip(tr(
+            "选中：点表头自动排序（默认）。\n"
+            "取消：进入手动模式，可拖拽行调整顺序；批次运行中拖拽被禁用。"))
+        self.btn_auto_sort.toggled.connect(self._on_auto_sort_toggled)
+        self.table.setDragEnabled(False)       # S2：默认（自动排序）下不可拖
+        from PyQt6.QtWidgets import QAbstractItemView
+        self.table.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         # G35-1 进度表右键菜单：重试此仓库 / 复制错误详情 / 打开所在目录
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._progress_table_menu)
         v.addWidget(self.table, 3)
         # G36-5 下载中心空态引导：overlay 标签（绝对定位在表格上，有数据时隐藏）
+        # Rev11（V-22）：文案口径走 empty_state 工厂（唯一来源）
+        from .empty_state import DownloadEmptyState, build_empty_state
         self._empty_default_text = "粘贴仓库地址开始下载\n（支持多行 / 拖入 txt 文件）"
-        self._empty_download = QLabel(self._empty_default_text)
-        # G75：空态用 #emptyHint（h2 字号），在整屏 13px 里能立刻被看见
-        self._empty_download.setObjectName("emptyHint")
-        self._empty_download.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty_download.setWordWrap(True)
+        self._empty_download = build_empty_state(
+            title=self._empty_default_text, parent=self.table)
         self._empty_download.setVisible(False)
-        self._empty_download.setParent(self.table)
         self._empty_download.raise_()
+        # Rev14 R14-08：批次刚启动到第一条结果之间的空窗用骨架占位（纯绘制，不建控件）
+        from .skeleton import BusyPreview
+        self._busy_preview = BusyPreview(self.table, self._empty_download)
+        # 三态判定（无数据 / 筛选无结果 / 准备期）收敛到 empty_state —— 本文件贴 800 行红线
+        self._empty_state = DownloadEmptyState(
+            self.table, self._empty_download, self._empty_default_text,
+            filter_text_getter=self._progress_filter_text_now)
+        self._empty_state.busy_preview = self._busy_preview
+        # G02-1 搜索行（Rev11：抽到 _build_tools_row，_build_ui 守 100 行预算）
+        v.addWidget(self._build_tools_row())
 
-        # G02-1 搜索过滤框（防抖 200ms）+ 进度表右键「暂停此项」（G02-3）
-        row_tools = QHBoxLayout()
+    def _build_tools_row(self) -> QWidget:
+        """搜索过滤框（防抖 200ms）+ 排序模式切换（V-21）+「暂停选中」（G02-3）。
+
+        Rev14 F1：改成返回**一个 widget**（原来返回 layout）。理由是最矮的窗口要把
+        整行收起来给动作区让位 —— layout 没法 `setVisible`，只能一个个隐藏控件，
+        而「搜索：」这个内联 QLabel 没有句柄会留下来变成孤儿文字。
+        """
+        wrap = QWidget()
+        row_tools = QHBoxLayout(wrap)
+        row_tools.setContentsMargins(0, 0, 0, 0)
         row_tools.addWidget(QLabel("搜索："))
         self.progress_filter = QLineEdit()
-        self.progress_filter.setPlaceholderText("按仓库名过滤…")
+        self.progress_filter.setPlaceholderText(tr("按仓库名过滤…"))
         self.progress_filter.setClearButtonEnabled(True)
-        self.progress_filter.setAccessibleName("按仓库名过滤进度")
+        self.progress_filter.setAccessibleName(tr("按仓库名过滤进度"))
         self.progress_filter.textChanged.connect(self._schedule_progress_filter)
         row_tools.addWidget(self.progress_filter, 1)
+        # Rev11（V-21）：排序模式切换（进度表右下，与搜索框同行）
+        row_tools.addWidget(self.btn_auto_sort)
         btn_pause_selected = QPushButton("暂停选中")
         btn_pause_selected.clicked.connect(self.pause_selected)
         row_tools.addWidget(btn_pause_selected)
         row_tools.addStretch()
-        v.addLayout(row_tools)
+        self._tools_row = wrap          # 供折叠态整行让位（Rev14 F1）
+        return wrap
 
 
 
@@ -171,29 +228,24 @@ class ProgressTable(QWidget):
         elif not self._progress_filter_text.strip():
             self._update_empty_download(visible_rows=n)
 
-    def _update_empty_download(self, visible_rows: int | None = None):
-        """G36-5 下载中心空态：无可见行时显示引导 overlay。
+    def set_busy_preview(self, busy: bool) -> None:
+        """批次准备期显示/隐藏骨架（Rev14 R14-08）。只影响视觉，不建子控件。"""
+        bp = getattr(self, "_busy_preview", None)
+        if bp is None:
+            return
+        bp.set_busy(busy)
+        if not busy:
+            self._update_empty_download()
 
-        G70：过滤后可能「有行但全部隐藏」—— 原实现只看 rowCount()，
-        于是搜不到结果时表格一片空白却没有提示。
-        """
-        try:
-            ov = getattr(self, "_empty_download", None)
-            if ov is None:
-                return
-            if visible_rows is None:
-                visible_rows = 0 if self.table.rowCount() == 0 else 1
-            show = visible_rows == 0
-            filtering = bool(getattr(self, "_progress_filter_text", "").strip())
-            ov.setText("没有匹配的仓库\n（清空搜索框查看全部）"
-                       if (show and filtering and self.table.rowCount() > 0)
-                       else self._empty_default_text)
-            ov.setVisible(show)
-            if show:
-                ov.setGeometry(self.table.rect())
-                ov.raise_()
-        except Exception:
-            pass
+    def _progress_filter_text_now(self) -> str:
+        """当前过滤词（供 `empty_state.DownloadEmptyState` 读取）。"""
+        return str(getattr(self, "_progress_filter_text", "") or "").strip()
+
+    def _update_empty_download(self, visible_rows: int | None = None):
+        """三态判定（G36-5 / G70 / R14-08）→ 转发 `empty_state.DownloadEmptyState`。"""
+        st = getattr(self, "_empty_state", None)
+        if st is not None:
+            st.update(visible_rows)
 
     def _add_table_row(self, index, spec: RepoSpec):
         # 关闭排序再插入行，保证 index 与行号对齐（引擎回调按 index 定位）
@@ -201,28 +253,9 @@ class ProgressTable(QWidget):
         was_sorting = False if bulk else self.table.isSortingEnabled()
         if was_sorting:
             self.table.setSortingEnabled(False)
-        pal = current_palette()
-        name_item = QTableWidgetItem(spec.folder_name)
-        name_item.setToolTip(spec.url_https)
-        name_item.setData(Qt.ItemDataRole.UserRole, spec.folder_name)  # 供过滤
-        # G21-1：行内保存 engine index，排序/过滤后暂停仍能定位正确任务
-        name_item.setData(Qt.ItemDataRole.UserRole + 1, int(index))
-        self.table.setItem(index, 0, name_item)
-        # G70：进度列只存数据，由 ProgressDelegate 绘制（0 个 QWidget/行）
-        prog_item = QTableWidgetItem("")
-        prog_item.setData(DETAIL_ROLE, "")
-        prog_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.table.setItem(index, 1, prog_item)
-        status_item = QTableWidgetItem("等待中")
-        status_item.setData(Qt.ItemDataRole.UserRole, "pending")  # 供排序
-        status_item.setForeground(QColor(pal["text_dim"]))
-        self.table.setItem(index, 2, status_item)
-        act_item = QTableWidgetItem("—")
-        act_item.setForeground(QColor(pal["text_dim"]))
-        self.table.setItem(index, 3, act_item)
-        msg_item = QTableWidgetItem("—")
-        msg_item.setForeground(QColor(pal["text_dim"]))
-        self.table.setItem(index, 4, msg_item)
+        # Rev11：六格构建抽到 progress_rows.py（本文件曾破 800 行红线）
+        from .progress_rows import install_row
+        install_row(self.table, index, spec)
         if was_sorting:
             self.table.setSortingEnabled(True)
 
@@ -232,6 +265,22 @@ class ProgressTable(QWidget):
         self._bulk_sorting_was = self.table.isSortingEnabled()
         if self._bulk_sorting_was:
             self.table.setSortingEnabled(False)
+
+    # --------------------------------------------------------- Rev11 V-21 排序模式
+    def _strip_running_now(self) -> bool:
+        strip = self._strip()
+        return bool(strip is not None and strip.is_running())
+
+    def _on_auto_sort_toggled(self, checked: bool) -> None:
+        """「自动排序」切换（S3：切到自动 = 丢弃手动序，不可恢复）。
+
+        状态机在 `sort_mode.py`（本文件 800 行红线；规格见 计划书 §5.3）。
+        """
+        apply_sort_mode(self.table, self.btn_auto_sort, self._strip_running_now())
+
+    def set_drag_enabled_for_running(self, running: bool) -> None:
+        """S4：运行态切换拖拽开关（自动排序模式下始终不可拖）。"""
+        apply_sort_mode(self.table, self.btn_auto_sort, running)
 
     def end_bulk(self) -> None:
         """G70：批量插行结束，恢复排序并按当前关键字重新过滤。"""
@@ -336,7 +385,7 @@ class ProgressTable(QWidget):
     def _retry_table_row(self, row: int):
         """单仓库重试：把该行 spec 经 _launch 重新调度（其余任务不受影响）。"""
         if self.owner.busy:
-            _mw.QMessageBox.information(self.owner, "提示", "有任务正在运行，请等本轮结束后重试。")
+            _mw.QMessageBox.information(self.owner, tr("提示"), tr("有任务正在运行，请等本轮结束后重试。"))
             return
         idx = self._row_engine_index(row)
         spec = self.owner.row_specs.get(idx)
@@ -353,7 +402,6 @@ class ProgressTable(QWidget):
         detail = ""
         if msg_item is not None:
             detail = msg_item.toolTip() or msg_item.text()
-        from PyQt6.QtWidgets import QApplication as _QApp
         _QApp.clipboard().setText(detail)
         self.owner.statusBar().showMessage("错误详情已复制")
 
@@ -371,7 +419,6 @@ class ProgressTable(QWidget):
 
     def _repair_halfcloned_row(self, row: int) -> None:
         """Rev8 P1-1：检出修复（逻辑在 halfclone_actions，本面板只转发）。"""
-        from .halfclone_actions import repair_halfcloned_row
         repair_halfcloned_row(self, row)
 
     def _row_dir(self, row: int):
@@ -379,7 +426,6 @@ class ProgressTable(QWidget):
 
     def _delete_halfcloned_row(self, row: int) -> None:
         """删除半成品目录（二次确认；判定/删除在 halfclone_actions，面板只转发）。"""
-        from .halfclone_actions import delete_halfcloned_row
         delete_halfcloned_row(self, row)
 
     def _row_engine_index(self, row: int) -> int:
@@ -573,6 +619,11 @@ class ProgressTable(QWidget):
         if msg is not None:
             msg.setText(res.message)
             msg.setToolTip(res.detail or "")
+        # Rev11（V-16）：耗时列 —— duration_ms 由 worker 计时（SyncResult 既有字段）。
+        # 口径：毫秒 → 「x.xs」/「m:ss」；0/缺省显示 —（不显示假 0）。
+        dur = self.table.item(row, 5)
+        if dur is not None:
+            dur.setText(_format_duration(getattr(res, "duration_ms", 0)))
         # G36-6 完成动效：成功绿/失败红背景色 1.2s 消隐
         # （设置开关；offscreen 自动关；G46-8 prefers_reduced_motion 也关）
         if bool(getattr(self.owner.settings, "animations", True)) and \
@@ -597,39 +648,11 @@ class ProgressTable(QWidget):
     def _animate_result_row(self, index: int, status: SyncStatus):
         """G36-6 完成动效：成功绿/失败红背景色 1.2s 淡出到主题底色。
 
-        仅在非 offscreen（有真实渲染）且设置开启时由 _on_worker_result 调用。
-        动效结束后背景复位为主题面板色，不影响排序/过滤的 UserRole 数据。
+        Rev11：实现抽到 `row_anim.py`（本文件曾破 800 行红线），本方法只做转发 ——
+        `test_g36_ui.py:162` 直接调它，保留同名签名行为零变化。
         """
-        try:
-            from PyQt6.QtCore import QVariantAnimation
-            from PyQt6.QtGui import QBrush
-            st = self.table.item(index, 2)
-            if st is None:
-                return
-            # G70：动效并发上限 8（32 个任务同时完成时不再创建 32 个动画）
-            anims = getattr(self.owner, "_row_anims", None)
-            if anims is not None and len(anims) >= 8:
-                return
-            pal = current_palette()
-            flash = pal["success"] if status == SyncStatus.SUCCESS else pal["error"]
-            start_color = QColor(flash)
-            base_color = QColor(pal["panel"])
-            anim = QVariantAnimation(self)
-            anim.setDuration(600)
-            anim.setStartValue(start_color)
-            anim.setEndValue(base_color)
-            anim.valueChanged.connect(
-                lambda c: st.setBackground(QBrush(QColor(c))))
-            anim.finished.connect(
-                lambda: st.setBackground(QBrush(base_color)))
-            # 保留引用防止被 GC（存到窗口级列表）
-            if not hasattr(self.owner, "_row_anims"):
-                self.owner._row_anims = []
-            self.owner._row_anims.append(anim)
-            anim.finished.connect(lambda: self.owner._row_anims.remove(anim))
-            anim.start()
-        except Exception:
-            pass
+        from .row_anim import animate_result_row
+        animate_result_row(self, index, status, SyncStatus)
 
     # ------------------------------------------------------------ 槽
 
@@ -646,7 +669,7 @@ class ProgressTable(QWidget):
         if strip is not None:
             strip.end()
         done = 0
-        ok = fail = conflict = 0
+        ok = fail = conflict = skip = 0
         for i in range(self.table.rowCount()):
             it = self.table.item(i, 2)
             if not it:
@@ -661,6 +684,10 @@ class ProgressTable(QWidget):
                     conflict += 1
                 elif t == "failed":
                     fail += 1
+                elif t == "skipped":
+                    # Rev14 F2：断点续传跳过的仓库现在会到终态，必须单独计数 ——
+                    # 否则「成功 0 · 冲突 0 · 失败 0」看起来像什么都没发生。
+                    skip += 1
         self.owner.busy = False
         self._reset_buttons()
         try:
@@ -668,55 +695,16 @@ class ProgressTable(QWidget):
                 self.owner.tray.update_counts(reset=True)  # 空闲态 tooltip（G22-4）
         except Exception:
             pass
-        self.owner.statusBar().showMessage(
-            f"完成：成功 {ok} · 冲突 {conflict} · 失败 {fail}")
-        completed = f"成功 {ok} · 冲突 {conflict} · 失败 {fail}"
-        self.owner._emit_log(_mw._fmt_dt(), LogLevel.SYSTEM, f"全部任务结束：{completed}")
+        # Rev14 F2/F1：播报（状态栏/日志/托盘/Webhook）抽到 `batch_finish.announce_finished`
+        # —— 本文件已贴 800 行红线，而"整批结果的播报"本来也不是进度表的职责。
+        from .batch_finish import announce_finished
+        announce_finished(self.owner, ok=ok, conflict=conflict, fail=fail,
+                          skip=skip, table=self.table)
         # 下载完成自动清空输入框
         if getattr(self.owner, "_clear_after_finish", False):
             self.owner.repo_input.clear()
             self.owner._emit_log(_mw._fmt_dt(), LogLevel.SYSTEM, "下载完成，已自动清空输入框。")
         self.owner._load_db_into_grid()
-        # 全部完成系统通知（托盘存在时）
-        try:
-            if getattr(self.owner, "tray", None) is not None:
-                self.owner.tray.notify(
-                    "全部任务完成",
-                    f"成功 {ok} · 冲突 {conflict} · 失败 {fail}")
-        except Exception:
-            pass
-        # G49-7 完成通知 Webhook：显式开启 + URL 非空才发送；后台线程，失败不影响主流程
-        try:
-            failed_names = []
-            for i in range(self.table.rowCount()):
-                it0 = self.table.item(i, 0)
-                it2 = self.table.item(i, 2)
-                if it2 and (it2.data(Qt.ItemDataRole.UserRole) or it2.text()) == "failed" and it0:
-                    failed_names.append(it0.text())
-            _s = getattr(self.owner, "settings", None)
-            if _s is not None:
-                _params = (ok, fail, conflict, 0, ok + fail + conflict, failed_names)
-
-                def _kl():
-                    try:
-                        from ..app.notify import maybe_notify as _mn
-                        # G67-6：传 data_dir 以便写审计台账（notify.log）
-                        if _mn(_s, *_params,
-                               data_dir=getattr(self.owner, "data_dir", None)):
-                            # G67-2：工作线程不得直接触碰 QWidget。原实现此处调
-                            # owner.statusBar().showMessage(...) —— 改为 emit 信号，
-                            # 由 GUI 线程的槽更新状态栏（Qt 自动走 QueuedConnection）。
-                            try:
-                                self.owner.notify_sent.emit("完成通知 Webhook 已发送")
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
-
-                import threading
-                threading.Thread(target=_kl, daemon=True).start()
-        except Exception:
-            pass
         # G35-2 完成提示音（设置开关默认开；QApplication.beep 无 UI 影响）
         try:
             if bool(getattr(self.owner.settings, "finish_sound", True)):

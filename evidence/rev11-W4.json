@@ -1,0 +1,54 @@
+{
+  "node": "Rev11-W4",
+  "kind": "new-interactions",
+  "checked_at": "2026-11-04",
+  "items": {
+    "V-19_stage_timeline": {
+      "new_module": "gcm/ui/stage_timeline.py（约 150 行）",
+      "wiring": "repo_detail_dialog：时间线挂在统计区下，默认展示最近一条；选中历史行跟随刷新（itemSelectionChanged → _update_stage_timeline → loads_stages(stage_json)）",
+      "empty_honesty": "无数据/坏数据 → 空态 em-dash + tooltip「暂无分阶段耗时数据」，不编数据",
+      "guard": "tests/test_rev11_w4.TestStageTimeline（5 例含生产接线）",
+      "status": "DONE"
+    },
+    "V-20_quick_repos_inline": {
+      "new_module": "gcm/ui/quick_repos_editor.py（D-7：只改显示标签）",
+      "wiring": "main_window._edit_quick_repos → edit_quick_repos_inline（原 download_layout.edit_quick_repos 弹框保留未删但不再被主窗调用）",
+      "d7_compliance": "守卫断言：reject 零写盘；确认后 quick_repos 更新而 download_dir/token 等其余字段不动；每行预览落点 owner__repo",
+      "guard": "TestQuickReposEditor（5 例）",
+      "status": "DONE"
+    },
+    "V-21_sort_mode": {
+      "new_module": "gcm/ui/sort_mode.py（状态机唯一落点）",
+      "wiring": "progress_table：右下「自动排序」checkable 按钮（默认选中 = 现状行为）；toggled → apply_sort_mode",
+      "s_invariants": {
+        "S1": "变异测试：3 行按名字排序后触发 result 槽，断言终态落在 engine index 对应行、其他行不被误写（test_s1_userrole_survives_drag_reorder_simulation）",
+        "S2": "自动模式 dragEnabled=False 恒成立；手动模式才可能 True",
+        "S3": "切回自动 = setSortingEnabled(True)（视图序被重写 = 手动序丢弃）",
+        "S4": "strip.is_running() 时手动模式也 dragEnabled=False",
+        "S5": "本专项未新增任何 rowCount()-1 / 视觉行号推断；G69-5 防线 _row_for 未动"
+      },
+      "guard": "TestSortModeStateMachine（5 例）",
+      "status": "DONE"
+    },
+    "V-22_empty_state": {
+      "new_module": "gcm/ui/empty_state.py（工厂 + 口径唯一）",
+      "wiring": "本轮先落工厂与守卫；四处接入（下载页/管理页/失败面板/日志区）为增量改造，已登记为后续项（不阻塞收口——既有空态行为未劣化）",
+      "guard": "TestEmptyState（2 例）",
+      "status": "DONE(工厂)"
+    }
+  },
+  "line_budget_incidents": [
+    {
+      "issue": "progress_table.py 破 800（V-16/V-21 直接往里加逻辑，违反计划「必须用 helper 模块」约束）",
+      "fix": "三次抽模块：_format_duration → result_labels.py（同属结果文案）；_animate_result_row → row_anim.py；六格构建 → progress_rows.py；排序状态机 → sort_mode.py",
+      "final": "progress_table 793 行，超限集合恢复 3 个（与登记一致）"
+    }
+  ],
+  "verification": [
+    {"cmd": "unittest 18 模块大回归", "result": "Ran 317 tests OK (skipped=1)"},
+    {"cmd": "ruff check gcm", "result": "All checks passed"},
+    {"cmd": "mypy gcm", "result": "Success: no issues found in 130 source files"},
+    {"cmd": "i18n_coverage", "result": "I18N OK（18 键双语补齐 + 重复键去重）"}
+  ],
+  "label": "已验证"
+}

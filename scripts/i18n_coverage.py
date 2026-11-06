@@ -18,12 +18,15 @@
 from __future__ import annotations
 
 import ast
+import json
 import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 _CJK = re.compile(r"[\u4e00-\u9fff]")
+#: Rev14 R14-18\uff1a\u672a\u8d70 `tr()` \u7684\u4e2d\u6587\u53ef\u89c1\u5b57\u9762\u91cf\u7684\u57fa\u7ebf\u6587\u4ef6\uff08\u8ba1\u6570\u53ea\u964d\u4e0d\u5347\uff09\u3002
+BASELINE = ROOT / "scripts" / "i18n_baseline.json"
 
 
 def _dict(path: Path, name: str) -> dict[str, str]:
@@ -39,7 +42,9 @@ def _used() -> dict[str, str]:
     """{key: 首个出现位置}，只认 tr() 的**字面量**参数（f-string / 变量无法静态检查）。"""
     out: dict[str, str] = {}
     for p in sorted((ROOT / "gcm").rglob("*.py")):
-        if "i18n" in p.as_posix():
+        # `gcm/i18n/` 是字典本体；`_changelog_data.py` 是**发布说明**（中文是刻意的，
+        # 不进 UI、不切英文）。棘轮盯的是"用户可见文案"，这两类不该混进分母。
+        if "i18n" in p.as_posix() or p.name == "_changelog_data.py":
             continue
         try:
             tree = ast.parse(p.read_text(encoding="utf-8", errors="replace"))
@@ -52,6 +57,76 @@ def _used() -> dict[str, str]:
                 out.setdefault(n.args[0].value,
                                f"{p.relative_to(ROOT).as_posix()}:{n.lineno}")
     return out
+
+
+def untranslated() -> dict[str, int]:
+    """未走 `tr()` 的中文可见字面量计数（按文件）。
+
+    **为什么需要**：`_used()` 只看 `tr()` 的实参 —— 没被 `tr()` 包住的中文
+    它根本看不见，于是"覆盖检查通过"与"英文模式下满屏中文"可以同时成立
+    （Rev13 R12 记录的假绿）。这里从**另一头**数：每个含中文的字符串常量，
+    排除 docstring、排除 `tr()` 实参，剩下的就是"哪怕切到英文也不会变"的文案。
+
+    计入的包括日志与提示文本（日志也面向用户），不含注释（注释不是字符串常量）。
+    """
+    per: dict[str, int] = {}
+    for p in sorted((ROOT / "gcm").rglob("*.py")):
+        if "i18n" in p.as_posix():
+            continue
+        try:
+            tree = ast.parse(p.read_text(encoding="utf-8", errors="replace"))
+        except SyntaxError:
+            continue
+        docstrings: set[int] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.FunctionDef,
+                                 ast.AsyncFunctionDef, ast.ClassDef)):
+                if ast.get_docstring(node, clean=False) and node.body:
+                    docstrings.add(id(node.body[0].value))
+        tr_args: set[int] = set()
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call)
+                    and getattr(node.func, "id", "") == "tr"):
+                for arg in node.args:
+                    tr_args.add(id(arg))
+        count = 0
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                    and id(node) not in docstrings and id(node) not in tr_args
+                    and _CJK.search(node.value)):
+                count += 1
+        if count:
+            per[p.relative_to(ROOT).as_posix()] = count
+    return per
+
+
+def load_baseline() -> dict:
+    if not BASELINE.exists():
+        return {}
+    try:
+        return json.loads(BASELINE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+
+
+def check_untranslated() -> list[str]:
+    """Rev14 R14-18 棘轮：未走 `tr()` 的中文字面量总数不得高于基线。"""
+    per = untranslated()
+    total = sum(per.values())
+    base = load_baseline()
+    if not base:
+        return []
+    problems: list[str] = []
+    if total > int(base.get("total", 0)):
+        worst = sorted(per.items(), key=lambda kv: -kv[1])[:5]
+        problems.append(
+            f"未走 tr() 的中文字面量 {base.get('total')} → {total}"
+            f"（新增请用 tr()；确实不改请说明理由并下调基线）最多的是 {worst}")
+    for fname, count in (base.get("by_file") or {}).items():
+        cur = per.get(fname, 0)
+        if cur > int(count):
+            problems.append(f"{fname} 未翻译字面量 {count} → {cur}")
+    return problems
 
 
 def check() -> list[str]:
@@ -80,11 +155,22 @@ def check() -> list[str]:
 def main(argv: list[str]) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    problems = check()
+    if "--update-baseline" in argv:
+        per = untranslated()
+        payload = {"total": sum(per.values()),
+                   "by_file": dict(sorted(per.items(), key=lambda kv: -kv[1]))}
+        BASELINE.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                            encoding="utf-8")
+        print(f"i18n 基线已更新：总数 {payload['total']} → "
+              f"{BASELINE.relative_to(ROOT)}")
+        return 0
+    problems = check() + check_untranslated()
     zh = _dict(ROOT / "gcm/i18n/zh.py", "ZH")
     used = _used()
     if "--verbose" in argv:
-        print(f"ZH={len(zh)} 使用中的字面量键={len(used)}")
+        per = untranslated()
+        print(f"ZH={len(zh)} 使用中的字面量键={len(used)} "
+              f"未走 tr() 的中文字面量={sum(per.values())}")
     if problems:
         print(f"i18n 覆盖问题 {len(problems)} 条：")
         for p in problems[:40]:

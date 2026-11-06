@@ -149,6 +149,8 @@ class MainWindow(QMainWindow):
         self.engine.progress.connect(self._on_worker_progress)
         self.engine.progress_detail.connect(self._on_worker_progress_detail)
         self.engine.result.connect(self._on_worker_result)
+        # Rev14 F2：断点续传跳过的仓库也要把行推到终态（否则永远「等待中」）
+        self.engine.skipped.connect(self._on_engine_skipped)
         self.engine.finished.connect(self._on_engine_finished)
         self.engine.adapt_changed.connect(self._on_adapt_changed)  # G48-1
         # 兼容旧引用（测试/托盘可能读 pool）
@@ -196,6 +198,8 @@ class MainWindow(QMainWindow):
         self.alerts_fired.connect(self._on_alerts_fired)
         # G35-10：Star 列表拉取结束 → 回填输入区（网络在 worker 线程）
         self.starred_fetched.connect(self._on_starred_fetched)
+        # Rev14 R14-02：屏幕增删 / 主屏切换 → 按新屏重算最小尺寸与布局档
+        self._wire_screen_watchers()
 
         # G05-1 应用持久化主题（默认 deep）+ G10-1 字号缩放
         from ..ui import theme as _th
@@ -226,11 +230,17 @@ class MainWindow(QMainWindow):
             pass
         self.tabs.currentChanged.connect(self._save_last_tab)
         self.tabs.currentChanged.connect(self._on_tab_activated)
+        # Rev14 R14-03：键盘导航（显式 tab 链 + F6 页签循环）
+        from .focus_order import install as _install_focus
+        _install_focus(self)
         # 初始页签若是「仓库管理」，立即触发一次延迟加载
         self._on_tab_activated(self.tabs.currentIndex())
         # G02-4 URL 历史：同步成功的地址自动留档（data/history.json）
         from ..db.history import UrlHistory
         self.url_history = UrlHistory(self.data_dir / "history.json")
+        # Rev12 U-01：操作台账（data/oplog.json）—— 撤销的唯一事实源
+        from ..util.oplog import default_oplog
+        self.oplog = default_oplog(self.data_dir)
         # G35-4 任务清单：data/lists/*.json（保存/载入输入区地址）
         from ..db.lists import TaskLists
         self.task_lists = TaskLists(self.data_dir / "lists")
@@ -613,18 +623,24 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------ UI
 
     def _serialize_geometry(self) -> str:
-        """G36-4 当前窗口几何 → "WxH+X+Y"（含最大化状态前缀 M:）。
+        """G36-4 当前窗口几何 → "WxH+X+Y@屏名"（含最大化状态前缀 M:）。
 
         最大化时**连普通几何的位置一起存**：原实现只写 `M:WxH`（2 个数字），
         而 `_restore_geometry` 无条件按 4 个值解包 → `ValueError` 被 `except` 吞掉
         → 最大化用户每次启动都恢复不了（实测复发）。
+
+        Rev14 R14-02：末尾追加 `@屏名`。位置坐标本身不足以判断"这块屏还在不在"
+        —— 用户把副屏拔掉后，同样的坐标可能落在另一块屏上，也可能落在虚空里。
+        存名字才能在恢复时明确知道"上次那块屏没了"，进而回主屏而不是硬放。
         """
         try:
+            _name = self._current_screen_name()
+            _suffix = f"@{_name}" if _name else ""
             if self.isMaximized():
                 ng = self.normalGeometry()          # 最大化前的普通几何（含位置）
-                return f"M:{ng.width()}x{ng.height()}+{ng.x()}+{ng.y()}"
+                return f"M:{ng.width()}x{ng.height()}+{ng.x()}+{ng.y()}{_suffix}"
             g = self.geometry()
-            return f"{g.width()}x{g.height()}+{g.x()}+{g.y()}"
+            return f"{g.width()}x{g.height()}+{g.x()}+{g.y()}{_suffix}"
         except Exception:
             return ""
 
@@ -657,6 +673,8 @@ class MainWindow(QMainWindow):
             maximized = raw.startswith("M:")
             if maximized:
                 raw = raw[2:]
+            # Rev14 R14-02：几何串尾部可能带 `@屏名`（新格式），先剥掉再解数字
+            raw, _sep, _stored_screen = raw.partition("@")
             parts = [int(v) for v in raw.replace("x", " ").replace("+", " ").split()]
             if len(parts) == 2:                 # 旧版 `M:WxH` 格式：只有尺寸
                 w, h = parts
@@ -677,7 +695,16 @@ class MainWindow(QMainWindow):
                 w = max(w, self._base_min_size[0])
                 h = max(h, self._base_min_size[1])
             self.resize(w, h)
-            if x is None or y is None or not self._screen_contains_point(x, y):
+            # Rev14 R14-02：上次所在的屏已不在（拔屏 / 远程桌面换了会话）
+            # → 明确告知并回主屏居中，绝不硬放到那块屏原来的坐标上
+            _known = {s["name"] for s in self._screen_snapshot()}
+            _screen_gone = bool(_stored_screen) and _stored_screen not in _known
+            if _screen_gone:
+                self._emit_log(
+                    _fmt_dt(), LogLevel.WARN,
+                    f"上次所在的显示器「{_stored_screen}」已不可用，窗口已回到主屏")
+                self._center_on_primary_screen(w, h)
+            elif x is None or y is None or not self._screen_contains_point(x, y):
                 # 位置不可用（旧格式 / 屏已不在）→ **居中显示**，绝不放到用户看不见的地方
                 self._center_on_primary_screen(w, h)
             else:
@@ -714,28 +741,180 @@ class MainWindow(QMainWindow):
         except Exception:
             return None
 
+    # ------------------------------------------------------------ Rev14 R14-02 多显示器
+
+    def _screen_snapshot(self) -> list[dict]:
+        """当前所有屏幕的「名称 + 工作区」快照（`layout.resolve_screen` 的输入）。
+
+        之所以要抽成快照而不是各处直接问 `primaryScreen()`：拔掉副屏之后
+        `primaryScreen()` 依然是主屏，窗口却可能停在**已消失的那块屏**上 ——
+        必须按窗口当前所在屏的**名字**去匹配，才能发现"这块屏没了"。
+        """
+        from PyQt6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app is None:
+            return []
+        out: list[dict] = []
+        for s in app.screens():
+            g = s.availableGeometry()
+            out.append({"name": str(s.name() or ""),
+                        "available": (int(g.width()), int(g.height()))})
+        return out
+
+    def _current_screen_name(self) -> str:
+        """窗口当前所在屏幕的名称（拿不到就空串，调用方按"未知"处理）。
+
+        LBYL 而非 try/except：`screen()` 在控件已构造后必存在，唯一可能是
+        没有 `QApplication`（纯逻辑测试）—— 那种情况直接返回空串，不算异常。
+        """
+        from PyQt6.QtWidgets import QApplication
+        s = self.screen()
+        if s is None:
+            app = QApplication.instance()
+            if app is None:
+                return ""
+            s = app.primaryScreen()
+        return str(s.name() or "") if s is not None else ""
+
+    def _wire_screen_watchers(self) -> None:
+        """把 `QGuiApplication` 的屏幕信号接到 `_on_screen_changed`。
+
+        三个信号各管一件事：`primaryScreenChanged`（主屏换了）、`screenAdded` /
+        `screenRemoved`（插拔）。全部用**绑定方法**连接，不用 `lambda` 捕获 self
+        —— 否则引用环会让 `del w` 之后无法按引用计数释放（G69-18 踩过）。
+        """
+        from PyQt6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app is None:
+            return
+        for _name in ("primaryScreenChanged", "screenAdded", "screenRemoved"):
+            _sig = getattr(app, _name, None)
+            if _sig is not None:
+                _sig.connect(self._on_screen_changed)
+        self._screen_watchers_wired = True
+
+    def _on_screen_changed(self, *_args) -> None:
+        """屏幕集合变化 → 按新屏重算最小尺寸、夹取窗口、重算布局档。"""
+        from .layout import clamp_window_size, minimum_for_screen, resolve_screen
+        screens = self._screen_snapshot()
+        head = resolve_screen(screens, self._current_screen_name())
+        min_w, min_h = minimum_for_screen(screens, head["name"])
+        self._base_min_size = (min_w, min_h)
+        self.setMinimumSize(min_w, min_h)
+        aw, ah = head["available"]
+        if aw > 0 and ah > 0:
+            w, h = clamp_window_size(self.width(), self.height(), aw, ah)
+            if (w, h) != (self.width(), self.height()):
+                self.resize(w, h)
+        # 尺寸可能变了 → 重跑一次布局判定（折叠 / 档位 / 次要列）
+        self._apply_layout_for_width(self.width())
+        self._apply_layout_mode()
+        self._emit_log(_fmt_dt(), LogLevel.INFO,
+                       f"显示器变更：当前屏幕 {head['name'] or '未知'}，"
+                       f"工作区 {aw}×{ah}，最小窗口 {min_w}×{min_h}")
+
+    def _apply_fold_and_min_heights(self, compact: bool) -> None:
+        """Rev13 R13-01/02：矮窗口折叠工具行 + 同步各区块最小高度。
+
+        **折叠**：窗口高度 < `layout.tools_fold_height(字号)` 时，把
+        打开目录/失败汇总/重试队列/诊断包 收进一个「更多 ▸」下拉菜单 ——
+        实测 900×480 与 1366×768@150% 的 911×512 工作区下，这四个按钮
+        可见高只有 27/42px（下半截被父级裁掉）。折叠后入口仍在（同名同槽）。
+
+        **为什么高度也要一起改**：折叠后顶部区 minHint 194 + 进度区 minHint 196
+        = 390 > splitter 361，两个区一起被压 →「更多 ▸」自己只剩 6/20px。
+        所以折叠态下把可滚动的两处（顶部滚动区、进度表）压到各自的最小需求。
+        """
+        # Rev13 R13-02：矮窗口把工具行（打开目录/失败汇总/重试队列/诊断包）
+        # 折叠进「更多 ▸」——否则四点按钮会被父级裁掉下半截（实测 900×480 与
+        # 1366×768@150% 的 911×512 工作区下可见高只有 27/42px）。
+        # 判定按**窗口高度 vs 实测需求高度**（见 layout.tools_fold_height），
+        # 不按宽度：宽度够也照样放不下高度。
+        #
+        # 异常策略：这里用 **LBYL（hasattr 守卫）** 而不是 try/except ——
+        # `test_g80_hygiene` 的异常预算棘轮只降不升，纯外观修正不该加 except。
+        from .download_layout import set_tools_row_folded
+        from .layout import tools_fold_height
+        if getattr(self, "download_actions", None) is not None:
+            _scale = getattr(self.settings, "font_scale", 1.0)
+            _fold = int(self.height()) < tools_fold_height(_scale)
+            set_tools_row_folded(self, _fold)
+            self._tools_folded = _fold
+        # v9.12.1 / X-4：动作区不许被压扁 —— 构建时 sizeHint 尚未定型（父级会把孩子
+        # 压扁，G78 为 chip 踩过同一个坑），所以每次布局切换按**当前** sizeHint 重设
+        # 最小高度；矮窗口里让「可滚动」的顶部区先让位，而不是切掉常驻按钮。
+        # 折叠后 sizeHint 自然变小，这里跟着走（不写死两套数字）。
+        _act = getattr(self, "download_actions", None)
+        if _act is not None:
+            # Rev14 F1：取 `sizeHint` 与 `minimumSizeHint` 的**较大者** —— 折叠后
+            # 只按 sizeHint（116）设最小高，「更多 ▸」那第二行就只能分到 10/20px
+            # （实测 visibleRegion 86×10）。
+            _act.setMinimumHeight(max(int(_act.sizeHint().height()),
+                                      int(_act.minimumSizeHint().height())))
+        if getattr(self, "download_top_scroll", None) is not None:
+            # 顶部区是**可滚动**的，所以它是矮窗口里唯一该让位的东西：
+            #   ≥ 标准高度  180（完整露出输入区）
+            #   compact     120
+            #   极矮(<640)   64（让常驻的动作区完整放得下）
+            #   Rev13 折叠态 40 —— 折叠后顶部 minHint 194 + 进度区 minHint 196
+            #   = 390 > splitter 361（实测 900×480 / 911×512），必须再让出空间，
+            #   否则**第一行**的开始/取消也会被裁。
+            _h = int(self.height())
+            _folded = bool(getattr(self, "_tools_folded", False))
+            if _folded:
+                # Rev14 F1：折叠态原来是 40，实测那会让「仓库地址」输入框只剩 10px
+                # （滚动视口 40，输入框在内容里 y≈30 处）。
+                # 但窗口高度 **< 560** 时（真机 1366×768@150% 的工作区夹出来的 900×504）
+                # 地址 + 选项 + 动作 + 进度**四块加起来超过整个可用高度**，物理上装不下：
+                # 此时保「更多 ▸」可达（四个工具入口在那里），地址退回可滚动 40 ——
+                # 这也是 Rev13 当年在同一尺寸上的取舍，实测一致（累计 408 > 369）。
+                _min = 110 if _h >= 560 else 40
+            else:
+                _min = 180 if not compact else (110 if _h < 640 else 120)
+            self.download_top_scroll.setMinimumHeight(_min)
+
+    def _apply_wide_layout(self, wide: bool) -> None:
+        """Rev14 R14-01 / R14-07：按断点档位设置密度（行高）与宽屏专属列宽。
+
+        为什么必须做：`layout_mode()` 一直会返回 `"wide"`，但全库唯一消费点是比较
+        `in ("compact", "unsupported")` —— 宽屏与主流办公**行为完全相同**，
+        `WIDE_WIDTH/WIDE_HEIGHT` 因此是死常量（Rev13 R4）。这里给它可断言的差异：
+        进度表行高 `TOKENS.row.default(26)` → `row.wide(28)`（宽屏视距更远）。
+        管理页列宽在 L 档的加宽由 `manage_panel.apply_column_budget` 单独负责
+        —— 列宽只有一个所有者，两处各设一遍必然互相打架。
+
+        触摸屏上取 `TOKENS.row.touch(34)` 作为下限 —— 26/28px 的行用指尖点不中。
+        判定**排除 offscreen 平台**：Qt 的离屏后端会伪造一个 TouchScreen 设备，
+        不排除的话所有测试都会跑在"触摸模式"下（见 `layout.has_touchscreen`）。
+
+        幂等：每次都按当前档位重设，不累加。异常策略用 LBYL（`getattr` 链）。
+        """
+        from .layout import has_touchscreen
+        from .palettes import TOKENS
+
+        # 直接两层下标读（不走 `rows = TOKENS["row"]` 别名）：守卫
+        # `tests/test_rev14_feedback.TestTokensHaveNoDeadEntries` 只认直接读取，
+        # 别名会让它看不见这处耦合，于是"token 有没有人用"就查不出来了。
+        row_h = int(TOKENS["row"]["wide"] if wide else TOKENS["row"]["default"])
+        if has_touchscreen():
+            row_h = max(row_h, int(TOKENS["row"]["touch"]))
+        pp = getattr(self, "progress_panel", None)
+        table = getattr(pp, "table", None) if pp is not None else None
+        if table is not None:
+            vh = table.verticalHeader()
+            if vh is not None and vh.defaultSectionSize() != row_h:
+                vh.setDefaultSectionSize(row_h)
+
     def _apply_layout_mode(self):
         """G70：Compact 下隐藏快捷填充按钮与设置分组导航（功能仍可手输）。"""
         try:
-            from .layout import layout_mode
-            compact = layout_mode(self.width(), self.height()) in ("compact", "unsupported")
-            # v9.12.1 / X-4：动作区不许被压扁 —— 构建时 sizeHint 尚未定型（父级会把孩子
-            # 压扁，G78 为 chip 踩过同一个坑），所以每次布局切换按**当前** sizeHint 重设
-            # 最小高度；矮窗口里让「可滚动」的顶部区先让位，而不是切掉常驻按钮。
-            try:
-                _act = getattr(self, "download_actions", None)
-                if _act is not None:
-                    _act.setMinimumHeight(int(_act.sizeHint().height()))
-                if hasattr(self, "download_top_scroll"):
-                    # 顶部区是**可滚动**的，所以它是矮窗口里唯一该让位的东西：
-                    #   ≥ 标准高度  180（完整露出输入区）
-                    #   compact     120
-                    #   极矮(<640)   64（让常驻的动作区三行完整放得下）
-                    _h = int(self.height())
-                    _min = 180 if not compact else (64 if _h < 640 else 120)
-                    self.download_top_scroll.setMinimumHeight(_min)
-            except Exception as exc:  # noqa: BLE001 —— 纯外观修正，不能拖垮布局切换
-                self._emit_log(_fmt_dt(), LogLevel.WARN, f"动作区高度同步失败：{exc}")
+            from .layout import BREAKPOINT_L, breakpoint_name, is_compact_bp
+            _bp = breakpoint_name(self.width(), self.height())
+            compact = is_compact_bp(_bp)
+            # Rev13：折叠判定 + 各区块最小高度同步（抽成独立方法，防本方法超 100 行）
+            self._apply_fold_and_min_heights(compact)
+            # Rev14 R14-01：L 档的真实差异化行为（此前 wide 是死枚举）
+            self._apply_wide_layout(_bp == BREAKPOINT_L)
             for btn in getattr(self, "_quick_fill_buttons", []):
                 btn.setVisible(not compact)
             # G74：Compact 下把 chip 滚动区收起来（把高度还给进度表）。
@@ -748,6 +927,45 @@ class MainWindow(QMainWindow):
                 _w = getattr(self, _name, None)
                 if _w is not None:
                     _w.setVisible(not compact)
+            # Rev11：结论条紧凑化（1020×560 硬地板；紧凑下只留铭牌+读数一行）。
+            # getattr 兜底而非 try/except pass（异常预算棘轮只降不升）。
+            _bc = getattr(self, "batch_conclusion", None)
+            if _bc is not None:
+                _bc.set_compact(compact)
+                # Rev14 F1：最矮的窗口（折叠态，<720）连结论条也要让位 ——
+                # 实测 1020×584@1.3/1.6 下第一行按钮还差 4–10px，结论条 22px+间距
+                # 正好补上。齿条仍显示「成功/失败」计数，信息不会丢；窗口一变大就恢复。
+                _bc.setVisible(not bool(getattr(self, "_tools_folded", False)))
+            # Rev11：紧凑下进度表 minH 120→94 —— 结论条占了顶部 ~24px 后，
+            # splitter 两侧 minHint 之和超过可用高度，会把动作区按钮裁 21px
+            # （test_ui_compact_visibility 1020×560 抓到的真回归）。表格是可滚动区，
+            # 让它让位符合「可滚动的先吸收压缩」的既有原则。
+            _pp = getattr(self, "progress_panel", None)
+            if _pp is not None:
+                # Rev13：折叠态下进度表也得再让位 —— 实测 900×480（真机 911×512）
+                # 时顶部 minHint 194 + 进度区 minHint 196 = 390 > splitter 361，
+                # 两个区一起被压 → 「更多 ▸」只剩 6/20px。进度表本身可滚动，
+                # 压到它自己的 minimumSizeHint（66）不影响可用性。
+                if bool(getattr(self, "_tools_folded", False)):
+                    # Rev14 F1：折叠态（窗口 < 720）下把表格让到 0 —— QSplitter 按子控件
+                    # 的 minimumSizeHint 夹取，表格每多要 1px 就是从动作区扣 1px。
+                    # 表格本身可滚动，压到 0 不伤可用性；常驻按钮被切才是真缺陷。
+                    _pp.table.setMinimumHeight(0)
+                else:
+                    _pp.table.setMinimumHeight(94 if compact else 120)
+            # Rev14 F1：折叠态再让一个**信息重复**的条 —— `batch_overview`
+            # （本批次完成度进度条）与结论条「已完成 x/y · 成功率」说的是同一件事，
+            # 最矮的窗口上留结论条（全屏唯一 display 读数）更要紧。
+            _folded_now = bool(getattr(self, "_tools_folded", False))
+            _bo = getattr(_pp, "batch_overview", None) if _pp is not None else None
+            if _bo is not None:
+                _bo.setVisible(not _folded_now)
+            # Rev14 F1：进度区的「搜索 / 自动排序 / 暂停选中」行在最矮窗口里也整行收起
+            # —— 它占 34px，而 QSplitter 按子控件 minimumSizeHint 夹取，这 34px 正是
+            # 动作区「更多 ▸」被压到 10/20px 的原因。
+            _tr_w = getattr(_pp, "_tools_row", None) if _pp is not None else None
+            if _tr_w is not None:
+                _tr_w.setVisible(not _folded_now)
             # G78：布局模式/缩放变化后，按 chip 真实高度重算滚动区高度
             # （构建时窗口还没定型，父级会把它压扁 → chip 底部被裁）
             try:
@@ -755,29 +973,23 @@ class MainWindow(QMainWindow):
                 sync_quick_scroll_height(self)
             except Exception as exc:  # noqa: BLE001 —— 纯外观修正，不能拖垮布局切换
                 self._emit_log(_fmt_dt(), LogLevel.WARN, f"快捷填充高度同步失败：{exc}")
-            # G74：Compact 把高度还给进度表（1366×768 下原来只能看到 3 行）
-            # G84-16：**按视口高度派生**，不再用写死的 380/420。
-            # 原来两档固定值在 768 高的机器上只能露出 4~5 行、日志区被挤没；
-            # 现在顶区不超过视口的 55%，其余全部给进度表（下限 120px 保可用）。
+            # G74/G84-16：顶部区与进度表的高度分配 —— 抽成独立方法（Rev14 F1）
             try:
-                if hasattr(self, "download_splitter"):
-                    _h = self.download_splitter.height() or self.height() or 0
-                    _top = 380 if compact else 420
-                    if _h > 200:
-                        _top = max(240, min(_top, int(_h * 0.55)))
-                        _rest = max(120, _h - _top)
-                    else:
-                        _rest = 380
-                    if (getattr(self, "_last_compact", None) != compact
-                            or getattr(self, "_last_split_h", None) != _h):
-                        self._last_compact = compact
-                        self._last_split_h = _h
-                        self.download_splitter.setSizes([_top, _rest])
-                        # 尺寸变化后把顶部滚回起点，避免只露出「下载位置」下半截
-                        try:
-                            self.download_top_scroll.verticalScrollBar().setValue(0)
-                        except Exception:
-                            pass
+                # 连算两次：`_h` 取的是 splitter **上一帧**的高度（本方法 docstring 早已
+                # 写明这个限制）。窗口尺寸一次跳变很大时，第一次会用旧高度算出偏小的
+                # 常驻区，把第一行按钮裁到 30/42；第二次读到稳定高度后才收敛。
+                for _ in range(2):
+                    self._size_download_splitter(compact)
+                if (getattr(self, "_last_compact", None) != compact
+                        or getattr(self, "_last_split_fold", None)
+                        != getattr(self, "_tools_folded", None)):
+                    self._last_compact = compact
+                    self._last_split_fold = getattr(self, "_tools_folded", None)
+                    # 尺寸变化后把顶部滚回起点，避免只露出「下载位置」下半截
+                    try:
+                        self.download_top_scroll.verticalScrollBar().setValue(0)
+                    except Exception:
+                        pass
             except Exception:
                 pass
             nav = getattr(self, "settings_nav", None)
@@ -787,6 +999,41 @@ class MainWindow(QMainWindow):
                 nav.setVisible(self.width() >= 1000)
         except Exception:
             pass
+
+    def _size_download_splitter(self, compact: bool) -> None:
+        """分配「顶部常驻区 / 进度表」的高度（Rev14 F1）。
+
+        **优先级**：常驻区（结论条 + 仓库地址 + 下载位置/克隆模式 + 两行动作）
+        先拿满自己的 `minimumSizeHint`；剩余全部给进度表；两者之和超过可用高度时，
+        进度表退到 `_pp_floor` —— 它本身就是可滚动区，压它不伤可用性。
+
+        **为什么重写**：原实现在「装不下」时**退回 55% 启发式**，于是常驻区被压到
+        测量值 `btn_open 132×16/132×42`、`btn_start 219×30/219×42`（第一行按钮被
+        切掉一截）。把「下载位置/克隆模式」搬出滚动区后这个缺口从 ~30px 涨到 ~140px，
+        必须改成「常驻区优先」。
+        """
+        if not hasattr(self, "download_splitter"):
+            return
+        _h = self.download_splitter.height() or self.height() or 0
+        if _h <= 200:
+            self.download_splitter.setSizes([380, 380])
+            return
+        _top = max(240, min(380 if compact else 420, int(_h * 0.55)))
+        _rest = max(120, _h - _top)
+        _tc = self.download_splitter.widget(0)
+        if _tc is not None:
+            _need = int(_tc.minimumSizeHint().height())
+            _pp = getattr(self, "progress_panel", None)
+            _pp_need = int(_pp.minimumSizeHint().height()) if _pp is not None else 0
+            if _need + _pp_need <= _h:
+                _top = max(_top, _need)
+                _rest = max(_pp_need, _h - _top)
+                _top = max(0, _h - _rest)
+            else:
+                _pp_floor = max(48, _pp_need // 3)
+                _top = max(_top, min(_need, max(0, _h - _pp_floor)))
+                _rest = max(0, _h - _top)
+        self.download_splitter.setSizes([_top, _rest])
 
     def _goto_settings_section(self, section: str = "network") -> None:
         """C2-4：切到设置页并滚到对应分组（实现见 `ui/settings_nav.py`）。"""
@@ -804,12 +1051,18 @@ class MainWindow(QMainWindow):
             pass
 
     def _build_ui(self):
-        self.setWindowTitle("Git-clone-Max — GitHub 仓库批量并行下载")
+        self.setWindowTitle(tr("Git-clone-Max — GitHub 仓库批量并行下载"))
         # G70：窗口下限改为 1020×560（覆盖 1366×768@125% 与 1080p@150%）
         from .layout import WINDOW_DEFAULT, effective_minimum
         self.resize(*WINDOW_DEFAULT)
         min_w, min_h = effective_minimum(
             *(self._available_screen_size() or WINDOW_DEFAULT))
+        # Rev12 U-10：菜单栏占一行（实测 23–30px）。它必须从「可用高度」里扣除，
+        # 否则最小尺寸下的主操作区会被挤掉 —— 实测守卫
+        # tests/test_ui_compact_visibility 在 1020×560 下报 btn_open 只剩 17/42 像素。
+        # 这里**抬高下限**而不是压缩控件：下限提高 24px 对真实屏幕几乎无感，
+        # 而压小按钮会直接违反「主操作区必须常驻完整可见」。
+        min_h = int(min_h) + 24
         self._base_min_size = (min_w, min_h)
         self.setMinimumSize(min_w, min_h)
         # G36-4 恢复上次窗口几何（尺寸+位置）；无记录则保持默认
@@ -834,6 +1087,11 @@ class MainWindow(QMainWindow):
         # 兼容：settings_panel._save_concurrency 会直接改 thread_lbl 文案
         self.thread_lbl = self.status_strip.thread_lbl
         root.addWidget(self.status_strip)
+        # Rev14 R14-10：断网标记（最近 3 次失败全为网络类才显示，恢复即消）
+        from .offline_indicator import FailureStreak, OfflineIndicator
+        self.offline_indicator = OfflineIndicator(self.status_strip)
+        self.status_strip.add_trailing_widget(self.offline_indicator)
+        self._offline_streak = FailureStreak()
 
         self.tabs = QTabWidget()
         root.addWidget(self.tabs, 1)
@@ -854,17 +1112,51 @@ class MainWindow(QMainWindow):
         self._build_manage_tab()
         self._build_settings_tab()
 
+        # Rev12 U-10/U-11：菜单栏（内容全在 ui/menu_bar.py，此处只挂载）
+        try:
+            from .menu_bar import build_menu_bar
+            build_menu_bar(self)
+        except Exception as e:  # noqa: BLE001 —— 菜单栏失败不该让整个窗口起不来
+            from ..app.applog import warn as _warn
+            _warn(f"菜单栏构建失败（其余功能不受影响）：{e}")
+        # Rev12 U-06：撤销浮条。**放在 `tabs` 之下的布局里**（两行：页签 + 浮条），
+        # 而不是绝对定位盖在中央控件上 —— 实测覆盖式定位会把下载页底部那排按钮
+        # （打开克隆目录 / 失败汇总 / 重试队列 / 诊断包）挡住，可用性改进反而
+        # 制造可用性缺陷。放进布局后它隐藏时不占高度（hide() 后 sizeHint 为 0）。
+        try:
+            from .undo_bar import UndoBar
+            self.undo_bar = UndoBar(self, central)
+            root.addWidget(self.undo_bar, 0)
+            self.undo_bar.hide()
+        except Exception as e:  # noqa: BLE001 —— 浮条失败只影响撤销入口
+            from ..app.applog import warn as _warn
+            _warn(f"撤销浮条创建失败：{e}")
+
         self.statusBar().showMessage("就绪")
         # G36-5 首次显示空态 overlay（表初始为空）
+        # Rev14 R14-09：三态判定收敛到 `manage_panel._update_empty_manage`（唯一来源）
         try:
             self._update_empty_download()
-            ov = getattr(self, "_empty_manage", None)
-            if ov is not None and self.manage_model.rowCount() == 0:
-                ov.setVisible(True)
-                ov.setGeometry(self.manage_table.rect())
-                ov.raise_()
+            self.manage_panel._update_empty_manage()
         except Exception:
             pass
+        # Rev14 R14-04：无障碍命名（主操作显式命名 + 输入控件按标签推导）。
+        # 放在最后：所有控件都已建好，推导才有标签可找。
+        self._apply_a11y_names()
+
+    def _apply_a11y_names(self) -> None:
+        """Rev14 R14-04：给主操作与输入控件补无障碍名字。
+
+        实测缺口（Rev14 基线）：14 个主操作里 11 个没有 `accessibleName`；
+        `QLineEdit` 34/36、`QSpinBox` 19/19、`QComboBox` 8/8 没有名字 ——
+        这些控件没有可见文本，读屏只会报「编辑框」，等于功能不可用。
+
+        只在**缺失**时补，已有人工命名不覆盖（优先级见 `ui/a11y.py`）。
+        不包 `try/except`：两个函数只做 `QWidget` 属性赋值，没有 I/O 与失败路径；
+        异常预算棘轮只降不升，可访问性增强不该占额度。
+        """
+        from .a11y import apply_main_action_names, autoname_inputs
+        self._a11y_named = (apply_main_action_names(self), autoname_inputs(self))
 
     # ---------------- 下载中心
     def _build_download_tab(self):
@@ -873,13 +1165,25 @@ class MainWindow(QMainWindow):
 
         # G71-7：顶部区域控件搭建已抽到 download_layout.build_download_top
         # （长函数治理；所有控件仍挂在本窗口，外部引用不变）
-        from .download_layout import build_download_actions, build_download_top
+        # Rev14 F1/F7：下载位置/克隆模式从滚动区搬到常驻区（实测小屏被切到 6px）
+        from .download_layout import (
+            build_download_actions,
+            build_download_options,
+            build_download_top,
+        )
         top = build_download_top(self)
+        options = build_download_options(self)
         actions = build_download_actions(self)
 
         # G45-6：进度表/空态/过滤框/暂停 收敛到 progress_table.py（ProgressTable）
         from .progress_table import ProgressTable
         self.progress_panel = ProgressTable(owner=self, parent=self.tab_download)
+        # Rev11（V-09）：批次结论条 —— 全屏唯一 display 字号，插在齿条与滚动区之间。
+        # 数据槽接线见 `_conclusion_from_overview`（从既有批次信号取数，零引擎契约变更）。
+        from .batch_conclusion import BatchConclusionBar
+        self.batch_conclusion = BatchConclusionBar(
+            motion=bool(getattr(self.settings, "prefers_reduced_motion", False) is False))
+        self.batch_conclusion.review_btn.clicked.connect(self._open_failure_dialog)
         # G70：顶部区域放入可滚动容器 —— 小屏（1366×768@125% / 1080p@150%）下
         # 输入区不会被父容器裁切，用户滚动即可访问全部控件。
         self.download_top_scroll = QScrollArea()
@@ -893,11 +1197,15 @@ class MainWindow(QMainWindow):
         # v9.12.1 / X-4：动作区（清单行 + 开始/取消 + 工具行）必须常驻且不被压扁，
         # 保存引用供 `_apply_layout_mode` 在每次布局切换后按真实 sizeHint 重设最小高度。
         self.download_actions = actions
+        # Rev14 F1/F7：下载位置/克隆模式常驻（与主操作同级的最高频操作）
+        self.download_options = options
         top_container = QWidget()
         tc = QVBoxLayout(top_container)
         tc.setContentsMargins(0, 0, 0, 0)
         tc.setSpacing(6)
+        tc.addWidget(self.batch_conclusion)
         tc.addWidget(self.download_top_scroll, 1)
+        tc.addWidget(options)
         tc.addWidget(actions)
         self.download_splitter = QSplitter(Qt.Orientation.Vertical)
         self.download_splitter.setChildrenCollapsible(False)
@@ -1056,7 +1364,7 @@ class MainWindow(QMainWindow):
         startup_ms = getattr(self, "_startup_ms", 0)
         slow_note = "（启动偏慢，可考虑使用便携版）" if startup_ms > 3000 else ""
         lines.append(f"启动耗时：{startup_ms} ms{slow_note}")
-        QMessageBox.information(self, "环境自检", "\n".join(lines))
+        QMessageBox.information(self, tr("环境自检"), "\n".join(lines))
         self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"环境自检完成：{' / '.join(lines)}")
         # G33-6 结构化留痕：selftest|startup_ms=…（供长期监控启动性能回归）
         try:
@@ -1295,7 +1603,11 @@ class MainWindow(QMainWindow):
             pass
 
     def _on_tab_activated(self, index: int):
-        """G70：首次进入管理页加载仓库；首次进入设置页回填开机自启状态。"""
+        """G70：首次进入管理页加载仓库；首次进入设置页回填开机自启状态。
+
+        Rev14 R14-03：切页签时应用该页的 tab 链（不同页的可聚焦控件集合不同，
+        链必须在切换时重设，否则 `Tab` 会走回上一页的旧顺序）。
+        """
         try:
             index = int(index)
             if index == 1:
@@ -1304,6 +1616,25 @@ class MainWindow(QMainWindow):
                 self._refresh_autostart_state()
         except Exception:
             pass
+        from .focus_order import apply_tab_order
+        apply_tab_order(self, index)
+
+    def cycle_tab_focus(self) -> None:
+        """`F6`：在三页签之间循环并把焦点交给新页的第一个可聚焦控件（Rev14 R14-03）。
+
+        为什么不是简单地 `setCurrentIndex(+1)`：只切页不给焦点，键盘用户按完 `F6`
+        还在原来那一页的控件上，等于"切了但看不出切了"。这里切完页立刻
+        `setFocus()` 到该页链头。
+        """
+        from .focus_order import chain_widgets
+        total = self.tabs.count()
+        if total <= 0:
+            return
+        nxt = (self.tabs.currentIndex() + 1) % total
+        self.tabs.setCurrentIndex(nxt)
+        widgets = chain_widgets(self, nxt)
+        if widgets:
+            widgets[0].setFocus()
 
     def _refresh_autostart_state(self):
         """G70：延迟读取任务计划状态（避免启动时同步跑 schtasks）。"""
@@ -1355,6 +1686,13 @@ class MainWindow(QMainWindow):
             self.setStyleSheet(self._themed_qss())
         except Exception:
             pass
+        # Rev13 R13-02：折叠阈值依赖字号（580/600/620 对应 1.0/1.3/1.6）——
+        # 只重刷 QSS 不会重算布局，字号调大后工具行会**少算**所需高度而被裁。
+        # 这里补一次布局重算；无 QApplication / 控件未建时由 _apply_layout_mode
+        # 自身的 getattr 守卫静默跳过。
+        apply_mode = getattr(self, "_apply_layout_mode", None)
+        if callable(apply_mode):
+            apply_mode()
 
     def _rehighlight_log(self):
         """G70：主题/强调色切换后重着色**存量**日志行。
@@ -1375,7 +1713,13 @@ class MainWindow(QMainWindow):
         self._apply_font_scale()
 
     def zoom_out(self):
-        self.settings.font_scale = round(max(0.8, self.settings.font_scale - 0.1), 2)
+        # Rev13 R13-02：下限改用 UI 层常量 `FONT_SCALE_MIN_UI`（0.9）。
+        # 原来写死 0.8，而 `typography.FONT_SCALE_MIN_UI = 0.9` 声明「UI 层字号下限」
+        # 全库零强制 —— 两套口径并存，`Ctrl+-` 能一路压到 0.8，实测 0.8 字号下
+        # 紧凑窗口的主操作按钮几乎全裁。现在只保留一个口径。
+        from .typography import FONT_SCALE_MIN_UI
+        self.settings.font_scale = round(
+            max(FONT_SCALE_MIN_UI, self.settings.font_scale - 0.1), 2)
         self.settings_store.save(self.settings)
         self._apply_font_scale()
 
@@ -1759,13 +2103,13 @@ class MainWindow(QMainWindow):
             self.repo_input.appendPlainText(f"https://github.com/{repo}")
 
     def _edit_quick_repos(self) -> int:
-        """G76：编辑快捷填充列表（逻辑在 `download_layout`，主窗只做委派）。
+        """G76 + Rev11 V-20：编辑快捷填充（行内编辑器，D-7 只改显示标签）。
 
-        此前 `quick_repos` 只有读侧（`download_layout` 建按钮），changelog 却承诺
-        「快捷填充可配置」—— 用户只能手改 `settings.json`。
+        Rev11 起「逗号串弹框」升级为逐条行内编辑 + 落点预览；
+        保存路径不变（`settings_store.save`，跨进程锁），只触碰 `quick_repos`。
         """
-        from .download_layout import edit_quick_repos
-        return edit_quick_repos(self)
+        from .quick_repos_editor import edit_quick_repos_inline
+        return edit_quick_repos_inline(self)
 
     # ------------------------------------------------------------ G35-10 Star 导入
     def import_starred(self) -> None:
@@ -1962,7 +2306,7 @@ class MainWindow(QMainWindow):
         text = self.repo_input.toPlainText()
         items = [ln.strip() for ln in text.splitlines() if ln.strip()]
         if not items:
-            QMessageBox.information(self, "提示", "输入区为空，没有可保存的地址。")
+            QMessageBox.information(self, tr("提示"), tr("输入区为空，没有可保存的地址。"))
             return
         name, ok = QInputDialog.getText(self, "保存任务清单", "清单名称：")
         if not ok or not name.strip():
@@ -1973,17 +2317,17 @@ class MainWindow(QMainWindow):
             self._emit_log(_fmt_dt(), LogLevel.INFO, f"已保存任务清单：{name.strip()}（{len(items)} 行）")
             self.statusBar().showMessage(f"已保存清单：{name.strip()}")
         except Exception as e:
-            QMessageBox.warning(self, "保存失败", str(e))
+            QMessageBox.warning(self, tr("保存失败", str(e)))
 
     def _load_task_list(self):
         """把所选清单的地址填入输入区。"""
         name = self.combo_load_list.currentText()
         if not name:
-            QMessageBox.information(self, "提示", "请先选择要载入的清单。")
+            QMessageBox.information(self, tr("提示"), tr("请先选择要载入的清单。"))
             return
         items = self.task_lists.items(name)
         if not items:
-            QMessageBox.information(self, "提示", f"清单「{name}」为空或不存在。")
+            QMessageBox.information(self, tr("提示"), f"清单「{name}」为空或不存在。")
             return
         self.repo_input.appendPlainText("\n".join(items) + "\n")
         self._emit_log(_fmt_dt(), LogLevel.INFO, f"已载入任务清单：{name}（{len(items)} 行）")
@@ -2009,7 +2353,7 @@ class MainWindow(QMainWindow):
         specs, invalid = parse_urls(text)
         if not specs:
             QMessageBox.information(
-                self, "提示",
+                self, tr("提示"),
                 "没有可用的 GitHub 地址。\n\n有效示例：\n"
                 "https://github.com/vercel-labs/skills\ngit@github.com:microsoft/azure-skills.git\n"
                 "vercel-labs/agent-skills")
@@ -2017,7 +2361,7 @@ class MainWindow(QMainWindow):
         if invalid:
             shown = "\n".join(f"  - {line}" for line in invalid)
             ret = QMessageBox.question(
-                self, "无效地址（忽略并继续？）",
+                self, tr("无效地址（忽略并继续？）"),
                 f"{len(invalid)} 行不是有效的 GitHub 仓库地址：\n{shown}\n\n"
                 "继续将只同步有效行，是否忽略无效行？",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
@@ -2027,12 +2371,12 @@ class MainWindow(QMainWindow):
                             f"已忽略 {len(invalid)} 行无效地址：{', '.join(invalid)}")
         target = self.target_edit.text().strip()
         if not target:
-            QMessageBox.warning(self, "提示", "请先选择下载目录。")
+            QMessageBox.warning(self, tr("提示"), tr("请先选择下载目录。"))
             return
         try:
             Path(target).mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            QMessageBox.warning(self, "提示", f"无法创建下载目录：{e}")
+            QMessageBox.warning(self, tr("提示"), f"无法创建下载目录：{e}")
             return
         # G38-4：模式 1=浅克隆、2=单分支浅克隆（都走 shallow 路径，后者加 --single-branch）
         mode_idx = self.mode_combo.currentIndex()
@@ -2059,11 +2403,11 @@ class MainWindow(QMainWindow):
 
     def update_all(self):
         if self.busy:
-            QMessageBox.information(self, "提示", "有任务正在运行，请先取消或等待完成。")
+            QMessageBox.information(self, tr("提示"), tr("有任务正在运行，请先取消或等待完成。"))
             return
         rows = self.db.list_pending_updates()  # 全 host（已排除黑名单 excluded=1）
         if not rows:
-            QMessageBox.information(self, "提示", "数据库中没有已记录的仓库，请先到「下载中心」添加。")
+            QMessageBox.information(self, tr("提示"), tr("数据库中没有已记录的仓库，请先到「下载中心」添加。"))
             return
         # 按 local_path 反推根目录集合：仓库可能分散在多个下载目录
         from collections import OrderedDict
@@ -2106,11 +2450,27 @@ class MainWindow(QMainWindow):
             single_branch = ui_mode or bool(
                 getattr(self.settings, "single_branch", False))
         self.busy = True
+        # Rev14 R14-10 修正：新批次开始时清掉上一批的「断网」判定 —— 否则断网批次
+        # 结束后标记会一直亮着，直到**下一次成功**才灭（用户只是看看界面不会消）。
+        _st = getattr(self, "_offline_streak", None)
+        if _st is not None:
+            _st.note_success()
+            _ind = getattr(self, "offline_indicator", None)
+            if _ind is not None:
+                _ind.set_offline(False)
+        # Rev14 R14-08：从"点开始"到第一条结果之间显示骨架，避免整表空白
+        self.progress_panel.set_busy_preview(True)
+        self._skeleton_on = True
         # G75：仪表齿条清零并起表（活跃数由进度信号累加）
         try:
             self.status_strip.begin(len(specs))
         except Exception as exc:  # noqa: BLE001 —— 齿条只是观测件，不能拖垮下载链路
             self._emit_log(_fmt_dt(), LogLevel.WARN, f"仪表齿条未能启动：{exc}")
+        # Rev11（V-09）：结论条切入运行态（动效受 reduced_motion 支配，组件内自判）。
+        # getattr 兜底而非 try/except pass（异常预算棘轮只降不升）。
+        _bc = getattr(self, "batch_conclusion", None)
+        if _bc is not None:
+            _bc.begin(len(specs))
         self.btn_start.setEnabled(False)
         self.btn_cancel.setEnabled(True)
         # C2-6：批次启动即可暂停（暂无待发任务时点它只会给出提示）
@@ -2167,6 +2527,8 @@ class MainWindow(QMainWindow):
         self.engine.progress.connect(self._on_worker_progress)
         self.engine.progress_detail.connect(self._on_worker_progress_detail)
         self.engine.result.connect(self._on_worker_result)
+        # Rev14 F2：断点续传跳过的仓库也要把行推到终态（否则永远「等待中」）
+        self.engine.skipped.connect(self._on_engine_skipped)
         self.engine.finished.connect(self._on_engine_finished)
         self.pool = self.engine.pool
         # G22-4：托盘进度计数接入（托盘未安装时 update_counts 静默无效）
@@ -2189,6 +2551,11 @@ class MainWindow(QMainWindow):
         # 表格预填行（engine 去重后实际索引与表格行号可能不对齐，
         # 表格行只用于展示：先用完整列表填行，engine 结果按 index 回填）
         self._pending_count = len(specs)
+        # Rev14 F2 修正：`progress_rows.install_row` 只用 `setItem` 写格子，**不会**
+        # 把行数撑起来（`QTableWidget.setItem` 对不存在的行是静默空操作）。所以这里
+        # 必须先 `_prepare_table` 建行，否则「预填」一直是白做工 —— 全部被跳过时
+        # 表格就一行都没有（用户看不到是哪个仓库被跳过）。
+        self._prepare_table(len(specs))
         self.progress_panel.begin_bulk()
         for i, spec in enumerate(specs):
             self._add_table_row(i, spec)
@@ -2205,11 +2572,28 @@ class MainWindow(QMainWindow):
             clear_input=clear_input,
             check_existing=True,
             mirror=bool(mirror),  # G48-6
+            # Rev14 F2：GUI 需要知道哪些被「已完成」预检跳过 → 行才能到终态。
+            # CLI 保持默认 False，`results[]` 与退出码契约零变化。
+            report_skipped=True,
         )
         if launched == 0:
+            # 全部被跳过：表格里必须留下这些行（带「已跳过」终态），否则用户
+            # 只看到一张空表 + 一句「成功 0」。
+            if self.progress_panel.table.rowCount() == 0 and specs:
+                self._prepare_table(len(specs))
+                self.progress_panel.begin_bulk()
+                for i, spec in enumerate(specs):
+                    self._add_table_row(i, spec)
+                    self.row_specs[i] = spec
+                self.progress_panel.end_bulk()
             self.busy = False
+            self.progress_panel.set_busy_preview(False)
             self._reset_buttons()
             self._on_engine_finished()
+            # Rev14 F3：`engine.launch()` 在「全部被跳过」时会**同步** finished，
+            # 上面的 `_on_engine_finished` 已经写好批次小结；原先这里继续往下执行，
+            # 又被 `并行同步中：N 个仓库…` 覆盖，用户看到的是「还在跑」。
+            return
         else:
             # G21-1：表格行与 engine 去重后的索引严格对齐（去重/断点跳过都会
             # 改变唯一清单），旧行全部废弃重建，避免暂停/进度按错行
@@ -2224,7 +2608,6 @@ class MainWindow(QMainWindow):
             self._pending_count = n
             self.statusBar().showMessage(f"并行同步中：{n} 个仓库…")
             return
-        self.statusBar().showMessage(f"并行同步中：{len(specs)} 个仓库…")
 
     # ------------------------------------------------------------ 槽
     def _on_engine_line(self, index, text, level):
@@ -2306,7 +2689,72 @@ class MainWindow(QMainWindow):
                 self._auto_update_batch_had_changes = True
         except AttributeError:
             pass
+        # Rev11（V-09）：结论条与表格共用同一份终态流（零引擎契约变更）。
+        # getattr 兜底而非 try/except pass（异常预算棘轮只降不升）。
+        _bc = getattr(self, "batch_conclusion", None)
+        if _bc is not None:
+            _bc.note_result(str(getattr(res.status, "value", res.status)))
+        # Rev14 R14-08：第一条结果到达即撤掉骨架（此后表格已有真实行）
+        if getattr(self, "_skeleton_on", False):
+            self._skeleton_on = False
+            self.progress_panel.set_busy_preview(False)
+        # Rev14 R14-10：离线判定（用唯一分类器，不另写关键字表）
+        self._note_network_streak(res)
         return self.progress_panel._on_worker_result(index, res)
+
+    def _on_engine_skipped(self, key: str, message: str) -> None:
+        """把「已完成，跳过」推到对应表格行（Rev14 F2）。
+
+        为什么用 key 而不是 index：被跳过的 spec **不进** `engine.specs`，
+        也就没有 index（index 是调度序，不是输入序）。用 `owner/repo` 匹配
+        `row_specs` 才是稳定的。找不到对应行（例如部分跳过导致表格按 engine.specs
+        重建）就只累计计数，由批次小结里的「跳过 N」兜住 —— 不让信息消失。
+        """
+        self._skipped_count = int(getattr(self, "_skipped_count", 0)) + 1
+        for i, spec in getattr(self, "row_specs", {}).items():
+            if f"{getattr(spec, 'owner', '')}/{getattr(spec, 'repo', '')}" != key:
+                continue
+            table = self.progress_panel.table
+            if i >= table.rowCount():
+                break
+            from PyQt6.QtCore import Qt as _Qt
+            st_item = table.item(i, 2)
+            if st_item is not None:
+                st_item.setText(tr("已跳过"))
+                st_item.setData(_Qt.ItemDataRole.UserRole, "skipped")
+            det = table.item(i, 4)
+            if det is not None:
+                det.setText(message)
+            act = table.item(i, 3)
+            if act is not None and not (act.text() or "").strip("—"):
+                act.setText("—")
+            break
+
+    def _note_network_streak(self, res: SyncResult) -> None:
+        """按单条结果更新「断网」标记（Rev14 R14-10）。
+
+        成功 → 清零；失败 → 交给 `app.errors.classify_error` 分类后入窗口。
+        不弹窗、不阻塞：这是状态指示，网络恢复不需要用户确认。
+        """
+        streak = getattr(self, "_offline_streak", None)
+        ind = getattr(self, "offline_indicator", None)
+        if streak is None or ind is None:
+            return
+        status = str(getattr(res.status, "value", res.status))
+        if status == "success":
+            streak.note_success()
+        elif status == "failed":
+            from ..app.errors import classify_error
+            info = classify_error(str(getattr(res.message, "", "") or ""),
+                                  str(getattr(res.detail, "", "") or ""))
+            was_offline = streak.is_offline
+            now_offline = streak.note_failure(getattr(info, "category", "other"))
+            if now_offline and not was_offline:
+                self.statusBar().showMessage(tr(
+                    "网络似乎不可用：最近几次失败都是网络类错误，恢复后会自动消失"), 8000)
+        else:
+            return
+        ind.set_offline(streak.is_offline)
 
     def _animate_result_row(self, index: int, status: SyncStatus):
         """G45-6 转发 progress_table.py（行为零变化）。"""
@@ -2616,11 +3064,19 @@ class MainWindow(QMainWindow):
         had = bool(getattr(self, "_auto_update_batch_had_changes", False))
         self._auto_update_batch_had_changes = False
         self._note_batch_change(had)
+        # Rev14 R14-08：零结果批次也要撤掉骨架（否则占位块会一直盖着空表）
+        if getattr(self, "_skeleton_on", False):
+            self._skeleton_on = False
+            self.progress_panel.set_busy_preview(False)
         try:
             if getattr(self, "watchdog", None) is not None:
                 self.watchdog.reset()
         except Exception:
             pass
+        # Rev11（V-09）：批次结束 → 结论条切成绩单态（getattr 兜底，同上）
+        _bc = getattr(self, "batch_conclusion", None)
+        if _bc is not None:
+            _bc.finish()
         return self.progress_panel._on_engine_finished()
 
     def _reset_buttons(self):
@@ -2661,7 +3117,11 @@ class MainWindow(QMainWindow):
         # 由结果槽统一复位
 
     def confirm_clear_input(self):
-        """A5-4/U-18：清空输入区；>20 行时先确认（默认 No）。"""
+        """A5-4/U-18：清空输入区；>20 行时先确认（默认 No）。
+
+        Rev12 U-08：清空后把原文写进台账并弹撤销浮条 —— 输入区常是用户手打的
+        几百行地址，本仓库此前唯一能找回的方式是「保存过清单」。
+        """
         n = self.repo_input.blockCount() if hasattr(self.repo_input, "blockCount") else 0
         if n > 20:
             ret = QMessageBox.question(
@@ -2671,7 +3131,16 @@ class MainWindow(QMainWindow):
                 QMessageBox.StandardButton.No)
             if ret != QMessageBox.StandardButton.Yes:
                 return
+        text = self.repo_input.toPlainText()
         self.repo_input.clear()
+        if text.strip():
+            try:
+                rec = self.oplog.record(
+                    "input_clear", tr("{n} 行地址").format(n=len(text.splitlines())),
+                    summary=tr("清空输入区"), before={"text": text}, undoable=True)
+                self.offer_undo(rec, tr("已清空输入区"))
+            except Exception as e:  # noqa: BLE001 —— 台账失败不该影响清空本身
+                self._emit_log(_fmt_dt(), LogLevel.WARN, f"操作台账写入失败：{e}")
 
     def _any_cancel(self):
         """G45-6 转发 progress_table.py（行为零变化）。"""
@@ -2706,7 +3175,7 @@ class MainWindow(QMainWindow):
     def import_local_repos(self):
         """打开「导入本地已有仓库」对话框。"""
         if self.busy:
-            QMessageBox.information(self, "提示", "有任务正在运行，请稍后再导入。")
+            QMessageBox.information(self, tr("提示"), tr("有任务正在运行，请稍后再导入。"))
             return
         # G70：扫描根目录依赖管理页模型，确保已加载
         self._ensure_manage_loaded()
@@ -2739,7 +3208,7 @@ class MainWindow(QMainWindow):
                 lines.append(
                     f"{h['started_at']} {h['action']:10s} {h['status']:8s} "
                     f"+{h['commits']}  {h['message'][:70]}")
-            QMessageBox.information(self, "同步历史", "\n".join(lines) or "仓库不存在或已删除")
+            QMessageBox.information(self, tr("同步历史"), "\n".join(lines) or "仓库不存在或已删除")
             return
         RepoDetailDialog(repo=repo, history=hist, parent=self).exec()
 
@@ -2760,13 +3229,15 @@ class MainWindow(QMainWindow):
         """取当前主题的语义色（accent2=成功绿 / error=错误红）。
 
         G69-18：校验条原先写死 Deep 主题的十六进制色 —— Light 主题下
-        `#3fb950` 对白底对比度约 2.4:1（AA 要求 4.5:1），几乎看不清。
+        旧 Primer 绿对白底对比度约 2.4:1（AA 要求 4.5:1），几乎看不清。
+        Rev11（V-08）：兜底值不再写死任何 Primer/灰色字面量 —— 直接从
+        PALETTES["deep"] 取（模块级常量，无 QApplication 也可用）。
+        LBYL（getattr 链）而非嵌套 try —— 异常预算棘轮只降不升。
         """
-        try:
-            from . import theme as _th
-            return str(_th.current_palette().get(key) or "#888888")
-        except Exception:
-            return "#888888"
+        from . import theme as _th
+        pal = getattr(_th, "current_palette", lambda: {})()
+        pal = pal if isinstance(pal, dict) else getattr(_th, "PALETTES", {}).get("deep", {})
+        return str(pal.get(key) or "")
 
     def _on_layout_tick(self) -> None:
         """G69-18：布局防抖定时器到点 → 按当前宽度重排（绑定方法，不成环）。"""
@@ -2775,16 +3246,43 @@ class MainWindow(QMainWindow):
         self._apply_layout_mode()
 
     def _apply_layout_for_width(self, w: int) -> None:
-        """G57-1：按窗口宽度切换布局语义（S<768 / M / D / XL）。窄窗折叠次要列。"""
-        try:
-            narrow = w < 768
-            if hasattr(self, "manage_table"):
-                for col in range(self.manage_table.columnCount()):
-                    hdr = self.manage_table.horizontalHeaderItem(col)
-                    hide = narrow and hdr is not None and hdr.text() in ("大小", "健康", "标签")
-                    self.manage_table.setColumnHidden(col, bool(hide))
-        except Exception:
-            pass
+        """按窗口宽度折叠管理页次要列（**Rev13 R13-03 重写**）。
+
+        原实现有三个真缺陷（本轮实测确认，不是推测）：
+        1. `QTableView.horizontalHeaderItem()` **不存在**（那是 `QTableWidget` 的 API）
+           → 每次都抛 `AttributeError`，被外层 `except` 吞掉 → **从来没折叠过任何列**；
+        2. 它匹配的表头 `"标签"` 在现模型 8 列里**不存在**（仓库/作者/本地路径/上次同步/
+           HEAD/历史/健康/大小）；
+        3. 阈值 `w < 768` **不可达** —— `effective_minimum()` 的下限是 900
+           （`layout.ABSOLUTE_MIN`），窗口不可能窄过 900。
+
+        现在：用 `model().headerData()` 读列名（真实来源），阈值取
+        `layout.NARROW_WIDTH = 1020`（= `WINDOW_MIN[0]`，真实可达），
+        只折叠「大小 / 健康」两列（真正的次要数据，主列与「历史」入口不动）。
+        """
+        from PyQt6.QtCore import Qt as _Qt
+
+        from .layout import NARROW_WIDTH
+        # 异常策略：LBYL（getattr 链）—— 异常预算棘轮只降不升，纯外观修正不加 except。
+        table = getattr(self, "manage_table", None)
+        if table is None:
+            return
+        model = table.model()
+        if model is None:
+            return
+        narrow = int(w) < int(NARROW_WIDTH)
+        hide_names = ("大小", "健康")
+        for col in range(model.columnCount()):
+            name = model.headerData(
+                col, _Qt.Orientation.Horizontal,
+                _Qt.ItemDataRole.DisplayRole)
+            table.setColumnHidden(col, bool(narrow) and str(name or "") in hide_names)
+        # Rev14 R14-06：定宽列按档位重排（窄窗压到下限、L 档偏宽、其余用用户保存值）
+        from .layout import BREAKPOINT_L, breakpoint_name
+        panel = getattr(self, "manage_panel", None)
+        if panel is not None:
+            bp = breakpoint_name(int(w), self.height())
+            panel.apply_column_budget(narrow, bp == BREAKPOINT_L)
 
     def resizeEvent(self, e):
         """G57-1 窗口语义档（防抖 150ms）+ G36-5 空态 overlay 跟随表格定位。"""
@@ -2803,6 +3301,13 @@ class MainWindow(QMainWindow):
             self._layout_timer.start()
         except Exception:
             pass
+        # Rev12 U-06：撤销浮条贴在中央控件底部，窗口尺寸变化时必须跟随，
+        # 否则拉大窗口后浮条停在原位置（正是 Rev6 U-19 空态 overlay 踩过的坑）。
+        try:
+            self._position_undo_bar()
+        except Exception:  # noqa: BLE001 —— 重定位失败不影响 resize 本身
+            pass
+
     # ------------------------------------------------------------ G49-6 启动隐入托盘
     def should_auto_hide(self) -> bool:
         """--minimized 启动且系统托盘已安装 → 主窗不弹出（托盘常驻）。"""
@@ -2867,8 +3372,8 @@ class MainWindow(QMainWindow):
     def closeEvent(self, e: QCloseEvent):
         if self.busy:
             ret = QMessageBox.question(
-                self, "确认退出",
-                "有任务正在运行，退出将中断（已下载内容不会丢失）。确定退出？",
+                self, tr("确认退出"),
+                tr("有任务正在运行，退出将中断（已下载内容不会丢失）。确定退出？"),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if ret != QMessageBox.StandardButton.Yes:
                 e.ignore()
@@ -2943,3 +3448,127 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         e.accept()
+
+    # ================================================================ Rev12 可用性接线
+    # 尼尔森原则③（撤销）、④（平台惯例菜单栏）、⑩（帮助随时可得）。
+    # 全部为**转发**：真实现分别在 ui/undo_bar.py、ui/menu_bar.py、app/undo.py，
+    # 主窗只做入口，避免继续往 2980 行的类里加逻辑（CLAUDE.md §6 的增量约束）。
+
+    def menu_undo(self):
+        """编辑 → 撤销：撤销最近一条**可撤销**操作。"""
+        try:
+            from ..app.undo import UndoError, undo_record
+            records = self.oplog.recent(1, undoable_only=True)
+            if not records:
+                self.statusBar().showMessage(tr("没有可撤销的操作"), 4000)
+                return
+            rec = records[0]
+            try:
+                summary = undo_record(self.oplog, self, rec)
+            except UndoError as e:
+                self.statusBar().showMessage(str(e), 6000)
+                self._emit_log(_fmt_dt(), LogLevel.WARN, f"撤销失败：{e}")
+                return
+            self.statusBar().showMessage(summary, 5000)
+            self._emit_log(_fmt_dt(), LogLevel.INFO, summary)
+        except Exception as e:  # noqa: BLE001 —— 撤销入口故障不该影响主流程
+            self._emit_log(_fmt_dt(), LogLevel.WARN, f"撤销入口异常：{e}")
+
+    def undo_op(self, record_id: str) -> tuple[bool, str]:
+        """按 id 撤销（UndoBar 调用）。返回 (是否成功, 给用户看的文案)。"""
+        from ..app.undo import UndoError, undo_record
+        rec = self.oplog.get(record_id)
+        if rec is None:
+            return False, tr("找不到这条操作记录（可能已被清理）")
+        try:
+            summary = undo_record(self.oplog, self, rec)
+        except UndoError as e:
+            return False, str(e)
+        except Exception as e:  # noqa: BLE001 —— 逆做失败要给用户可读原因，不抛栈
+            return False, tr("撤销失败：{err}").format(err=e)
+        self._emit_log(_fmt_dt(), LogLevel.INFO, summary)
+        return True, summary
+
+    def offer_undo(self, record, text: str) -> None:
+        """展示撤销浮条。`record` 是 `util.oplog.OpRecord`（只取 id）。"""
+        try:
+            bar = getattr(self, "undo_bar", None)
+            if bar is not None and record is not None:
+                bar.offer(record.id, text)
+        except Exception as e:  # noqa: BLE001 —— 浮条失败不影响操作本身已完成
+            self._emit_log(_fmt_dt(), LogLevel.WARN, f"撤销浮条显示失败：{e}")
+
+    def open_oplog_dialog(self):
+        """编辑 → 操作历史…：列出最近可撤销记录。"""
+        try:
+            from .undo_bar import build_oplog_dialog
+            build_oplog_dialog(self).exec()
+        except Exception as e:  # noqa: BLE001
+            self._emit_log(_fmt_dt(), LogLevel.WARN, f"操作历史打开失败：{e}")
+
+    def menu_goto_tab(self):
+        """视图 → 切页签（读 sender 的 tab_index 属性，避免 lambda 捕获 self）。"""
+        try:
+            act = self.sender()
+            idx = int(act.property("tab_index")) if act is not None else 0
+            self.tabs.setCurrentIndex(max(0, min(self.tabs.count() - 1, idx)))
+        except Exception as e:  # noqa: BLE001
+            self._emit_log(_fmt_dt(), LogLevel.WARN, f"切换页签失败：{e}")
+
+    def open_help(self):
+        """帮助 → 使用说明（F1）。与设置页「使用说明」走**同一个**槽，防漂移。"""
+        return self.settings_panel._open_help()
+
+    def open_data_dir(self):
+        """文件 → 打开数据目录。复用设置页实现（唯一真相）。"""
+        return self.settings_panel._open_data_dir()
+
+    def show_about(self):
+        """帮助 → 关于：版本 + 项目地址 + 数据目录。"""
+        import platform
+
+        from .. import __version__
+        lines = [
+            f"Git-clone-Max {__version__}",
+            tr("批量并行克隆 + 增量更新 + 入库追踪"),
+            "",
+            f"Python {platform.python_version()} · {platform.system()} {platform.release()}",
+            f"{tr('数据目录')}：{self.data_dir}",
+        ]
+        QMessageBox.information(self, tr("关于"), "\n".join(lines))
+
+    def _position_undo_bar(self) -> None:
+        """按「中央控件底部按钮行高度」定位撤销浮条（Rev12 U-06）。
+
+        为什么不能写死偏移：下载页底部有一排按钮（打开克隆目录 / 失败汇总 /
+        重试队列 / 诊断包 …），实测写死 24px 会把它们整排盖住 —— 可用性改进
+        反而制造可用性缺陷。这里取最后一个 QPushButton 的底边作为避让基准，
+        取不到时退回默认 24px（布局异常也不该让浮条消失）。
+        """
+        bar = getattr(self, "undo_bar", None)
+        cw = self.centralWidget()
+        if bar is None or cw is None:
+            return
+        offset = 24
+        try:
+            from PyQt6.QtWidgets import QPushButton
+            lowest = 0
+            for btn in cw.findChildren(QPushButton):
+                # 必须排除浮条**自身及其子控件** —— findChildren 会递归到撤销/关闭
+                # 按钮，它们的坐标是相对浮条的，混进来会把避让算成 0（实测过）。
+                if btn is bar or bar.isAncestorOf(btn) or not btn.isVisible():
+                    continue
+                # 只关心「贴近底部」的按钮行，中间的按钮不参与
+                geo = btn.geometry()
+                top = btn.mapTo(cw, geo.topLeft()).y()
+                bottom = top + geo.height()
+                if bottom > cw.height() - 160:
+                    lowest = max(lowest, bottom)
+            if lowest:
+                offset = cw.height() - lowest + 8
+        except Exception as e:  # noqa: BLE001 —— 定位失败退回默认值即可
+            from ..app.applog import warn as _warn
+            _warn(f"撤销浮条避让计算失败，使用默认偏移：{e}")
+            offset = 24
+        bar._bottom_offset = offset
+        bar.reposition(cw.rect(), bottom_offset=offset)

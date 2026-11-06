@@ -70,25 +70,25 @@
 | ADR-003 | 凭据加密落盘（DPAPI/Keyring/XOR 降级）+ redact 全出口打码 |
 | ADR-004 | 生态 agent 化：CLI --json 契约 + MCP 只读 + HTTP API 默认只读（显式 enable 才可写） |
 
-## 4. 模块规模基线（2026-11-04 v9.18.0 实测，`python scripts/dev_metrics.py` 可一键复测）
+## 4. 模块规模基线（2026-11-05 v9.18.8 实测，`python scripts/dev_metrics.py` 可一键复测）
 
 | 模块 | 行数 | 职责 |
 |------|------|------|
-| `gcm/ui/main_window.py` | 2945 | 主窗编排（已登记技术债；引擎构造在 `engine_factory.py`、顶栏齿条在 `status_strip.py`） |
+| `gcm/ui/main_window.py` | 3574 | 主窗编排（已登记技术债；引擎构造在 `engine_factory.py`、顶栏齿条在 `status_strip.py`、批次结论条在 `batch_conclusion.py`） |
 | `gcm/git/service.py` | 1970 | Git 操作全链路（`_update` 已拆为 `_update_bare_mirror`/`_fetch_remote`/`_merge_remote`） |
-| `gcm/app/engine.py` | 1667 | 调度/并发/进度/重试/会话/事件发布 |
-| `gcm/ui/progress_table.py` | 787 | 进度表（delegate→`progress_delegate.py`、批次总览→`batch_overview.py`、结果文案→`result_labels.py`） |
+| `gcm/app/engine.py` | 1682 | 调度/并发/进度/重试/会话/事件发布 |
+| `gcm/ui/progress_table.py` | 771 | 进度表（delegate→`progress_delegate.py`、批次总览→`batch_overview.py`、结果文案→`result_labels.py`、行动效→`row_anim.py`、左缘刻度→`edge_ruler.py`） |
 | `gcm/db/repo_db.py` | 750 | SQLite 数据层 |
 | `gcm/ui/settings_panel.py` | 791 | 设置 UI（分组构建器在 `settings_groups.py`） |
 | `gcm/ui/settings_groups.py` | 786 | 设置分组构建器（7 个组） |
 | `gcm/ui/theme.py` | 314 | 主题状态（当前主题/强调色）+ 日志模型 + 兼容再导出 |
 | `gcm/ui/typography.py` | 113 | 三字族 + 七级字号阶梯（QSS 字符串 + QFont 两条路径） |
-| `gcm/ui/palettes.py` | 211 | 四套色板 + 设计 token + 对比度工具 |
-| `gcm/ui/qss_build.py` | 262 | QSS 拼装（由色板/token/排版角色生成，含 reduced-motion 分支） |
-| `gcm/ui/status_strip.py` | 238 | 仪表齿条（进程运行态读数） |
+| `gcm/ui/palettes.py` | 271 | 四套色板 + 设计 token + 对比度工具（Rev11：panel_primary/signal_dim、6 档 accent 预设） |
+| `gcm/ui/qss_build.py` | 372 | QSS 拼装（由色板/token/排版角色生成，含 reduced-motion 分支；Rev11：三档卡面权重） |
+| `gcm/ui/status_strip.py` | 249 | 仪表齿条（进程运行态读数） |
 | `gcm/ui/status_pill.py` | 165 | 状态形状编码 + 表格 pill delegate |
 | `gcm/ui/batch_overview.py` | 74 | 批次完成度条（与齿条职责分离） |
-| `gcm/ui/result_labels.py` | 59 | 状态/动作用户可见文案（唯一来源，走 tr） |
+| `gcm/ui/result_labels.py` | 82 | 状态/动作/耗时用户可见文案（唯一来源，走 tr） |
 | `gcm/ui/settings_actions.py` | 334 | 设置页动作型回调（字段写入 wiring / 钩子确认 / 数据目录迁移） |
 | `gcm/ui/update_flow.py` | 205 | 更新检查三段（手动/结果槽/启动静默）+ 唯一 patch 点约定 |
 

@@ -5,7 +5,7 @@
 > 这边是**跑了证明什么**（接缝 ↔ 用例 ↔ 最后结果）。
 > 只记录本轮真实运行过的结果；引用历史结果必须标日期。
 
-**最后更新**：2026-11-04（v9.18.0：G84 接线/预览/门禁 + 审查整改）。各接缝的**引入版本**写在下表 S 行的括号里 —— 这里不再堆版本沿革（堆一行会让每次发版都撞版本守卫，且读者也读不出哪条是什么时候加的）。
+**最后更新**：2026-11-05（v9.18.8：Rev13 新增 S50–S51 两条适配接缝；Rev11 于 2026-11-04 新增 S47–S49）。各接缝的**引入版本**写在下表 S 行的括号里 —— 这里不再堆版本沿革（堆一行会让每次发版都撞版本守卫，且读者也读不出哪条是什么时候加的）。
 
 ---
 
@@ -62,6 +62,16 @@
 | S45 | **批次收尾 → WAL 收缩**（v9.12.0 / C1-11） | `db/repo_db.wal_checkpoint(PASSIVE)` | `app/engine._maybe_checkpoint_wal()`（批次终态调用） | ①只在批次收尾调一次（不是每任务）；②失败只 warn、不得影响本批结果；③无 db/无该方法时安全跳过 | `tests/test_c1_wiring.TestWalCheckpointOnBatchFinish`（2） |
 | S46 | **文档数字 → 实测度量**（v9.12.0 / C1-4/C1-5/C1-13） | `scripts/dev_metrics.py`（唯一度量口径） | `scripts/doc_drift_check.py`（6 类断言）· `tests/test_function_size_budget.py`（20 个 >100 行函数集合相等）· `tests/test_g79_repo_hygiene`（测试文件数） | ①模块行数表与实测差 ≤5；②超长函数集合相等（增删都红）；③测试文件数三处同源；④技能包数 = README 声称且每个有 SKILL.md；⑤每类断言必须有「改坏会红」的反向自检 | `tests/test_doc_drift_guard`（8）· `tests/test_function_size_budget`（4） |
 
+| S47 | **批次信号 → 结论条三态**（Rev11 / V-09） | `ui/main_window._launch/_on_worker_result/_on_engine_finished` | `ui/batch_conclusion.BatchConclusionBar` | ①与 `batch_overview` 并存不合并（`test_g46_nav_batch` 精确文本断言不动）；②`note_result` 与表格共用同一份终态流（零引擎契约变更）；③`motion=False` 时零动效；④opacity effect 用完即释放 | `tests/test_rev11_w2.TestBatchConclusionBar`（8） |
+| S48 | **表格列结构 → 全部消费方**（Rev11 / V-16） | `ui/progress_table`（6 列）+ `progress_rows.build_row_items` | 全部 `table.item(r, col)` 调用点 | ①耗时列只加**末尾**（index=5），0–4 索引零变化（`evidence/rev11-columns.json` 盘点）；②耗时口径唯一在 `result_labels.format_duration`（转发断言防两处真相）；③数据列 mono + 右对齐 | `tests/test_rev11_w2.TestDurationColumnWiring` · `TestFormatDuration` |
+| S49 | **排序模式 ⟷ 拖拽可用性**（Rev11 / V-21，D-6） | `ui/sort_mode.apply_sort_mode` | `progress_table.btn_auto_sort` + `table.dragEnabled` | ①S1 UserRole 是唯一真相（变异测试：排序后 result 槽写到正确仓库行）；②S2 自动模式恒不可拖；③S3 切自动即弃手动序；④S4 运行中禁拖；⑤S5 不新增视觉位置推断 | `tests/test_rev11_w4.TestSortModeStateMachine`（5） |
+| S50 | **窗口高度 → 工具行折叠**（Rev13 / R13-01/02，D-14） | `ui/layout.tools_fold_height(字号)` | `ui/download_layout.set_tools_row_folded()` → `main_window._apply_fold_and_min_heights()` | ①阈值随字号单调（580/600/620@1.0/1.3/1.6）；②折叠后四入口在「更多 ▸」菜单里同名可用（复用按钮文本/图标/槽，不写第二份定义）；③折叠态下常驻控件零裁切、折/展往返不累积误差；④**字号变化必须重新判定**（`_apply_font_scale` 末尾补布局重算）；⑤只压可滚动区（顶部滚动区 40 / 进度表 66），不压常驻按钮 | `tests/test_rev13_adapt.TestToolsFold`（6） |
+| S52 | **窗口尺寸 → 断点档位（XS/S/M/L）**（Rev14 / R14-01） | `ui/layout.breakpoint_name(w, h)` | `main_window._apply_layout_mode()` → `_apply_wide_layout()` / `manage_panel.apply_column_budget()` | ①10 个实测锚点的档位表；②宽度递增档位单调不回退；③坏入参不抛异常；④`layout_mode()` 返回值不变（既有 5 处断言依赖）；⑤**L 档与 M 档必须有可测量差异**（行高 26→28），否则 `WIDE_WIDTH/HEIGHT` 又是死常量 | `tests/test_rev14_adapt.TestBreakpoints`（5）+ `TestWideBreakpointHasRealBehaviour`（1） |
+| S53 | **屏幕增删 → 最小尺寸重算**（Rev14 / R14-02） | `ui/layout.resolve_screen(screens, name)` / `minimum_for_screen()` / `has_touchscreen()` | `main_window._wire_screen_watchers()` → `_on_screen_changed()`；`_serialize_geometry()` 追加 `@屏名` | ①按名字命中；②名字不存在时回落第一块屏并置 `fell_back`；③空屏幕列表不炸；④几何串带屏名可往返；⑤拔屏后回主屏且**留 WARN 文案**；⑥离屏平台不报触摸屏（离屏后端会伪造一个） | `tests/test_rev14_adapt.TestScreenResolution`（5）+ `TestGeometryRemembersScreen`（3） |
+| S54 | **键盘焦点顺序**（Rev14 / R14-03） | `ui/focus_order.CHAINS`（属性名链，不持有控件引用） | `main_window._on_tab_activated()` / `cycle_tab_focus()`（F6） | ①链里每个名字在真实窗口上存在（打错一个只是少串一对，不报错）；②同页无重复；③下载页输入框排在主操作之前、开始按钮在进度表之前；④F6 三页循环且焦点落到新页第一个可操作控件 | `tests/test_rev14_keyboard`（8） |
+| S55 | **无障碍命名**（Rev14 / R14-04） | `ui/a11y.MAIN_ACTIONS` + `effective_name()`（口径：accessibleName → text() → tooltip） | `main_window._apply_a11y_names()`（构建末尾）→ `autoname_inputs()` 读 buddy/相邻标签/tooltip | ①14 个主操作 100% 有名字与描述且不重名；②输入控件没有可见文本也必须推导出名字；③人工命名不被覆盖；④`scripts/a11y_audit.py` 棘轮只降不升（基线 `scripts/a11y_baseline.json`） | `tests/test_rev14_a11y`（8）+ `scripts/a11y_audit.py` |
+| S56 | **截图 → 像素回归判定**（Rev14 / R14-19） | `scripts/pixel_diff.compare_images/compare_dirs`（容差 8、占比 0.5%） | `scripts/ui_screenshot_audit.py --compare <基线目录>` | ①完全相同的图通过；②**平移 2px 必须被抓到**（反向自检，阈值宽到发现不了等于没守）；③尺寸不同直接判失败（不按比例放过）；④基线有而本次没截到的图也算回归 | `tests/test_rev14_pixel`（4） |
+| S51 | **窄窗 → 管理页列折叠**（Rev13 / R13-03） | `ui/layout.NARROW_WIDTH`（= WINDOW_MIN[0]） | `main_window._apply_layout_for_width()` → `manage_model.headerData()` | ①用真实模型列名判定（不再用不存在的 `QTableView.horizontalHeaderItem`）；②只折叠「大小/健康」，非次要列不许误隐；③宽窗必须全部恢复 | `tests/test_g57_responsive.TestNarrowFoldOnRealModel`（1）+ `TestWindowLayoutBand`（2） |
 > **编号说明（避免与并行会话撞号）**：并行会话产出的《下一步改进指南》（位于 `docs/plans/`）在其 §9B 建议了 S35–S42（定时队列 / 引擎参数契约 / 忙态令牌 / 错误动作 / 全文索引 / 事件持久化 / 契约 schema 导出 / 自更新校验），**那些都是未落地的规划**。本轮 S35/S36 是**已落地**的真实接缝，先占号。**2026-11-01 更正**：G82 已用掉 S37–S40（重试队列/闸门/子进程/统计线程），Rev7 的计划落地时请从 **S41** 起 —— 本表 S41–S46 即 v9.12.0（Rev7 C1 批）真实落地的六条接缝。
 
 ---

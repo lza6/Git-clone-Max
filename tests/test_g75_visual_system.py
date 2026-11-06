@@ -232,10 +232,17 @@ class TestQssLayers(unittest.TestCase):
         self.assertIn("border-top", block, "卡面缺少内嵌高光（Qt 没有 box-shadow）")
         self.assertIn(PALETTES["deep"]["glow"], block)
 
-    def test_tab_selected_uses_accent(self):
+    def test_tab_selected_uses_neutral_underline(self):
+        """Rev11（§2.3 色彩预算）：页签选中态改用中性色下划线 + 字重，不再花 accent。
+
+        原 G75 断言「选中态用 accent」与 Rev11 的 accent 收窄直接冲突 ——
+        accent 现在只表达「正在发生」，页签位置属于「结构」，用亮度（text 色）标记。
+        守卫由 tests/test_rev11_visual.TestAccentBudget 接管反向（禁 accent），
+        本条正向（必须是 text 色且字重 700）。
+        """
         q = theme.qss_for_theme("deep", 1.0)
         block = q.split("QTabBar::tab:selected {", 1)[1].split("}", 1)[0]
-        self.assertIn(PALETTES["deep"]["accent"], block)
+        self.assertIn(PALETTES["deep"]["text"], block)
         self.assertIn("font-weight: 700", block)
 
     def test_default_button_is_ghost(self):

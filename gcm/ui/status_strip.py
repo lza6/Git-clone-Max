@@ -118,6 +118,17 @@ class StatusStrip(QWidget):
         self.refresh()
 
     # ---------------- 构建
+    def add_trailing_widget(self, widget) -> None:
+        """在齿条**右端**追加一个状态件（Rev14 R14-10 的离线指示）。
+
+        追加在 `addStretch(1)` 之后 → 被推到最右。离线是**全局状态**，
+        不该混进左侧"本次批次读数"那一簇里（两者回答不同的问题）。
+        """
+        lay = self.layout()
+        if lay is None:
+            return
+        lay.addWidget(widget)
+
     def _mk(self, row: QHBoxLayout) -> QLabel:
         sep = QLabel("·")
         sep.setObjectName("muted")

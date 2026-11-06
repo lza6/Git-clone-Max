@@ -40,7 +40,36 @@ from gcm.models import (  # noqa: E402
     RepoSpec, SyncAction, SyncResult, SyncStatus,
 )
 
-OUT = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "reports" / "ui-audit")
+def _arg_value(flag: str) -> str:
+    """取 `--flag value` 的值（没有就空串）。"""
+    argv = sys.argv[1:]
+    if flag in argv:
+        i = argv.index(flag)
+        if i + 1 < len(argv):
+            return argv[i + 1]
+    return ""
+
+
+def _positional_args() -> list[str]:
+    """过滤掉 `--flag value` 对，剩下真正的位置参数。"""
+    argv = sys.argv[1:]
+    out: list[str] = []
+    skip = False
+    for a in argv:
+        if skip:
+            skip = False
+            continue
+        if a.startswith("--"):
+            skip = True
+            continue
+        out.append(a)
+    return out
+
+
+_pos = _positional_args()
+OUT = Path(_pos[0] if _pos else ROOT / "reports" / "ui-audit")
+#: Rev14 R14-19：`--compare <基线目录>` → 存完图后逐张比，有回归则退出码 1。
+COMPARE_BASE = _arg_value("--compare")
 OUT.mkdir(parents=True, exist_ok=True)
 
 REPOS = [
@@ -60,14 +89,30 @@ REPOS = [
 
 
 def _seed(db: Database, root: Path) -> list[RepoSpec]:
+    """造种子数据 —— **每一列都要有数据**（Rev14 V3）。
+
+    为什么必须建真实目录并给 `head_sha` / `duration_ms`：这份种子此前只写库、
+    不建目录也不给这两个字段，于是「HEAD / 大小 / 耗时」三列在**所有截图里永远
+    是空的** —— 四轮 UI 迭代都"看过"截图，但没人发现它们可能根本没渲染。
+    截图只能证明布局，证明不了数据。
+    """
     specs = []
     for i, (owner, repo, host) in enumerate(REPOS):
         spec = RepoSpec(owner=owner, repo=repo,
                         url_https=f"https://{host}/{owner}/{repo}.git",
                         folder_name=f"{owner}__{repo}")
-        rid = db.upsert_repo(spec, str(root / spec.folder_name), host=host)
+        target = root / spec.folder_name
+        # 真实目录 + .git + 一点内容：让「大小」列算得出值、`目录存在` 判定也成立
+        (target / ".git").mkdir(parents=True, exist_ok=True)
+        (target / "README.md").write_text("# demo\n", encoding="utf-8")
+        (target / "src").mkdir(exist_ok=True)
+        (target / "src" / "main.py").write_text(
+            "print('x')\n" * (40 + i * 7), encoding="utf-8")
+        rid = db.upsert_repo(spec, str(target), host=host,
+                             head_sha=f"{i:02x}9f3c1a7b5d2e4f60"[:16])
         db.add_sync_history(rid, SyncStatus.SUCCESS, SyncAction.CLONED,
-                            "克隆完成", "", commits=i % 4)
+                            "克隆完成", "", commits=i % 4,
+                            duration_ms=1200 + i * 137)
         specs.append(spec)
     return specs
 
@@ -120,7 +165,11 @@ def main() -> int:
                                   "本地改动冲突" if st == SyncStatus.CONFLICT else
                                   "已取消" if st == SyncStatus.CANCELLED else
                                   "已是最新"),
-                         detail="mock detail for layout audit", commits=i % 4)
+                         detail="mock detail for layout audit", commits=i % 4,
+                         # Rev14 V3：不传 duration_ms 时「耗时」列永远显示「—」，
+                         # 截图就永远证明不了那一列能渲染（同 HEAD/大小 的数据洞）。
+                         duration_ms=(0 if st == SyncStatus.PENDING else 1400 + i * 233),
+                         started=0.0, ended=0.0)
         try:
             win.progress_panel._on_worker_result(i, res)
         except Exception:
@@ -331,6 +380,19 @@ def main() -> int:
     db.close()
     shutil.rmtree(tmp, ignore_errors=True)
     print("OUT:", OUT)
+    if COMPARE_BASE:
+        # Rev14 R14-19：与基线逐张比。历史教训是"只存图不断言"——
+        # 一行按钮被裁成 4 个空框，4 轮迭代都没人发现。
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import pixel_diff
+        res = pixel_diff.compare_dirs(COMPARE_BASE, OUT)
+        print("像素回归比对：", "通过" if res["ok"] else "有回归")
+        for name in res.get("missing") or []:
+            print(f"  缺失（基线有、本次没截到）：{name}")
+        for line in res.get("regressions") or []:
+            print(f"  变化：{line}")
+        if not res["ok"]:
+            return 1
     return 0
 
 

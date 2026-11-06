@@ -35,6 +35,9 @@ sys.path.insert(0, str(ROOT))
 _MAIN_ACTION_WIDGETS = (
     # 任务清单 / Star 导入（X-4 事故现场）
     "btn_save_list", "combo_load_list", "btn_load_list", "btn_star_import",
+    # 输入区与选项区（Rev14 F1：此前**不在这份契约里**，所以它们被裁到 6–23px
+    # 一直没人发现 —— 1024×768 下 target_edit 可见 352×6/352×34）
+    "repo_input", "target_edit", "mode_combo", "depth_spin",
     # 主操作
     "btn_start", "btn_cancel", "btn_clear",
     # 工具行
@@ -78,7 +81,22 @@ class TestMainActionAreaFullyVisible(unittest.TestCase):
         from PyQt6.QtTest import QTest
         QTest.qWait(ms)          # resize 有 150ms 去抖 + 布局重排
 
+    #: 允许折叠进「更多 ▸」的四个工具入口（D-14：小屏折叠是设计，不是缺陷；
+    #: 但**入口必须还在** —— 菜单里能点开就等于用户够得到）。
+    _FOLDABLE = ("btn_open", "btn_failures", "btn_retry_queue", "btn_diag_bundle")
+
+    def _menu_entries(self) -> set[str]:
+        """当前「更多 ▸」菜单里可点开的入口文案（未折叠/无菜单时为空集）。"""
+        more = getattr(self.win, "btn_more_tools", None)
+        if more is None or not more.isVisible():
+            return set()
+        menu = more.menu()
+        if menu is None:
+            return set()
+        return {a.text() for a in menu.actions() if a.text()}
+
     def _clipped(self) -> list[str]:
+        menu_texts = self._menu_entries()
         bad = []
         for name in _MAIN_ACTION_WIDGETS:
             w = getattr(self.win, name, None)
@@ -86,6 +104,10 @@ class TestMainActionAreaFullyVisible(unittest.TestCase):
                 bad.append(f"{name}(缺失)")
                 continue
             if not w.isVisible():
+                # Rev14 F1：折叠阈值按新布局重测抬高后，1216×684 / 1093×614 /
+                # 1020×560 三档会折叠工具行。折叠**允许**，但入口必须在菜单里可点。
+                if name in self._FOLDABLE and (w.text() or "") in menu_texts:
+                    continue
                 bad.append(f"{name}(不可见)")
                 continue
             vr = w.visibleRegion().boundingRect()
@@ -103,7 +125,8 @@ class TestMainActionAreaFullyVisible(unittest.TestCase):
                 self.assertEqual(
                     bad, [],
                     f"{size} 下主操作区控件被裁切/缺失：{bad}\n"
-                    "主操作区必须常驻可见（顶部可滚动区可以让位，这些不行）")
+                    "主操作区必须常驻可见，或（仅工具行）折叠进「更多 ▸」菜单里可点开；"
+                    "顶部可滚动区可以让位，这些不行")
 
     def test_the_two_real_laptop_sizes_are_exactly_what_clamp_produces(self):
         """反向自检：被判定的两个「笔记本尺寸」必须是真的由 clamp 算出来的。

@@ -1,0 +1,30 @@
+{
+  "total": 10,
+  "correct": 10,
+  "score": 1.0,
+  "passed": true,
+  "answers": {
+    "q1_skip_reports_by_key": "A",
+    "q2_fold_threshold_unchanged": false,
+    "q3_install_row_noop": "setItem 对不存在的行静默忽略，必须先 setRowCount",
+    "q4_three_reds": "B",
+    "q5_wide_threshold_ok": false,
+    "q6_spinbox_text_is_value": "text() 返回当前数值而非标签，会让审计永远认为有名、棘轮失明",
+    "q7_yields_first": "B",
+    "q8_page_title_free": false,
+    "q9_ui_state_both_sides": "只写不读=用户改了没用；只读不写=永远默认值",
+    "q10_deploy_equivalent": "B"
+  },
+  "key": {
+    "q1_skip_reports_by_key": "A",
+    "q2_fold_threshold_unchanged": false,
+    "q3_install_row_noop": "setItem 对不存在的行静默忽略，必须先 setRowCount",
+    "q4_three_reds": "B",
+    "q5_wide_threshold_ok": false,
+    "q6_spinbox_text_is_value": "text() 返回当前数值而非标签，会让审计永远认为有名、棘轮失明",
+    "q7_yields_first": "B",
+    "q8_page_title_free": false,
+    "q9_ui_state_both_sides": "只写不读=用户改了没用；只读不写=永远默认值",
+    "q10_deploy_equivalent": "B"
+  }
+}

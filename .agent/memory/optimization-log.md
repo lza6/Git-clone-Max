@@ -35,3 +35,13 @@ owner: Builder
 - 打包：exe 41,173,858 B；portable zip 79,482,799 B（314 条目）；健康检查 28.999s（首次解包）。
 - G72：app.log 落盘打码按需触发（仅含凭据特征时跑正则）；诊断包 zip 并发导出无撞名；
   SSE 并发上限 16/写超时 30s；重试 jitter 打散尖峰、单 tick ≤50。
+
+## Rev14（2026-11-06）
+- 启动分段（离屏）：qt_import 21.3 / ui_import 94.5 / ctor 144.9 / first_frame 15.7 = **282.1ms**；
+  打包 exe 历史 3815ms（不同口径，禁止混算）。ctor 仅占 exe 3.8% → 「启动优化」判定 CUT。
+- 重排（resize→processEvents）：**4.1–10.3ms**，8 尺寸 × 3 字号全部 ≤16.7ms 帧预算。
+- `_apply_layout_for_width` **0.01ms/次**、`_apply_layout_mode` **0.03ms/次** →
+  「列遍历优化」归因错误，CUT（重排成本在 Qt 布局内部）。
+- 整窗 `setStyleSheet` **42.6–49.7ms**（已低于 80ms 目标）→ 「主题切换优化」CUT。
+- 首帧后位移 `first_frame_moves=31`（CLS 等价，目标 0）—— **未达成**，来源 show 后 150ms 去抖重算。
+- 500 行 `add` 32.22ms / `update` 2.02ms / `progress_widgets=0`。

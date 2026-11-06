@@ -54,6 +54,9 @@ ALLOWED_SELECTORS: frozenset[str] = frozenset({
     "QWidget", "QMainWindow", "QDialog", "QLabel", "QGroupBox",
     "QPlainTextEdit", "QTextEdit", "QLineEdit", "QSpinBox", "QComboBox",
     "QPushButton", "QTableWidget", "QTableView", "QHeaderView",
+    # Rev14 R14-05：QToolButton 真实存在于界面（`btn_more_tools` 矮窗折叠入口），
+    # 白名单此前漏了它 —— 补焦点规则时才发现。
+    "QToolButton",
     "QProgressBar", "QStatusBar", "QCheckBox", "QRadioButton", "QScrollBar",
     "QTabWidget", "QTabBar", "QListWidget", "QListView", "QAbstractItemView",
     "QMenu", "QToolTip", "QFrame", "QSplitter", "QStackedWidget",

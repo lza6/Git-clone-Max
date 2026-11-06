@@ -313,6 +313,10 @@ class Settings:
     )
     geometry: str = ""                # G36-4 主窗口几何（"WxH+X+Y"，记忆上次窗口尺寸/位置）
     last_tab: int = 0                 # G70 上次使用的页签（0 下载 / 1 管理 / 2 设置）
+    # Rev14 R14-06：界面微状态（不是用户设置）。当前只有管理页定宽列：
+    #   {"manage_columns": {"3": 150, "4": 78, ...}}
+    # 放在这里而不是另开文件：它必须与其它界面状态一起原子写、一起跨进程锁。
+    ui_state: dict = field(default_factory=dict)
     animations: bool = True           # G36-6 完成动效（成功绿/失败红背景色 1.2s 消隐；低配/offscreen 自动关）
     prefers_reduced_motion: bool = False  # G46-8 减少动态效果（关闭完成动效与 hover 过渡）
     accent_preset: str = "teal"           # G75：默认强调色 = Ink 的示波器青（blue/violet/teal）

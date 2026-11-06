@@ -139,12 +139,16 @@ class StatusPillDelegate(QStyledItemDelegate):
 
         pill = option.rect.adjusted(6, 4, -6, -4)
         tint = QColor(color)
-        tint.setAlpha(38)
+        # Rev11 色彩预算（§2.3）：底 alpha 38→18 —— 满饱和底在面板色上显脏，
+        # 且让整排表变成"圣诞树"；辨识主力是形状（13px）+ 满饱和描边。
+        tint.setAlpha(18)
         painter.setBrush(QBrush(tint))
-        painter.setPen(QPen(color, 1))
+        edge = QColor(color)
+        edge.setAlpha(90)
+        painter.setPen(QPen(edge, 1))
         painter.drawRoundedRect(pill, 8, 8)
 
-        icon = QRect(pill.left() + 6, pill.top() + (pill.height() - 12) // 2, 12, 12)
+        icon = QRect(pill.left() + 8, pill.top() + (pill.height() - 13) // 2, 13, 13)
         draw_shape(painter, icon, shape_for(status), color)
 
         # G75：pill 文字用排版系统的正文族（宽度可预测，pill 才不会抖）

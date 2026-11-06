@@ -56,4 +56,32 @@ def action_label(action, commits: int = 0) -> str:
     return tr(_ACTION_TEXT.get(raw, raw))
 
 
-__all__ = ["status_label", "action_label"]
+def format_duration(duration_ms) -> str:
+    """毫秒 → 可读耗时（Rev11 V-16 唯一口径，tests/test_rev11_w2.py 钉死）。
+
+    落在本模块的理由：耗时与状态/动作同属"一行的结果呈现文案"，
+    且 progress_table.py 已贴 800 行红线（Rev11 执行时破线，抽出即回）。
+
+    - None/0/负数 → `—`（不显示假 0，与 status_strip 同一纪律）；
+    - < 60s → `12.3s`（保留一位小数）；
+    - ≥ 60s → `m:ss`（与 status_strip.format_elapsed 同形态，便于跨表比较）。
+
+    LBYL 判型而非 try/except：异常预算棘轮（test_g80_hygiene）只降不升。
+    """
+    v = duration_ms
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        s = str(v).strip() if v is not None else ""
+        if s.replace(".", "", 1).lstrip("+-").isdigit():
+            v = int(s)
+        else:
+            return "—"
+    if v <= 0:
+        return "—"
+    total_s = v / 1000.0
+    if total_s < 60:
+        return f"{total_s:.1f}s"
+    minutes, seconds = divmod(int(total_s), 60)
+    return f"{minutes}:{seconds:02d}"
+
+
+__all__ = ["status_label", "action_label", "format_duration"]

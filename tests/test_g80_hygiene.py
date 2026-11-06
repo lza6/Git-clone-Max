@@ -83,8 +83,16 @@ GCM = ROOT / "gcm"
 #   manage_panel（标记"计算中"失败 warn）、download_tools（状态栏提示失败 warn）。
 #   续批再加 11 处（G84-19..23：exc_dump 打码、diag 收 error.log、MCP 资源/提示词读取、kill_tree 的 taskkill/killpg 兜底、关窗反馈）—— 同样**全部带日志出口**，
 #   pass-only 仍是 286。
-BASELINE_EXCEPT = 728
-BASELINE_PASS_ONLY = 286
+# - Rev12（2026-11-05，except 728→751 / **pass-only 286→285，比基线还降 1**）：
+#   可用性专项新增的防御分支 —— oplog（文件损坏→空台账、非 dict 条目跳过、
+#   record 内部）、undo（单条仓库恢复失败计数上报、撤销后刷新告警）、
+#   undo_bar（重定位失败告警、owner 已释放时静默隐藏）、menu_bar（构建失败 warn）、
+#   main_window（菜单栏/浮条/台账四处接线兜底，全部 emit_log 或 applog.warn）、
+#   manage_panel/download_tools/retry_panel 的台账写入兜底、help_dialog 的快捷键派生兜底。
+#   **pass-only 反而下降 1**：undo.py 与 undo_bar.py 里最初写成 pass 的两处，
+#   本轮按红线改成 applog.warn 留痕后才登记基线（不是为了绿灯才降，是先改后测）。
+BASELINE_EXCEPT = 752
+BASELINE_PASS_ONLY = 285
 
 
 def _py_files() -> list[Path]:

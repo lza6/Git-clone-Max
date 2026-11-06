@@ -10,6 +10,8 @@ from __future__ import annotations
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QMenu
 
+from ..i18n import tr
+
 
 def build_progress_menu(panel, row: int):
     """构造进度表右键菜单（不 exec，便于离屏测试）。
@@ -46,11 +48,11 @@ def build_progress_menu(panel, row: int):
         kind = classify_repo(p) if p is not None else "not_repo"
         if kind == "not_checked_out":
             act_repair = menu.addAction("检出修复（恢复工作树）")
-            act_repair.setToolTip("数据已取回只是未检出：git checkout -f 恢复，零网络、秒级")
+            act_repair.setToolTip(tr("数据已取回只是未检出：git checkout -f 恢复，零网络、秒级"))
             act_repair.triggered.connect(
                 lambda _=False, r=row: panel._repair_halfcloned_row(r))
         act_clean = menu.addAction("删除半成品目录…")
-        act_clean.setToolTip("该仓库已取回但未检出：删除目录后重新克隆")
+        act_clean.setToolTip(tr("该仓库已取回但未检出：删除目录后重新克隆"))
         act_clean.triggered.connect(
             lambda _=False, r=row: panel._delete_halfcloned_row(r))
     return menu

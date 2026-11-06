@@ -1,0 +1,35 @@
+{
+  "main_actions_total": 14,
+  "main_actions_missing": [],
+  "by_class": {
+    "QPushButton": {
+      "total": 56,
+      "missing": 0
+    },
+    "QToolButton": {
+      "total": 8,
+      "missing": 5
+    },
+    "QLineEdit": {
+      "total": 36,
+      "missing": 21
+    },
+    "QCheckBox": {
+      "total": 22,
+      "missing": 0
+    },
+    "QComboBox": {
+      "total": 8,
+      "missing": 1
+    },
+    "QSpinBox": {
+      "total": 19,
+      "missing": 1
+    },
+    "QPlainTextEdit": {
+      "total": 2,
+      "missing": 0
+    }
+  },
+  "missing_total": 28
+}

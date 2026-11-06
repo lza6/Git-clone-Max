@@ -1,0 +1,180 @@
+{
+  "node": "rev13-P0",
+  "kind": "implementation_evidence",
+  "claim": "Rev13 P0 止血（R13-01~04）在 2026-11-05 实施并验证：矮窗工具行折叠、字号下限收敛 0.9、管理页窄窗列折叠真正生效、文档漂移归零",
+  "version": "9.18.0",
+  "baseline_head": "f6b913e",
+  "checked_at": "2026-11-05T08:05:00+08:00",
+  "decisions": [
+    {
+      "id": "D-12",
+      "decision": "立刻做 P0 止血（R13-01~03）",
+      "by": "user",
+      "at": "2026-11-05"
+    },
+    {
+      "id": "D-13",
+      "decision": "字号下限强制 0.9（typography.FONT_SCALE_MIN_UI 唯一来源）",
+      "by": "user",
+      "at": "2026-11-05"
+    },
+    {
+      "id": "D-14",
+      "decision": "矮窗把第二行折叠进「更多 ▸」菜单",
+      "by": "user",
+      "at": "2026-11-05"
+    }
+  ],
+  "changes": [
+    {
+      "id": "R13-01",
+      "files": [
+        "gcm/ui/main_window.py::_apply_fold_and_min_heights (新增 51 行方法)",
+        "gcm/ui/main_window.py::_apply_layout_mode (调用新方法)"
+      ],
+      "why": "test_ui_compact_visibility 在 1020×560 报 btn_open 等四个按钮 27/42px。主因（菜单栏 18px）已由并行会话 Rev12 U-10 的 min_h+24 修掉；本轮补上小屏被 effective_minimum 夹回 480/504 后的兜底",
+      "result": "test_ui_compact_visibility 9 尺寸全绿，断言一行未改"
+    },
+    {
+      "id": "R13-02",
+      "files": [
+        "gcm/ui/layout.py::tools_fold_height / NARROW_WIDTH",
+        "gcm/ui/download_layout.py::set_tools_row_folded / build_download_actions(btn_more_tools)",
+        "gcm/ui/main_window.py::_apply_fold_and_min_heights"
+      ],
+      "why": "窗口 < 580/600/620px（字号 1.0/1.3/1.6）时四工具按钮被父级裁切；仅抬高最小高度无效（effective_minimum 会按屏幕工作区夹回）",
+      "result": "900×504（1366×768@150% 的 911×512 工作区）折叠后：常驻控件零裁切、「更多 ▸」完整可见、菜单四项可用"
+    },
+    {
+      "id": "R13-03",
+      "files": [
+        "gcm/ui/main_window.py::_apply_layout_for_width (重写)",
+        "gcm/ui/layout.py::NARROW_WIDTH"
+      ],
+      "why": "原实现调 QTableView.horizontalHeaderItem()（不存在）→ AttributeError 被吞；匹配不存在的「标签」列；阈值 w<768 在最小宽 900 下不可达 → 死分支",
+      "result": "真实模型窄窗真隐藏「大小/健康」、宽窗真恢复；非次要列不动"
+    },
+    {
+      "id": "D-13-impl",
+      "files": [
+        "gcm/ui/main_window.py::zoom_out"
+      ],
+      "why": "typography.FONT_SCALE_MIN_UI=0.9 声明了 UI 层下限但全库零强制，Ctrl+- 可到 0.8",
+      "result": "zoom_out 连续 20 次停在 0.9"
+    },
+    {
+      "id": "R13-04",
+      "files": [
+        "CLAUDE.md §6 (main_window 3242→3237 校准 + 测试文件 192)",
+        "docs/architecture.md §4",
+        "README.md",
+        "tests/test_g79_repo_hygiene.py::_EXPECTED_TEST_FILES"
+      ],
+      "result": "doc_drift_check = DRIFT 0"
+    },
+    {
+      "id": "i18n",
+      "files": [
+        "gcm/i18n/zh.py",
+        "gcm/i18n/en.py"
+      ],
+      "why": "新增 3 条用户可见文案必须同时进 zh/en",
+      "result": "i18n_coverage.py = I18N OK"
+    },
+    {
+      "id": "R13-02b",
+      "files": [
+        "gcm/ui/main_window.py::_apply_font_scale"
+      ],
+      "why": "折叠阈值依赖字号，但 _apply_font_scale 只重刷 QSS 不重算布局 —— 字号调到 1.6 后 600 高窗口仍按 1.0 阈值判定，工具行又被裁（实测抓到）",
+      "result": "字号 1.6 + 600 高 → 自动转入折叠态，「更多 ▸」出现，常驻控件仍完整可见"
+    }
+  ],
+  "verification": [
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe scripts/ci_run_fast.py",
+      "result": "Ran 2067 tests · failures=0 errors=0 skipped=4 · OK · exit 0（字号联动改动后重跑；首轮 2066 例因新增 1 例守卫）"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_rev13_adapt -v",
+      "result": "Ran 7 tests · OK"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_ui_compact_visibility",
+      "result": "Ran 3 tests · OK（本轮之前为 FAILED）"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_g57_responsive",
+      "result": "Ran 8 tests · OK"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_ui_compact_visibility tests.test_g57_responsive tests.test_g74_ui_layout tests.test_font_scale tests.test_g70_ui_upgrade tests.test_g78_quick_scroll tests.test_rev13_adapt",
+      "result": "Ran 72 tests · OK"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_g80_hygiene tests.test_g79_repo_hygiene tests.test_function_size_budget tests.test_g67_docs_freshness",
+      "result": "Ran 35 tests · OK（异常预算 752 未升；超 100 行函数仍 19 个；DRIFT 0）"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_g69_regressions.TestG69_18NoMainWindowRefCycle",
+      "result": "OK（新增「更多」菜单未造引用环）"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe -m ruff check gcm",
+      "result": "All checks passed!"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe -m mypy gcm",
+      "result": "Success: no issues found in 134 source files"
+    },
+    {
+      "cmd": "PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe scripts/doc_drift_check.py",
+      "result": "DRIFT 0"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe scripts/i18n_coverage.py",
+      "result": "I18N OK"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_ui_compact_visibility tests.test_g74_ui_layout tests.test_font_scale tests.test_g78_quick_scroll tests.test_g70_ui_upgrade",
+      "result": "Ran 58 tests · OK（字号联动改动后的布局回归）"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m coverage run --source=gcm scripts/ci_run_fast.py && coverage report --include=\"gcm/*\"",
+      "result": "TOTAL 81%（18538 语句 / 3225 未覆盖），与 Windows 门禁一致"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe scripts/ci_run_fast.py（收尾第三次）",
+      "result": "Ran 2067 tests · failures=3 errors=0 skipped=4 —— 3 例全部是 test_g66_patch/test_g81_changelog 的「ENTRIES 首条未以当前版本开头」。根因：**并行会话正在把 __version__ 从 9.18.0 连跳到 9.18.8**（本轮未改版本号、未 build changelog），属版本 bump 的中间态，不是 Rev13 的代码问题。Rev13 负责的 38 例定向回归全绿。"
+    }
+  ],
+  "measurements": {
+    "tools_row_fold_threshold_px": {
+      "scale_1.0": 580,
+      "scale_1.3": 600,
+      "scale_1.6": 620,
+      "method": "逐 10px 扫描首个不裁切高度"
+    },
+    "before_fix_visible_height": {
+      "900x480": "27/42px",
+      "911x512": "27/42px",
+      "1020x560(=584)": "27/42px 于本轮之前"
+    },
+    "after_fix": {
+      "900x504 folded": "常驻控件全部 full-rect，btn_more_tools 86x20 完整可见",
+      "1020x584": "两行完整可见（不折叠）",
+      "1440x900": "两行完整可见（不折叠）"
+    },
+    "effective_minimum_911x512": "(900, 480) → 叠加菜单栏 +24 = (900, 504)"
+  },
+  "not_verified": [
+    "真实多显示器拔插（本机单屏）→ 已列为 R13-06",
+    "Windows 系统级高对比/减少动画开关",
+    "PyInstaller 打包产物真机点击（属发版动作）",
+    "CI 三平台（本轮仅本机 Windows 验证）"
+  ],
+  "known_boundary": "折叠态在 900×504 时进度表最小高被压到 66px（其自身 minimumSizeHint），可见行数变少但可滚动；这是「矮窗口里可滚动区让位」既有原则的延续，不是回归；折叠态下四个工具按钮仍可经命令面板（Ctrl+K）检索——面板按文本去重，菜单 QAction 与按钮同名不会产生重复项",
+  "version_at_finish": "9.18.8",
+  "version_note": "写作基线版本为 9.18.0；实施期间并行会话持续推进版本号（9.18.0 → 9.18.8）。本轮改动不涉及版本号，由并行会话的 bump 流程统一管理；本文档中出现的 `9.18.0` 是写作基线，不是本轮结论。",
+  "external_red": "收尾时工作区有 3 例红（test_g66_patch ×2 / test_g81_changelog ×1），原因：并行会话 bump 了 __version__（9.18.0→9.18.8）但尚未 changelog build。由并行会话按其发版流程收口；Rev13 不越权改版本或聚合 changelog。"
+}

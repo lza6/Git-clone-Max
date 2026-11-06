@@ -10,7 +10,7 @@ import threading
 import time
 import weakref
 
-from PyQt6.QtCore import QEvent, Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
@@ -107,18 +107,18 @@ class ManagePanel(QWidget):
         self.btn_delete.clicked.connect(self.delete_selected)
         self.btn_delete.setIcon(self.owner._std_icon("trash", self.btn_delete))
         self.btn_batch_tag = QPushButton("打标签")
-        self.btn_batch_tag.setToolTip("给选中的仓库追加标签（多选批量）")
+        self.btn_batch_tag.setToolTip(tr("给选中的仓库追加标签（多选批量）"))
         self.btn_batch_tag.clicked.connect(self.batch_tag_selected)
         self.btn_export_selected = QPushButton("导出所选")
-        self.btn_export_selected.setToolTip("把选中的仓库导出为 CSV 报表")
+        self.btn_export_selected.setToolTip(tr("把选中的仓库导出为 CSV 报表"))
         self.btn_export_selected.clicked.connect(self.export_selected_csv)
         self.btn_export_selected.setIcon(self.owner._std_icon("save", self.btn_export_selected))
         # G47-7 元数据导入/导出
         self.btn_export_meta = QPushButton("导出元数据")
-        self.btn_export_meta.setToolTip("导出仓库元数据(标签/收藏/备注/黑名单)为 JSON")
+        self.btn_export_meta.setToolTip(tr("导出仓库元数据(标签/收藏/备注/黑名单)为 JSON"))
         self.btn_export_meta.clicked.connect(self._export_metadata)
         self.btn_import_meta = QPushButton("导入元数据")
-        self.btn_import_meta.setToolTip("从 JSON 合并导入仓库元数据(按 owner/repo/host upsert)")
+        self.btn_import_meta.setToolTip(tr("从 JSON 合并导入仓库元数据(按 owner/repo/host upsert)"))
         self.btn_import_meta.clicked.connect(self._import_metadata)
         row2 = QHBoxLayout()
         row2.setSpacing(8)
@@ -147,9 +147,9 @@ class ManagePanel(QWidget):
         # `_update_manage_stats()`（此前一旦漏调，页面上就显示过期数字）。
         self.manage_model.rowsChanged.connect(self._on_model_rows_changed)
         self.manage_model.visChanged.connect(self._on_model_vis_changed)
-        self.manage_table.setAccessibleName("仓库管理表")
+        self.manage_table.setAccessibleName(tr("仓库管理表"))
         self.manage_table.setAccessibleDescription(
-            "每行一个已下载仓库：名称、平台、标签、健康分、大小与最近同步")
+            tr("每行一个已下载仓库：名称、平台、标签、健康分、大小与最近同步"))
         # G47-1/5 健康 + 大小列（末两列，原 0-5 列语义不变）
         # 表头标签由 ManageModel.headerData 提供（G47-1/5 健康/大小列）
         self.manage_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -161,6 +161,14 @@ class ManagePanel(QWidget):
         for _col, _w in ((3, 150), (4, 78), (5, 70), (6, 64), (7, 84)):
             _hdr.setSectionResizeMode(_col, QHeaderView.ResizeMode.Fixed)
             self.manage_table.setColumnWidth(_col, _w)
+        # Rev14 R14-06：列宽自适应下限 + 持久化。
+        # 构建完（已按默认值排好）→ 先套用上次保存的宽度，再挂防抖落盘。
+        self._col_width_timer = QTimer(self)
+        self._col_width_timer.setSingleShot(True)
+        self._col_width_timer.setInterval(400)
+        self._col_width_timer.timeout.connect(self._save_column_widths)
+        _hdr.sectionResized.connect(self._on_section_resized)
+        self._restore_column_widths()
         self.manage_table.verticalHeader().setVisible(False)
         self.manage_table.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
         self.manage_table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
@@ -182,12 +190,15 @@ class ManagePanel(QWidget):
         self.manage_table.setItemDelegateForColumn(5, self._hist_delegate)
         v.addWidget(self.manage_table, 3)
         # G36-5 管理页空态引导：overlay 标签（有仓库时隐藏）
-        self._empty_manage = QLabel("尚未导入仓库\n点击「导入本地已有仓库」开始")
-        self._empty_manage.setObjectName("muted")
-        self._empty_manage.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty_manage.setWordWrap(True)
+        # Rev14 R14-09：文案改走 `empty_state` 工厂（唯一来源），并区分
+        # 「真没有仓库」与「筛选之后没有匹配」—— 原来是直书 QLabel，
+        # 筛选到空时整片空白，用户以为数据丢了。
+        from .empty_state import build_empty_state
+        self._empty_manage = build_empty_state(
+            title=tr("尚未导入仓库"),
+            hint=tr("点击「导入本地已有仓库」开始"),
+            parent=self.manage_table)
         self._empty_manage.setVisible(False)
-        self._empty_manage.setParent(self.manage_table)
         self._empty_manage.raise_()
 
         self.manage_desc = QLabel(
@@ -197,31 +208,131 @@ class ManagePanel(QWidget):
         self.manage_desc.setObjectName("muted")
         self.manage_desc.setWordWrap(True)
 
-        self.manage_table.verticalHeader().setDefaultSectionSize(34)
+        # Rev14 R14-13：行高改读 `TOKENS.row.manage`（原来是裸 34，token 定义了没人用）
+        from .palettes import TOKENS
+        self.manage_table.verticalHeader().setDefaultSectionSize(
+            int(TOKENS["row"]["manage"]))
         v.addWidget(self.manage_desc)
 
-        # 保持状态栏"历史"列宽固定
-        self.manage_table.setColumnWidth(5, 70)
         v.addWidget(self.manage_table)
 
+    def _update_empty_manage(self) -> None:
+        """按「无数据 / 筛选无结果 / 有数据」三态显示管理页空态（Rev14 R14-09）。"""
+        ov = getattr(self, "_empty_manage", None)
+        if ov is None:
+            return
+        total = self.manage_model.rowCount()
+        visible = int(getattr(self, "_visible_count", total))
+        from .empty_state import empty_copy
+        if total == 0:
+            text, tip = empty_copy(tr("尚未导入仓库"), tr("点击「导入本地已有仓库」开始"))
+        elif visible == 0:
+            # 走 `empty_copy(filtered=True)` —— 空态文案与 tooltip 的唯一来源
+            # （审查发现 `filtered` 此前只在测试里传，生产路径零调用点）
+            text, tip = empty_copy(tr("没有匹配的仓库"), "", filtered=True)
+        else:
+            ov.setVisible(False)
+            return
+        ov.setText(text)
+        ov.setToolTip(tip)
+        ov.setGeometry(self.manage_table.rect())
+        ov.setVisible(True)
+        ov.raise_()
 
+    # ---- Rev14 R14-06：管理页定宽列的自适应下限与持久化
 
+    #: 定宽列 → (默认宽, 窄窗下限, L 档宽)。三档都要写在表里，
+    #: 免得 `apply_column_budget` 里散落魔法数字。
+    #: 下限存在的理由：窄窗把「上次同步」压到 60px 以下时，日期会省略成
+    #: 「2026-10-..0:23:35」—— 读不出是几号几分，等于该列失效。
+    COLUMN_SPECS: dict[int, tuple[int, int, int]] = {
+        3: (150, 96, 150),   # 上次同步
+        4: (78, 54, 78),     # HEAD
+        5: (70, 70, 96),     # 历史（每行一个「查看」按钮，L 档给更大点击区）
+        6: (64, 48, 64),     # 健康
+        7: (84, 52, 84),     # 大小
+    }
+
+    def _ui_state_dict(self) -> dict:
+        """当前 settings.ui_state（拿不到就给空 dict，调用方只读）。"""
+        st = getattr(self.owner, "settings", None)
+        raw = getattr(st, "ui_state", None) if st is not None else None
+        return raw if isinstance(raw, dict) else {}
+
+    def _set_column_widths(self, widths: dict[int, int]) -> None:
+        """程序化设置列宽，期间**不**触发落盘（否则恢复动作会写回自己）。"""
+        self._col_width_restoring = True
+        try:
+            for col, w in widths.items():
+                self.manage_table.setColumnWidth(int(col), int(w))
+        finally:
+            self._col_width_restoring = False
+
+    def _restore_column_widths(self) -> None:
+        """恢复用户上次拖出来的列宽（非法/越界值夹回区间，不抛异常）。"""
+        from .layout import coerce_int
+
+        saved = self._ui_state_dict().get("manage_columns")
+        if not isinstance(saved, dict):
+            return
+        widths: dict[int, int] = {}
+        for col, (default_w, floor_w, _wide_w) in self.COLUMN_SPECS.items():
+            w = coerce_int(saved.get(str(col), saved.get(col, 0)), 0)
+            widths[col] = max(floor_w, min(400, w)) if w > 0 else default_w
+        self._set_column_widths(widths)
+
+    def _on_section_resized(self, *_args) -> None:
+        """列宽变化 → 防抖 400ms 落盘。
+
+        直接写会把磁盘打满：用户拖动分隔线时每移动一像素都发一次信号。
+        """
+        if getattr(self, "_col_width_restoring", False):
+            return
+        self._col_width_timer.start()
+
+    def _save_column_widths(self) -> None:
+        """把当前定宽列写进 `settings.ui_state`（写侧接线，读侧见 `_restore`）。"""
+        st = getattr(self.owner, "settings", None)
+        store = getattr(self.owner, "settings_store", None)
+        if st is None or store is None:
+            return
+        cur = self._ui_state_dict()
+        cur["manage_columns"] = {
+            str(col): int(self.manage_table.columnWidth(col))
+            for col in self.COLUMN_SPECS
+        }
+        st.ui_state = cur
+        store.save(st)
+
+    def apply_column_budget(self, narrow: bool, wide: bool = False) -> None:
+        """按窗口档位重排定宽列（Rev14 R14-06）。
+
+        - 窄窗（`narrow`）：压到各自**下限**，把宽度还给仓库名/路径；
+        - L 档（`wide`）：用偏宽的档位（「历史」列 96，点击目标更大）；
+        - 其余：用用户保存的宽度（没有保存值就是默认值）。
+        """
+        from .layout import coerce_int
+
+        saved = self._ui_state_dict().get("manage_columns")
+        widths: dict[int, int] = {}
+        for col, (default_w, floor_w, wide_w) in self.COLUMN_SPECS.items():
+            if narrow:
+                widths[col] = floor_w
+                continue
+            want = default_w
+            if isinstance(saved, dict):
+                want = max(floor_w, min(400, coerce_int(
+                    saved.get(str(col), saved.get(col, default_w)), default_w)))
+            if wide:
+                want = max(want, wide_w)
+            widths[col] = want
+        self._set_column_widths(widths)
 
     def _load_db_into_grid(self):
         """从 DB 加载仓库列表到模型（全 host，含本地导入仓库；批量懒渲染）。"""
         self.manage_model.set_rows(self.owner.db.list_repos())
         self._apply_manage_filter()
-        # G36-5 管理页空态：无仓库时显示引导 overlay
-        try:
-            ov = getattr(self, "_empty_manage", None)
-            if ov is not None:
-                visible = self.manage_model.rowCount() == 0
-                ov.setVisible(visible)
-                if visible:
-                    ov.setGeometry(self.manage_table.rect())
-                    ov.raise_()
-        except Exception:
-            pass
+        self._update_empty_manage()
         # G47-5 懒加载磁盘大小
         self._start_size_loader()
         try:
@@ -243,7 +354,9 @@ class ManagePanel(QWidget):
         n = self.manage_model.filter_rows(getattr(self, "_filter_text", ""))
         for row in range(len(self.manage_model)):
             self.manage_table.setRowHidden(row, not self.manage_model.is_visible(row))
+        self._visible_count = int(n)
         self._update_manage_stats(n if visible is None else visible)
+        self._update_empty_manage()
         return n
 
     def _on_model_rows_changed(self) -> None:
@@ -275,22 +388,44 @@ class ManagePanel(QWidget):
     def delete_selected(self):
         rows = sorted({i.row() for i in self.manage_table.selectedIndexes()})
         if not rows:
-            _mw.QMessageBox.information(self.owner, "提示", "请先选择要删除的记录。")
+            _mw.QMessageBox.information(self.owner, tr("提示"), tr("请先选择要删除的记录。"))
             return
-        if _mw.QMessageBox.question(self.owner, "确认删除",
+        if _mw.QMessageBox.question(self.owner, tr("确认删除"),
                                 f"将从数据库中删除 {len(rows)} 条记录（不影响已下载的仓库目录）。\n继续？") != _mw.QMessageBox.StandardButton.Yes:
             return
         repo_ids = set()
+        snaps: list[dict] = []
         for r in rows:
             row = self.manage_model.row_at(r)
             if row is not None:
                 rec = self.owner.db.get_repo(row.owner, row.repo, row.host)
                 if rec:
                     repo_ids.add(rec["id"])
+                    # Rev12 U-02：删除前抓全量快照 —— 撤销要靠它重建整行
+                    snaps.append(dict(rec))
         for rid in repo_ids:
             self.owner.db.delete_repo(rid)
         self.owner._load_db_into_grid()
         self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO, f"已删除 {len(repo_ids)} 条数据库记录")
+        # Rev12 U-06：给一条可撤销的出路（原则③）。单条与批量都记**一条**
+        # 可撤销记录：批量把快照放进 before["batch"]，撤销时逐条 upsert 回去。
+        if snaps:
+            try:
+                if len(snaps) > 1:
+                    rec = self.owner.oplog.record(
+                        "repo_delete", f"{len(snaps)} 条记录",
+                        summary=f"批量删除 {len(snaps)} 条仓库记录",
+                        before={"batch": snaps}, undoable=True)
+                    self.owner.offer_undo(rec, f"已删除 {len(snaps)} 条仓库记录")
+                else:
+                    s = snaps[0]
+                    rec = self.owner.oplog.record(
+                        "repo_delete", f"{s.get('owner')}/{s.get('repo')}",
+                        summary="删除仓库记录", before=s, undoable=True)
+                    self.owner.offer_undo(
+                        rec, f"已删除「{s.get('display') or s.get('repo')}」")
+            except Exception as e:  # noqa: BLE001 —— 台账失败不该让删除本身失败
+                self.owner._emit_log(_mw._fmt_dt(), LogLevel.WARN, f"操作台账写入失败：{e}")
 
     # --------------------------------------------------------- G35-9 批量操作
 
@@ -298,7 +433,7 @@ class ManagePanel(QWidget):
         """给选中的仓库追加标签（多选批量，覆盖式设置指定标签）。"""
         rows = sorted({i.row() for i in self.manage_table.selectedIndexes()})
         if not rows:
-            _mw.QMessageBox.information(self.owner, "提示", "请先选择要打标签的仓库。")
+            _mw.QMessageBox.information(self.owner, tr("提示"), tr("请先选择要打标签的仓库。"))
             return
         tag, ok = _mw.QInputDialog.getText(
             self, "批量打标签", "输入标签名（多个用逗号分隔，将覆盖原标签）：")
@@ -323,7 +458,7 @@ class ManagePanel(QWidget):
         """把选中的仓库导出为 CSV（仅所选行；无历史则同样导出元数据）。"""
         rows = sorted({i.row() for i in self.manage_table.selectedIndexes()})
         if not rows:
-            _mw.QMessageBox.information(self.owner, "提示", "请先选择要导出的仓库。")
+            _mw.QMessageBox.information(self.owner, tr("提示"), tr("请先选择要导出的仓库。"))
             return
         path, _ = _mw.QFileDialog.getSaveFileName(
             self, "导出所选仓库", str(self.owner.data_dir / "selected_repos.csv"),
@@ -349,7 +484,7 @@ class ManagePanel(QWidget):
             self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO, f"已导出所选 {len(sel)} 个仓库：{path}")
             self.owner.statusBar().showMessage(f"已导出 {len(sel)} 个仓库")
         except Exception as e:
-            _mw.QMessageBox.critical(self.owner, "导出失败", str(e))
+            _mw.QMessageBox.critical(self.owner, tr("导出失败", str(e)))
 
     def _on_manage_double_clicked(self, index):
         row = index.row()
@@ -637,7 +772,7 @@ class ManagePanel(QWidget):
                                  f"已导出 {n} 条仓库元数据：{path}")
             self.owner.statusBar().showMessage(f"已导出 {n} 条元数据")
         except Exception as e:
-            _mw.QMessageBox.warning(self.owner, "导出失败", str(e))
+            _mw.QMessageBox.warning(self.owner, tr("导出失败", str(e)))
 
     def _import_metadata(self):
         """G47-7：从 JSON 合并导入仓库元数据。"""
@@ -653,4 +788,4 @@ class ManagePanel(QWidget):
                                  f"已导入 {n} 条仓库元数据：{path}")
             self.owner.statusBar().showMessage(f"已导入 {n} 条元数据")
         except Exception as e:
-            _mw.QMessageBox.warning(self.owner, "导入失败", str(e))
+            _mw.QMessageBox.warning(self.owner, tr("导入失败", str(e)))

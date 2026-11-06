@@ -67,6 +67,10 @@ class SyncEngine(QObject):
     progress = pyqtSignal(int, str)         # index, percent
     progress_detail = pyqtSignal(int, str)  # index, "rate files" 附加文本（速率/对象数）
     result = pyqtSignal(int, SyncResult)    # index, result
+    # Rev14 F2：断点续传预检跳过的仓库 —— (key="owner/repo", 说明)。
+    # 这些 spec 不进 `unique_specs`，因此**没有** index（index 是调度序而非输入序），
+    # 只能用 key 回报给 UI 让它把对应行推到终态。CLI 不连这个信号 → 契约零变化。
+    skipped = pyqtSignal(str, str)
     adapt_changed = pyqtSignal(int, str)     # G48-1 并发自适应：当前并发, 说明
     finished = pyqtSignal()                 # 全部 worker 完成（成功/失败/取消都算）
     _arm_flush = pyqtSignal()               # G43-1②：worker 线程请求主线程武装合并窗口定时器
@@ -216,6 +220,7 @@ class SyncEngine(QObject):
             else {"finished": [], "in_progress": {}})
         self._dirty = False
         self._skip_done = True          # 已完成且目录存在 → 直接跳过
+        self._report_skipped = False    # Rev14 F2：是否把跳过回报给 UI
         self._launch_clear_input = False
 
         # 取消缓存：key -> 是否已取消（避免 UI 每行输出遍历全部 flags）
@@ -998,7 +1003,8 @@ class SyncEngine(QObject):
     def launch(self, specs: Iterable[RepoSpec], host_by_key: Optional[dict[str, str]] = None,
                fetch_depth: int = 0, unshallow: bool = False,
                clear_input: bool = False, check_existing: bool = True,
-               mirror: bool = False, session_merge: bool = False) -> int:
+               mirror: bool = False, session_merge: bool = False,
+               report_skipped: bool = False) -> int:
         """启动一组仓库的并行同步。返回实际调度数量（去重后）。
 
         - specs: 待同步仓库列表（可含重复，内部去重）
@@ -1006,6 +1012,8 @@ class SyncEngine(QObject):
         - fetch_depth/unshallow: 浅克隆语义
         - clear_input: 全部完成后是否需要 UI 清空输入框（engine 只透传标志，由 UI 处理）
         - check_existing: 断点续传预检（已完成且目录在 → 跳过）
+        - report_skipped: 跳过的仓库是否 emit `skipped` 信号（GUI 传 True：否则
+          UI 里那一行会永远停在「等待中」；CLI 保持 False，`results[]` 契约不变）
         - session_merge: A5-2/C-18 —— 重投路径传 True，会话清单只合入新 key
           不整体替换（否则 due_tasks(limit) 截断的失败项从续跑清单被抹掉）
         """
@@ -1015,6 +1023,7 @@ class SyncEngine(QObject):
         self._mirror_launch = bool(mirror)  # G48-6 本次批次镜像模式
         self._clear_input = clear_input
         self._skip_done = check_existing
+        self._report_skipped = bool(report_skipped)
 
         # G22-1：先释放上轮可能滞留的旗标/列表引用，避免累积
         try:
@@ -1042,7 +1051,18 @@ class SyncEngine(QObject):
                     # A5-2/C-16：key 统一 owner/repo —— 原实现 `pre[0] and first.display
                     # or key` 恒传 display（pre[0] 恒真），与 _precheck_skip 的
                     # f"{owner}/{repo}" 匹配键不一致 → 续跑预检永不命中
-                    self._mark_done(key, pre[0], pre[1])
+                    # Rev14 F2：**key 口径统一成 `owner/repo`**。`_dedupe_specs` 的 key 是
+                    # 目标目录（`owner__repo`），而 `_precheck_skip` 按 `owner/repo` 匹配 ——
+                    # 原样写进 finished 的话，这条记录下次永远匹配不到自己（还会与
+                    # `_on_result` 写的 owner/repo 记录并存，污染列表）。
+                    _done_key = f"{first.owner}/{first.repo}"
+                    self._mark_done(_done_key, pre[0], pre[1])
+                    if self._report_skipped:
+                        # Rev14 F2：让 UI 把这一行推到终态（否则永远「等待中」）
+                        # 用 `owner/repo` 而不是 dedupe 的 folder 风格 key ——
+                        # 后者是 `owner__repo`，UI 按 owner/repo 找行，对不上就静默失败
+                        # （实测第一版就是这样：计数 +1 但行仍停在「等待中」）。
+                        self.skipped.emit(_done_key, str(pre[1]))
                     continue
             unique_specs.append(first)
         for k in dup_keys:

@@ -4,6 +4,24 @@ updated: 2026-11-03
 owner: Verifier
 ---
 # 已测试范围（tested-scope）
+## 0. 最新一次真实运行（2026-11-06 · Rev14 收尾轮）
+
+| 项 | 命令 | 结果（实测） |
+|---|---|---|
+| 质量闸 | `ruff check gcm` / `mypy gcm` | All checks passed / Success（**140** 源文件） |
+| 文档漂移 | `scripts/doc_drift_check.py` | `DRIFT 0` |
+| i18n 棘轮 | `scripts/i18n_coverage.py` | `I18N OK`（未走 `tr()` 的中文字面量 1517 → **1418**） |
+| 发布台账 | `scripts/changelog.py check` | 86 条历史 / 0 条待发布碎片（9.18.8 已聚合） |
+| 全快集 | `scripts/ci_run_fast.py` | 2126 例 · failures=3（3 红=版本/changelog 台账）→ 聚合后 `test_g66_patch`+`test_g81_changelog` **75 例 OK** |
+| 小屏几何 | 自建探针（9 尺寸 × 3 字号） | 27 组合 + 900×480 **零裁切**（含「更多 ▸」） |
+| 真实 GUI E2E | 离屏真窗口点「开始」（真网络） | 第1轮 `成功/新建克隆/克隆完成/2.1s`；第2轮 `已跳过/—/已完成，跳过` + 状态栏「跳过 1」 |
+| DPI 矩阵 | `scripts/check_dpi_matrix.py` | 1.25/1.5/1.75/2.0 四档 `exit 0` · **0 裁切**（`evidence/rev14-dpi.json`） |
+| 像素基线 | `pixel_diff.compare_dirs` | 基线 vs 同代码第二份 → **回归 0 / 缺失 0 / 新增 0** |
+| 首帧位移 | `scripts/bench_resize.py` | `first_frame_moves=**31**`（目标 0，**未达成**：来源 show 后 150ms 的布局去抖重算） |
+
+> **别再重复跑**：上面这批就是 Rev14 收尾轮的完整口径。改 `gcm/ui/` 布局或折叠阈值时
+> 只需重跑 `test_ui_compact_visibility` + `test_rev13_adapt` + `test_g70_ui_upgrade`。
+
 
 ## 0. 最新一次真实运行（2026-11-03 · v9.17.0 G83 批）
 

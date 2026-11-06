@@ -33,7 +33,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-from PyQt6.QtWidgets import QApplication  # noqa: E402
+from PyQt6.QtWidgets import QApplication, QDialog  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 
@@ -177,8 +177,13 @@ class TestQuickReposEditable(_Win):
         self.assertEqual(got, ("a/b", "c/d", "e/f", "g/h"))
 
     def test_edit_rebuilds_buttons_and_persists(self):
-        with mock.patch("PyQt6.QtWidgets.QInputDialog.getText",
-                        return_value=("x/one, y/two", True)):
+        # Rev11（V-20）：编辑入口从「QInputDialog 逗号串弹框」升级为行内编辑器
+        # （quick_repos_editor.QuickReposEditor）。行为契约不变：确认 → 重建按钮 +
+        # 持久化。mock 从 getText 改为 patch QDialog.exec（返回 Accepted）。
+        with mock.patch("gcm.ui.quick_repos_editor.QuickReposEditor.exec",
+                        return_value=QDialog.DialogCode.Accepted), \
+             mock.patch("gcm.ui.quick_repos_editor.QuickReposEditor.result_repos",
+                        return_value=["x/one", "y/two"]):
             n = self.win._edit_quick_repos()
         self.assertEqual(n, 2, "编辑后按钮数必须等于列表长度")
         self.assertEqual(len(self.win._quick_fill_buttons), 2)
@@ -187,8 +192,8 @@ class TestQuickReposEditable(_Win):
 
     def test_cancel_keeps_existing_buttons(self):
         before = len(self.win._quick_fill_buttons)
-        with mock.patch("PyQt6.QtWidgets.QInputDialog.getText",
-                        return_value=("zzz/zzz", False)):
+        with mock.patch("gcm.ui.quick_repos_editor.QuickReposEditor.exec",
+                        return_value=QDialog.DialogCode.Rejected):
             n = self.win._edit_quick_repos()
         self.assertEqual(n, before, "取消编辑不该改变按钮数")
         self.assertNotIn("zzz/zzz", tuple(self.win.settings.quick_repos))

@@ -13,6 +13,7 @@ import re
 import weakref
 
 from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -20,11 +21,13 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSizePolicy,
     QSpinBox,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -124,6 +127,10 @@ def build_download_top(owner) -> QWidget:
     # G74：限制最大高度，保证 1366/1440 下「下载位置/克隆模式/快捷填充/清单」
     # 都能落在首屏；更多地址可在输入框内滚动。
     owner.repo_input.setMaximumHeight(112)
+    # Rev14 R14-03 修正：QPlainTextEdit 默认 `tabChangesFocus=False`，Tab 会被当成
+    # 文本缩进 —— 用户在地址框按 Tab 想跳到选项，结果往输入框里插了一个制表符，
+    # 声明好的 `repo_input → btn_readme_import` 永远不可达。这里让 Tab 交还焦点链。
+    owner.repo_input.setTabChangesFocus(True)
     owner.repo_input.setAccessibleName(tr("仓库地址输入框"))
     b.addWidget(owner.repo_input)
     # G54-1 实时校验条：输入/粘贴后显示「有效 N / 无效 M」
@@ -197,11 +204,36 @@ def build_download_top(owner) -> QWidget:
     tv.setSpacing(10)
     tv.addWidget(box)
 
-    opts = QHBoxLayout()
+    # G74：快捷填充/清单是次要操作，留在可滚动区里（小高度时可滚出视口）
+    tv.addLayout(quick_row)
+    return top
+
+
+def build_download_options(owner) -> QWidget:
+    """下载位置 + 克隆模式（Rev14 F1/F7：**常驻，不进滚动区**）。
+
+    **为什么从滚动区里搬出来**（实测，不是观感）：
+    - 1024×768 / 1366×768 / 1280×800 三档下，这两个控件被顶部滚动区切到只剩
+      `visibleRegion` 352×**6** / 335×6 / 608×23（控件本身 34 高）—— 用户看到的
+      是一个只有一条边的输入框，点都点不准；
+    - 顶部区内容需要 298px、视口只给 226px，**连 1920×1080 都要滚动**才能看到
+      「克隆模式」下拉。
+    这两件事与「开始」按钮同属最高频操作（粘地址 → 选模式 → 点开始），
+    不该藏在折叠线以下。搬出后滚动区只剩「仓库地址 + 快捷填充」，各档都不需要滚动。
+    """
+    wrap = QWidget()
+    opts = QHBoxLayout(wrap)
+    opts.setContentsMargins(0, 0, 0, 0)
+    opts.setSpacing(10)
+
     g1 = QGroupBox(tr("下载位置"))
     l1 = QHBoxLayout(g1)
     default_dir = str(owner.settings.download_dir or (owner.data_dir / "clones"))
     owner.target_edit = QLineEdit(default_dir)
+    # Rev14 R14-04 修正：这一组控件没有相邻 QLabel（标题在 QGroupBox 上），
+    # 推导链取不到名字 —— 显式命名，否则读屏只报「编辑框」。
+    owner.target_edit.setAccessibleName(tr("下载位置"))
+    owner.target_edit.setAccessibleDescription(tr("仓库克隆到哪个目录；可点「浏览…」选择"))
     btn_browse = QPushButton(tr("浏览…"))
     btn_browse.clicked.connect(owner.choose_target)
     l1.addWidget(owner.target_edit, 1)
@@ -211,6 +243,9 @@ def build_download_top(owner) -> QWidget:
     g2 = QGroupBox(tr("克隆模式"))
     l2 = QHBoxLayout(g2)
     owner.mode_combo = QComboBox()
+    owner.mode_combo.setAccessibleName(tr("克隆模式"))
+    owner.mode_combo.setAccessibleDescription(
+        tr("满量克隆 / 浅克隆 / 单分支浅克隆 / 镜像克隆 四选一"))
     owner.mode_combo.addItems([tr("满量克隆（完整历史）"), tr("浅克隆（最新代码）"),
                                tr("单分支浅克隆（--single-branch）"),
                                tr("镜像克隆（--mirror）")])
@@ -219,15 +254,12 @@ def build_download_top(owner) -> QWidget:
     owner.depth_spin.setValue(1)
     owner.depth_spin.setSuffix(" 层")
     owner.depth_spin.setEnabled(False)
+    owner.depth_spin.setAccessibleName(tr("浅克隆深度（层）"))
     owner.mode_combo.currentIndexChanged.connect(owner._on_mode_changed)
     l2.addWidget(owner.mode_combo)
     l2.addWidget(owner.depth_spin)
     opts.addWidget(g2)
-    tv.addLayout(opts)
-    # G74：快捷填充/清单是次要操作，放在下载位置/克隆模式之后；
-    # 小高度时先保证核心选项可见。
-    tv.addLayout(quick_row)
-    return top
+    return wrap
 
 
 def build_task_list_row(owner) -> QWidget:
@@ -343,9 +375,66 @@ def build_download_actions(owner) -> QWidget:
     row2.addWidget(owner.btn_diag_bundle)
     row2.addStretch(1)
     v.addLayout(row2)
+    # Rev13 R13-02：**兜底折叠**。矮窗口（900×480 / 1366×768@150% 的工作区 911×512）
+    # 放不下这第二行 —— 实测工具行被裁到 27/42px。此时把四个工具按钮折进一个
+    # 「更多 ▸」按钮的菜单里：入口仍在（点开就能用），但不再占一整行高度。
+    # 正常高度下这行保持原样展开（gui_helpers.set_tools_row_folded 控制）。
+    owner.btn_more_tools = QToolButton()
+    owner.btn_more_tools.setText(tr("更多 ▸"))
+    owner.btn_more_tools.setToolTip(
+        tr("打开克隆目录 / 失败汇总 / 重试队列 / 诊断包"))
+    owner.btn_more_tools.setPopupMode(
+        QToolButton.ToolButtonPopupMode.InstantPopup)
+    owner.btn_more_tools.setAccessibleName(tr("更多工具菜单"))
+    owner.btn_more_tools.hide()
+    v.addWidget(owner.btn_more_tools)
     # v9.12.1：动作区**绝不允许被压扁**。清单行搬进来后总共三行，在声明的最小窗口
     # 1020×560 下 Qt 会按比例压缩这个容器，按钮被切成 31/42px（看起来像被裁）。
     # 这里把纵向策略钉成 Fixed 并给出最小高度，让**可滚动**的顶部区去吸收压缩。
     wrap.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
     wrap.setMinimumHeight(wrap.sizeHint().height())
+    # Rev13 R13-02：给折叠态留最小高度基线（展开态 = sizeHint，折叠态 = 两行）
+    owner._actions_hint_expanded = int(wrap.sizeHint().height())
+    owner._actions_hint_folded = int(wrap.minimumSizeHint().height() - 44)
     return wrap
+
+
+def set_tools_row_folded(owner, folded: bool) -> None:
+    """Rev13 R13-02：把工具行（打开目录/失败汇总/重试队列/诊断包）折叠成「更多 ▸」。
+
+    **为什么需要**：矮窗口下这一行放不下 —— 实测 900×480 与 1366×768@150% 的工作区
+    911×512 下，`btn_open` 等四个按钮可见高度只有 27/42px（下半截被父级裁掉）。
+    折叠后入口仍在（菜单里同名同槽），但不再占一整行高度。
+
+    **不要简单删掉这几个按钮**：它们是失败排查链路唯一的 UI 入口
+    （`test_g69_regressions.TestG69_18WiringClosure` 会抓孤儿）。
+    折叠只是换了个挂载点，槽与文案必须逐项保持一致。
+    """
+    more = getattr(owner, "btn_more_tools", None)
+    btns = [getattr(owner, n, None)
+            for n in ("btn_open", "btn_failures", "btn_retry_queue", "btn_diag_bundle")]
+    if more is None or any(b is None for b in btns):
+        return
+    if folded:
+        if more.menu() is None:
+            menu = QMenu(more)
+            # 菜单项直接**复用按钮的文本与图标**，再绑定同一个槽 ——
+            # 文案/行为只有按钮这一处事实源，不存在第二份定义。
+            for btn in btns:
+                act = QAction(btn.icon(), btn.text(), menu)
+                act.triggered.connect(btn.click)
+                menu.addAction(act)
+            more.setMenu(menu)
+        for b in btns:
+            b.hide()
+        more.show()
+    else:
+        more.hide()
+        for b in btns:
+            b.show()
+    act = getattr(owner, "download_actions", None)
+    if act is not None:
+        hint = getattr(owner, "_actions_hint_folded", 0) if folded \
+            else getattr(owner, "_actions_hint_expanded", 0)
+        if hint:
+            act.setMinimumHeight(int(hint))

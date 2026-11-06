@@ -5,7 +5,17 @@ from PyQt6.QtWidgets import QDialog, QTextBrowser, QVBoxLayout
 
 from ..i18n import tr
 
+
 # 说明正文（每条独立段落，便于单测断言关键字）
+def _shortcut_lines() -> list[str]:
+    """从 `ui/menu_bar.SHORTCUTS` 生成帮助页的快捷键行（单一事实源）。"""
+    try:
+        from .menu_bar import SHORTCUTS
+        return [f"{key} — {desc}" for key, desc in SHORTCUTS]
+    except Exception:  # noqa: BLE001 —— 帮助页不能在导入期因菜单模块失败而崩
+        return ["Ctrl+K 命令面板"]
+
+
 HELP_SECTIONS = [
     ("仓库地址语法", [
         "每行一个仓库地址，支持：https://host/o/r(.git) / git@host:o/r.git / 短格式 o/r",
@@ -20,11 +30,10 @@ HELP_SECTIONS = [
         "设置页「镜像前缀」每行一个：host=前缀，例如 github.com=https://ghproxy.com",
         "克隆时自动拼接镜像地址（仅 https 生效；SSH 不拼）",
     ]),
-    ("快捷键", [
-        "Ctrl+= 放大 / Ctrl+- 缩小 / Ctrl+0 复位字号",
-        "Ctrl+Alt+S 开始/取消全部 · Ctrl+Alt+U 一键更新 · Ctrl+Alt+M 显示主窗口",
-        "Ctrl+K 命令面板（搜索并执行任意功能）",
-    ]),
+    # Rev12 U-12：快捷键表**从 menu_bar.SHORTCUTS 派生**，不再手写 ——
+    # Rev6 U-22 实测过这里漏了 Ctrl+1/2/3（用户按文档根本找不到），
+    # 手写第二份真相就是漂移的源头。新增快捷键只改 SHORTCUTS 一处。
+    ("快捷键", _shortcut_lines()),
     ("拖拽与清单", [
         "把 .txt / .csv 拖进输入区自动按行填充地址；目录拖入会触发本地仓库导入扫描",
         "「保存清单」把当前输入区存为命名清单（data/lists/*.json），可分享给他人载入",

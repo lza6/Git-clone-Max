@@ -1,0 +1,80 @@
+{
+  "node": "Rev11-W0",
+  "kind": "docs-only-round",
+  "version": "9.18.0",
+  "baseline_head": "f6b913e",
+  "checked_at": "2026-11-04T09:42:00+08:00",
+  "claim": "创建计划书/UI-视觉重设计-Rev11.md 并完成根目录白名单登记；仓库守卫保持全绿",
+  "commands": [
+    {
+      "cmd": "python scripts/dev_metrics.py",
+      "result_tail": "__version__ = 9.18.0 / gcm 123 文件 31671 行 / 超800行 3 个与登记集合一致 / >100 行函数 19 / tests 187 文件 36069 行",
+      "label": "已验证"
+    },
+    {
+      "cmd": "git log --oneline -1 ; git status --porcelain",
+      "result": "f6b913e docs(evidence): 回填 CI 三平台结论（7/7 全绿 @ 6e3e3e4）；仅 ?? docs/plans/",
+      "label": "已验证"
+    },
+    {
+      "cmd": "git -c core.quotepath=false ls-files | grep ^计划书/",
+      "result": "计划书/UI-视觉重设计-Rev11.md",
+      "label": "已验证"
+    },
+    {
+      "cmd": "python -m unittest tests.test_g79_repo_hygiene.TestRootDirWhitelist -v",
+      "result": "Ran 2 tests OK（加白名单登记后）",
+      "label": "已验证"
+    },
+    {
+      "cmd": "python -m unittest tests.test_g79_repo_hygiene",
+      "result": "Ran 10 tests OK",
+      "label": "已验证"
+    },
+    {
+      "cmd": "python -m unittest tests.test_g67_docs_freshness",
+      "result": "Ran 11 tests OK（探针删除后复核）",
+      "label": "已验证"
+    }
+  ],
+  "probe": {
+    "purpose": "验证「计划文档不宜放 docs/ 下」这一判断，避免写进计划的是推断而非事实",
+    "setup": "新建 docs/计划书/_probe.md，内容含目标版本 v10.1.0 与不存在的路径 gcm/ui/nonexistent_probe.py",
+    "observed": "test_g67_docs_freshness FAILED (failures=2)：①版本 'v10.1.0' != 9.18.0 ②路径引用不存在",
+    "cleanup": "Remove-Item -Recurse docs/计划书；复跑 11 tests OK；Test-Path docs/计划书 = False",
+    "conclusion": "计划类文档必须避开 docs/** 扫描范围，否则每次写目标版本号/未创建路径都会红 —— 这是根级 计划书/ 的选型依据"
+  },
+  "guard_changes": [
+    {
+      "file": "tests/test_g79_repo_hygiene.py",
+      "change": "_ROOT_WHITELIST 增加 \"计划书\" + 理由注释",
+      "why_not_weakening": "守卫第 39 行明写「新增任何一条都必须先在这里登记理由」，这是该守卫唯一的设计入口；未删除或放宽任何断言，双向集合相等仍然生效"
+    }
+  ],
+  "not_run": [
+    "ruff / mypy / 快集 / 覆盖率 —— 本轮无 gcm/ 代码变更",
+    "截图重建 —— 属执行阶段 V-01",
+    "PyInstaller 打包 —— 属执行阶段 W5"
+  ],
+  "round2": {
+    "checked_at": "2026-11-04",
+    "what": "用户四项残留决策拍板（D-5…D-8），文档同步更新至 668 行",
+    "decisions": {
+      "D-5": "耗时列：新增独立列，加在末尾",
+      "D-6": "拖拽与列排序共存，加「排序」切换按钮（默认选中=现状行为）",
+      "D-7": "就地重命名只改显示标签，ToolTip 补真实路径",
+      "D-8": "accent 预设扩到 6 档（新增 V-10b；验证矩阵 4→24 组）"
+    },
+    "new_sections": [
+      "§0.2.1 第二轮拍板记录",
+      "§2.3.1 accent 六档的色相距离/深浅成对/对比度/矩阵四条硬约束（amber 作为 accent 被禁止）",
+      "§5.3 拖拽+排序共存的状态机五不变量（S1 UserRole 唯一真相 / S2 手动模式才可拖 / S3 切换即弃手动序 / S4 运行中禁拖 / S5 禁止视觉位置推断）——依据 progress_table.py:403-424 的 G69-5 真实事故（300 行批量 300/300 错位）",
+      "§9 改为「已拍板 9.1 + 残留 9.2」两级，新增 Q-1（耗时口径）/ Q-2（拖拽序持久化与否）"
+    ],
+    "risk_table_added": [
+      "拖拽引入 G69-5 同型错位（中/高）→ §5.3 五不变量 + S1/S4 守卫先于功能代码（RED→GREEN）+ 变异测试",
+      "accent 六档对比度/撞色相（中/中）→ TestAccentBudget + 24 组不抽样"
+    ],
+    "final_check": "unittest test_g79_repo_hygiene + test_g67_docs_freshness → Ran 21 tests OK；V 编号 V-01…V-24（含 V-10b）连续"
+  }
+}

@@ -433,8 +433,11 @@ def _build_group_appearance(owner: MainWindow, settings: Settings):
     # G46-7 强调色预设
     owner.accent_combo = QComboBox()
     # G75：青色（示波器青）是设计默认，排在第一位
+    # Rev11（D-8/V-10b）：预设 3→6 档。标签来源与 palettes.ACCENT_PRESETS 对齐
+    # （新档位必须深浅成对且避开语义色相族，守卫 TestAccentSixPresets）。
     for _k, _lbl in (("teal", tr("青色（默认）")), ("blue", tr("蓝色")),
-                     ("violet", tr("紫色"))):
+                     ("violet", tr("紫色")), ("cyan", tr("石青")),
+                     ("indigo", tr("靛蓝")), ("magenta", tr("品红"))):
         owner.accent_combo.addItem(_lbl, _k)
     _acc = getattr(settings, "accent_preset", "teal")
     _ai = owner.accent_combo.findData(_acc)

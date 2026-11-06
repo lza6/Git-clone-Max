@@ -93,6 +93,17 @@ class RepoDetailDialog(QDialog):
         v.addLayout(self._build_meta())
         v.addWidget(self._build_stats())
 
+        # Rev11（V-19）：分阶段耗时时间线 —— 选中历史行时跟随刷新
+        from .stage_timeline import StageTimeline
+        self.stage_timeline = StageTimeline(self)
+        lbl = QLabel("分阶段耗时：")
+        lbl.setObjectName("muted")
+        v.addWidget(lbl)
+        v.addWidget(self.stage_timeline)
+        if self.history:
+            # 默认展示最近一条
+            self._update_stage_timeline(self.history[0])
+
         v.addWidget(QLabel("同步历史："))
         v.addWidget(self._build_table(), 1)
 
@@ -208,9 +219,9 @@ class RepoDetailDialog(QDialog):
         key = QLabel("备注")
         key.setObjectName("muted")
         self.note_edit = QLineEdit(str(self.repo.get("note") or ""))
-        self.note_edit.setPlaceholderText("添加备注…")
+        self.note_edit.setPlaceholderText(tr("添加备注…"))
         self.btn_save_note = QPushButton("保存")
-        self.btn_save_note.setToolTip("保存备注（persist 到 repos.note）")
+        self.btn_save_note.setToolTip(tr("保存备注（persist 到 repos.note）"))
         self.btn_save_note.clicked.connect(self._save_note)
         grid.addWidget(key, note_row, 0, alignment=Qt.AlignmentFlag.AlignTop)
         grid.addWidget(self.note_edit, note_row, 1, alignment=Qt.AlignmentFlag.AlignTop)
@@ -255,9 +266,9 @@ class RepoDetailDialog(QDialog):
             if db is not None and rid:
                 db.set_note(rid, note)
             self.repo["note"] = note
-            QMessageBox.information(self, "备注", "备注已保存。")
+            QMessageBox.information(self, tr("备注"), tr("备注已保存。"))
         except Exception as e:
-            QMessageBox.warning(self, "保存失败", str(e))
+            QMessageBox.warning(self, tr("保存失败", str(e)))
 
     # ------------------------------------------------------------ 仓库级 SSH key（G80-B8）
     def _db_or_none(self):
@@ -341,7 +352,23 @@ class RepoDetailDialog(QDialog):
         self.table.setRowCount(len(self.history))
         for i, h in enumerate(self.history):
             self._set_row(i, h)
+        # Rev11（V-19）：选中历史行 → 时间线跟随
+        self.table.itemSelectionChanged.connect(self._on_history_selected)
         return self.table
+
+    def _on_history_selected(self) -> None:
+        row = self.table.currentRow()
+        if 0 <= row < len(self.history):
+            self._update_stage_timeline(self.history[row])
+
+    def _update_stage_timeline(self, h: dict) -> None:
+        """V-19：从 stage_json 还原四段耗时（坏数据/缺失 → 空态 `—`）。
+
+        loads_stages 自身对坏数据返回空 dict（绝不抛，见其 docstring），
+        因此这里无需 try —— 异常预算棘轮（test_g80_hygiene）只降不升。
+        """
+        from ..db.stage_stats import loads_stages
+        self.stage_timeline.set_stages(loads_stages(h.get("stage_json")))
 
     def _set_row(self, row: int, h: dict) -> None:
         cells = [
@@ -400,7 +427,7 @@ class RepoDetailDialog(QDialog):
             if not open_folder(path):
                 QMessageBox.warning(self, tr("无法打开目录"), f"系统未找到文件管理器：\n{path}")
         else:
-            QMessageBox.warning(self, "目录不存在", f"仓库目录不存在：\n{path or '（路径为空）'}")
+            QMessageBox.warning(self, tr("目录不存在"), f"仓库目录不存在：\n{path or '（路径为空）'}")
 
     def copy_path(self) -> None:
         """复制本地路径到剪贴板。"""
@@ -445,11 +472,11 @@ class RepoDetailDialog(QDialog):
         """
         url = str(self.repo.get("url") or "").strip()
         if not url:
-            self.lbl_remote.setText("无法检查远端（无 URL 或命令失败）")
+            self.lbl_remote.setText(tr("无法检查远端（无 URL 或命令失败）"))
             return
 
         self.btn_check_remote.setEnabled(False)
-        self.lbl_remote.setText("检查中…")
+        self.lbl_remote.setText(tr("检查中…"))
         local_sha = str(self.repo.get("head_sha") or "").strip() or None
 
         def _worker() -> None:
@@ -475,10 +502,10 @@ class RepoDetailDialog(QDialog):
         """
         path = str(self.repo.get("local_path") or "")
         if not path or not os.path.isdir(path):
-            self.lbl_remote.setText("无法体检（本地目录不存在）")
+            self.lbl_remote.setText(tr("无法体检（本地目录不存在）"))
             return
         self.btn_health.setEnabled(False)
-        self.lbl_remote.setText("体检中…")
+        self.lbl_remote.setText(tr("体检中…"))
 
         def _worker() -> None:
             text = self._compute_health_text()

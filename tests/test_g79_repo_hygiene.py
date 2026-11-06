@@ -62,6 +62,15 @@ _ROOT_WHITELIST = {
     # .agents/skills、.codex（config+hooks，其他 harness 的 agent 配置）、
     # .claude（Claude Code 项目配置）。
     ".agents", ".beads", ".claude", ".codex", "AGENTS.md",
+    # 2026-11-04 Rev11 登记（用户决策 D-1）：计划文档目录回到根级 `计划书/`。
+    # 与 `docs/plans/` 的分工：`docs/plans/` 放「正在执行的迭代计划」（且被
+    # `test_g67_docs_freshness` 整目录排除，因为计划必然引用尚未创建的路径与目标版本号）；
+    # 本目录放「面向下一版的独立专项设计指南」。刻意**不放** `docs/计划书/` ——
+    # 那里会被 docs_freshness 的 `docs/**` 全局扫描判成死链 + 版本漂移，为迁就它去改
+    # 那条守卫才是真正的放宽断言。生命周期同旧 `docs/计划书/`：任务全部闭环 → 归档到
+    # `docs/archive/plans/<日期>/` → 删除目录 → **同批把本行也删掉**（否则
+    # `test_whitelist_has_no_dead_entries` 会红，这正是双向集合相等想要的效果）。
+    "计划书",
     # 2026-10-25 归档：workflow_status.md 与 参考的结果计划指南.md 移入
     # docs/archive/working/2026-10/（原 2026-10-24 的根目录登记随之失效）。
     # 2026-10-31 说明：新一轮参考对标任务的状态源回到根目录，但那份工作流明确
@@ -82,7 +91,7 @@ _OVERSIZED_LIMIT = 800
 
 # 断言基线：测试文件数与主窗行数（`CLAUDE.md` / `README.md` 必须与实测一致）。
 # 这两个数字会随开发变化，改代码时**同步改这里和文档**，守卫才有意义。
-_EXPECTED_TEST_FILES = 187
+_EXPECTED_TEST_FILES = 198
 
 
 def _git_ls_files() -> list[str]:

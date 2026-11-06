@@ -75,8 +75,11 @@ class RadarChart(QWidget):
             from .theme import current_palette
             return current_palette()
         except Exception:
-            return {"accent": "#58a6ff", "border": "#30363d", "text": "#e6edf3",
-                    "text_dim": "#8b949e", "panel": "#161b22"}
+            # Rev11（V-08）：兜底不再用 GitHub Primer 全家桶（那是
+            # TestAntiGenericAesthetics 明令禁止的色板），改从 PALETTES["deep"]
+            # 取 —— 模块级常量，无 QApplication 也能读。
+            from .palettes import PALETTES
+            return dict(PALETTES["deep"])
 
     @staticmethod
     def _point(cx: float, cy: float, radius: float, angle: float) -> QPointF:
@@ -97,8 +100,8 @@ class RadarChart(QWidget):
             return
         angles = [-math.pi / 2 + 2 * math.pi * i / n for i in range(n)]
 
-        # 网格：同心多边形 + 轴线
-        grid_pen = QPen(QColor(str(pal.get("border", "#30363d"))))
+        # 网格：同心多边形 + 轴线（Rev11：pal 来自 PALETTES 时键必存在，get 兜底串仅防御）
+        grid_pen = QPen(QColor(str(pal.get("border") or "#242c31")))
         grid_pen.setWidth(1)
         p.setPen(grid_pen)
         for level in _RING_LEVELS:
@@ -110,7 +113,7 @@ class RadarChart(QWidget):
 
         # 数据多边形（没有传入数据时才显示空态；六维全 0 是真实数据）
         if self._has_data:
-            accent = QColor(str(pal.get("accent", "#58a6ff")))
+            accent = QColor(str(pal.get("accent") or "#35c8b4"))
             fill = QColor(accent)
             fill.setAlpha(70)
             poly = QPolygonF([
@@ -125,12 +128,12 @@ class RadarChart(QWidget):
                 r = radius * self._values.get(k, 0) / 100.0
                 p.drawEllipse(self._point(cx, cy, r, a), 3, 3)
         else:
-            p.setPen(QPen(QColor(str(pal.get("text_dim", "#8b949e")))))
+            p.setPen(QPen(QColor(str(pal.get("text_dim") or "#9c978e"))))
             p.setFont(QFont(self.font().family(), 9))
             p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, tr("暂无评分数据"))
 
         # 维度标签
-        p.setPen(QPen(QColor(str(pal.get("text", "#e6edf3")))))
+        p.setPen(QPen(QColor(str(pal.get("text") or "#e8e3da"))))
         font = QFont(self.font().family(), 9)
         p.setFont(font)
         for k, a in zip(keys, angles, strict=True):

@@ -28,6 +28,8 @@ reports/ui-g82*
 reports/ui-audit-final/
 # v9.12.0 起：截图审计产物一律可重建（python scripts/ui_screenshot_audit.py <dir>），不入库
 reports/ui-v9120*/
+# Rev14 起：按轮次命名的截图目录同样可重建；D29 事故就是 38 张截图误入索引
+reports/ui-rev*/
 reports/ui-v9*/
 # G84-2：`reports/ui-audit/` 此前漏在忽略规则之外（只忽略 ui-audit-final/），
 # 导致 G83 的 34 张截图一直是未跟踪产物，任何 `git add -A` 都会把它们带进提交。

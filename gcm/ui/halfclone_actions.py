@@ -27,6 +27,7 @@ from ..app.halfclone import (
 from ..app.halfclone import (
     repair_halfclone as repair_halfclone,
 )
+from ..i18n import tr
 
 
 def delete_halfcloned(path: Path) -> bool:
@@ -74,7 +75,7 @@ def repair_halfcloned_row(panel, row: int) -> None:
                               f"半成品检出修复成功：{p}（{msg}）")
     else:
         from PyQt6.QtWidgets import QMessageBox
-        QMessageBox.warning(panel.owner, "无法修复", f"{p}\n\n{msg}")
+        QMessageBox.warning(panel.owner, tr("无法修复"), f"{p}\n\n{msg}")
 
 
 def delete_halfcloned_row(panel, row: int) -> None:
@@ -89,11 +90,11 @@ def delete_halfcloned_row(panel, row: int) -> None:
 
     p = row_repo_dir(panel, row)
     if not looks_halfcloned(p):
-        QMessageBox.information(panel.owner, "无需清理",
-                                "该目录不是半成品（有工作树内容）。")
+        QMessageBox.information(panel.owner, tr("无需清理"),
+                                tr("该目录不是半成品（有工作树内容）。"))
         return
     sure = QMessageBox.question(
-        panel.owner, "删除半成品目录",
+        panel.owner, tr("删除半成品目录"),
         f"将删除该仓库的整个目录（其中只有 .git，没有工作树内容）：\n{p}\n\n继续？",
         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
     if sure != QMessageBox.StandardButton.Yes:

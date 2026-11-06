@@ -41,10 +41,10 @@ class _TrendCanvas(QWidget):
         super().__init__(parent)
         self._data: list[dict] = []
         self.setMinimumSize(460, 120)
-        self.setToolTip("最近 30 天每日同步：绿=成功 红=失败 橙=冲突")
+        self.setToolTip(tr("最近 30 天每日同步：绿=成功 红=失败 橙=冲突"))
         # G70：自绘控件补无障碍替代文本（读屏用户拿得到同样的信息）
-        self.setAccessibleName("同步趋势图")
-        self.setAccessibleDescription("最近同步趋势柱状图：绿色为成功、红色为失败、橙色为冲突")
+        self.setAccessibleName(tr("同步趋势图"))
+        self.setAccessibleDescription(tr("最近同步趋势柱状图：绿色为成功、红色为失败、橙色为冲突"))
 
     def set_data(self, data: list[dict]) -> None:
         self._data = data or []
@@ -122,7 +122,7 @@ class StatisticsDialog(QDialog):
         from .theme import apply_parent_theme
         apply_parent_theme(self)
         self.db = db
-        self.setWindowTitle("统计中心")
+        self.setWindowTitle(tr("统计中心"))
         from .layout import fit_dialog_to_screen
         fit_dialog_to_screen(self, 860, 720, 620, 480)
         # G70：不再套导入时生成的静态深色 QSS —— 沿用父窗口当前主题/字号。
@@ -264,7 +264,7 @@ class StatisticsDialog(QDialog):
             self.lbl_hosts.setText(
                 "平台分布：" + " · ".join(f"{h}: {c}" for h, c in by_host.items()))
         else:
-            self.lbl_hosts.setText("平台分布：（暂无仓库）")
+            self.lbl_hosts.setText(tr("平台分布：（暂无仓库）"))
 
         # G81（N-6）：语言构成（来自仓库画像；未探测的仓库不计入）
         try:
@@ -291,7 +291,7 @@ class StatisticsDialog(QDialog):
                 f"累计更新 {usage.get('updates', 0)} 次 · "
                 f"累计新增提交 {usage.get('commits', 0)} 个")
         except Exception:
-            self.lbl_usage.setText("用量统计：（不可用）")
+            self.lbl_usage.setText(tr("用量统计：（不可用）"))
 
         # G37-1 30 天趋势
         try:
@@ -306,7 +306,7 @@ class StatisticsDialog(QDialog):
         except Exception:
             slow = []
         if not isinstance(slow, (list, tuple)) or not slow:
-            self.lbl_slow.setText("（暂无同步数据）")
+            self.lbl_slow.setText(tr("（暂无同步数据）"))
         else:
             lines = []
             for i, it in enumerate(slow, 1):
@@ -389,7 +389,7 @@ class StatisticsDialog(QDialog):
             return  # 过期轮次
         try:
             if summary == "__error__" or summary is None:
-                self.lbl_scorecard.setText("评分卡：（不可用）")
+                self.lbl_scorecard.setText(tr("评分卡：（不可用）"))
                 self.radar.set_values({})
             else:
                 labels = {
@@ -404,7 +404,7 @@ class StatisticsDialog(QDialog):
                 self.lbl_scorecard.setText("\n".join(lines))
                 self.radar.set_values(avg or {})
         except Exception:
-            self.lbl_scorecard.setText("评分卡：（不可用）")
+            self.lbl_scorecard.setText(tr("评分卡：（不可用）"))
             try:
                 self.radar.set_values({})
             except Exception:
@@ -435,4 +435,4 @@ class StatisticsDialog(QDialog):
                 raise RuntimeError("保存失败")
         except Exception as e:
             from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "导出失败", str(e))
+            QMessageBox.warning(self, tr("导出失败", str(e)))

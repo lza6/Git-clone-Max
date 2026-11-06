@@ -56,6 +56,13 @@ class OnboardingDialog(QDialog):
         v = QVBoxLayout(self)
         v.setSpacing(12)
 
+        # Rev11（V-24）：kicker 铭牌 + display 标题 —— 向导是首启第一眼，
+        # 必须体现排版声部（§2.4）；kicker 用 mono + text_dim（色彩预算 §2.3）。
+        kicker = QLabel(tr("SETUP · 首次配置"))
+        kicker.setObjectName("kicker")
+        from .typography import apply_type
+        apply_type(kicker, "small")
+        v.addWidget(kicker)
         title = QLabel(tr("欢迎使用 Git-clone-Max"))
         title.setObjectName("pageTitle")
         v.addWidget(title)

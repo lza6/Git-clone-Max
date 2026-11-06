@@ -199,3 +199,21 @@ owner: Auditor
   按它「指出的事实」执行才对（`test_g67_closure` 打回）。
 - 产出：`docs/验证记录-2026-11-01-v9.12.0.md`（9 节）· `docs/计划文档审计-2026-11-01.md` ·
   `reports/change-report-2026-11-01-v9120.html`（含 8 题测验）· `evidence/C1.json` + `C1-health.json`。
+
+## 2026-11-06 · Rev14 收尾轮审计结论
+
+- **范围**：`gcm/ui/` 适配与无障碍（layout / download_layout / progress_table / manage_panel /
+  a11y / focus_order / skeleton / offline_indicator / motion / empty_state）、引擎 `launch()` 跳过分支、
+  发布台账。
+- **方法**：真实运行（3 类调用 + 真实 GUI E2E + 4 档 DPI 子进程）+ 1 名只读审查（新模块逻辑）。
+  第二名审查（既有文件回归面）**因 API 流中断未完成**，如实记为未审。
+- **抓到并修掉**（都是"看起来对、实际不通"）：Tab 被 `QPlainTextEdit`/`QTableView` 吞掉；
+  `effective_name` 把输入值当无障碍名；`install_row` 只用 `setItem`（对不存在的行静默空操作）→ 预填行一直白做工；
+  引擎 `_mark_done` key 口径与预检不一致；`launched==0` 后状态栏被「并行同步中」覆盖。
+- **三条过期记忆**：#7 MCP 作业机制 / #8 `backup_to` 原子性 / #9 健康分 tooltip —— 代码早已闭环，
+  记忆没更新。教训同 D31：过期结论会派生一整轮无效工作。
+- **自己引入并已修**：`XS_MAX_HEIGHT` 误引用折叠阈值（XS 语义被静默改成 h<720）；
+  批量 `tr()` 包装误删 33 处**原有**合法包裹（英文模式实测暴露，已按索引版本复原）。
+- 产出：`docs/验收与缺口盘点-2026-11-05.md` · `docs/验证记录-2026-11-05-Rev14.md`（§8 三段）·
+  `evidence/rev14.json` / `rev14-dpi.json` / `rev14-quiz.json` ·
+  `reports/change-report-2026-11-06-rev14.html`（含 10 题测验，10/10）。

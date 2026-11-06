@@ -108,8 +108,22 @@ def repo_input_menu(owner, pos, fmt_dt, extra_actions=None) -> None:
 
 def clear_url_history(owner, fmt_dt) -> None:
     try:
+        # Rev12 U-03：清空前抓快照 —— 否则「清空」是全库唯一真正不可逆的轻量操作
+        items = []
+        try:
+            items = list(owner.url_history.items() or [])
+        except Exception:  # noqa: BLE001 —— 取不到快照时退化为「只记录、不可撤销」
+            items = []
         owner.url_history.clear()
         owner._emit_log(fmt_dt(), LogLevel.INFO, "URL 历史已清空。")
+        if items:
+            try:
+                rec = owner.oplog.record(
+                    "url_history_clear", f"{len(items)} 条地址",
+                    summary="清空地址历史", before={"items": items}, undoable=True)
+                owner.offer_undo(rec, f"已清空 {len(items)} 条地址历史")
+            except Exception as e:  # noqa: BLE001 —— 台账失败不影响清空本身
+                owner._emit_log(fmt_dt(), LogLevel.WARN, f"操作台账写入失败：{e}")
     except Exception:
         pass
 

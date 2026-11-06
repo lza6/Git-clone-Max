@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>变更报告 — Rev14 跨设备适配 / 无障碍 / 反馈闭环（2026-11-06）</title>
+<style>
+ body{font:14px/1.7 "Microsoft YaHei UI",system-ui,sans-serif;max-width:980px;margin:32px auto;padding:0 20px;color:#1b1f24;background:#fbfbfa}
+ h1{font-size:26px;border-bottom:2px solid #0f7c70;padding-bottom:8px}
+ h2{margin-top:34px;font-size:19px;color:#0f4f47}
+ code{background:#eef2f1;padding:1px 5px;border-radius:4px;font-family:Consolas,monospace;font-size:13px}
+ pre{background:#101418;color:#d8e0de;padding:12px 14px;border-radius:6px;overflow:auto;font-family:Consolas,monospace;font-size:12.5px;line-height:1.55}
+ table{border-collapse:collapse;width:100%;margin:12px 0}
+ th,td{border:1px solid #d5dcda;padding:6px 9px;text-align:left;vertical-align:top}
+ th{background:#eef2f1}
+ .k{display:inline-block;padding:1px 7px;border-radius:10px;font-size:12px;font-weight:600}
+ .p0{background:#ffe3e0;color:#a4160a}.p1{background:#fff0d6;color:#8a5300}
+ .p2{background:#e7f1ff;color:#0b4c8c}.done{background:#d9f2e6;color:#0b5c3e}
+ .warn{background:#fff4d6;color:#7a4b00}
+ blockquote{border-left:3px solid #0f7c70;margin:0;padding:2px 14px;color:#3c4a48;background:#f2f7f6}
+</style></head><body>
+
+<h1>变更报告 — Rev14：跨设备适配 / 无障碍 / 反馈闭环 / 发布台账</h1>
+<p><b>日期</b> 2026-11-06 · <b>版本</b> 9.18.8 · <b>基线</b> <code>main @ f6b913e</code> + 工作区</p>
+
+<h2>1. 上下文：为什么做这次变更</h2>
+<p>这个仓库是 <b>PyQt6 桌面单机工具</b>（批量并行克隆 GitHub/GitLab 等仓库），不是 Web 应用。
+上一轮已经把「跨设备适配 / 性能 / 设计系统 / UX」拆成了 Rev14 施工版，本轮做三件事：
+①用户拍板的三项修复落地；②独立审查提出的问题收口；③把「修好了也看不见」的验收基础设施补齐，
+并把发版台账（9.18.8 的 changelog 条目）聚合出来。</p>
+<blockquote>模板里适配 Web 的条目（断点 320/768px、LCP/INP/CLS、Service Worker、dvh/刘海、CDN/Redis/分片/热更新）
+按项目真实形态做了同构替换或判定<b>不适用</b> —— 这个产品没有服务端，<code>policy.md</code> §4 明确
+「热更新不适用于本项目，不得虚构服务端部署流程」。</blockquote>
+
+<h2>2. 直觉：关键决策与取舍</h2>
+<table>
+<tr><th>决策</th><th>取舍</th></tr>
+<tr><td><b>「下载位置/克隆模式」移出滚动区</b></td>
+<td>实测小屏被裁到 6–23px（<code>target_edit 352×6/352×34</code>）。移出后顶部常驻区 +140px，
+折叠阈值必须从 580 抬到 <b>720/740/760</b>（逐 10px 重扫），代价是最小窗口上要折叠工具行 —— 这是设计好的降级。</td></tr>
+<tr><td><b>跳过的仓库用 <code>skipped</code> 信号回报</b></td>
+<td>不动 CLI 的 <code>results[]</code>/退出码契约（GUI 传 True、CLI 默认 False）。因为 index 是「调度序」而非「输入序」，
+被跳过的 spec 没有 index，只能用 <code>owner/repo</code> 作 key 去找行。</td></tr>
+<tr><td><b>像素基线用当前状态重拍并 gitignore</b></td>
+<td>旧基线是 Rev11-final，比出来 28 张、30%+ 差异全是菜单栏带来的整体位移 —— 那种"全红"会让人重新忽略这个护栏（历史事故）。</td></tr>
+<tr><td><b>不做页面级标题</b></td>
+<td>加了要吃掉约 30px，正好抵掉本轮争来的高度（最小窗口会重新裁按钮）。页签本身已经给出页面身份，收益小于回归风险。</td></tr>
+</table>
+
+<h2>3. 做了什么</h2>
+<table>
+<tr><th>批次</th><th>内容</th><th>状态</th></tr>
+<tr><td>V1</td><td>选项行常驻 + splitter 优先保常驻区 + 折叠阈值重扫 + 折叠态四级让位；契约清单补入三个控件</td><td><span class="k done">DONE</span></td></tr>
+<tr><td>V2</td><td>引擎 <code>skipped</code> 信号 + <code>report_skipped</code>；行到「已跳过」；小结/通知报「跳过 N」；<code>launched==0</code> 不再覆盖小结</td><td><span class="k done">DONE</span></td></tr>
+<tr><td>V3</td><td>截图种子补真实目录/<code>head_sha</code>/<code>duration_ms</code>；<code>bench_resize</code> 补首帧位移计数；新增 DPI 子进程矩阵</td><td><span class="k done">DONE</span></td></tr>
+<tr><td>审查收口</td><td>Tab 被 <code>QPlainTextEdit</code>/<code>QTableView</code> 吞掉；<code>effective_name</code> 把输入值当名字；F6 未进帮助页；断网标记不清零；骨架不跟随 resize；<code>empty_state(filtered=)</code> 零调用点</td><td><span class="k done">DONE</span></td></tr>
+<tr><td>根问题</td><td><code>install_row</code> 只用 <code>setItem</code>（对不存在的行静默空操作）→ 预填行一直白做工；<code>_mark_done</code> key 口径与预检不一致</td><td><span class="k done">DONE</span></td></tr>
+<tr><td>发布台账</td><td>4 条碎片聚合为 9.18.8 条目（<code>changelog.py build</code>），3 条既有红灯转绿</td><td><span class="k done">DONE</span></td></tr>
+<tr><td>页面级标题 / 宽屏留白</td><td>评估后判定不做（见 §2 取舍、§7 已知限制）</td><td><span class="k p2">CUT</span></td></tr>
+</table>
+
+<h2>4. 链路图</h2>
+<pre>
+用户点「开始」
+   └─ MainWindow._launch
+        ├─ _prepare_table(len(specs))      ← 必须先建行（setItem 对不存在的行是空操作）
+        ├─ _add_table_row(i, spec)          ← 预填占位行（等待中）
+        └─ engine.launch(specs, report_skipped=True)
+             ├─ _dedupe_specs(key=目录名)
+             ├─ _precheck_skip(spec)        ← 命中：已完成 + 目录在
+             │     ├─ _mark_done("owner/repo")      ← key 口径统一
+             │     └─ skipped.emit("owner/repo", 说明)
+             │           └─ MainWindow._on_engine_skipped → 行变「已跳过」
+             └─ 未命中 → worker → result(index, res)
+                   └─ _on_worker_result → 行终态 + 耗时(duration_ms)
+
+批次结束 → progress_table._on_engine_finished
+   ├─ 统计 UserRole（success/failed/conflict/skipped）
+   └─ batch_finish.announce_finished(owner, ...)  → 状态栏 / 日志 / 托盘 / Webhook
+</pre>
+
+<h2>5. 验证证据（本轮真实运行）</h2>
+<pre>
+ruff check gcm                    → All checks passed!
+mypy gcm                          → Success: no issues found in 140 source files
+scripts/doc_drift_check.py        → DRIFT 0
+scripts/i18n_coverage.py          → I18N OK（未走 tr() 的中文字面量 1517 → 1418）
+scripts/changelog.py check        → [OK] 86 条历史，0 条待发布碎片
+ci_run_fast.py（全快集）           → 见 §5.1
+小屏几何契约（9 尺寸 × 3 字号）      → 27 组合 + 900×480，0 处裁切（含「更多 ▸」）
+真实 GUI E2E（真网络）              → 第1轮 成功/新建克隆/克隆完成/2.1s
+                                    第2轮 已跳过/—/已完成，跳过（克隆完成）
+                                    状态栏：完成：成功 0 · 冲突 0 · 失败 0 · 跳过 1
+多行全跳过边界                     → 2 行都在、状态「已跳过」、状态栏「跳过 2」
+DPI 子进程矩阵（1.25/1.5/1.75/2.0） → 4 档 exit 0 · 0 裁切（evidence/rev14-dpi.json）
+像素基线自比对                     → compare_dirs(基线, 同代码第二份) = ok，回归 0
+</pre>
+<h3>5.1 全快集</h3>
+<pre>Ran 2126 tests · failures=3 errors=0 skipped=4   ← 修复前（3 红=版本/changelog 台账）
+changelog.py build --version 9.18.8 之后：
+test_g66_patch + test_g81_changelog → 75 tests OK
+</pre>
+
+<h2>6. 风险与回滚</h2>
+<table>
+<tr><th>项</th><th>回滚方式</th></tr>
+<tr><td>布局重排（选项行常驻 + 折叠阈值 720）</td><td><code>git revert</code> 对应提交；<code>download_layout.build_download_options</code> 是纯新增函数，删掉即可回到旧结构</td></tr>
+<tr><td>引擎 <code>skipped</code> 信号 / <code>report_skipped</code></td><td>参数默认 False + 信号无人监听 → 行为与旧版一致；删除接线即回滚</td></tr>
+<tr><td><code>_mark_done</code> key 改 <code>owner/repo</code></td><td><code>progress.json</code> 是派生缓存，改回旧 key 不影响数据正确性（只影响预检命中率）</td></tr>
+<tr><td>9.18.8 changelog 条目</td><td><code>gcm/_changelog_data.py</code> 是生成文件；<code>git checkout -- gcm/_changelog_data.py</code> + 碎片从 <code>changelog.d/_archive/9.18.8/</code> 取回</td></tr>
+<tr><td>像素基线目录</td><td>已 gitignore，删除即可重生（<code>ui_screenshot_audit.py</code>）</td></tr>
+</table>
+
+<h2>7. 已知限制</h2>
+<ul>
+<li><b>真机多屏 / 拔插 / 混合 DPI 未验</b>：本机单屏，只覆盖注入屏幕参数的纯函数 + 离屏 4 档缩放。</li>
+<li><b>屏幕阅读器（NVDA/JAWS）实机未验</b>：只保证「名称/角色/顺序/焦点/对比度」五项静态可验证。</li>
+<li><b>首帧后 500ms 内有 31 次控件位移</b>（CLS 等价，目标 0）：来源是 show 后 150ms 的布局去抖重算，未修。</li>
+<li><b>离屏 800×800 在 2.0 缩放档只剩 400×400 逻辑尺寸</b>，低于项目声明的 <code>ABSOLUTE_MIN 900×480</code> —— 属 "unsupported"，不是回归。</li>
+<li><b>打包 exe 与真机点击未验</b>：属发版动作，需 <code>health_check.py --json</code>。</li>
+</ul>
+
+<h2>8. 测验</h2>
+<ol>
+<li>（选择）被断点续传预检跳过的仓库，为什么用 <code>owner/repo</code> 而不是 index 回报给 UI？<br>
+A. 因为 index 是调度序，被跳过的 spec 没有 index　B. 因为字符串更省内存　C. 因为 UI 只认字符串
+<p><b>答案 A。</b></p></li>
+<li>（判断）把「下载位置/克隆模式」移出滚动区后，折叠阈值可以保持不变。<br>
+<b>错。</b>顶部常驻区 +140px，阈值必须从 580 抬到 720/740/760，否则工具行被裁。</li>
+<li>（简答）<code>progress_rows.install_row</code> 为什么在「预填行」时是空操作？<br>
+<b>答案：</b>它只用 <code>QTableWidget.setItem(index, col, item)</code>，而 Qt 对不存在的行是静默忽略，
+不会自动扩容。必须先 <code>setRowCount</code>（即 <code>_prepare_table</code>）。</li>
+<li>（选择）全快集修复前的 3 条红灯是什么？<br>
+A. 单元测试逻辑错　B. <code>__version__</code> 已 bump 到 9.18.8 但没有 changelog 条目　C. 编码问题<p><b>答案 B。</b></p></li>
+<li>（判断）<code>pixel_diff</code> 的阈值宽到 2px 位移也发现不了，仍然算有效护栏。<br>
+<b>错。</b>所以它自带 <code>--self-check</code>：平移 2px 必须报警（实测占比 1.11% &gt; 阈值 0.5%）。</li>
+<li>（简答）为什么 <code>effective_name</code> 不能用 <code>QSpinBox.text()</code> 当无障碍名字？<br>
+<b>答案：</b>它返回的是**当前数值**（如 <code>7</code>），不是标签；同样 <code>QLineEdit.text()</code> 是用户输入。
+把它们当名字会让审计永远认为"有名字"，棘轮对新加的无标签输入框失明。</li>
+<li>（选择）折叠态下最先让位的是谁？<br>
+A. 主操作按钮　B. 进度表与它的筛选行　C. 输入框<p><b>答案 B。</b>常驻按钮被裁才是真缺陷；可滚动区先让位。</p></li>
+<li>（判断）把「页面级标题」加回去没有代价。<br>
+<b>错。</b>要吃掉约 30px，最小窗口下会把本轮争来的高度抵掉，按钮重新被裁。</li>
+<li>（简答）<code>settings.ui_state</code> 为什么必须写读两侧都接线？<br>
+<b>答案：</b>只写不读 = 用户改了没用（项目红线 <code>TestG69_18WiringClosure</code> 会抓）；只读不写 = 永远默认值。</li>
+<li>（选择）本项目的"部署"等价动作是什么？<br>
+A. 推 Docker 镜像　B. 打包 → health_check 真启动 → GitHub Release　C. 热更新服务端<p>
+<b>答案 B。</b><code>policy.md</code> §4：桌面单机工具，没有服务端，不得虚构热更新流程。</p></li>
+</ol>
+<p><b>通过标准</b>：10 题答对 ≥8 题（80%）。<b>自测结果</b>：10/10（见 <code>evidence/rev14-quiz.json</code>）。</p>
+
+</body></html>

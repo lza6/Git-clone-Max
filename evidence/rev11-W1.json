@@ -1,0 +1,62 @@
+{
+  "node": "Rev11-W1",
+  "kind": "design-token-layer",
+  "checked_at": "2026-11-04",
+  "items": {
+    "V-05_accent_budget": {
+      "changes": [
+        "qss_build.py: 页签选中/focus/hover 下划线 accent → text（中性）；primary:hover 边框 accent → cta；按钮 hover 边框 accent → border_strong；splitter hover accent → border_strong；kicker accent → text_dim"
+      ],
+      "guard": "tests/test_rev11_visual.py::TestAccentBudget（5 例，含反例自检）",
+      "status": "DONE"
+    },
+    "V-06_new_palette_keys": {
+      "changes": ["palettes.py: panel_primary/signal_dim × 4 主题"],
+      "guard": "TestNewPaletteKeys（4 例）",
+      "status": "DONE"
+    },
+    "V-07_panel_weights": {
+      "changes": ["qss_build.py: 新增 QWidget#panelPrimary / QWidget#panelGhost 选择器"],
+      "guard": "TestPanelWeights（3 例）+ 24 组 qss_validate",
+      "status": "DONE"
+    },
+    "V-08_no_primer_fallback": {
+      "changes": [
+        "radar_chart.py: _palette() 兜底 dict 改 PALETTES['deep']；4 处 pal.get 兜底串改 Ink 色",
+        "main_window.py: _semantic_color 兜底 '#888888' → PALETTES['deep']；注释里的 #3fb950 字面量改文字描述（守卫连注释也拦）"
+      ],
+      "guard": "TestNoPrimerFallback（2 例，含反向自检）",
+      "status": "DONE"
+    },
+    "V-10b_six_presets": {
+      "changes": [
+        "palettes.py: ACCENT_PRESETS 3→6 档（cyan/indigo/magenta，均深浅成对）",
+        "indigo dark #818cf8→#8e96fa（nord 上 on_accent 4.19→达标，实测调色）",
+        "indigo light #4338ca→#4f46c8（on_accent 对比度 4.5 达标）"
+      ],
+      "guard": "TestAccentSixPresets（4 例，24 组矩阵全验）",
+      "note": "色相区间定义修正：绿上界 180→165°（teal 172° 是青不是绿）",
+      "status": "DONE"
+    }
+  },
+  "guard_updates_outside_new_file": [
+    {
+      "file": "tests/test_g75_visual_system.py",
+      "change": "test_tab_selected_uses_accent → test_tab_selected_uses_neutral_underline",
+      "why_not_weakening": "G75 断言「选中态必须用 accent」与 Rev11 色彩预算（§5.2 白名单允许的呈现权变更）方向相反；正向断言保留（text 色 + 700 字重），反向（禁 accent）由 TestAccentBudget 接管 —— 守卫强度不减反增"
+    },
+    {
+      "file": "tests/test_g46_theme.py",
+      "change": "test_accent_presets 预设集合 3→6",
+      "why_not_weakening": "集合扩展是 D-8 拍板的功能变更，既有 3 档仍在断言内"
+    }
+  ],
+  "verification": [
+    {"cmd": "unittest test_rev11_visual + test_g75_visual_system + test_g46_theme + test_g70_ui_upgrade", "result": "Ran 109 tests OK (skipped=1)"},
+    {"cmd": "unittest test_g36_ui + test_g52 + test_g74 + test_ui_compact_visibility", "result": "OK"},
+    {"cmd": "ruff check gcm + 新改测试", "result": "All checks passed"},
+    {"cmd": "mypy gcm", "result": "Success: no issues found in 122 source files"},
+    {"cmd": "ui_screenshot_audit → reports/ui-rev11-w1", "result": "34 张生成；目检 deep/light 两张：页签中性下划线生效、kicker 变灰、accent 仅存于进度与焦点"}
+  ],
+  "label": "已验证"
+}

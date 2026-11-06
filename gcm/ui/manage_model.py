@@ -7,10 +7,8 @@ from typing import Optional
 
 from PyQt6.QtCore import QAbstractItemModel, QEvent, QModelIndex, QRect, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QApplication,
     QStyle,
     QStyledItemDelegate,
-    QStyleOptionButton,
 )
 
 from ..i18n import tr
@@ -299,43 +297,62 @@ class ManageModel(QAbstractItemModel):
 class HistoryButtonDelegate(QStyledItemDelegate):
     """G03-7 末列「查看」按钮委托：每行独立可点击（替代共享按钮）。
 
-    用 QStyle 绘制原生按钮外观，sizeHint 给足按钮尺寸，editorEvent 处理点击。
+    **Rev14 R14-15：自绘，不再用 `style.drawControl(CE_PushButton)`**。
+    原生按钮的绘制走操作系统主题：深色主题下就是一块**浅灰方块**，
+    与项目四套深色卡面完全不搭（这是 Rev11 `V-12` 记了很久的遗留问题）。
+    改成 QPainter 画「panel2 底 + 1px 强边框 + 圆角 5」，颜色全部读
+    `theme.current_palette()`，于是它跟着主题走，也满足「颜色只有一个来源」。
     """
 
     clicked = pyqtSignal(int)  # row
+    #: 按钮内框尺寸。写死而不问 `styleFromContents`：原生尺寸随平台变，
+    #: 会让「历史」列宽在 Windows 10/11 上平均差 4px，列宽持久化就失去意义。
+    BUTTON_W = 56
+    BUTTON_H = 22
 
     def button_rect(self, rect: QRect) -> QRect:
-        """在单元格内居中放置一个合适宽高的按钮。"""
-        w = min(56, max(30, rect.width() - 12))
-        h = min(24, max(16, rect.height() - 8))
+        """在单元格内居中放置按钮。"""
+        w = min(self.BUTTON_W, max(30, rect.width() - 12))
+        h = min(self.BUTTON_H, max(16, rect.height() - 8))
         return QRect(
             rect.x() + (rect.width() - w) // 2,
             rect.y() + (rect.height() - h) // 2,
             w, h,
         )
 
-    def _option(self, option, rect: QRect) -> QStyleOptionButton:
-        btn = QStyleOptionButton()
-        btn.rect = rect
-        btn.text = "查看"
-        btn.state = QStyle.StateFlag.State_Enabled
-        return btn
+    def _label(self) -> str:
+        return tr("查看")
 
     def paint(self, painter, option, index):
         if index.column() != 5:
             super().paint(painter, option, index)
             return
+        from PyQt6.QtGui import QColor, QFont, QPainter, QPen
+
+        from .palettes import TOKENS, _shade
+        from .theme import current_palette
+        from .typography import type_font
+
+        pal = current_palette()
         rect = self.button_rect(option.rect)
-        btn = self._option(option, rect)
-        style = option.widget.style() if option.widget else QApplication.style()
-        style.drawControl(QStyle.ControlElement.CE_PushButton, btn, painter)
+        hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
+        bg = _shade(pal["panel2"], 112 if hovered else 100)
+        radius = int(TOKENS["radius"]["control"])
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setBrush(QColor(bg))
+        painter.setPen(QPen(QColor(pal["border_strong"]),
+                            int(TOKENS["border"]["default"])))
+        painter.drawRoundedRect(rect, radius, radius)
+        painter.setPen(QColor(pal["text"]))
+        painter.setFont(QFont(type_font("small")))
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self._label())
+        painter.restore()
 
     def sizeHint(self, option, index):
         if index.column() == 5:
-            btn = self._option(option, QRect(0, 0, 70, 30))
-            style = QApplication.style()
-            return style.sizeFromContents(
-                QStyle.ContentsType.CT_PushButton, btn, option.rect.size())
+            from PyQt6.QtCore import QSize
+            return QSize(self.BUTTON_W + 14, self.BUTTON_H + 10)
         return super().sizeHint(option, index)
 
     def editorEvent(self, event, model, option, index):

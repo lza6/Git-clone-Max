@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QProgressBar, QWidget
 
+from ..i18n import tr
+
 
 class BatchOverview(QWidget):
     """「已完成 x/总 y · 成功率 %」+ 迷你进度条。"""
@@ -32,7 +34,7 @@ class BatchOverview(QWidget):
         self.bar.setValue(0)
         self.bar.setFixedWidth(180)
         self.bar.setTextVisible(False)
-        self.bar.setAccessibleName("批次完成度")
+        self.bar.setAccessibleName(tr("批次完成度"))
         row.addWidget(self.label)
         row.addWidget(self.bar, 1)
         row.addStretch()
@@ -62,7 +64,7 @@ class BatchOverview(QWidget):
     def render(self) -> None:
         total, done, ok = self._total, self._done, self._ok
         if total <= 0:
-            self.label.setText("批次：—")
+            self.label.setText(tr("批次：—"))
             self.bar.setValue(0)
             return
         pct = min(100, round(done / total * 100))

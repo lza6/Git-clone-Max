@@ -1,0 +1,30 @@
+{
+  "node": "Rev11-W0",
+  "kind": "baseline-freeze",
+  "checked_at": "2026-11-04",
+  "items": {
+    "V-01_screenshots": {
+      "cmd": "python scripts/ui_screenshot_audit.py reports/ui-rev11-baseline",
+      "result": "34 PNG 全部生成（4 主题×5 尺寸 + 3 页签 + 7 对话框），无 <10KB 可疑小文件",
+      "note": "脚本退出码 0xC0000409（Qt offscreen 已知原生退出崩溃，CLAUDE.md §6 登记过的同型；产物完整，历史 ui-audit 等多轮同款现象）",
+      "status": "DONE"
+    },
+    "V-02_root_whitelist": {
+      "done_in": "计划文档交付轮（evidence/rev11-W0.json round1）",
+      "result": "test_g79_repo_hygiene 全绿",
+      "status": "DONE"
+    },
+    "V-03_column_inventory": {
+      "artifact": "evidence/rev11-columns.json",
+      "result": "进度表 0..4 列的生产者（progress_table 10 处槽）+ 11 个测试文件 24 处消费点全量登记；结论：末尾加列 index=5 零错位",
+      "status": "DONE"
+    },
+    "V-04_motion_cost": {
+      "cmd": "offscreen 下 500 次 QGraphicsOpacityEffect 创建+销毁计时",
+      "result": "总 1.8ms，单次 0.004ms << 50ms 阈值",
+      "verdict": "§2.6 第 2 条动效（完成时刻透明度脉冲）保留，不 CUT",
+      "status": "DONE"
+    }
+  },
+  "label": "已验证"
+}

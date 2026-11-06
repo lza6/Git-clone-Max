@@ -398,14 +398,40 @@ class RetryQueuePanel(QWidget):
             if ret != QMessageBox.StandardButton.Yes:
                 return 0  # 用户取消：未清空任何条目（返回值契约=本次清空数）
             try:
+                # 必须深拷贝：list_entries 返回内部字典的引用，clear() 后可能被复写
+                import copy as _copy
+                entries = _copy.deepcopy(list(q.list_entries() or []))
+            except Exception:  # noqa: BLE001 —— 快照取不到时仍允许清空，只是不可撤销
+                entries = []
+            try:
                 q.clear()
             except Exception:
                 n = 0
             if n:
                 self.changed.emit()
                 self._log(tr("已清空重试队列（{n} 条）").format(n=n))
+                # Rev12 U-04：清空队列是「即将自动重试的失败任务」全丢，
+                # 比单条删除更该有后悔药（原则③）。
+                if entries:
+                    self._offer_undo(entries)
         self.refresh()
         return n
+
+    def _offer_undo(self, entries: list[dict]) -> None:
+        """把清空动作写进台账并尝试弹撤销浮条（失败只记日志，不影响清空结果）。"""
+        try:
+            owner = self.owner
+            oplog = getattr(owner, "oplog", None)
+            if oplog is None:
+                return
+            rec = oplog.record(
+                "retry_queue_clear", tr("{n} 条重试任务").format(n=len(entries)),
+                summary=tr("清空重试队列"), before={"entries": entries}, undoable=True)
+            offer = getattr(owner, "offer_undo", None)
+            if offer is not None:
+                offer(rec, tr("已清空 {n} 条重试任务").format(n=len(entries)))
+        except Exception as e:  # noqa: BLE001 —— 台账失败不该让清空本身失败
+            self._log(tr("操作台账写入失败：{err}").format(err=e))
 
     # ------------------------------------------------------------ 辅助
     def _wake_engine(self) -> None:
