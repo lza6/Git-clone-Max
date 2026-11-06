@@ -232,5 +232,17 @@
       "real_network_two_rounds": "第1轮 成功/新建克隆/克隆完成/2.1s；第2轮 已跳过/—/已完成，跳过（克隆完成）",
       "tests": "124 例定向（engine+g67+rev13/rev14+ui_compact+g70）全绿"
     }
+  },
+  "git_release": {
+    "commit": "26f894b",
+    "tag": "v9.18.8",
+    "pushed_main": "f6b913e..26f894b",
+    "files": 127,
+    "insertions": 13436,
+    "deletions": 466,
+    "rollback_point": "f6b913e",
+    "packaging": "CI packaging job（tag 触发，windows-latest）",
+    "release_created": false,
+    "version_gap": "v9.18.1–v9.18.7 无 tag/条目（并行会话造成），不伪造"
   }
 }
