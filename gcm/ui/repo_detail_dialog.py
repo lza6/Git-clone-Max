@@ -96,7 +96,7 @@ class RepoDetailDialog(QDialog):
         # Rev11（V-19）：分阶段耗时时间线 —— 选中历史行时跟随刷新
         from .stage_timeline import StageTimeline
         self.stage_timeline = StageTimeline(self)
-        lbl = QLabel("分阶段耗时：")
+        lbl = QLabel(tr("分阶段耗时："))
         lbl.setObjectName("muted")
         v.addWidget(lbl)
         v.addWidget(self.stage_timeline)
@@ -104,7 +104,7 @@ class RepoDetailDialog(QDialog):
             # 默认展示最近一条
             self._update_stage_timeline(self.history[0])
 
-        v.addWidget(QLabel("同步历史："))
+        v.addWidget(QLabel(tr("同步历史：")))
         v.addWidget(self._build_table(), 1)
 
         v.addLayout(self._build_buttons())
@@ -216,11 +216,11 @@ class RepoDetailDialog(QDialog):
         grid.setColumnStretch(1, 1)
         # G37-6 备注：可编辑行 + 保存按钮（持久化到 repos.note）
         note_row = len(rows)
-        key = QLabel("备注")
+        key = QLabel(tr("备注"))
         key.setObjectName("muted")
         self.note_edit = QLineEdit(str(self.repo.get("note") or ""))
         self.note_edit.setPlaceholderText(tr("添加备注…"))
-        self.btn_save_note = QPushButton("保存")
+        self.btn_save_note = QPushButton(tr("保存"))
         self.btn_save_note.setToolTip(tr("保存备注（persist 到 repos.note）"))
         self.btn_save_note.clicked.connect(self._save_note)
         grid.addWidget(key, note_row, 0, alignment=Qt.AlignmentFlag.AlignTop)
@@ -268,7 +268,7 @@ class RepoDetailDialog(QDialog):
             self.repo["note"] = note
             QMessageBox.information(self, tr("备注"), tr("备注已保存。"))
         except Exception as e:
-            QMessageBox.warning(self, tr("保存失败", str(e)))
+            QMessageBox.warning(self, tr("保存失败"), str(e))
 
     # ------------------------------------------------------------ 仓库级 SSH key（G80-B8）
     def _db_or_none(self):
@@ -388,24 +388,24 @@ class RepoDetailDialog(QDialog):
         btns = QHBoxLayout()
         btns.addStretch(1)
 
-        self.btn_open_dir = QPushButton("打开目录")
+        self.btn_open_dir = QPushButton(tr("打开目录"))
         self.btn_open_dir.clicked.connect(self.open_dir)
         btns.addWidget(self.btn_open_dir)
 
-        self.btn_copy_path = QPushButton("复制路径")
+        self.btn_copy_path = QPushButton(tr("复制路径"))
         self.btn_copy_path.clicked.connect(self.copy_path)
         btns.addWidget(self.btn_copy_path)
 
-        self.btn_copy_command = QPushButton("复制克隆命令")
+        self.btn_copy_command = QPushButton(tr("复制克隆命令"))
         self.btn_copy_command.clicked.connect(self.copy_clone_command)
         btns.addWidget(self.btn_copy_command)
 
-        self.btn_check_remote = QPushButton("检查远端")
+        self.btn_check_remote = QPushButton(tr("检查远端"))
         self.btn_check_remote.clicked.connect(self.check_remote)
         btns.addWidget(self.btn_check_remote)
 
         # Rev8 C6-2：健康体检（git fsck，只在此显式点击时跑，不进自动批次）
-        self.btn_health = QPushButton("健康体检")
+        self.btn_health = QPushButton(tr("健康体检"))
         self.btn_health.clicked.connect(self.run_health_check)
         btns.addWidget(self.btn_health)
 

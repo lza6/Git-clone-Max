@@ -58,3 +58,31 @@ class TestI18nCoverage(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestTrArityAndRatchet(unittest.TestCase):
+    """Rev14 新增：`tr()` 参数个数 + 未翻译棘轮必须真的跑在测试里。"""
+
+    def test_tr_takes_exactly_one_argument(self):
+        """`tr()` 只接受 **1 个位置参数**。
+
+        真事故（Rev14）：批量迁移把 `QMessageBox.warning(self, "保存失败", str(e))`
+        切成了 `tr("保存失败", str(e))` —— 六处错误路径（导出 CSV/元数据/PNG、导入、
+        保存备注、保存清单）在失败时都会在槽里抛 TypeError，PyQt6 随即 abort
+        （实测退出码 0xC0000409），不是弹错误框。这条守卫钉住参数个数。
+        """
+        import ast
+        offenders = []
+        for p in (ROOT / "gcm").rglob("*.py"):
+            if "i18n" in p.as_posix():
+                continue
+            tree = ast.parse(p.read_text(encoding="utf-8", errors="replace"))
+            for n in ast.walk(tree):
+                if (isinstance(n, ast.Call) and getattr(n.func, "id", "") == "tr"
+                        and len(n.args) > 1):
+                    offenders.append(f"{p.relative_to(ROOT).as_posix()}:{n.lineno}")
+        self.assertEqual(offenders, [],
+                         f"tr() 多实参会在槽里抛 TypeError 并让进程 abort：{offenders}")
+
+    def test_untranslated_ratchet_is_enforced(self):
+        """未走 `tr()` 的中文字面量棘轮必须被测试执行（否则它只是手动脚本）。"""
+        self.assertEqual(cov.check_untranslated(), [])

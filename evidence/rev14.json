@@ -244,5 +244,47 @@
     "packaging": "CI packaging job（tag 触发，windows-latest）",
     "release_created": false,
     "version_gap": "v9.18.1–v9.18.7 无 tag/条目（并行会话造成），不伪造"
+  },
+  "round4_final": {
+    "version": "9.18.9",
+    "first_frame": {
+      "before": 31,
+      "after": 6,
+      "late_moves": 0,
+      "root_cause": "show() 后 150ms 去抖重算把 24 个控件再挪一次（全部落在 152ms）；改为首次布局 0 延迟"
+    },
+    "page_roles": {
+      "download": 4,
+      "manage": 2,
+      "settings": "1 → 2（补 #pageTitle）"
+    },
+    "i18n": {
+      "visible_cjk_before": 19,
+      "visible_cjk_after": 0,
+      "untranslated": 1355,
+      "untranslated_ex_release_notes": 1269
+    },
+    "exe": {
+      "built": true,
+      "size": 42743411,
+      "health": {
+        "started_ok": true,
+        "repos_db_created": true,
+        "elapsed_ms": 7299
+      }
+    },
+    "review_round2_fixed": [
+      "6 处 tr(标题, str(e)) 双实参 → 槽内 TypeError → PyQt6 abort（0xC0000409）",
+      "_on_engine_skipped 命中后 break → 同一地址两行只标一行",
+      "_skipped_count 无重置点 → 跨批泄漏「跳过 N」",
+      "_DEFAULTS 的 dict 被就地改写 → 拖列宽污染默认值",
+      "settings.save 整份快照覆盖 → 跨实例丢更新（新增 SettingsStore.update）",
+      "空转的连算两次 / 不可达的重建分支 / 过期注释与失效引用"
+    ],
+    "still_unverified": [
+      "多显示器真机拔插",
+      "读屏器实机",
+      "1.6 字号下 target_edit 宽 87px 的可读性（产品口径）"
+    ]
   }
 }

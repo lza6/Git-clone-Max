@@ -159,7 +159,7 @@ class ProgressTable(QWidget):
         # G36-5 下载中心空态引导：overlay 标签（绝对定位在表格上，有数据时隐藏）
         # Rev11（V-22）：文案口径走 empty_state 工厂（唯一来源）
         from .empty_state import DownloadEmptyState, build_empty_state
-        self._empty_default_text = "粘贴仓库地址开始下载\n（支持多行 / 拖入 txt 文件）"
+        self._empty_default_text = tr("粘贴仓库地址开始下载\n（支持多行 / 拖入 txt 文件）")
         self._empty_download = build_empty_state(
             title=self._empty_default_text, parent=self.table)
         self._empty_download.setVisible(False)
@@ -185,7 +185,7 @@ class ProgressTable(QWidget):
         wrap = QWidget()
         row_tools = QHBoxLayout(wrap)
         row_tools.setContentsMargins(0, 0, 0, 0)
-        row_tools.addWidget(QLabel("搜索："))
+        row_tools.addWidget(QLabel(tr("搜索：")))
         self.progress_filter = QLineEdit()
         self.progress_filter.setPlaceholderText(tr("按仓库名过滤…"))
         self.progress_filter.setClearButtonEnabled(True)
@@ -194,7 +194,7 @@ class ProgressTable(QWidget):
         row_tools.addWidget(self.progress_filter, 1)
         # Rev11（V-21）：排序模式切换（进度表右下，与搜索框同行）
         row_tools.addWidget(self.btn_auto_sort)
-        btn_pause_selected = QPushButton("暂停选中")
+        btn_pause_selected = QPushButton(tr("暂停选中"))
         btn_pause_selected.clicked.connect(self.pause_selected)
         row_tools.addWidget(btn_pause_selected)
         row_tools.addStretch()

@@ -7,6 +7,8 @@ from PyQt6.QtCore import QObject, Qt
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
+from ..i18n import tr
+
 
 def ensure_supported() -> bool:
     # offscreen 平台插件下 QSystemTrayIcon.isSystemTrayAvailable() 在 Windows 会
@@ -71,10 +73,10 @@ class TrayController(QObject):
         ck_autostart（任务计划写入）联动。
         """
         menu = QMenu()
-        act_show = menu.addAction("显示主窗口")
-        act_stats = menu.addAction("打开统计中心")
-        act_update = menu.addAction("检查更新")
-        act_auto = menu.addAction("开机自启（登录时启动）")
+        act_show = menu.addAction(tr("显示主窗口"))
+        act_stats = menu.addAction(tr("打开统计中心"))
+        act_update = menu.addAction(tr("检查更新"))
+        act_auto = menu.addAction(tr("开机自启（登录时启动）"))
         act_auto.setCheckable(True)
         try:
             if self.parent() is not None and hasattr(self.parent(), "ck_autostart"):
@@ -82,7 +84,7 @@ class TrayController(QObject):
         except Exception:
             pass
         menu.addSeparator()
-        act_quit = menu.addAction("退出")
+        act_quit = menu.addAction(tr("退出"))
         act_show.triggered.connect(lambda: self._show_window())
         act_stats.triggered.connect(lambda: self._show_stats())
         act_update.triggered.connect(lambda: self._check_update())

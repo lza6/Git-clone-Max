@@ -152,9 +152,9 @@ def verify_downloaded_file(win) -> None:
             f"期望：{expected}\n实际：{actual}\n\n"
             "可能原因：下载不完整、代理/镜像篡改、或下到了别的版本。建议重新从 Release 页面下载。")
     elif outcome == OUTCOME_UNREADABLE:
-        _msgbox().warning(win, tr("无法读取"), "这个文件读不了（可能被杀毒软件占用或权限不足）。")
+        _msgbox().warning(win, tr("无法读取"), tr("这个文件读不了（可能被杀毒软件占用或权限不足）。"))
     else:  # 防御性：理论上到不了（no_baseline 已在前面拦住）
-        _msgbox().information(win, tr("无法比对"), "没有基准校验值。")
+        _msgbox().information(win, tr("无法比对"), tr("没有基准校验值。"))
 
 
 def check_silent(win) -> None:

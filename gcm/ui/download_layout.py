@@ -252,7 +252,7 @@ def build_download_options(owner) -> QWidget:
     owner.depth_spin = QSpinBox()
     owner.depth_spin.setRange(1, 10000)
     owner.depth_spin.setValue(1)
-    owner.depth_spin.setSuffix(" 层")
+    owner.depth_spin.setSuffix(tr(" 层"))
     owner.depth_spin.setEnabled(False)
     owner.depth_spin.setAccessibleName(tr("浅克隆深度（层）"))
     owner.mode_combo.currentIndexChanged.connect(owner._on_mode_changed)

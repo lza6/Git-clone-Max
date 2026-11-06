@@ -162,7 +162,7 @@ class StatisticsDialog(QDialog):
         v = QVBoxLayout(inner)
         v.setSpacing(10)
 
-        self.lbl_title = QLabel("统计中心")
+        self.lbl_title = QLabel(tr("统计中心"))
         self.lbl_title.setObjectName("pageTitle")
         v.addWidget(self.lbl_title)
 
@@ -184,7 +184,7 @@ class StatisticsDialog(QDialog):
         # G53-1 多维评分卡（成功率/陈旧度/冲突/大小/标签/最近同步）
         # G74：评分卡/雷达属于「一眼看健康」的高层摘要，放在概览之后；
         # 否则 620~720px 高的对话框里雷达图落在可视区外，首次打开只能看到半张图。
-        v.addWidget(QLabel("多维评分卡（0-100，越高越好）"))
+        v.addWidget(QLabel(tr("多维评分卡（0-100，越高越好）")))
         self.lbl_scorecard = QLabel("")
         self.lbl_scorecard.setObjectName("muted")
         self.lbl_scorecard.setWordWrap(True)
@@ -196,7 +196,7 @@ class StatisticsDialog(QDialog):
 
         # G37-1/G47-4 同步趋势（周期可切 7/30/90，可导出 PNG）
         h_trend = QHBoxLayout()
-        h_trend.addWidget(QLabel("同步趋势（绿=成功 红=失败 橙=冲突）"))
+        h_trend.addWidget(QLabel(tr("同步趋势（绿=成功 红=失败 橙=冲突）")))
         self.period_combo = QComboBox()
         for _d, _lbl in ((7, "近 7 天"), (30, "近 30 天"), (90, "近 90 天")):
             self.period_combo.addItem(_lbl, _d)
@@ -205,7 +205,7 @@ class StatisticsDialog(QDialog):
             lambda _i: self._on_period_changed())
         h_trend.addWidget(self.period_combo)
         h_trend.addStretch()
-        self.btn_export_png = QPushButton("导出 PNG")
+        self.btn_export_png = QPushButton(tr("导出 PNG"))
         self.btn_export_png.clicked.connect(self._export_png)
         h_trend.addWidget(self.btn_export_png)
         v.addLayout(h_trend)
@@ -213,7 +213,7 @@ class StatisticsDialog(QDialog):
         v.addWidget(self.trend_canvas)
 
         # G43-3 平均耗时 Top10 慢仓库（帮助定位网络/大仓问题）
-        v.addWidget(QLabel("平均耗时 Top10 慢仓库（秒）"))
+        v.addWidget(QLabel(tr("平均耗时 Top10 慢仓库（秒）")))
         self.lbl_slow = QLabel("")
         self.lbl_slow.setObjectName("muted")
         self.lbl_slow.setWordWrap(True)
@@ -227,12 +227,12 @@ class StatisticsDialog(QDialog):
         v.addWidget(self.lbl_langs)
 
         # G53-3 存储看板（数据目录占用 / 磁盘剩余 / 建议）
-        v.addWidget(QLabel("存储看板"))
+        v.addWidget(QLabel(tr("存储看板")))
         self.lbl_storage = QLabel("")
         self.lbl_storage.setObjectName("muted")
         self.lbl_storage.setWordWrap(True)
         v.addWidget(self.lbl_storage)
-        self.lbl_note = QLabel("数据来自 sync_history 全量聚合；每次同步自动记录。")
+        self.lbl_note = QLabel(tr("数据来自 sync_history 全量聚合；每次同步自动记录。"))
         self.lbl_note.setObjectName("muted")
         v.addWidget(self.lbl_note)
 
@@ -240,7 +240,7 @@ class StatisticsDialog(QDialog):
 
         btns = QHBoxLayout()
         btns.addStretch(1)
-        self.btn_refresh = QPushButton("刷新")
+        self.btn_refresh = QPushButton(tr("刷新"))
         self.btn_refresh.clicked.connect(self._refresh)
         btns.addWidget(self.btn_refresh)
         self.btn_close = QPushButton(tr("关闭"))
@@ -435,4 +435,4 @@ class StatisticsDialog(QDialog):
                 raise RuntimeError("保存失败")
         except Exception as e:
             from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.warning(self, tr("导出失败", str(e)))
+            QMessageBox.warning(self, tr("导出失败"), str(e))

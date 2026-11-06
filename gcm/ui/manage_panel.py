@@ -69,7 +69,7 @@ class ManagePanel(QWidget):
         v.setSpacing(8)
         # G74：统计信息独占一行（原先与 9 个按钮挤在同一 QHBoxLayout，
         # 1024 宽时被压成 "共 12 个仓库 | github.com: 7 · bitbucke..."）。
-        self.manage_stats = QLabel("共 0 个仓库")
+        self.manage_stats = QLabel(tr("共 0 个仓库"))
         self.manage_stats.setObjectName("muted")
         self.manage_stats.setWordWrap(True)
         v.addWidget(self.manage_stats)
@@ -80,15 +80,15 @@ class ManagePanel(QWidget):
         self.manage_search.setClearButtonEnabled(True)
         self.manage_search.setMinimumWidth(180)
         self.manage_search.setMaximumWidth(360)
-        self.btn_update_all = QPushButton("一键更新全部")
+        self.btn_update_all = QPushButton(tr("一键更新全部"))
         self.btn_update_all.setObjectName("primary")
         self.btn_update_all.clicked.connect(lambda _=False: self.update_all_requested.emit())
         self.btn_update_all.setIcon(self.owner._std_icon("refresh", self.btn_update_all))
-        self.btn_cancel_manage = QPushButton("取消全部")
+        self.btn_cancel_manage = QPushButton(tr("取消全部"))
         self.btn_cancel_manage.setEnabled(False)
         self.btn_cancel_manage.clicked.connect(lambda _=False: self.cancel_all_requested.emit())
         self.btn_cancel_manage.setIcon(self.owner._std_icon("stop", self.btn_cancel_manage))
-        self.btn_refresh = QPushButton("刷新列表")
+        self.btn_refresh = QPushButton(tr("刷新列表"))
         self.btn_refresh.clicked.connect(self._on_refresh_clicked)
         self.btn_refresh.setIcon(self.owner._std_icon("refresh", self.btn_refresh))
         # G74：主操作与搜索同一行（宽度充足且不会被 9 个按钮挤爆）
@@ -100,24 +100,24 @@ class ManagePanel(QWidget):
         top.addWidget(self.btn_refresh)
         v.addLayout(top)
 
-        self.btn_import_local = QPushButton("导入本地已有仓库")
+        self.btn_import_local = QPushButton(tr("导入本地已有仓库"))
         self.btn_import_local.clicked.connect(lambda _=False: self.import_local_requested.emit())
         self.btn_import_local.setIcon(self.owner._std_icon("folder", self.btn_import_local))
-        self.btn_delete = QPushButton("删除选中记录")
+        self.btn_delete = QPushButton(tr("删除选中记录"))
         self.btn_delete.clicked.connect(self.delete_selected)
         self.btn_delete.setIcon(self.owner._std_icon("trash", self.btn_delete))
-        self.btn_batch_tag = QPushButton("打标签")
+        self.btn_batch_tag = QPushButton(tr("打标签"))
         self.btn_batch_tag.setToolTip(tr("给选中的仓库追加标签（多选批量）"))
         self.btn_batch_tag.clicked.connect(self.batch_tag_selected)
-        self.btn_export_selected = QPushButton("导出所选")
+        self.btn_export_selected = QPushButton(tr("导出所选"))
         self.btn_export_selected.setToolTip(tr("把选中的仓库导出为 CSV 报表"))
         self.btn_export_selected.clicked.connect(self.export_selected_csv)
         self.btn_export_selected.setIcon(self.owner._std_icon("save", self.btn_export_selected))
         # G47-7 元数据导入/导出
-        self.btn_export_meta = QPushButton("导出元数据")
+        self.btn_export_meta = QPushButton(tr("导出元数据"))
         self.btn_export_meta.setToolTip(tr("导出仓库元数据(标签/收藏/备注/黑名单)为 JSON"))
         self.btn_export_meta.clicked.connect(self._export_metadata)
-        self.btn_import_meta = QPushButton("导入元数据")
+        self.btn_import_meta = QPushButton(tr("导入元数据"))
         self.btn_import_meta.setToolTip(tr("从 JSON 合并导入仓库元数据(按 owner/repo/host upsert)"))
         self.btn_import_meta.clicked.connect(self._import_metadata)
         row2 = QHBoxLayout()
@@ -201,10 +201,10 @@ class ManagePanel(QWidget):
         self._empty_manage.setVisible(False)
         self._empty_manage.raise_()
 
-        self.manage_desc = QLabel(
+        self.manage_desc = QLabel(tr(
             "「一键更新全部」会按 作者__仓库 命名找到每个仓库目录，"
             "已存在则 git fetch 增量更新；本地有改动冲突时保留本地、标记冲突，绝不覆盖。\n"
-            "「导入本地已有仓库」能扫描任意目录下已存在的 git 仓库，一并纳入管理。")
+            "「导入本地已有仓库」能扫描任意目录下已存在的 git 仓库，一并纳入管理。"))
         self.manage_desc.setObjectName("muted")
         self.manage_desc.setWordWrap(True)
 
@@ -369,7 +369,7 @@ class ManagePanel(QWidget):
 
     def _update_manage_stats(self, visible: int | None = None) -> None:
         total = self.manage_model.rowCount()
-        base = f"共 {total} 个仓库"
+        base = tr("共 {n} 个仓库").replace("{n}", str(total))
         try:
             hs = self.manage_model.host_summary()
             if hs:
@@ -484,7 +484,7 @@ class ManagePanel(QWidget):
             self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO, f"已导出所选 {len(sel)} 个仓库：{path}")
             self.owner.statusBar().showMessage(f"已导出 {len(sel)} 个仓库")
         except Exception as e:
-            _mw.QMessageBox.critical(self.owner, tr("导出失败", str(e)))
+            _mw.QMessageBox.critical(self.owner, tr("导出失败"), str(e))
 
     def _on_manage_double_clicked(self, index):
         row = index.row()
@@ -525,12 +525,12 @@ class ManagePanel(QWidget):
         """构造管理表右键菜单（不 exec，便于离屏测试）。无选中行时动作置灰+tooltip。"""
         from PyQt6.QtWidgets import QMenu
         menu = QMenu(self)
-        act_hist = menu.addAction("打开同步历史")
+        act_hist = menu.addAction(tr("打开同步历史"))
         act_hist.triggered.connect(lambda _=False: self._history_for_current_row())
         menu.addSeparator()
-        act_tag = menu.addAction("打标签")
+        act_tag = menu.addAction(tr("打标签"))
         act_tag.triggered.connect(lambda _=False: self.batch_tag_selected())
-        act_export = menu.addAction("导出所选 CSV")
+        act_export = menu.addAction(tr("导出所选 CSV"))
         act_export.triggered.connect(lambda _=False: self.export_selected_csv())
         # G03 收藏置顶 / 黑名单：`set_favorite` / `set_excluded` 早已存在且被
         # `list_pending_updates`（favorite DESC / excluded=0）消费，但此前没有任何
@@ -539,7 +539,7 @@ class ManagePanel(QWidget):
         act_fav.triggered.connect(lambda _=False: self._toggle_flag("favorite"))
         act_excl = menu.addAction(tr("加入 / 移出黑名单（一键更新跳过）"))
         act_excl.triggered.connect(lambda _=False: self._toggle_flag("excluded"))
-        act_del = menu.addAction("删除选中记录")
+        act_del = menu.addAction(tr("删除选中记录"))
         act_del.triggered.connect(lambda _=False: self.delete_selected())
         has_sel = bool(self.manage_table.selectedIndexes())
         for a in (act_tag, act_export, act_fav, act_excl, act_del):
@@ -772,7 +772,7 @@ class ManagePanel(QWidget):
                                  f"已导出 {n} 条仓库元数据：{path}")
             self.owner.statusBar().showMessage(f"已导出 {n} 条元数据")
         except Exception as e:
-            _mw.QMessageBox.warning(self.owner, tr("导出失败", str(e)))
+            _mw.QMessageBox.warning(self.owner, tr("导出失败"), str(e))
 
     def _import_metadata(self):
         """G47-7：从 JSON 合并导入仓库元数据。"""
@@ -788,4 +788,4 @@ class ManagePanel(QWidget):
                                  f"已导入 {n} 条仓库元数据：{path}")
             self.owner.statusBar().showMessage(f"已导入 {n} 条元数据")
         except Exception as e:
-            _mw.QMessageBox.warning(self.owner, tr("导入失败", str(e)))
+            _mw.QMessageBox.warning(self.owner, tr("导入失败"), str(e))

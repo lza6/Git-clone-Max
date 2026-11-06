@@ -86,6 +86,11 @@ _ACCEPTED_OVERSIZED = {
     "gcm/ui/main_window.py",
     "gcm/git/service.py",
     "gcm/app/engine.py",
+    # Rev14 V4：i18n 字典是**生成文件**（key 即中文、一行一条），行数随文案量线性增长，
+    # 拆分它没有意义（拆完还要再拼回去查表）。它们在 gcm/i18n/ 内，不参与 UI 布局，
+    # 不属于「一个模块承担过多职责」那类技术债。CLAUDE.md §6 已同步登记。
+    "gcm/i18n/zh.py",
+    "gcm/i18n/en.py",
 }
 _OVERSIZED_LIMIT = 800
 

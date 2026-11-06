@@ -130,7 +130,7 @@ PALETTES: dict[str, dict[str, str]] = {
 # inset(20)/section(40)`、`row.compact(24)`、`radius.chip(10)` 全库零消费 ——
 # 定义在那里却没人读，等价于给读者一份不存在的规格。现在删掉它们，保留的都是
 # `qss_build` / `progress_table` / `manage_panel` / 主窗密度切换真实读取的档位。
-# 守卫：`tests/test_rev14_tokens`。要加档位请同时加消费点，否则测试红。
+# 守卫：`tests/test_rev14_feedback.TestTokensHaveNoDeadEntries`。要加档位请同时加消费点，否则测试红。
 TOKENS: dict[str, dict[str, object]] = {
     # G75：卡面圆角从 8 收到 6（更硬、更像仪表面板），控件 5
     "radius": {"card": 6, "control": 5, "bar": 5, "tab": 8, "checkbox": 4},
@@ -149,7 +149,7 @@ TOKENS: dict[str, dict[str, object]] = {
 }
 
 #: 刻意不提供消费点的 token（Rev14 R14-13）。列在这里是**显式声明**，不是遗漏：
-#: 新增 token 却没有消费点、又没登记到这里，`tests/test_rev14_tokens` 会红。
+#: 新增 token 却没有消费点、又没登记到这里，`tests/test_rev14_feedback.TestTokensHaveNoDeadEntries` 会红。
 DELIBERATELY_UNUSED: frozenset[tuple[str, str]] = frozenset({
     ("shadow", "focus"),
 })

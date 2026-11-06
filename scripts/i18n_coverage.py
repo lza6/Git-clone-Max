@@ -71,7 +71,8 @@ def untranslated() -> dict[str, int]:
     """
     per: dict[str, int] = {}
     for p in sorted((ROOT / "gcm").rglob("*.py")):
-        if "i18n" in p.as_posix():
+        # 同上：字典本体与**发布说明**都不是 UI 文案
+        if "i18n" in p.as_posix() or p.name == "_changelog_data.py":
             continue
         try:
             tree = ast.parse(p.read_text(encoding="utf-8", errors="replace"))

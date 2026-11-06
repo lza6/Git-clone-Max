@@ -27,7 +27,7 @@ class BatchOverview(QWidget):
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
-        self.label = QLabel("批次：—")
+        self.label = QLabel(tr("批次：—"))
         self.label.setObjectName("muted")
         self.bar = QProgressBar()
         self.bar.setRange(0, 100)

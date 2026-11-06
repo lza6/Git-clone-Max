@@ -33,6 +33,9 @@ sys.path.insert(0, str(ROOT))
 FRAME_BUDGET_MS = 16.7
 #: 位移计数（`moveEvent` 次数）—— 桌面端的「布局抖动」等价物
 _MOVE_COUNTER = [0]
+#: 首帧后 **50ms 以上**才发生的位移 —— 用户真正看得见的那一类（首帧边界内的不算）
+_LATE_MOVES = [0]
+_T0 = [0.0]
 SIZES = (
     (1020, 584), (1020, 560), (1100, 700), (1240, 729),
     (1366, 768), (1440, 900), (1600, 1000), (1920, 1080),
@@ -58,6 +61,8 @@ class _MoveWatcher(QObject):
     def eventFilter(self, obj, event) -> bool:      # noqa: N802 —— Qt 命名
         if event.type() == QEvent.Type.Move:
             _MOVE_COUNTER[0] += 1
+            if (time.perf_counter() - _T0[0]) * 1000 > 50:
+                _LATE_MOVES[0] += 1
         return False
 
     def detach(self) -> None:
@@ -96,10 +101,13 @@ def main(argv: list[str]) -> int:
     # Rev14 V3：首帧后静置 500ms 计「自主位移」（CLS 等价）—— 这期间没有任何用户操作
     from PyQt6.QtWidgets import QWidget
     _MOVE_COUNTER[0] = 0
+    _LATE_MOVES[0] = 0
+    _T0[0] = time.perf_counter()
     _watcher = _MoveWatcher([win, *win.findChildren(QWidget)])
     from PyQt6.QtTest import QTest
     QTest.qWait(500)
     first_frame_moves = _MOVE_COUNTER[0]
+    late_moves = _LATE_MOVES[0]
     _watcher.detach()
 
     rows: list[dict] = []
@@ -129,6 +137,8 @@ def main(argv: list[str]) -> int:
     result = {"frame_budget_ms": FRAME_BUDGET_MS,
               # CLS 等价：首帧后 500ms 内、无用户操作时的控件位移次数（目标 0）
               "first_frame_moves": first_frame_moves,
+              # 用户可见口径：首帧 50ms 之后的位移（目标 0）
+              "late_moves": late_moves,
               "rows": rows,
               "over_budget": over}
     text = json.dumps(result, ensure_ascii=False, indent=2)

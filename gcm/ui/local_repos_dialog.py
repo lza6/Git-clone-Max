@@ -63,16 +63,16 @@ class LocalReposDialog(QDialog):
         v.setSpacing(8)
 
         top = QHBoxLayout()
-        top.addWidget(QLabel("扫描目录："))
+        top.addWidget(QLabel(tr("扫描目录：")))
         self.root_combo = QLineEdit()
         self.root_combo.setPlaceholderText(tr("目录间用 ; 分隔（默认：克隆根目录）"))
         top.addWidget(self.root_combo, 1)
-        btn_scan = QPushButton("重新扫描")
+        btn_scan = QPushButton(tr("重新扫描"))
         btn_scan.clicked.connect(self._start_scan)
         top.addWidget(btn_scan)
         v.addLayout(top)
 
-        v.addWidget(QLabel("发现以下已有 git 仓库（勾选后点击「导入」纳入管理）："))
+        v.addWidget(QLabel(tr("发现以下已有 git 仓库（勾选后点击「导入」纳入管理）：")))
 
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["", "仓库", "远端", "本地路径"])
@@ -88,7 +88,7 @@ class LocalReposDialog(QDialog):
         self.filter_edit.textChanged.connect(self._apply_filter)
         v.addWidget(self.filter_edit)
 
-        self.chk_only_new = QCheckBox("仅显示未入库")
+        self.chk_only_new = QCheckBox(tr("仅显示未入库"))
         self.chk_only_new.stateChanged.connect(self._apply_filter)
         v.addWidget(self.chk_only_new)
 
@@ -102,11 +102,11 @@ class LocalReposDialog(QDialog):
         v.addWidget(self.status)
 
         btns = QDialogButtonBox()
-        self.btn_select_all = QPushButton("全选")
+        self.btn_select_all = QPushButton(tr("全选"))
         self.btn_select_all.clicked.connect(self._select_all)
-        self.btn_select_none = QPushButton("全不选")
+        self.btn_select_none = QPushButton(tr("全不选"))
         self.btn_select_none.clicked.connect(self._select_none)
-        self.chk_overwrite = QCheckBox("覆盖已入库路径")
+        self.chk_overwrite = QCheckBox(tr("覆盖已入库路径"))
         btns.addButton(self.btn_select_all, QDialogButtonBox.ButtonRole.ActionRole)
         btns.addButton(self.btn_select_none, QDialogButtonBox.ButtonRole.ActionRole)
         btns.addButton(self.chk_overwrite, QDialogButtonBox.ButtonRole.ActionRole)

@@ -975,11 +975,10 @@ class MainWindow(QMainWindow):
                 self._emit_log(_fmt_dt(), LogLevel.WARN, f"快捷填充高度同步失败：{exc}")
             # G74/G84-16：顶部区与进度表的高度分配 —— 抽成独立方法（Rev14 F1）
             try:
-                # 连算两次：`_h` 取的是 splitter **上一帧**的高度（本方法 docstring 早已
-                # 写明这个限制）。窗口尺寸一次跳变很大时，第一次会用旧高度算出偏小的
-                # 常驻区，把第一行按钮裁到 30/42；第二次读到稳定高度后才收敛。
-                for _ in range(2):
-                    self._size_download_splitter(compact)
+                # Rev14 V4：原「连算两次」经实测是空转（两次调用之间没有布局回合，
+                # 输入完全相同：_h=442 时第一次 [245,196]→[320,121]，第二次 [320,121]→[320,121]）。
+                # 真正的首帧收敛靠 `_layout_timer` 首次 0 延迟，不是靠重复调用。
+                self._size_download_splitter(compact)
                 if (getattr(self, "_last_compact", None) != compact
                         or getattr(self, "_last_split_fold", None)
                         != getattr(self, "_tools_folded", None)):
@@ -1143,6 +1142,11 @@ class MainWindow(QMainWindow):
         # Rev14 R14-04：无障碍命名（主操作显式命名 + 输入控件按标签推导）。
         # 放在最后：所有控件都已建好，推导才有标签可找。
         self._apply_a11y_names()
+        # Rev14 V4：构建末尾先跑一遍布局档 —— 否则 `show()` 后 150ms 的去抖重算
+        # 会**第二次**改最小高度/splitter 尺寸，用户能在首帧后看到 31 个控件被挪动
+        # （实测 first_frame_moves=31，目标 0）。这里先收敛，去抖那趟就变成空操作。
+        self._apply_layout_mode()
+        self._apply_layout_for_width(self.width())
 
     def _apply_a11y_names(self) -> None:
         """Rev14 R14-04：给主操作与输入控件补无障碍名字。
@@ -1423,7 +1427,7 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot(int)
     def _on_log_appended(self, count):
-        self.log_count.setText(f"{count} 条")
+        self.log_count.setText(tr("{n} 条").replace("{n}", str(count)))
 
     def has_pending_logs(self) -> bool:
         """供 closeEvent 判断是否还有积压节流日志需 flush。"""
@@ -1874,7 +1878,7 @@ class MainWindow(QMainWindow):
         from .download_tools import repo_input_menu as _rim
 
         def _extra(menu):
-            act = menu.addAction("归档下载（zip，免入库）")
+            act = menu.addAction(tr("归档下载（zip，免入库）"))
             act.triggered.connect(self._archive_current_line)   # G69-18：绑定方法
         _rim(self, pos, _fmt_dt, extra_actions=_extra)
 
@@ -2317,7 +2321,7 @@ class MainWindow(QMainWindow):
             self._emit_log(_fmt_dt(), LogLevel.INFO, f"已保存任务清单：{name.strip()}（{len(items)} 行）")
             self.statusBar().showMessage(f"已保存清单：{name.strip()}")
         except Exception as e:
-            QMessageBox.warning(self, tr("保存失败", str(e)))
+            QMessageBox.warning(self, tr("保存失败"), str(e))
 
     def _load_task_list(self):
         """把所选清单的地址填入输入区。"""
@@ -2450,6 +2454,9 @@ class MainWindow(QMainWindow):
             single_branch = ui_mode or bool(
                 getattr(self.settings, "single_branch", False))
         self.busy = True
+        # Rev14 V4：跳过计数按**批次**统计 —— 不清零的话，第一批跳过 3 个、
+        # 第二批全成功时状态栏/托盘/Webhook 仍会报「跳过 3」（审查实测复现）。
+        self._skipped_count = 0
         # Rev14 R14-10 修正：新批次开始时清掉上一批的「断网」判定 —— 否则断网批次
         # 结束后标记会一直亮着，直到**下一次成功**才灭（用户只是看看界面不会消）。
         _st = getattr(self, "_offline_streak", None)
@@ -2577,15 +2584,9 @@ class MainWindow(QMainWindow):
             report_skipped=True,
         )
         if launched == 0:
-            # 全部被跳过：表格里必须留下这些行（带「已跳过」终态），否则用户
-            # 只看到一张空表 + 一句「成功 0」。
-            if self.progress_panel.table.rowCount() == 0 and specs:
-                self._prepare_table(len(specs))
-                self.progress_panel.begin_bulk()
-                for i, spec in enumerate(specs):
-                    self._add_table_row(i, spec)
-                    self.row_specs[i] = spec
-                self.progress_panel.end_bulk()
+            # 全部被跳过：行在预填阶段就已建好（`_prepare_table(len(specs))`），
+            # `_on_engine_skipped` 也已把它们推到「已跳过」。这里**不需要**再重建 ——
+            # 重建反而会抹掉刚写好的终态（审查指出这段兜底比它兜的错更危险，已删）。
             self.busy = False
             self.progress_panel.set_busy_preview(False)
             self._reset_buttons()
@@ -2716,7 +2717,7 @@ class MainWindow(QMainWindow):
                 continue
             table = self.progress_panel.table
             if i >= table.rowCount():
-                break
+                continue
             from PyQt6.QtCore import Qt as _Qt
             st_item = table.item(i, 2)
             if st_item is not None:
@@ -2728,7 +2729,8 @@ class MainWindow(QMainWindow):
             act = table.item(i, 3)
             if act is not None and not (act.text() or "").strip("—"):
                 act.setText("—")
-            break
+            # **不要 break**：预填按「每条输入」建行，同一地址贴两遍就有两行；
+            # 只标第一行会让第二行永远停在「等待中」（审查实测 [已跳过, 等待中]）。
 
     def _note_network_streak(self, res: SyncResult) -> None:
         """按单条结果更新「断网」标记（Rev14 R14-10）。
@@ -3241,6 +3243,12 @@ class MainWindow(QMainWindow):
 
     def _on_layout_tick(self) -> None:
         """G69-18：布局防抖定时器到点 → 按当前宽度重排（绑定方法，不成环）。"""
+        if not getattr(self, "_layout_bootstrapped", False):
+            self._layout_bootstrapped = True
+            # 首帧收敛完成 → 后续恢复 150ms 防抖
+            timer = getattr(self, "_layout_timer", None)
+            if timer is not None:
+                timer.setInterval(150)
         self._apply_layout_for_width(self.width())
         # G70：同时按宽/高切换 Compact（隐藏快捷填充与设置导航）
         self._apply_layout_mode()
@@ -3291,7 +3299,11 @@ class MainWindow(QMainWindow):
                 from PyQt6.QtCore import QTimer as _QT
                 self._layout_timer = _QT(self)
                 self._layout_timer.setSingleShot(True)
-                self._layout_timer.setInterval(150)
+                # Rev14 V4：**首次**布局用 0 延迟 —— 实测 show() 后 150ms 的去抖
+                # 重算会把 24 个控件再挪一次（first_frame_moves=24，全部落在 152ms）。
+                # 首帧那一次必须在用户看到之前收敛；之后的拖动/缩放才需要防抖。
+                self._layout_timer.setInterval(
+                    150 if getattr(self, "_layout_bootstrapped", False) else 0)
                 # G69-18 **关键**：这里原先是 lambda 捕获 self ——
                 # 平时不 show() 时窗口能按引用计数释放，但一旦 show()，
                 # resizeEvent 就会创建这个定时器，lambda 立刻把环重新接上，

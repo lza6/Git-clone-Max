@@ -80,7 +80,12 @@ def _build_settings_shell(owner: MainWindow):
 
     # ---- G36-7 设置搜索：顶部搜索框，输入关键字隐藏不匹配分组
     search_row = QHBoxLayout()
-    search_row.addWidget(QLabel(tr("设置搜索")))
+    # Rev14 V4：把设置页的**页面标题**并进搜索行（零高度成本）——
+    # 实测这一屏原本只有 h2（QGroupBox 标题）一个非正文角色，没有页面锚点。
+    # `#pageTitle` 是 QSS 里已有的 h1 角色（20px/700/display 字族），不是新造样式。
+    _page_title = QLabel(tr("设置"))
+    _page_title.setObjectName("pageTitle")
+    search_row.addWidget(_page_title)
     owner.settings_search = QLineEdit()
     owner.settings_search.setPlaceholderText(tr("搜索设置项（分组标题 / 行内标签）…"))
     owner.settings_search.setClearButtonEnabled(True)
@@ -240,7 +245,7 @@ def _network_rows_basic(owner: MainWindow, settings: Settings, f3: QFormLayout) 
     owner.spin_auto_update = QSpinBox()
     owner.spin_auto_update.setRange(0, 10080)  # 0 或 1 分钟 ~ 7 天
     owner.spin_auto_update.setValue(int(getattr(settings, "auto_update_minutes", 0) or 0))
-    owner.spin_auto_update.setSuffix(" 分钟")
+    owner.spin_auto_update.setSuffix(tr(" 分钟"))
     owner.spin_auto_update.setSpecialValueText(tr("不启用"))
     owner.spin_auto_update.setToolTip(tr("定时自动一键更新全部（任务运行中自动跳过）；0=关闭"))
     owner.spin_auto_update.valueChanged.connect(owner._save_auto_update)
@@ -250,7 +255,7 @@ def _network_rows_basic(owner: MainWindow, settings: Settings, f3: QFormLayout) 
     owner.spin_clone_timeout = QSpinBox()
     owner.spin_clone_timeout.setRange(*int_range("clone_timeout"))  # G80-B5 单一真相
     owner.spin_clone_timeout.setValue(int(getattr(settings, "clone_timeout", 600) or 600))
-    owner.spin_clone_timeout.setSuffix(" 秒")
+    owner.spin_clone_timeout.setSuffix(tr(" 秒"))
     owner.spin_clone_timeout.setToolTip(
         tr("单个仓库 clone 的超时时间（大仓/慢网调大）；只影响克隆阶段，不影响 fetch"))
     owner.spin_clone_timeout.valueChanged.connect(
@@ -779,7 +784,7 @@ def _append_retry_backoff_row(owner, f3) -> None:
     owner.spin_retry_backoff = QSpinBox()
     owner.spin_retry_backoff.setRange(*int_range("retry_backoff_base_sec"))
     owner.spin_retry_backoff.setValue(int(getattr(owner.settings, "retry_backoff_base_sec", 30) or 30))
-    owner.spin_retry_backoff.setSuffix(" 秒")
+    owner.spin_retry_backoff.setSuffix(tr(" 秒"))
     owner.spin_retry_backoff.setToolTip(tr("失败重试的退避基数：第 n 次等待 = 基数×n（另加 50%~100% 抖动）"))
     owner.spin_retry_backoff.valueChanged.connect(owner._save_retry_backoff)
     f3.addRow(tr("重试退避基数（秒）："), owner.spin_retry_backoff)
