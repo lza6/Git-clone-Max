@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """scanner / manage_model / local_repos_dialog 单元测试。"""
 from __future__ import annotations
 
@@ -13,10 +12,16 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gcm.app.scanner import (RepoInfo, _name_to_owner_repo, filter_new,
-                             known_keys_from_db, parse_remote_url,
-                             remote_is_local, scan_git_dirs, to_spec)
-from gcm.models import RepoSpec
+from gcm.app.scanner import (
+    RepoInfo,
+    _name_to_owner_repo,
+    filter_new,
+    known_keys_from_db,
+    parse_remote_url,
+    remote_is_local,
+    scan_git_dirs,
+    to_spec,
+)
 
 
 def _init_git(path: Path, commit=True):
@@ -144,11 +149,13 @@ class TestManageModel(unittest.TestCase):
         self.assertEqual(model.data(idx2, Qt.ItemDataRole.DisplayRole), "2026-01-01 12:00:00")
         idx4 = model.index(0, 4)
         self.assertEqual(model.data(idx4, Qt.ItemDataRole.DisplayRole), "abcdef01")
-        # G47-1/5：健康(6)/大小(7) 新列；无 db 时健康取行内默认 3，大小懒加载前为空
+        # G47-1/5：健康(6)/大小(7) 新列；无 db 时健康取行内默认 3。
+        # Rev11-C R-06：大小列未算出时显示「—」而不是空串 —— 空串让用户分不清
+        # 「还没算」和「这一列坏了」；ToolTip 里有对应的解释文案。
         idx6 = model.index(0, 6)
         self.assertEqual(model.data(idx6, Qt.ItemDataRole.DisplayRole), "3/5")
         idx7 = model.index(0, 7)
-        self.assertEqual(model.data(idx7, Qt.ItemDataRole.DisplayRole), "")
+        self.assertEqual(model.data(idx7, Qt.ItemDataRole.DisplayRole), "—")
         self.assertEqual(model.row_at(0).repo_id, 7)
         self.assertIsNone(model.row_at(99))
 
