@@ -90,6 +90,24 @@ def _enable_event_sink(portable: bool = False) -> None:
             return
 
 
+def _init_applog(portable: bool = False) -> None:
+    """S-01：进程默认日志路径在唯一入口挂载（GUI / CLI / --serve 三形态都覆盖）。
+
+    全库 28 处 `applog.info/warn/error(...)` 都不传路径 —— handler 挂载权此前
+    交给「调用方传路径」，于是 app.log 从未生成、留痕全进黑洞。必须早于
+    Database/SettingsStore 构造，否则开库期的日志同样丢。
+    """
+    try:
+        from gcm.app.applog import set_default_log_path
+        set_default_log_path(get_data_dir(portable=portable) / "app.log")
+    except Exception as e:      # noqa: BLE001 —— 观测增强，失败不得拖垮入口
+        try:
+            import sys as _sys
+            print(f"[applog] 日志初始化失败（不影响启动与克隆）：{e}", file=_sys.stderr)
+        except Exception:
+            return
+
+
 def main(argv=None) -> int:
     flags = _parse_flags(argv)
 
@@ -100,6 +118,8 @@ def main(argv=None) -> int:
 
     # G84-5：事件落盘在**唯一入口**挂载，三种形态（GUI / --cli / --cli --serve）都覆盖
     _enable_event_sink(portable=flags["portable"])
+    # S-01：app.log 默认路径同样在唯一入口挂载（必须早于任何 Database/开库动作）
+    _init_applog(portable=flags["portable"])
 
     # G49-3：CLI 批量克隆模式（离屏，不创建 GUI 窗口）
     if flags["cli"]:

@@ -189,9 +189,14 @@ class RuntimeSessionStore:
             })
 
     def update_status(self, key: str, status: str, message: str = "") -> None:
-        """更新单任务状态（结果回调）；成功/取消终态从清单移除（已完成无需续跑）。"""
-        with self._lock:
-            data = self.load()
+        """更新单任务状态（结果回调）；成功/取消终态从清单移除（已完成无需续跑）。
+
+        S-07：读-改-写必须走 `_rmw`（同一临界区）。原实现 `self.load()`（独立
+        临界区）+ `self._save(data)`（另一临界区）之间可被其它进程插入 →
+        并发更新互相覆盖、续跑清单条目凭空消失 —— 与 `_rmw` docstring 记录的
+        A5-2/C-5 是同一类洞，但这个方法漏改了。
+        """
+        def _mutate(data: dict[str, Any]) -> None:
             kept: list[dict[str, Any]] = []
             for t in data.get("tasks", []):
                 if t.get("key") != key:
@@ -205,7 +210,39 @@ class RuntimeSessionStore:
                 kept.append(t)
             data["tasks"] = kept
             data["updated_at"] = _now()
-            self._save(data)
+        self._rmw(_mutate)
+
+    def update_results(self, results: list[tuple[str, str, str]]) -> None:
+        """S-08：一批结果**一次** `_rmw` 提交（每仓一次 → 每批一次）。
+
+        500 仓批次原来要 500 次整文件重写 + 500 次跨进程锁（每次 ≈16ms，
+        GUI 线程累计 ≈8s 纯阻塞）；本入口把同帧到达的结果聚合成一次写盘。
+        `results`: [(key, status, message), ...]，语义与逐条 `update_status` 完全一致。
+        """
+        if not results:
+            return
+
+        def _mutate(data: dict[str, Any]) -> None:
+            by_key = {}
+            for key, status, message in results:
+                by_key[key] = (status, message)
+            kept: list[dict[str, Any]] = []
+            for t in data.get("tasks", []):
+                k = t.get("key")
+                if k not in by_key:
+                    kept.append(t)
+                    continue
+                status, message = by_key.pop(k)
+                if status in (_STATUS_SUCCESS, "cancelled", "skipped", "conflict"):
+                    continue  # 终态非失败 → 无需续跑，移除
+                t["status"] = status
+                if message:
+                    t["message"] = redact(str(message))
+                kept.append(t)
+            # tasks 里没有的 key（理论上不该发生）也按终态语义吞掉
+            data["tasks"] = kept
+            data["updated_at"] = _now()
+        self._rmw(_mutate)
 
     def mark_failed(self, key: str, message: str = "") -> None:
         """便捷：标记失败（保留在清单内供续跑/看门狗）。"""

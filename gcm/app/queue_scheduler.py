@@ -68,6 +68,37 @@ def missed_run_allowed(days_set: set[int], start: str, on_missed: str,
     return not str(last_run_at or "").startswith(today)
 
 
+def already_ran_in_window_today(days_set: set[int], start: str, end: str,
+                                last_run_at: str | None,
+                                now: datetime.datetime | None = None) -> bool:
+    """S-06：该队列**今天在时间窗内**是否已经启动过。
+
+    此前 `due_queues` 的到点分支只看 `is_due`（周几+时间窗），完全不看
+    `last_run_at` —— tick 每 60 秒一次，窗口几小时 → 同一批在窗口内被
+    重复启动几十次（Rev10 审计实锤复现）。修复：到点分支加这条闸。
+    """
+    if now is None:
+        now = datetime.datetime.now()
+    raw = str(last_run_at or "").strip()
+    if not raw.startswith(now.strftime("%Y-%m-%d")):
+        return False  # 今天没跑过 / 上次是别天
+    st = parse_hhmm(start)
+    # 上次启动时刻必须落在**本次窗口**内才算"已跑过"（防止跨零点窗误判：
+    # 凌晨窗跑过一次，晚上窗仍应正常跑）
+    try:
+        ran = datetime.datetime.strptime(raw[:19], "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return False
+    en = parse_hhmm(end)
+    if st is not None and en is not None:
+        if st <= en:
+            in_window = st <= (ran.hour, ran.minute) <= en
+        else:  # 跨零点窗： ran 在 st 之后或 en 之前
+            in_window = (ran.hour, ran.minute) >= st or (ran.hour, ran.minute) < en
+        return in_window
+    return True  # 无窗（随时跑）：跑过一次当天就算
+
+
 def queue_spec_payload(queue_row: dict[str, Any]) -> list[dict[str, Any]]:
     """取队列的 specs（已由 QueueStore.list_queues 反序列化）。"""
     specs = queue_row.get("specs") or []

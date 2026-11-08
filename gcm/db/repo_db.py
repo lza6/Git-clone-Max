@@ -95,7 +95,9 @@ def _migrate(conn):
                 "ALTER TABLE sync_history ADD COLUMN stage_json TEXT DEFAULT ''")
     if v < 8:  # v8：全文索引虚表（C4-1）；FTS5/trigram 不可用时由调用方降级为 LIKE
         migrate_to_v8(conn)
-    conn.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
+        conn.execute("PRAGMA user_version=8")
+    if v < _SCHEMA_VERSION:
+        conn.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
     conn.commit()
 
 
@@ -131,20 +133,30 @@ class Database(BackupMixin, SshKeyMixin, SearchMixin, RepoProfileMixin,
             self._conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS};")  # 高并发写不立刻抛锁错误
             with self._lock:
                 self._conn.executescript(_SCHEMA)
-                # C4-1：v8 要建 FTS5 虚表。若当前 SQLite 不带 FTS5/trigram，
-                # 迁移会抛 OperationalError —— 此时**降级为纯 LIKE**（搜索仍可用），
-                # 而不是让整个数据库打不开。
+                # S-03：异常收敛到**正确的粒度**。只有 v8（FTS5 虚表）允许降级
+                # （FTS 不可用是可接受的降级，搜索退化为 LIKE）；其余迁移失败
+                # 必须**上抛** —— 此前整个 `_migrate` 被包在一个 except 里，
+                # 磁盘满/锁超时导致的半迁移会被「强推 user_version」固化为
+                # 已完成，之后每次打开都跳过迁移 = 永久坏库。
+                # `user_version` 只在 `_migrate` 成功后由其内部写入。
                 self._fts_ready = True
                 try:
                     _migrate(self._conn)
                 except sqlite3.OperationalError as e:
                     self._conn.rollback()
-                    self._fts_ready = False
-                    from ..app.applog import warn as _warn
-                    _warn(f"FTS5/trigram 不可用，全文搜索降级为 LIKE：{e}")
-                    # 退一步：把版本号推到当前，避免每次打开都重试建表失败
-                    self._conn.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
-                self._conn.commit()
+                    # 区分降级与真失败：回滚后 user_version 若仍是旧值，
+                    # 说明迁移没走到 v8 之前就挂了（或挂在 v8 之前的某步）——
+                    # 对 v8 专属的 FTS 建表失败，这里补一次单独尝试并降级。
+                    v_now = self._conn.execute("PRAGMA user_version").fetchone()[0]
+                    if v_now >= _SCHEMA_VERSION - 1:  # 迁移推进到了 v8 这一步
+                        self._fts_ready = False
+                        from ..app.applog import warn as _warn
+                        _warn(f"FTS5/trigram 不可用，全文搜索降级为 LIKE：{e}")
+                        from .repo_fts import _mark_v8_degraded
+                        _mark_v8_degraded(self._conn)
+                        self._conn.commit()
+                    else:
+                        raise
         if not hasattr(self, "_fts_ready"):
             self._fts_ready = not readonly
         # G80-B7-3：同步队列读写（S1）
@@ -277,10 +289,8 @@ class Database(BackupMixin, SshKeyMixin, SearchMixin, RepoProfileMixin,
     def set_tags(self, repo_id: int, tags: list[str]) -> None:
         """覆盖式设置标签（竖线分隔存储）。"""
         val = "|".join(str(t).strip() for t in tags if str(t).strip())
-        with self._lock:
-            self._begin_immediate()
+        with self._lock, write_txn(self):
             self._conn.execute("UPDATE repos SET tags=? WHERE id=?", (val, repo_id))
-            self._conn.commit()
 
     def list_by_tag(self, tag: str) -> list[dict]:
         """按标签精确匹配（tags 字段含该标签段）。"""
@@ -295,27 +305,21 @@ class Database(BackupMixin, SshKeyMixin, SearchMixin, RepoProfileMixin,
             return [dict(r) for r in rows]
 
     def set_favorite(self, repo_id: int, fav: bool) -> None:
-        with self._lock:
-            self._begin_immediate()
+        with self._lock, write_txn(self):
             self._conn.execute("UPDATE repos SET favorite=? WHERE id=?",
                                (1 if fav else 0, repo_id))
-            self._conn.commit()
 
     def set_note(self, repo_id: int, note: str) -> None:
         """G37-6 设置仓库备注（覆盖式）。"""
-        with self._lock:
-            self._begin_immediate()
+        with self._lock, write_txn(self):
             self._conn.execute(
                 "UPDATE repos SET note=?, updated_at=datetime('now','localtime') WHERE id=?",
                 (str(note or ""), repo_id))
-            self._conn.commit()
 
     def set_excluded(self, repo_id: int, excluded: bool) -> None:
-        with self._lock:
-            self._begin_immediate()
+        with self._lock, write_txn(self):
             self._conn.execute("UPDATE repos SET excluded=? WHERE id=?",
                                (1 if excluded else 0, repo_id))
-            self._conn.commit()
 
     def list_pending_updates(self) -> list[dict]:
         """待更新仓库（排除黑名单 excluded=1）。"""
@@ -509,17 +513,15 @@ class Database(BackupMixin, SshKeyMixin, SearchMixin, RepoProfileMixin,
         return out
 
     def delete_repo(self, repo_id: int):
-        with self._lock:
+        with self._lock, write_txn(self):
             self._conn.execute("DELETE FROM sync_history WHERE repo_id=?", (repo_id,))
             self._conn.execute("DELETE FROM repos WHERE id=?", (repo_id,))
-            self._conn.commit()
 
     def delete_all_repos(self):
         """清空全部仓库记录（含历史）。供测试/重置使用。"""
-        with self._lock:
+        with self._lock, write_txn(self):
             self._conn.execute("DELETE FROM sync_history")
             self._conn.execute("DELETE FROM repos")
-            self._conn.commit()
 
     def count(self) -> int:
         with self._lock:

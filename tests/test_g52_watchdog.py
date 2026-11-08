@@ -1,4 +1,5 @@
 """G52-3 看门狗续跑测试（幂等 / 间隔收敛 / 清单驱动）。"""
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,7 +8,7 @@ from PyQt6.QtWidgets import QApplication
 
 _app = QApplication.instance() or QApplication([])
 
-from gcm.app.watchdog import Watchdog, clamp_interval
+from gcm.app.watchdog import _DISPATCH_TTL_S, Watchdog, clamp_interval
 from gcm.db.runtime_sessions import RuntimeSessionStore
 from gcm.models import RepoSpec
 
@@ -72,3 +73,31 @@ class TestWatchdogLogic(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWatchdogTtlRecovery(unittest.TestCase):
+    """S-09：派发闸门超时必须自动复位 —— 一次派发失败不得永久杀死看门狗。"""
+
+    def setUp(self):
+        if QApplication.instance() is None:
+            QApplication([])
+        self.tmp = Path(tempfile.mkdtemp(prefix="wd_ttl_"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.store = RuntimeSessionStore(self.tmp / "s.json")
+        self.store.replace([RepoSpec("o", "r", "https://github.com/o/r")])
+        self.wd = Watchdog(self.tmp / "s.json", interval_min=5, store=self.store)
+        self.addCleanup(self.wd._timer.stop)
+
+    def test_ttl_auto_reset(self):
+        self.assertTrue(self.wd.check())          # 派发一次，闸门置位
+        self.assertFalse(self.wd.check())         # 未复位期间拒绝再派发
+        # 把置位时刻拨回 TTL 之前 → 下一次 check 必须自动复位并重新派发
+        self.wd._dispatched_at -= _DISPATCH_TTL_S + 1
+        self.assertTrue(self.wd.check(),
+                        "闸门超时后必须自动复位并恢复检测（旧行为是永久 False）")
+        self.assertFalse(self.wd._dispatching is False and True)
+
+    def test_reset_within_ttl_keeps_normal_flow(self):
+        self.assertTrue(self.wd.check())
+        self.wd.reset()
+        self.assertFalse(self.wd._dispatching)

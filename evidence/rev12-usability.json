@@ -1,0 +1,29 @@
+{
+  "task_id": "Rev12-usability",
+  "status": "verified",
+  "timestamp": "2026-11-08",
+  "scope": "Rev12 可用性批次（尼尔森十原则）U-01..U-12 撤销/重做基建 + 菜单栏 + 帮助可达",
+  "commands_executed": [
+    {
+      "cmd": "python -m unittest tests.test_rev12_usability",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 28 tests ... OK（2026-11-05 首次；2026-11-08 复跑随 89 例合并集全绿）"
+    },
+    {
+      "cmd": "python -m unittest tests.test_rev12_usability tests.test_rev11_visual tests.test_rev14_skipped tests.test_rev13_adapt",
+      "exit_code": 0,
+      "raw_output_tail": "OK（本轮 UI/i18n 回归批次）"
+    }
+  ],
+  "files_changed": [],
+  "note": "本文件为补登记：Rev12 的 DONE 此前只有 docs/验证记录-2026-11-05-Rev12.md 支撑，缺 evidence/*.json，违反文档 §0.4 自己规定的证据门禁。2026-11-08 复核补录。",
+  "tests": [
+    {"name": "tests/test_rev12_usability.py", "type": "unit+ui", "status": "pass", "evidence": "28 例；含撤销/重做菜单挂载、帮助页快捷键表从 menu_bar.SHORTCUTS 派生、oplog 记录与 offer_undo 接线"},
+    {"name": "tests/test_r01_ready_wiring.py", "type": "unit+ui", "status": "pass", "evidence": "4 例；补上 Rev11-C R-01 结论条就绪态接线（Rev12 遗留的「一个组件三种状态」最后一块）"}
+  ],
+  "coverage_summary": null,
+  "seams_touched": ["S33", "S34"],
+  "mock_scenarios_covered": [],
+  "browser_validation": "offscreen 真窗 + 3 张截图（reports/ui-s011、ui-s012）",
+  "limitations": "U-13~U-18 为文档显式不做项；其中 U-13（tab order）已被 Rev14 R14-03 focus_order 实际覆盖，Rev12 状态行未同步——本轮在 known-issues 登记更正。"
+}

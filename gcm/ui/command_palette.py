@@ -18,10 +18,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Optional
 
-from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog,
-    QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
@@ -158,9 +156,9 @@ class CommandPalette(QDialog):
         self.list.itemActivated.connect(lambda _it: self._run_current())
         layout.addWidget(self.list, 1)
 
-        self.empty = QLabel(tr("没有匹配的动作（试试更短的关键词）"))
-        self.empty.setObjectName("muted")
-        self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        from .empty_state import build_empty_state
+        self.empty = build_empty_state(
+            tr("没有匹配的动作"), tr("试试更短的关键词"), parent=self)
         self.empty.setVisible(False)
         layout.addWidget(self.empty)
 

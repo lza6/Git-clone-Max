@@ -493,6 +493,13 @@ def run_git_ui(cmd: Iterable[str], cwd: str, on_line: LineCallback,
             else:
                 break  # 仓库类错误 / 已达上限：直接返回
         attempts += 1
+    # G-01：整条命令（含重试）落环形缓冲，供 UI 回看（G-02）
+    try:
+        from ..app import git_command_log as _gcl
+        _gcl.record(label, list(cmd), rc,
+                    int((time.time() - budget_started) * 1000), log)
+    except Exception:
+        pass  # 观测失败不影响主流程
     return rc, last_progress
 
 
@@ -1411,6 +1418,7 @@ class GitService:
             # G69-21：镜像命令显式清空 http.extraHeader，防止仓库级/全局认证头外泄
             cmd = [cmd[0], "-c", "http.extraHeader="] + cmd[1:]
         rc, prog = run_git_ui(cmd, str(self.root), _collate,
+                              label=spec.folder_name,
                               cancelled=self.cancelled, env=self._env(),
                               timeout=self.clone_timeout,
                               # G69-21：镜像首跳**不重试**。第三方镜像在传 pack 时
@@ -1429,6 +1437,7 @@ class GitService:
             clone_url = source_url
             cmd = self.build_clone_cmd(spec, repo_dir, url_override=source_url)
             rc, prog = run_git_ui(cmd, str(self.root), _collate,
+                                  label=spec.folder_name,
                                   cancelled=self.cancelled, env=self._env(),
                                   timeout=self.clone_timeout, retries=self.retries,
                                   backoff=self._backoff,
@@ -1462,7 +1471,8 @@ class GitService:
             # 子模块失败本来就不影响主仓（见下方 warn），所以 retries 收为 0。
             sm_rc, _ = run_git_ui(
                 ["git", "-C", str(repo_dir), "submodule", "update", "--init", "--recursive"],
-                str(self.root), self.on_line, cancelled=self.cancelled, env=self._env(),
+                str(self.root), self.on_line, label=spec.folder_name,
+                cancelled=self.cancelled, env=self._env(),
                 timeout=self.clone_timeout, retries=0, backoff=self._backoff,
                 budget=self.time_budget or None,
             )
@@ -1491,6 +1501,7 @@ class GitService:
                 treeless_cmd += [clone_url, str(repo_dir)]
                 rc, prog = run_git_ui(
                     treeless_cmd, str(self.root), _collate,
+                    label=spec.folder_name,
                     cancelled=self.cancelled,
                     env=(self._mirror_env() if _is_mirror else self._env()),
                                       timeout=self.clone_timeout, retries=0,
@@ -1512,6 +1523,7 @@ class GitService:
                     shallow_cmd += [clone_url, str(repo_dir)]
                     rc, prog = run_git_ui(
                         shallow_cmd, str(self.root), _collate,
+                        label=spec.folder_name,
                         cancelled=self.cancelled,
                         env=(self._mirror_env() if clone_url != source_url else self._env()),
                         timeout=self.clone_timeout, retries=0,
@@ -1674,7 +1686,8 @@ class GitService:
         README 的「更新失败自动切换」对 --mirror 仓库不成立）。
         """
         mr_rc, _ = run_git_ui(
-            fetch_cmd, str(repo_dir), self.on_line, cancelled=self.cancelled,
+            fetch_cmd, str(repo_dir), self.on_line, label=spec.folder_name,
+            cancelled=self.cancelled,
             env=self._env(), timeout=self.fetch_timeout, retries=self.retries,
             backoff=self._backoff)
         if mr_rc != 0 and self.mirror_fallback and not self.cancelled():
@@ -1703,7 +1716,7 @@ class GitService:
                     if alt != spec.url_https:
                         alt_cmd = [fetch_cmd[0], "-c", "http.extraHeader="] + fetch_cmd[1:]
                     mr_rc, _ = run_git_ui(
-                        alt_cmd, str(repo_dir), self.on_line,
+                        alt_cmd, str(repo_dir), self.on_line, label=spec.folder_name,
                         cancelled=self.cancelled,
                         env=(self._mirror_env() if alt != spec.url_https else self._env()),
                         timeout=self.fetch_timeout, retries=0,
@@ -1761,7 +1774,8 @@ class GitService:
                 c for c in fetch_cmd if c != "origin" and c != "git"] + [
                 mirror_url, "+refs/heads/*:refs/remotes/origin/*"]
             rc, _ = run_git_ui(
-                mirror_cmd, str(repo_dir), self.on_line, cancelled=self.cancelled,
+                mirror_cmd, str(repo_dir), self.on_line, label=spec.folder_name,
+                cancelled=self.cancelled,
                 env=self._mirror_env(), timeout=min(self.fetch_timeout, 180.0),
                 retries=0, backoff=self._backoff,
                 progress_detail=getattr(self, "send_progress_detail", None),
@@ -1774,7 +1788,8 @@ class GitService:
         if not mirror_url or rc != 0:
             rc, _ = run_git_ui(
                 fetch_cmd,
-                str(repo_dir), self.on_line, cancelled=self.cancelled, env=self._env(),
+                str(repo_dir), self.on_line, label=spec.folder_name,
+                cancelled=self.cancelled, env=self._env(),
                 timeout=self.fetch_timeout, retries=self.retries, backoff=self._backoff,
                 progress_detail=getattr(self, "send_progress_detail", None),
             )
@@ -1785,7 +1800,8 @@ class GitService:
             fetch_cmd = ["git", "fetch", "--progress", "--prune", "origin"]
             rc, _ = run_git_ui(
                 fetch_cmd,
-                str(repo_dir), self.on_line, cancelled=self.cancelled, env=self._env(),
+                str(repo_dir), self.on_line, label=spec.folder_name,
+                cancelled=self.cancelled, env=self._env(),
                 timeout=self.fetch_timeout, retries=self.retries, backoff=self._backoff,
                 progress_detail=getattr(self, "send_progress_detail", None),
             )
@@ -1827,7 +1843,8 @@ class GitService:
                         alt_cmd = [fetch_cmd[0], "-c", "http.extraHeader="] + fetch_cmd[1:]
                     rc, _ = run_git_ui(
                         alt_cmd,
-                        str(repo_dir), self.on_line, cancelled=self.cancelled,
+                        str(repo_dir), self.on_line, label=spec.folder_name,
+                        cancelled=self.cancelled,
                         env=alt_env, timeout=self.fetch_timeout,
                         retries=0, backoff=self._backoff,
                         progress_detail=getattr(self, "send_progress_detail", None),
@@ -1850,7 +1867,7 @@ class GitService:
                         if used_unshallow and self._is_shallow_repo(repo_dir):
                             urc, _ = run_git_ui(
                                 ["git", "fetch", "--unshallow", "origin"],
-                                str(repo_dir), self.on_line,
+                                str(repo_dir), self.on_line, label=spec.folder_name,
                                 cancelled=self.cancelled, env=self._env(),
                                 timeout=self.fetch_timeout, retries=0,
                                 backoff=self._backoff,
@@ -1886,13 +1903,15 @@ class GitService:
                 f"{spec.display} 无法判定远端新提交数（{remote_ref} 不可解析），"
                 "已尝试同步，请复核远端分支是否被重命名/删除", "warn")
             run_git_ui(["git", "merge", "--ff-only", "@{upstream}"],
-                       str(repo_dir), self.on_line, cancelled=self.cancelled, timeout=120,
+                       str(repo_dir), self.on_line, label=spec.folder_name,
+                       cancelled=self.cancelled, timeout=120,
                        progress_detail=getattr(self, "send_progress_detail", None))
         elif commits_new > 0:
             self._emit(f"{spec.display} 有 {commits_new} 个新提交，执行快进合并 …")
             rc, _ = run_git_ui(
                 ["git", "merge", "--ff-only", "@{upstream}"],
-                str(repo_dir), self.on_line, cancelled=self.cancelled, timeout=120,
+                str(repo_dir), self.on_line, label=spec.folder_name,
+                cancelled=self.cancelled, timeout=120,
                 progress_detail=getattr(self, "send_progress_detail", None),
             )
             if rc != 0:
@@ -1900,7 +1919,8 @@ class GitService:
                 self._emit("快进合并失败，尝试 rebase …", "warn")
                 rc, _ = run_git_ui(
                     ["git", "rebase", "@{upstream}"],
-                    str(repo_dir), self.on_line, cancelled=self.cancelled, timeout=120,
+                    str(repo_dir), self.on_line, label=spec.folder_name,
+                    cancelled=self.cancelled, timeout=120,
                     progress_detail=getattr(self, "send_progress_detail", None),
                 )
                 if rc != 0:

@@ -207,6 +207,20 @@ QPushButton#primary {{
 }}
 QPushButton#primary:hover {{ background: {cta_hover}; border-color: {cta}; }}
 QPushButton#primary:disabled {{ background: {panel2}; color: {dim}; border-color: {border}; }}
+/* Rev11-C P-01: three button weights (primary / secondary / ghost).
+   secondary = common but has an alternate path (refresh, export);
+   ghost = low-frequency, separated by spacing only, no visual budget. */
+QPushButton#secondary {{
+  background: {panel2}; border: {b_def}px solid {border_strong};
+  color: {text}; font-weight: 600;
+}}
+QPushButton#secondary:hover {{ background: {panel}; border-color: {border_strong}; }}
+QPushButton#secondary:disabled {{ color: {dim}; border-color: {border}; }}
+QPushButton#ghost {{
+  background: transparent; border: {b_def}px solid transparent;
+  color: {dim}; font-weight: 400; padding-left: 6px; padding-right: 6px;
+}}
+QPushButton#ghost:hover {{ color: {text}; border-color: {border}; }}
 {danger_qss}
 QPushButton#danger:hover {{ background: {panel2}; border-color: {err}; }}
 {table_rules}

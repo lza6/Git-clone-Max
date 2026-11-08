@@ -142,3 +142,14 @@ def _fts_pattern(query: str) -> str:
     """
     safe = str(query or "").replace('"', '""')
     return f'"{safe}"'
+
+
+def _mark_v8_degraded(conn: sqlite3.Connection) -> None:
+    """S-03：FTS 建表失败时的**有界降级** —— 只把版本推进到 8，避免每次打开
+    都重试建虚表；其余表结构（v0–v7）此时已由 `_migrate` 成功推进。
+
+    与旧实现的区别：旧代码把**整个** `_migrate` 包在 except 里并强推到头版本，
+    磁盘满/锁超时的半迁移会被固化为已完成 → 永久坏库。现在降级只可能发生在
+    「迁移已推进到 v8 一步」时（调用方判定 `v_now >= _SCHEMA_VERSION - 1`）。
+    """
+    conn.execute("PRAGMA user_version=8")

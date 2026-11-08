@@ -80,8 +80,9 @@ class ManagePanel(QWidget):
         self.manage_search.setClearButtonEnabled(True)
         self.manage_search.setMinimumWidth(180)
         self.manage_search.setMaximumWidth(360)
+        # Rev11-C P-01：权重按语义统一赋（primary=主操作 / danger=中断或破坏 /
+        # secondary=常用有替代路径 / ghost=低频），规则见 qss_build 的三档 QSS。
         self.btn_update_all = QPushButton(tr("一键更新全部"))
-        self.btn_update_all.setObjectName("primary")
         self.btn_update_all.clicked.connect(lambda _=False: self.update_all_requested.emit())
         self.btn_update_all.setIcon(self.owner._std_icon("refresh", self.btn_update_all))
         self.btn_cancel_manage = QPushButton(tr("取消全部"))
@@ -128,6 +129,8 @@ class ManagePanel(QWidget):
             row2.addWidget(_btn)
         row2.addStretch(1)
         v.addLayout(row2)
+        from .button_weights import apply_weights
+        apply_weights(self)
 
         # 模型化视图：数据与视图解耦，大批量行不卡（共享按钮 + 懒加载）
         from .manage_model import ManageModel
@@ -421,7 +424,7 @@ class ManagePanel(QWidget):
                     s = snaps[0]
                     rec = self.owner.oplog.record(
                         "repo_delete", f"{s.get('owner')}/{s.get('repo')}",
-                        summary="删除仓库记录", before=s, undoable=True)
+                        summary=tr("删除仓库记录"), before=s, undoable=True)
                     self.owner.offer_undo(
                         rec, f"已删除「{s.get('display') or s.get('repo')}」")
             except Exception as e:  # noqa: BLE001 —— 台账失败不该让删除本身失败
@@ -436,10 +439,13 @@ class ManagePanel(QWidget):
             _mw.QMessageBox.information(self.owner, tr("提示"), tr("请先选择要打标签的仓库。"))
             return
         tag, ok = _mw.QInputDialog.getText(
-            self, "批量打标签", "输入标签名（多个用逗号分隔，将覆盖原标签）：")
+            self, tr("批量打标签"), tr("输入标签名（多个用逗号分隔，将覆盖原标签）："))
         if not ok:
             return
-        tags = [t.strip() for t in tag.split(",") if t.strip()]
+        # S-04：UI 输入用逗号/中文逗号分隔，交给 set_tags 前拆成列表即可 ——
+        # 存储侧由 set_tags 统一转竖线。此前这里不拆，整串「a, b」当一个标签
+        # 写入（`|a, b|`），与搜索侧口径不一致 → tag: 搜索永远查不到。
+        tags = [t.strip() for t in str(tag).replace("，", ",").split(",") if t.strip()]
         if not tags:
             return
         n = 0
@@ -461,7 +467,7 @@ class ManagePanel(QWidget):
             _mw.QMessageBox.information(self.owner, tr("提示"), tr("请先选择要导出的仓库。"))
             return
         path, _ = _mw.QFileDialog.getSaveFileName(
-            self, "导出所选仓库", str(self.owner.data_dir / "selected_repos.csv"),
+            self, tr("导出所选仓库"), str(self.owner.data_dir / "selected_repos.csv"),
             "CSV (*.csv)")
         if not path:
             return
@@ -544,7 +550,7 @@ class ManagePanel(QWidget):
         has_sel = bool(self.manage_table.selectedIndexes())
         for a in (act_tag, act_export, act_fav, act_excl, act_del):
             a.setEnabled(has_sel)
-            a.setToolTip("请先选择仓库行" if not has_sel else "")
+            a.setToolTip(tr("请先选择仓库行") if not has_sel else "")
         return menu
 
     def _selected_rows(self) -> list:
@@ -762,7 +768,7 @@ class ManagePanel(QWidget):
         """G47-7：导出仓库元数据 JSON。"""
         from PyQt6.QtWidgets import QFileDialog
         path, _ = QFileDialog.getSaveFileName(
-            self.owner, "导出仓库元数据", str(self.owner.data_dir / "repos_meta.json"),
+            self.owner, tr("导出仓库元数据"), str(self.owner.data_dir / "repos_meta.json"),
             "JSON (*.json)")
         if not path:
             return
@@ -778,7 +784,7 @@ class ManagePanel(QWidget):
         """G47-7：从 JSON 合并导入仓库元数据。"""
         from PyQt6.QtWidgets import QFileDialog
         path, _ = QFileDialog.getOpenFileName(
-            self.owner, "导入仓库元数据", str(self.owner.data_dir), "JSON (*.json)")
+            self.owner, tr("导入仓库元数据"), str(self.owner.data_dir), "JSON (*.json)")
         if not path:
             return
         try:

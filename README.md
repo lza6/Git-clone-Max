@@ -1,7 +1,7 @@
 # Git-clone-Max
 
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
-> **当前版本：v9.18.9** · 逐版本历史见 `gcm/__init__.py` 的 `__changelog__`。
+> **当前版本：v9.19.0** · 逐版本历史见 `gcm/__init__.py` 的 `__changelog__`。
 > **v5.0：多平台直克隆** — GitLab / Gitee / Codeberg / Bitbucket / 自建主机（HTTPS/SSH/短格式/子组）同样支持。
 > 克隆目录一律 `host__作者__仓库`（GitHub 为 `作者__仓库`），本地改动永不覆盖。
 
@@ -60,7 +60,7 @@ uv run python -m gcm --portable
 
 | 功能 | 说明 |
 |------|------|
-| 自适应自动更新间隔 | 定时一键更新的间隔会**自适应**：某轮更新发现仓库无任何变更时，下一轮间隔按 ×1.5 退避（封顶 4×），有变更立即回到设置值——仓库没动就不白白请求（v9.18.9） |
+| 自适应自动更新间隔 | 定时一键更新的间隔会**自适应**：某轮更新发现仓库无任何变更时，下一轮间隔按 ×1.5 退避（封顶 4×），有变更立即回到设置值——仓库没动就不白白请求（v9.19.0） |
 | 多平台 | GitHub / GitLab / Gitee / Codeberg / Bitbucket / 自建主机，HTTPS + SSH + 短格式 + 子组 + 自定义主机白名单，直接复制地址即下载 |
 | 指定版本 | `owner/repo@v1.2.0` 语法指定分支/标签（`clone -b`），不改动仓库默认检出 |
 | 仓库级 SSH 私钥 | 仓库详情里可为**单个仓库**指定 SSH 私钥（只记录**路径**，不保存私钥内容）；优先级 仓库级 > 全局设置；清除即回落全局。校验会拒绝「把私钥内容粘进来」、不存在、是目录、非私钥文件 |
@@ -103,6 +103,9 @@ uv run python -m gcm --portable
 | 响应式窗口 | 1024/1280/1440 三档逻辑断点；主操作区常驻；快捷填充横向滚动；管理/设置窄屏分行；对话框按屏幕 90%×85% 自适应；100%–200% DPI |
 | 进度表性能 | 进度列 delegate 自绘（500 行不创建 500 个 QProgressBar）；250ms 合批；批量插行关排序 |
 | 可靠性 | token 加密落盘（有 DPAPI/keyring 时真加密；否则可逆混淆并在日志显式告警）、单实例锁、全局异常兜底 `error.log`、settings 备份恢复、数据库自动迁移备份 |
+| prune 三态 | 远端已删除的仓库可安全清理：`--no-clean` 只报告（默认）· `--prune` 清 DB 记录 · `--prune-untouched` 连本地目录一起删。**excluded（黑名单）仓库任何模式都不删**；只处理最近一次同步报「Repository not found」的仓库；每次删除写操作台账（不可撤销）。GUI 无此功能，属 CLI/agent 高级操作 |
+| git 命令记录 | 失败汇总 →「git 命令记录…」回看最近执行的 git 命令与输出尾部（已脱敏，最近 500 条，双击看全文）—— 失败不再只有一行摘要 |
+| 预览差异表 | 下载页「预览…」弹表逐行看这批的**将克隆/将更新/删除重建/被占/重复/无效**与原因（与 `--dry-run` 同一实现） |
 | 数据库 | SQLite `repos.db`（WAL）记录元数据 + `sync_history` 全量同步快照健康治理 |
 | 一键更新 | 「仓库管理 → ⟳ 一键更新全部」对库中所有仓库增量同步（黑名单排除） |
 | 执行前预览 | 点「开始」前可先看这批会发生什么：**将克隆 / 将更新 / 将删除重建 / 目录被占 / 重复 / 无效** 六档，纯本地判定（不联网、不写盘）。命令行等价物 `--cli --dry-run`（`--json` 时带 `mode:"dry_run"` 判别位，`replace` 明确标"会先删除再克隆"） |
@@ -159,7 +162,7 @@ Git-clone-Max/
 ├── skills/                  agent 技能包（gcm-clone/archive/report/diag/resume，各含 SKILL.md）
 ├── scripts/                 启动器（bat/ps1）+ E2E 冒烟 / 健康检查 / 发布 / 基准 / CI 快集
 ├── docs/                    架构 / ADR / 数据模型 / agent 契约 / SOP / 发布清单
-├── tests/                   单元 + 集成 + 真实 git E2E（198 个测试文件）
+├── tests/                   单元 + 集成 + 真实 git E2E（210 个测试文件）
 ├── requirements.txt         运行时依赖（PyQt6）
 └── pyproject.toml           项目元数据 + ruff / mypy 配置
 ```
@@ -278,9 +281,9 @@ python -m coverage run --source=gcm -m unittest discover -s tests
 ## 发布
 
 ```bash
-git tag v9.18.9   # 示例；发版时替换成当次版本（守卫会校验文档里的版本号）
+git tag v9.19.0   # 示例；发版时替换成当次版本（守卫会校验文档里的版本号）
 git push origin main --tags
-python scripts/publish_release.py --tag v9.18.9   # 自动上传 exe 到 GitHub Release
+python scripts/publish_release.py --tag v9.19.0   # 自动上传 exe 到 GitHub Release
 ```
 
 ## License

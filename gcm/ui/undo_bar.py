@@ -161,9 +161,9 @@ def build_oplog_dialog(owner: Any) -> Any:
 
     records = oplog.recent(20, undoable_only=True)
     if not records:
-        empty = QLabel(tr("没有可撤销的操作"), holder)
-        empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        col.addWidget(empty)
+        from .empty_state import build_empty_state
+        col.addWidget(build_empty_state(
+            tr("没有可撤销的操作"), tr("做过可撤销的操作后会出现在这里"), parent=holder))
     for rec in records:
         line = QFrame(holder)
         h = QHBoxLayout(line)

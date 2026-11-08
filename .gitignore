@@ -48,3 +48,8 @@ workflow_status.md
 .beads/proxieddb/
 # bd 的自动导入缓存（只有 size/mtime 标记，随时可重建，不入库）
 .beads/.auto-import-issues.jsonl
+
+# 2026-11-08：本轮 UI 验收截图目录（可重建的产物，不进库）
+reports/ui-s011/
+reports/ui-s012/
+reports/ui-s013/

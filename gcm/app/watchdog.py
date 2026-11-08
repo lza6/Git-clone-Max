@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -19,6 +20,11 @@ from ..db.runtime_sessions import RuntimeSessionStore
 # 看门狗允许的间隔（分钟）
 VALID_INTERVALS_MIN = (1, 5, 15, 30)
 _DEFAULT_INTERVAL_MIN = 5
+
+#: S-09：派发闸门的自动复位上限。真正启动的批次会远早于此复位
+#: （批次结束调 reset()）；超过它说明 UI 侧没有真正启动（引擎忙让路/异常），
+#: 看门狗必须恢复检测，否则一次派发失败 = 永久失效。
+_DISPATCH_TTL_S = 300.0
 
 
 def clamp_interval(minutes: int) -> int:
@@ -51,6 +57,7 @@ class Watchdog(QObject):
         self.silent = bool(silent)
         self.engine = engine                # 可选的 SyncEngine（busy 判定）
         self._dispatching = False           # 幂等闸门：同一时刻只派发一次
+        self._dispatched_at = 0.0           # S-09：闸门置位时刻（monotonic）
         self._timer = QTimer(self)
         self._timer.setInterval(self.interval_min * 60 * 1000)
         self._timer.timeout.connect(self.check)
@@ -96,10 +103,19 @@ class Watchdog(QObject):
         """检测并请求续跑；返回是否发出 resume_requested。
 
         幂等条件：引擎忙 / 清单空 / 上次已正常完成 / 已派发未复位 → False。
+        S-09：闸门带**时间上限** —— 此前派发后若 UI 侧没有真正启动批次
+        （引擎忙让路 / `_launch` 抛异常），`reset()` 永不执行 → 看门狗
+        一次派发失败即永久失效。现在超过 `_DISPATCH_TTL_S` 自动复位，
+        下个周期重试；真正启动的批次内 TTL 会被批次时长覆盖前复位。
         """
         try:
             if self._dispatching:
-                return False
+                if time.monotonic() - self._dispatched_at > _DISPATCH_TTL_S:
+                    from .applog import warn as _warn
+                    _warn("看门狗派发闸门超时未复位（UI 侧未真正启动批次），自动恢复检测")
+                    self._dispatching = False
+                else:
+                    return False
             if self.engine is not None and getattr(self.engine, "busy", False):
                 return False
             if not self.store.is_resumable():
@@ -108,6 +124,7 @@ class Watchdog(QObject):
             if not specs:
                 return False
             self._dispatching = True
+            self._dispatched_at = time.monotonic()
             self.resume_requested.emit(specs)
             # G80-B7-1：把"真的派发了一次"登记下来（UI 后台任务面板读它）
             from . import background_jobs as _bj

@@ -47,7 +47,7 @@ owner: memory-keeper
 | 3 | ~~`prune_history` 全表窗口函数跑在 GUI 线程；无分阶段耗时埋点~~ | **已闭环**：C3-2 改为批次收尾 `prune_history_if_due`；C3-4 `stage_json` 四段埋点（v9.14/v9.15） |
 | 4 | ~~检索 LIKE 单路；trigram 对两字中文零命中~~ | **已闭环**：C4 双路（≥3 字 FTS5 bm25 / <3 字 LIKE），`test_c4_search` 24 例 |
 | 5 | ~~MCP 仅 4 个只读工具；事件不落盘；本地 API 无 token~~ | **已部分闭环**：`clone_batch`（`--allow-mutate`）+ `api_token` Bearer + **G84 把 `event_sink` 接上生产入口**（此前只有测试调用）。仍未做：MCP 长任务 `progress`/`cancel`、MCP 审计行、`resources`/`prompts` |
-| 6 | 英文模式 tr 键回退中文（历史登记 58 键） | **已复核（2026-11-05 Rev14 收尾轮，真实运行）**：`set_language("en")` + 真实建窗，页签已显示 `Download Center / Repos / Settings & Log`，窗口标题已英文；**仍有 10 条按钮文案是中文**（`一键更新全部 / 取消全部 / 刷新列表 / 导出元数据 …`）—— 它们是 `QPushButton("中文")` **构造参数从未走 `tr()`**，属 R14-18 i18n 长尾，不是回退缺陷 |
+| 6 | 英文模式 tr 键回退中文（历史登记 58 键） | **已复核（2026-11-05 Rev14 收尾轮，真实运行）**：`set_language("en")` + 真实建窗，页签已显示 `Download Center / Repos / Settings & Log`，窗口标题已英文；**已全部闭环（2026-11-08 复核）**：按钮 0 残留（Rev14 已迁 tr()）；菜单项 11 条缺 EN 字典 key 已补齐（带 `…` 后缀的 key 与字典不带后缀的旧 key 不匹配是根因）。EN 模式真实建窗扫描：按钮/标签/复选框/菜单**零中文残留** |
 | 7 | ~~MCP `clone_batch` 在 stdio 循环里同步跑子进程（timeout=3600），最长 1 小时无 progress、不可取消~~ | **已闭环（Rev14 复核，代码为准）**：`gcm/mcp_jobs.py` 已存在，`clone_batch(async=true)` + `job_status` 轮询 + `job_cancel` 杀进程树（`mcp_server.py:108,119,219` 有工具声明与使用指引）。原登记指向的 `mcp_server.py:288-294` 已不是同步长跑路径 |
 | 8 | ~~`backup_to()` 备份非原子：`wal_checkpoint(TRUNCATE)` + `shutil.copy2`，无 tmp+replace/无覆盖保护/无 `quick_check`~~ | **已闭环（Rev14 复核，代码为准）**：实现已抽到 `gcm/db/backup.py`（G84-10 强化），顺序是 checkpoint → tmp → fsync → **先 `quick_check` 再 `os.replace`**，失败清理 tmp 并上抛。UI 文案「原子写 + quick_check 校验」与实现一致（`settings_actions.py:186-189`） |
 | 9 | ~~管理页「健康 5/5」无解释（ToolTip 只挂 col 0/2/3/4）~~ | **已闭环（Rev14 复核）**：`manage_model.py:216-221` 已给 col 6（健康分口径：近 20 次成功率 50% + 陈旧度 25% + 冲突惩罚 25%）与 col 7（大小未算出的原因）挂 `ToolTipRole`。**仍未做**：`mirror_used`/`degrade_path` 只到 CLI、GUI 看不到 |
@@ -58,8 +58,31 @@ owner: memory-keeper
 |---|------|------|
 | 10 | **断点续传跳过的仓库不产生终态**：用户把已下过的仓库再贴一次点「开始」→ 行永远停在「等待中」、`本次/详情/耗时` 被抹成「—」、通知「成功 0」、状态栏一直「并行同步中」（GUI 实测复现）。根因 `engine.launch()` 的 `_precheck_skip` 命中后只 `_emit_line` + `_mark_done` + `continue`，不 emit result；全跳过时 `finished.emit()` 但零结果 | **已闭环（Rev14 F2，同日）**：引擎新增 `skipped` 信号 + `launch(report_skipped=)`；GUI 行到终态、小结报「跳过 N」；守卫 `tests/test_rev14_skipped`（3 例） |
 | 11 | **小屏「下载位置 / 克隆模式 / 层数」被裁到 6–23px**（几何断言：1024×768 下 `target_edit` 可见 352×6/352×34；1366×768 同样；1440×900 无裁切） | **已闭环（Rev14 F1，同日）**：三个控件移出滚动区成常驻行；契约清单已补入，27 组合 + 900×480 **零裁切**；折叠阈值重扫为 720/740/760 |
-| 12 | **验收工具的数据洞**：`ui_screenshot_audit.py` 的种子不建真实目录、不给 `head_sha`/`duration_ms` → 管理页 HEAD/大小两列与进度页耗时列**永远空**，截图验收看不见它们坏没坏（已用真实数据证明三列本身能渲染） | **开放（P2）**，见 §3.B.5 |
+| 12 | ~~验收工具的数据洞：种子不建真实目录/不给 sha/耗时~~ | **已闭环（Rev14 V3 复核 2026-11-08）**：`ui_screenshot_audit.py:91` `_seed` 已为每列造真实数据（真实目录 + `head_sha` + `duration_ms`），docstring 明写「每一列都要有数据」 |
 | 13 | **`--diag` 单独用会静默走 GUI 单实例路径**（`-m gcm --diag` → 打印「已在运行」并 exit 0）；帮助里写的是 `--cli --diag` | **开放（P3）**：help 未说明必须配 `--cli` |
+
+## 2026-11-08 收口（Rev10 稳定性批次 + Rev11-C 悬空项）
+
+| 项 | 原状态 | 结论 |
+|----|--------|------|
+| S-01 app.log 生产环境从未生成 | 开放（P0） | **已闭环**：`applog.set_default_log_path` + `__main__._init_applog`；真机子进程生成 app.log，引擎级 error 真实落盘 |
+| S-02 写库异常无 rollback | 开放（P0） | **已闭环**：6 个裸写方法迁 `write_txn`；触发器注入失败后事务已回滚 |
+| S-03 迁移失败强推版本号 | 开放（P0） | **已闭环**：只有 v8 允许降级，其余上抛；`user_version` 分段成功后写；重开库自愈 |
+| S-04 `tag:` 搜索永久零命中 | 未登记 | **已闭环**：三口径统一到竖线 + 历史逗号兼容 + `-tag:` 早退修复 |
+| S-05 `sanitize_name` 污染网络 URL | 未登记 | **已闭环**：URL 保原始段，仅 `folder_name` 清洗（`geocar/con` 不再变成 `con_.git`） |
+| S-06 定时队列窗口内重复启动 | 未登记 | **已闭环**：`already_ran_in_window_today` 闸；真实时钟同窗二次 tick=0 |
+| S-07 `update_status` 读改写分两临界区 | 未登记 | **已闭环**：走 `_rmw`；20 线程并发零丢失 + AST 守卫 |
+| S-08 GUI 线程 38ms/仓 | 未登记 | **部分闭环**：`update_results` 批量 789.6ms→3.0ms（263x）+ 帧缓冲 + 丢帧还原；DB 写仍在 GUI 线程（实测 3ms/仓可接受），后台执行器未做 |
+| S-09 看门狗一次派发失败即永久失效 | 未登记 | **已闭环**：派发闸门 TTL 300s 自动复位 |
+| S-10 错误分类两处误判 | 未登记 | **已闭环**：publickey→auth；状态码需 HTTP 语境词 |
+| R-01 结论条就绪态（Rev11-C，悬空 4 轮） | 开放 | **已闭环**：`start_all` → `plan_batch` → `set_ready`；假注释已删；守卫 4 例 |
+| R-05 裸空态未清零 | 开放（部分） | **已闭环**：四处裸 `QLabel` 全走 `empty_state` 工厂，复扫 0 命中 |
+| R-06 大小列空串 | 开放（半做） | **已闭环**：空值显示 `—` |
+| P-01 管理页按钮权重 | 未做 | **已闭环**：QSS 增 secondary/ghost 两档 + 9 按钮按语义赋权（`ui/button_weights.py`） |
+| P-03 事件流未中文化 | 未做 | **已闭环**：类型/状态走 i18n key；真对话框实测显示「任务结果 / 成功」 |
+| P-04 失败面板排版 | 未做 | **已闭环**：次数列右对齐 + mono |
+| Rev12 缺 evidence/rev12-*.json | 违反自定门禁 | **已补**：`evidence/rev12-usability.json`；Rev12 记录追加 §4 更正（U-13 已被 Rev14 focus_order 覆盖） |
+| R14-18 i18n 长尾 | DOING | **批次 3 完成**：棘轮 1288→1128（实迁 160 条），EN 真窗零残留；批次 4–5 余量以日志/协议层文案为主，明确不再推进（棘轮防恶化） |
 
 ## 未闭环功能
 

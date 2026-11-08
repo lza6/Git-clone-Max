@@ -1,6 +1,6 @@
 # Git-clone-Max Agent 契约（G56-5）
 
-> 适用版本：v9.18.9。本文档是所有 agent 接入点
+> 适用版本：v9.19.0。本文档是所有 agent 接入点
 > （CLI `--json` / MCP server / 本地 HTTP API / `skills/gcm-*`）的统一契约。
 > 任何实现与本文档冲突时，以实际输出为准（测试 `tests/test_g56_contract.py` 抽样断言）。
 
@@ -27,7 +27,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ```json
 {
-  "version": "9.18.9",
+  "version": "9.19.0",
   "ok": true,
   "counts": {"success": 2, "failed": 0, "other": 0, "total": 2},
   "results": [
@@ -66,7 +66,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ```json
 {
-  "version": "9.18.9",
+  "version": "9.19.0",
   "ok": true,
   "mode": "dry_run",
   "plan": {
@@ -89,6 +89,49 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
   `blocked`（`local_path` 来自导入元数据 → 执行器不删除，非空非 git 会失败） ·
   `duplicate` 本批内同目录 · `invalid` 解析失败。
   ⚠️ `replace` 是**破坏性**动作，agent 必须显式告知用户。
+
+### 2.1c `--prune` 三态的 JSON 形态（R-01，与克隆结果**不同形**）
+
+```json
+{
+  "version": "9.19.0",
+  "ok": true,
+  "mode": "prune:prune",
+  "pruned": 1,
+  "dir_removed": 0,
+  "skipped_protected": 0,
+  "reported": 0,
+  "items": [{"folder": "o__r", "url": "https://github.com/o/r",
+             "remote_gone": true, "protected": false,
+             "db_removed": true, "dir_removed": false,
+             "skipped_reason": ""}]
+}
+```
+
+- 三模式互斥：`--no-clean`（默认只报告，`mode: "prune:no-clean"`，什么都不删）、
+  `--prune`（删 DB 记录，不删本地目录）、`--prune-untouched`（删 DB 记录 + 删本地目录）。
+- `mode` 字段是判别位，消费方必须先判 `mode` 再读计数。
+- ⚠️ `--prune-untouched` **会删除本地目录**（不可恢复，不进回收站）。
+  agent 必须显式告知用户后才可调用。
+- 三重护栏（服务端强制，不是建议）：`protected`（excluded 标记）的仓库
+  **任何模式都不删**；只处理 `remote_gone`（最近一次同步失败且报
+  "Repository not found"）的仓库；每次删除写 oplog（`undoable=0`，不可撤销）。
+
+### 2.1d `--cli` 是**无状态批处理**入口（不写本地库）
+
+2026-11-08 E2E 实测确认并在此明确：`--cli` 路径构造引擎时 `db=None`，
+**克隆结果只出现在 stdout/`--json` 里，不写 `repos.db`**，也不更新
+`progress.json` / 会话清单。
+
+| 入口 | 是否入库 | 适用 |
+|------|---------|------|
+| `--cli` / `--cli --json` | **否**（无状态） | CI、脚本、一次性批量抓取 |
+| GUI 主窗 | 是 | 需要「仓库管理 / 搜索 / 统计 / 续跑」的日常使用 |
+| `--serve`（HTTP API） | 读库 + 可选写库（`--allow-mutate`） | agent 读现状 |
+| MCP `clone_batch` | 走 CLI 子进程 → **不入库** | agent 一次性抓取 |
+
+因此 `--prune`（扫描 `repos.db`）**看不到**纯 `--cli` 克隆过的仓库 —— 这是
+「无状态」的直接推论，不是缺陷。要入库请用 GUI。
 
 ### 2.2 退出码
 
@@ -172,7 +215,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ```
 → {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{}}}
-← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"gcm","version":"9.18.9"}}}
+← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"gcm","version":"9.19.0"}}}
 → {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
 ← {"jsonrpc":"2.0","id":2,"result":{"tools":[{...list_repos...}, ...]}}
 → {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_repos","arguments":{}}}

@@ -295,6 +295,9 @@ def _print_help() -> int:
         "  --no-mirror     兼容开关（内置国内镜像已移除，默认即直连源站）\n"
         "  --dry-run       只做本地预检：打印\"将克隆/将更新/目录被占/重复/无效\"，\n"
         "                  不联网、不写盘（配 --json 输出完整计划）\n"
+        "  --no-clean      prune 只报告模式：列出远端已删仓库，不删任何东西\n"
+        "  --prune         删除远端已删仓库的数据库记录（不删本地目录；需 --yes）\n"
+        "  --prune-untouched  连本地目录一起删（不可恢复；需 --yes；黑名单仓永不删）\n"
         "  --help, -h      显示本帮助\n"
         "\n"
         "输入：<urls.txt> 为地址清单文件；`-` 表示 stdin（每行一个，`#` 开头忽略）。\n"
@@ -351,6 +354,15 @@ def main(argv: list[str] | None = None) -> int:
     dry_run = "--dry-run" in args
     if dry_run:
         args.remove("--dry-run")
+    # R-01 prune 三态（互斥；默认 no-clean 只报告不删）
+    prune_mode = None
+    for flag, m in (("--prune", "prune"),
+                    ("--prune-untouched", "prune-untouched"),
+                    ("--no-clean", "no-clean")):
+        if flag in args:
+            args.remove(flag)
+            prune_mode = m
+            break
     # M7：--dir <目录> 指定克隆输出根目录（默认当前目录/clones）
     root = Path.cwd() / "clones"
     if "--dir" in args:
@@ -366,6 +378,56 @@ def main(argv: list[str] | None = None) -> int:
                            allow_mutate, json_mode)
     if diag:
         return _diag_main(root, json_mode)
+    if prune_mode is not None:
+        # R-01：prune 扫描全库并按模式清理；不消耗 urls 输入，执行完即返回。
+        # 审查 P1：--dry-run 与 prune 同用时，删除模式必须强制降为只报告 ——
+        # 用户按既有习惯 `--prune --dry-run` 期望预览，绝不能直接删。
+        if dry_run and prune_mode != "no-clean":
+            prune_mode = "no-clean"
+        # 审查 P2：删除真实数据的模式必须显式 --yes（json 模式是 agent 契约，
+        # 由 agent 侧负责告知用户，故豁免）。
+        yes = "--yes" in args
+        if yes:
+            args.remove("--yes")
+        if prune_mode in ("prune", "prune-untouched") and not (yes or json_mode):
+            print("[CLI] --prune / --prune-untouched 会删除数据库记录"
+                  + ("与本地目录" if prune_mode == "prune-untouched" else "")
+                  + "（不可撤销）。")
+            print("[CLI] 先用 --no-clean 或 --dry-run 预览将删清单，"
+                  "确认后加 --yes 执行。")
+            return 2
+        from gcm.__main__ import get_data_dir
+        from gcm.app.prune import collect_prune_items, execute_prune
+        from gcm.db.repo_db import Database
+        from gcm.util.oplog import default_oplog
+        data_dir = get_data_dir()
+        db = Database(data_dir / "repos.db")
+        try:
+            items = collect_prune_items(db)
+            counts = execute_prune(db, items, prune_mode,
+                                   oplog=default_oplog(data_dir))
+        finally:
+            db.close()
+        if json_mode:
+            print(json.dumps({"version": __version__, "ok": True,
+                              "mode": f"prune:{prune_mode}",
+                              "pruned": counts["pruned"],
+                              "dir_removed": counts["dir_removed"],
+                              "skipped_protected": counts["skipped_protected"],
+                              "reported": counts["reported"],
+                              "items": [{"folder": it.folder_name, "url": it.url,
+                                         "remote_gone": it.remote_gone,
+                                         "protected": it.protected,
+                                         "db_removed": it.db_removed,
+                                         "dir_removed": it.dir_removed,
+                                         "skipped_reason": it.skipped_reason}
+                                        for it in items]},
+                             ensure_ascii=False, indent=2))
+        else:
+            print(f"[CLI] prune（{prune_mode}）：清库 {counts['pruned']} · "
+                  f"删目录 {counts['dir_removed']} · 保护跳过 "
+                  f"{counts['skipped_protected']} · 仅报告 {counts['reported']}")
+        return 0
     src = args[0] if args else "-"
     try:
         lines = _load_urls(src)

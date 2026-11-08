@@ -173,6 +173,10 @@ def _cases_parse_any() -> list[tuple[Any, Any]]:
         ("https://github.com/o/r@v1.2.0", ("https://github.com/o/r.git", "o__r@v1.2.0", "v1.2.0")),
         ("https://evil.com/a/b", None),
         ("", None),
+        # 击杀 `not owner or not repo` → `and` 的变异：一段为空必须 None
+        # （S-05 后 URL 重建用原始段，此判定是唯一防线，不能弱化）
+        ("https://github.com//repo", None),
+        ("https://github.com/owner/", None),
     ]
 
 

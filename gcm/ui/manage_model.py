@@ -205,7 +205,9 @@ class ManageModel(QAbstractItemModel):
                 # 用 "3/5" 更直接，也保留列语义。
                 return f"{self.health_value(index.row())}/5"
             if col == 7:
-                return r.size or ""
+                # Rev11-C R-06 收尾：空值显示「—」而不是空串 —— 空串让用户分不清
+                # 「没算」和「这列坏了」；与 ToolTip 的解释文案配套。
+                return r.size or "—"
             return (r.folder_name if col == 0 else
                     (f"{r.owner}/{r.repo}" if col == 1 else
                      (r.local_path if col == 2 else

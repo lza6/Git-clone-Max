@@ -369,7 +369,7 @@ class MainWindow(QMainWindow):
             from ..db.settings import crypto_warning
             _warn = crypto_warning()
             if _warn:
-                self._emit_log(_fmt_dt(), LogLevel.WARN, "凭据存储：" + _warn)
+                self._emit_log(_fmt_dt(), LogLevel.WARN, tr("凭据存储：") + _warn)
         except Exception:
             pass
 
@@ -432,7 +432,7 @@ class MainWindow(QMainWindow):
     def _on_auto_update_tick(self):
         """G37-4 定时触发：engine 非 busy 时一键更新全部（busy 跳过顺延下轮）。"""
         if self.busy:
-            self._emit_log(_fmt_dt(), LogLevel.INFO, "自动更新跳过：任务运行中")
+            self._emit_log(_fmt_dt(), LogLevel.INFO, tr("自动更新跳过：任务运行中"))
             return
         self._emit_log(_fmt_dt(), LogLevel.SYSTEM,
                        f"自动更新触发（间隔 {self._current_auto_update_minutes()} 分钟，"
@@ -542,7 +542,7 @@ class MainWindow(QMainWindow):
             # G71-5：优先读语义值（full/shallow）；旧版本/外部构造的对象退回文案判断。
             mode = (getattr(dlg, "selected_mode_value", "")
                     or getattr(dlg, "selected_mode", "") or "")
-            if mode == "shallow" or str(mode).startswith("浅") or \
+            if mode == "shallow" or str(mode).startswith(tr("浅")) or \
                     str(mode).lower().startswith("shallow"):
                 self.mode_combo.setCurrentIndex(1)
             self.settings_store.save(self.settings)
@@ -810,7 +810,7 @@ class MainWindow(QMainWindow):
         self._apply_layout_for_width(self.width())
         self._apply_layout_mode()
         self._emit_log(_fmt_dt(), LogLevel.INFO,
-                       f"显示器变更：当前屏幕 {head['name'] or '未知'}，"
+                       f"显示器变更：当前屏幕 {head['name'] or tr('未知')}，"
                        f"工作区 {aw}×{ah}，最小窗口 {min_w}×{min_h}")
 
     def _apply_fold_and_min_heights(self, compact: bool) -> None:
@@ -1131,7 +1131,7 @@ class MainWindow(QMainWindow):
             from ..app.applog import warn as _warn
             _warn(f"撤销浮条创建失败：{e}")
 
-        self.statusBar().showMessage("就绪")
+        self.statusBar().showMessage(tr("就绪"))
         # G36-5 首次显示空态 overlay（表初始为空）
         # Rev14 R14-09：三态判定收敛到 `manage_panel._update_empty_manage`（唯一来源）
         try:
@@ -1183,7 +1183,8 @@ class MainWindow(QMainWindow):
         from .progress_table import ProgressTable
         self.progress_panel = ProgressTable(owner=self, parent=self.tab_download)
         # Rev11（V-09）：批次结论条 —— 全屏唯一 display 字号，插在齿条与滚动区之间。
-        # 数据槽接线见 `_conclusion_from_overview`（从既有批次信号取数，零引擎契约变更）。
+        # 数据来源：运行态/完成态由 progress_table 的批次信号驱动；就绪态由 start_all
+        # 在引擎起跑前调 set_ready（R-01，数据来自 plan_batch）。
         from .batch_conclusion import BatchConclusionBar
         self.batch_conclusion = BatchConclusionBar(
             motion=bool(getattr(self.settings, "prefers_reduced_motion", False) is False))
@@ -1308,8 +1309,9 @@ class MainWindow(QMainWindow):
             except Exception:
                 self.settings_nav.addItem("")
         self.settings_nav.currentRowChanged.connect(self._scroll_to_settings_group)
-        self.settings_empty_lbl = QLabel(tr("没有匹配的设置项"))
-        self.settings_empty_lbl.setObjectName("muted")
+        from .empty_state import build_empty_state
+        self.settings_empty_lbl = build_empty_state(
+            tr("没有匹配的设置项"), tr("换个关键词试试"), parent=self)
         self.settings_empty_lbl.setVisible(False)
         v.addWidget(self.settings_empty_lbl)
         _row = QHBoxLayout()
@@ -1338,7 +1340,7 @@ class MainWindow(QMainWindow):
         lines: list[str] = []
         git_path = shutil.which("git")
         if not git_path:
-            lines.append("git：未检测到（请安装 Git 后重启应用）")
+            lines.append(tr("git：未检测到（请安装 Git 后重启应用）"))
         else:
             lines.append(f"git：{git_path}")
             try:
@@ -1347,7 +1349,7 @@ class MainWindow(QMainWindow):
                     capture_output=True, text=True, timeout=10,
                     encoding="utf-8", errors="replace")
                 out = (proc.stdout or "").strip() or (proc.stderr or "").strip()
-                lines.append(f"版本：{out or '未知'}")
+                lines.append(f"版本：{out or tr('未知')}")
             except Exception as e:
                 lines.append(f"版本：读取失败（{e}）")
         from PyQt6.QtCore import PYQT_VERSION_STR
@@ -1363,10 +1365,10 @@ class MainWindow(QMainWindow):
             shown = " · ".join(f"{k} {v / 1000:.1f}s" for k, v in
                                sorted(totals.items(), key=lambda kv: -kv[1]))
             lines.append(f"阶段耗时累计：{shown}")
-        lines.append(f"数据目录可写：{'是' if os.access(self.data_dir, os.W_OK) else '否'}")
+        lines.append(f"数据目录可写：{tr('是') if os.access(self.data_dir, os.W_OK) else tr('否')}")
         # G33-6 启动耗时：构造完成即记录；>3s 标注较慢（exe 解包/低配机器场景）
         startup_ms = getattr(self, "_startup_ms", 0)
-        slow_note = "（启动偏慢，可考虑使用便携版）" if startup_ms > 3000 else ""
+        slow_note = tr("（启动偏慢，可考虑使用便携版）") if startup_ms > 3000 else ""
         lines.append(f"启动耗时：{startup_ms} ms{slow_note}")
         QMessageBox.information(self, tr("环境自检"), "\n".join(lines))
         self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"环境自检完成：{' / '.join(lines)}")
@@ -1892,7 +1894,7 @@ class MainWindow(QMainWindow):
         text = self.repo_input.toPlainText()
         lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
         if not lines:
-            self._emit_log(_fmt_dt(), LogLevel.WARN, "输入区为空，无法归档下载。")
+            self._emit_log(_fmt_dt(), LogLevel.WARN, tr("输入区为空，无法归档下载。"))
             return
         # G67-2 附带修复：原实现固定取 lines[0]，与右键菜单文案「光标所在行」不符。
         cursor = self.repo_input.textCursor()
@@ -1901,7 +1903,7 @@ class MainWindow(QMainWindow):
         try:
             from gcm.git.archive import download_archive
         except Exception:
-            self._emit_log(_fmt_dt(), LogLevel.WARN, "归档模块不可用。")
+            self._emit_log(_fmt_dt(), LogLevel.WARN, tr("归档模块不可用。"))
             return
         from gcm.app.url_lib import sanitize_name
         dest_dir = self.data_dir / "archives"
@@ -1921,7 +1923,7 @@ class MainWindow(QMainWindow):
 
         import threading
         threading.Thread(target=_run, daemon=True).start()
-        self.statusBar().showMessage("归档下载中…")
+        self.statusBar().showMessage(tr("归档下载中…"))
 
     def _on_archive_finished(self, dest: str, ok: bool, message: str):
         """G67-2：归档完成回主线程（GUI 线程）后更新日志与状态栏。"""
@@ -2199,7 +2201,6 @@ class MainWindow(QMainWindow):
 
     def _apply_settings_filter(self, keyword: str) -> None:
         """G69-18：设置页搜索过滤（原为 settings_groups 内的闭包，会捕获 owner 成环）。"""
-        from PyQt6.QtWidgets import QLabel
         kw = (keyword or "").strip().lower()
         groups = list(getattr(self, "settings_groups", []) or []) + list(
             getattr(self, "settings_groups_extra", []) or [])
@@ -2312,7 +2313,7 @@ class MainWindow(QMainWindow):
         if not items:
             QMessageBox.information(self, tr("提示"), tr("输入区为空，没有可保存的地址。"))
             return
-        name, ok = QInputDialog.getText(self, "保存任务清单", "清单名称：")
+        name, ok = QInputDialog.getText(self, tr("保存任务清单"), tr("清单名称："))
         if not ok or not name.strip():
             return
         try:
@@ -2341,6 +2342,11 @@ class MainWindow(QMainWindow):
         """G84-18：从清单文件导入仓库地址（本地解析，不联网）。"""
         from .download_tools import import_readme_list as _ir
         _ir(self)
+
+    def open_batch_preview(self):
+        """Rev10 P-02：执行前预览差异表（纯本地预检）。"""
+        from .download_tools import open_batch_preview as _obp
+        _obp(self)
 
     def choose_target(self):
         from .download_tools import choose_target as _ct
@@ -2387,6 +2393,19 @@ class MainWindow(QMainWindow):
         shallow = mode_idx in (1, 2)
         mirror = mode_idx == 3  # G48-6 镜像克隆
         depth = self.depth_spin.value()
+        # Rev11-C R-01：就绪清单 —— 用户点「开始」后、引擎起跑前，结论条先展示
+        # 「这批会发生什么」（与 CLI --dry-run / 预览差异表同一份 plan_batch 纯函数）。
+        try:
+            from ..app.batch_plan import plan_batch
+            _plan = plan_batch("\n".join(str(s.url_https) for s in specs), target)
+            _c = _plan.counts
+            self.batch_conclusion.set_ready(
+                clone=_c.get("clone", 0), update=_c.get("update", 0),
+                protected=_c.get("duplicate", 0) + _c.get("invalid", 0),
+                blocked=_c.get("blocked", 0) + _c.get("replace", 0))
+        except Exception as e:      # noqa: BLE001 —— 就绪展示失败不得拖垮启动
+            from ..app.applog import warn as _warn
+            _warn(f"就绪清单计算失败（不影响启动）：{e}")
         # 下载完成后自动清空输入框（跟随设置页开关）
         self._launch(specs, target_root=Path(target), shallow=shallow, depth=depth,
                      clear_input=self.settings.auto_clear, mirror=mirror)
@@ -2490,7 +2509,7 @@ class MainWindow(QMainWindow):
         self.depth_spin.setEnabled(False)
 
         self._emit_log(_fmt_dt(), LogLevel.SYSTEM,
-                        f"开始并行同步 {len(specs)} 个仓库（{'浅克隆 depth=' + str(depth) if shallow else '满量'}）")
+                        f"开始并行同步 {len(specs)} 个仓库（{tr('浅克隆 depth=') + str(depth) if shallow else tr('满量')}）")
         self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"根目录：{target_root}")
 
         # 下载完成后自动清空输入框（默认开启）
@@ -2916,7 +2935,7 @@ class MainWindow(QMainWindow):
             f"Git-clone-Max {__version__}",
             f"生成时间：{_fmt_dt()}",
             f"数据目录：{self.data_dir}",
-            f"下载目录：{getattr(self.settings, 'download_dir', '') or '(未设置)'}",
+            f"下载目录：{getattr(self.settings, 'download_dir', '') or tr('(未设置)')}",
             f"引擎：busy={bool(getattr(self, 'busy', False))} "
             f"concurrency={getattr(getattr(self, 'engine', None), 'concurrency', '-')}",
         ]
@@ -2931,7 +2950,7 @@ class MainWindow(QMainWindow):
             if q is not None:
                 lines.append(f"重试队列：{q.stats()}")
             else:
-                lines.append("重试队列：未启用")
+                lines.append(tr("重试队列：未启用"))
         except Exception as e:  # noqa: BLE001
             lines.append(f"重试队列统计失败：{e}")
         try:
@@ -2983,7 +3002,7 @@ class MainWindow(QMainWindow):
             hits = [r for r in rows
                     if categorize_failure(str(r.get("message") or "")) == category]
             if not hits:
-                self._emit_log(_fmt_dt(), LogLevel.INFO, "该类无失败记录，跳过重试")
+                self._emit_log(_fmt_dt(), LogLevel.INFO, tr("该类无失败记录，跳过重试"))
                 return
             specs = []
             for r in hits:
@@ -3114,8 +3133,8 @@ class MainWindow(QMainWindow):
                 return
         if hasattr(self, "engine") and self.engine is not None:
             self.engine.cancel_all()
-        self._emit_log(_fmt_dt(), LogLevel.WARN, "已请求取消全部任务…")
-        self.statusBar().showMessage("正在取消…")
+        self._emit_log(_fmt_dt(), LogLevel.WARN, tr("已请求取消全部任务…"))
+        self.statusBar().showMessage(tr("正在取消…"))
         # 由结果槽统一复位
 
     def confirm_clear_input(self):
@@ -3210,7 +3229,7 @@ class MainWindow(QMainWindow):
                 lines.append(
                     f"{h['started_at']} {h['action']:10s} {h['status']:8s} "
                     f"+{h['commits']}  {h['message'][:70]}")
-            QMessageBox.information(self, tr("同步历史"), "\n".join(lines) or "仓库不存在或已删除")
+            QMessageBox.information(self, tr("同步历史"), "\n".join(lines) or tr("仓库不存在或已删除"))
             return
         RepoDetailDialog(repo=repo, history=hist, parent=self).exec()
 
@@ -3279,7 +3298,7 @@ class MainWindow(QMainWindow):
         if model is None:
             return
         narrow = int(w) < int(NARROW_WIDTH)
-        hide_names = ("大小", "健康")
+        hide_names = (tr("大小"), tr("健康"))
         for col in range(model.columnCount()):
             name = model.headerData(
                 col, _Qt.Orientation.Horizontal,

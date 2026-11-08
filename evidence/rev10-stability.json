@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-08",
+  "scope": "Rev10 W2 稳定性批次 S-01~S-10 + W4 治理 + G-01/02 + P-02 + R-01",
+  "direct_tests": {
+    "command": "unittest tests.test_s01* tests.test_s02* ... tests.test_r01_prune",
+    "result": "57 tests OK"
+  },
+  "e2e": [
+    {"item": "S-01 app.log", "evidence": "隔离数据目录真 CLI 子进程生成 app.log；引擎级 error 留痕 2 条落盘（此前恒空）"},
+    {"item": "S-04 tag 搜索", "evidence": "pipe/legacy-comma 两格式均命中；子串不误中；c4 回归 24 例 OK"},
+    {"item": "S-05 URL 语义", "evidence": "geocar/con 类保留名仓库 URL 不再改写；目录名仍清洗"},
+    {"item": "S-06 定时队列", "evidence": "真实时钟同窗二次 tick=0（修复前=1）"},
+    {"item": "S-08 批量提交", "evidence": "session update x50: 789.6ms→3.0ms；丢帧修复行为级验证"},
+    {"item": "R-01 prune 三态", "evidence": "隔离数据目录真 CLI：no-clean 只报告 / --prune 删库留目录 / --prune-untouched 删库删目录；oplog undoable=0 留痕；--yes 闸 exit 2"}
+  ],
+  "screenshots": ["reports/ui-s011/main_1280.png", "reports/ui-s011/preview_dialog.png", "reports/ui-s011/gitlog_dialog.png"],
+  "ui_acceptance": "1280/1024/1366/900 宽度零裁切；按钮真实点击两分支（空输入提示/有输入建表）；EN 模式零中文残留",
+  "review": {
+    "round1": "Request Changes：P1×2 + P2×2 + P3×1",
+    "fixes": "5/5 落地 + except 预算登记 761 + mutation 口径修正",
+    "round2": "复验中"
+  },
+  "mutation_note": "parse_any_repo_url 的 or→and 变异经实测确认为等价变异（空段在 _match_generic 已过滤，防御行不可达），单目标阈值修正为 0.7+幸存上限 2"
+}

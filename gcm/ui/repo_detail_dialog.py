@@ -29,25 +29,25 @@ from ..util.sshkey import permission_warning, validate_ssh_key_path
 
 # 同步动作 → 中文标签
 _ACTION_LABELS = {
-    "cloned": "克隆",
-    "updated": "更新",
-    "fetched": "检查",
-    "empty": "空仓库",
-    "skipped": "跳过",
-    "conflict": "冲突",
-    "cancelled": "取消",
-    "failed": "失败",
+    "cloned": tr("克隆"),
+    "updated": tr("更新"),
+    "fetched": tr("检查"),
+    "empty": tr("空仓库"),
+    "skipped": tr("跳过"),
+    "conflict": tr("冲突"),
+    "cancelled": tr("取消"),
+    "failed": tr("失败"),
 }
 
 # 同步状态 → 中文标签
 _STATUS_LABELS = {
-    "pending": "等待中",
-    "running": "进行中",
-    "success": "成功",
-    "failed": "失败",
-    "skipped": "跳过",
-    "cancelled": "已取消",
-    "conflict": "冲突",
+    "pending": tr("等待中"),
+    "running": tr("进行中"),
+    "success": tr("成功"),
+    "failed": tr("失败"),
+    "skipped": tr("跳过"),
+    "cancelled": tr("已取消"),
+    "conflict": tr("冲突"),
 }
 
 
@@ -191,17 +191,17 @@ class RepoDetailDialog(QDialog):
         grid = QGridLayout()
         grid.setSpacing(6)
         rows = [
-            ("仓库路径", str(self.repo.get("local_path") or "")),
-            ("主机", str(self.repo.get("host") or "")),
-            ("当前 HEAD", str(self.repo.get("head_sha") or "")[:12] or "（无）"),
-            ("最近同步", str(self.repo.get("last_sync_at") or "") or "（从未）"),
-            ("默认分支", str(self.repo.get("default_branch") or "") or "（未知）"),
+            (tr("仓库路径"), str(self.repo.get("local_path") or "")),
+            (tr("主机"), str(self.repo.get("host") or "")),
+            (tr("当前 HEAD"), str(self.repo.get("head_sha") or "")[:12] or tr("（无）")),
+            (tr("最近同步"), str(self.repo.get("last_sync_at") or "") or tr("（从未）")),
+            (tr("默认分支"), str(self.repo.get("default_branch") or "") or tr("（未知）")),
         ]
         rows.extend(self._profile_rows())
         for i, (label, value) in enumerate(rows):
             key = QLabel(label)
             key.setObjectName("muted")
-            is_path = label == "仓库路径"
+            is_path = label == tr("仓库路径")
             shown = value
             if is_path and len(value) > 64:
                 # G74：整条路径塞进 QLabel 会被硬裁；换行又会在盘符后断成
@@ -329,7 +329,7 @@ class RepoDetailDialog(QDialog):
 
     def _build_table(self) -> QTableWidget:
         self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["时间", "动作", "状态", "提交数", "说明"])
+        self.table.setHorizontalHeaderLabels([tr("时间"), tr("动作"), tr("状态"), tr("提交数"), tr("说明")])
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -344,7 +344,7 @@ class RepoDetailDialog(QDialog):
         if not self.history:
             # G47-2 空态占位
             self.table.setRowCount(1)
-            item = QTableWidgetItem("（暂无同步记录）")
+            item = QTableWidgetItem(tr("（暂无同步记录）"))
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.table.setItem(0, 0, item)
             self.table.setSpan(0, 0, 1, 5)
@@ -427,7 +427,7 @@ class RepoDetailDialog(QDialog):
             if not open_folder(path):
                 QMessageBox.warning(self, tr("无法打开目录"), f"系统未找到文件管理器：\n{path}")
         else:
-            QMessageBox.warning(self, tr("目录不存在"), f"仓库目录不存在：\n{path or '（路径为空）'}")
+            QMessageBox.warning(self, tr("目录不存在"), f"仓库目录不存在：\n{path or tr('（路径为空）')}")
 
     def copy_path(self) -> None:
         """复制本地路径到剪贴板。"""
@@ -538,7 +538,7 @@ class RepoDetailDialog(QDialog):
             err = (fsck.stderr or fsck.stdout or "").strip().splitlines()
             first = err[0] if err else f"rc={fsck.returncode}"
             return f"对象库异常：{first[:120]}"
-        return f"健康（对象库 {size_line or '正常'}）"
+        return f"健康（对象库 {size_line or tr('正常')}）"
 
     def _finish_health_check(self, text: str) -> None:
         """主线程收尾（health_checked 的槽）。"""
@@ -560,11 +560,11 @@ class RepoDetailDialog(QDialog):
             lines = (r.stdout or "").strip().splitlines()
             remote_sha = lines[0].split("\t")[0].strip() if lines else ""
         except Exception:  # noqa: BLE001 - 命令失败统一按无法检查处理
-            return "无法检查远端（无 URL 或命令失败）"
+            return tr("无法检查远端（无 URL 或命令失败）")
         if not remote_sha:
-            return "无法检查远端（无 URL 或命令失败）"
+            return tr("无法检查远端（无 URL 或命令失败）")
         if not local_sha:
-            return "无法比较（本地无 HEAD）"
+            return tr("无法比较（本地无 HEAD）")
         if local_sha == remote_sha:
-            return "已最新"
-        return "远端有新提交（本地 head 落后）"
+            return tr("已最新")
+        return tr("远端有新提交（本地 head 落后）")

@@ -60,6 +60,10 @@ def _redact_result(res: SyncResult) -> SyncResult:
     return res
 
 
+#: S-08：会话结果帧缓冲阈值 —— 满了立即落盘，防崩溃丢太多
+_SESSION_FLUSH_N = 20
+
+
 class SyncEngine(QObject):
     """统一的并行同步调度器。"""
 
@@ -157,6 +161,7 @@ class SyncEngine(QObject):
                 retry_queue_path, enabled=True,
                 max_retries=int(retry_max), backoff_base_sec=int(retry_backoff_base_sec))
         # G52-2 跨会话续跑清单（None 时不启用）
+        self._session_frame: list[tuple[str, str, str]] = []  # S-08 会话结果帧缓冲
         self.session_store = session_store if session_store is not None else None
         # G52-3 看门狗参数（由 MainWindow 创建 Watchdog；引擎只存参）
         self.watchdog_enabled = bool(watchdog_enabled)
@@ -639,18 +644,42 @@ class SyncEngine(QObject):
             pass
 
     def _session_update_result(self, res) -> None:
+        """S-08：单条结果**不立即写盘**，先攒进帧缓冲，批次收尾/缓冲超限一次提交。
+
+        每仓一次整文件重写 + 跨进程锁 ≈16ms，全在 GUI 线程；500 仓批次累计
+        ≈8s 纯阻塞。聚合后整批一次 `_rmw`（`update_results`）。缓冲在
+        `_session_flush`（批次 finished / 容量阈值）兜底落盘 —— 崩溃丢的只是
+        「本帧未满的会话清单状态」，与旧行为（每条落盘但可能整批 30s 冻结）
+        相比是正确的取舍。
+        """
         if self.session_store is None:
             return
         try:
             key = f"{res.spec.owner}/{res.spec.repo}"
-            self.session_store.update_status(key, res.status.value, res.message or "")
+            self._session_frame.append(
+                (key, res.status.value, res.message or ""))
+            if len(self._session_frame) >= _SESSION_FLUSH_N:
+                self._session_flush()
         except Exception:
             pass
+
+    def _session_flush(self) -> None:
+        """把帧缓冲里的会话结果一次性提交（批次收尾与容量阈值共用）。"""
+        if self.session_store is None or not self._session_frame:
+            return
+        try:
+            frame, self._session_frame = self._session_frame, []
+            self.session_store.update_results(frame)
+        except Exception:
+            # 审查 P2：提交失败必须把帧放回去（攒着下轮再试），
+            # 否则条目静默消失 —— 违反「会话清单不丢条目」。
+            self._session_frame = frame + self._session_frame
 
     def _session_mark_completed(self) -> None:
         if self.session_store is None:
             return
         try:
+            self._session_flush()          # S-08：先落盘攒着的结果再收尾
             self.session_store.mark_completed()
         except Exception:
             pass

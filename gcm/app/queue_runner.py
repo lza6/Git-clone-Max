@@ -17,7 +17,7 @@ from collections.abc import Callable
 from typing import Any
 
 from . import background_jobs
-from .queue_scheduler import is_due, missed_run_allowed
+from .queue_scheduler import already_ran_in_window_today, is_due, missed_run_allowed
 
 # 后台任务面板的第 5 行（B7-1 已建面板，S4 只需登记）
 JOB_SYNC_QUEUE = "sync_queue"
@@ -81,7 +81,9 @@ class QueueRunner:
             on_missed = str(row.get("on_missed") or "skip")
             last_run = str(row.get("last_run_at") or "")
             # 到点（时间窗内）或「错过但允许补跑一次」都算 due —— 两个判定共享 append
-            due_now = is_due(days, start, end, now)
+            # S-06：到点分支必须排除「今天同窗已跑过」，否则 tick 每 60s 重复启动
+            due_now = (is_due(days, start, end, now)
+                       and not already_ran_in_window_today(days, start, end, last_run, now))
             catch_up = missed_run_allowed(days, start, on_missed, last_run, now)
             if due_now or catch_up:
                 out.append(row)

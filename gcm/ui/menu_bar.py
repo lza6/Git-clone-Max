@@ -26,15 +26,15 @@ from ..i18n import tr
 
 #: 所有快捷键的唯一清单（帮助页与菜单共用 —— 单一事实源，防漂移）
 SHORTCUTS: tuple[tuple[str, str], ...] = (
-    ("Ctrl+= / Ctrl+- / Ctrl+0", "放大 / 缩小 / 复位字号"),
-    ("Ctrl+1 / Ctrl+2 / Ctrl+3", "切换下载中心 / 仓库管理 / 设置"),
-    ("Ctrl+K", "命令面板（搜索并执行任意功能）"),
-    ("Ctrl+Alt+S", "开始 / 取消全部"),
-    ("Ctrl+Alt+U", "一键更新全部"),
-    ("Ctrl+Alt+M", "显示主窗口"),
-    ("F6", "在各页签之间循环，并把焦点交给新页的第一个可操作控件"),
-    ("F1", "打开使用说明"),
-    ("Ctrl+Z", "撤销上一步可撤销操作"),
+    ("Ctrl+= / Ctrl+- / Ctrl+0", tr("放大 / 缩小 / 复位字号")),
+    ("Ctrl+1 / Ctrl+2 / Ctrl+3", tr("切换下载中心 / 仓库管理 / 设置")),
+    ("Ctrl+K", tr("命令面板（搜索并执行任意功能）")),
+    ("Ctrl+Alt+S", tr("开始 / 取消全部")),
+    ("Ctrl+Alt+U", tr("一键更新全部")),
+    ("Ctrl+Alt+M", tr("显示主窗口")),
+    ("F6", tr("在各页签之间循环，并把焦点交给新页的第一个可操作控件")),
+    ("F1", tr("打开使用说明")),
+    ("Ctrl+Z", tr("撤销上一步可撤销操作")),
 )
 
 
@@ -64,54 +64,54 @@ def build_menu_bar(owner: QMainWindow) -> Any:
 
     # ---------------------------------------------------------------- 文件
     m_file = bar.addMenu(tr("文件(&F)"))
-    m_file.addAction(_act(owner, "开始并行下载 / 更新", "start_all"))
-    m_file.addAction(_act(owner, "取消全部", "cancel_all"))
+    m_file.addAction(_act(owner, tr("开始并行下载 / 更新"), "start_all"))
+    m_file.addAction(_act(owner, tr("取消全部"), "cancel_all"))
     m_file.addSeparator()
-    m_file.addAction(_act(owner, "保存清单…", "_save_task_list"))
-    m_file.addAction(_act(owner, "载入清单…", "_load_task_list"))
+    m_file.addAction(_act(owner, tr("保存清单…"), "_save_task_list"))
+    m_file.addAction(_act(owner, tr("载入清单…"), "_load_task_list"))
     m_file.addSeparator()
-    m_file.addAction(_act(owner, "打开克隆目录", "open_target"))
-    m_file.addAction(_act(owner, "打开数据目录", "open_data_dir"))
+    m_file.addAction(_act(owner, tr("打开克隆目录"), "open_target"))
+    m_file.addAction(_act(owner, tr("打开数据目录"), "open_data_dir"))
     m_file.addSeparator()
-    m_file.addAction(_act(owner, "退出", "close"))
+    m_file.addAction(_act(owner, tr("退出"), "close"))
 
     # ---------------------------------------------------------------- 编辑
     m_edit = bar.addMenu(tr("编辑(&E)"))
-    m_edit.addAction(_act(owner, "撤销", "menu_undo", "Ctrl+Z"))
-    m_edit.addAction(_act(owner, "操作历史…", "open_oplog_dialog"))
+    m_edit.addAction(_act(owner, tr("撤销"), "menu_undo", "Ctrl+Z"))
+    m_edit.addAction(_act(owner, tr("操作历史…"), "open_oplog_dialog"))
     m_edit.addSeparator()
-    m_edit.addAction(_act(owner, "清空输入区", "confirm_clear_input"))
+    m_edit.addAction(_act(owner, tr("清空输入区"), "confirm_clear_input"))
 
     # ---------------------------------------------------------------- 视图
     m_view = bar.addMenu(tr("视图(&V)"))
-    for idx, name in enumerate(("下载中心", "仓库管理", "设置")):
+    for idx, name in enumerate((tr("下载中心"), tr("仓库管理"), tr("设置"))):
         act = QAction(tr(name), owner)
         act.setProperty("tab_index", idx)
         act.triggered.connect(owner.menu_goto_tab)   # 绑定方法；槽内读 sender 属性
         m_view.addAction(act)
     m_view.addSeparator()
-    m_view.addAction(_act(owner, "放大字号", "zoom_in", "Ctrl+="))
-    m_view.addAction(_act(owner, "缩小字号", "zoom_out", "Ctrl+-"))
-    m_view.addAction(_act(owner, "复位字号", "zoom_reset", "Ctrl+0"))
+    m_view.addAction(_act(owner, tr("放大字号"), "zoom_in", "Ctrl+="))
+    m_view.addAction(_act(owner, tr("缩小字号"), "zoom_out", "Ctrl+-"))
+    m_view.addAction(_act(owner, tr("复位字号"), "zoom_reset", "Ctrl+0"))
 
     # ---------------------------------------------------------------- 工具
     m_tools = bar.addMenu(tr("工具(&T)"))
-    m_tools.addAction(_act(owner, "命令面板…", "open_command_palette", "Ctrl+K"))
-    m_tools.addAction(_act(owner, "失败汇总…", "_open_failure_dialog"))
-    m_tools.addAction(_act(owner, "重试队列…", "_open_retry_dialog"))
-    m_tools.addAction(_act(owner, "后台任务…", "show_background_jobs"))
+    m_tools.addAction(_act(owner, tr("命令面板…"), "open_command_palette", "Ctrl+K"))
+    m_tools.addAction(_act(owner, tr("失败汇总…"), "_open_failure_dialog"))
+    m_tools.addAction(_act(owner, tr("重试队列…"), "_open_retry_dialog"))
+    m_tools.addAction(_act(owner, tr("后台任务…"), "show_background_jobs"))
     m_tools.addSeparator()
-    m_tools.addAction(_act(owner, "统计中心…", "show_statistics"))
-    m_tools.addAction(_act(owner, "导出诊断包…", "_export_diag_bundle"))
-    m_tools.addAction(_act(owner, "环境自检", "_run_selftest"))
+    m_tools.addAction(_act(owner, tr("统计中心…"), "show_statistics"))
+    m_tools.addAction(_act(owner, tr("导出诊断包…"), "_export_diag_bundle"))
+    m_tools.addAction(_act(owner, tr("环境自检"), "_run_selftest"))
 
     # ---------------------------------------------------------------- 帮助
     m_help = bar.addMenu(tr("帮助(&H)"))
-    m_help.addAction(_act(owner, "使用说明", "open_help", "F1"))
-    m_help.addAction(_act(owner, "开始使用清单", "_show_checklist"))
+    m_help.addAction(_act(owner, tr("使用说明"), "open_help", "F1"))
+    m_help.addAction(_act(owner, tr("开始使用清单"), "_show_checklist"))
     m_help.addSeparator()
-    m_help.addAction(_act(owner, "检查更新…", "check_update_now"))
-    m_help.addAction(_act(owner, "关于", "show_about"))
+    m_help.addAction(_act(owner, tr("检查更新…"), "check_update_now"))
+    m_help.addAction(_act(owner, tr("关于"), "show_about"))
     return bar
 
 

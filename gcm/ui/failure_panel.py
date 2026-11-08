@@ -161,9 +161,11 @@ class FailurePanel(QWidget):
         _sr.addWidget(self.btn_cancel_stuck)
         self.stuck_row.setVisible(False)
         v.addWidget(self.stuck_row)
-        self.empty_lbl = QLabel(tr("暂无失败记录"))
-        self.empty_lbl.setObjectName("muted")
-        self.empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Rev14 R14-09 收口：空态走 `empty_state` 工厂（唯一来源），
+        # 与管理页/进度表同一样式（emptyHint objectName），不再是裸 muted QLabel。
+        from .empty_state import build_empty_state
+        self.empty_lbl = build_empty_state(
+            tr("暂无失败记录"), tr("有仓库失败后会出现在这里"), parent=self)
         v.addWidget(self.empty_lbl)
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(
@@ -196,7 +198,18 @@ class FailurePanel(QWidget):
         self.table.setRowCount(len(rows))
         for i, g in enumerate(rows):
             self.table.setItem(i, 0, QTableWidgetItem(tr(g["label"])))
-            self.table.setItem(i, 1, QTableWidgetItem(str(g["count"])))
+            # Rev11-C P-04：次数是数字列 → 右对齐 + mono（个位对齐，扫读不串行）。
+            # 散文列（原因/处理）保持正文字体 —— mono 跑中文会失去可读性。
+            it_count = QTableWidgetItem(str(g["count"]))
+            it_count.setTextAlignment(
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            try:
+                from .typography import type_font
+                it_count.setFont(type_font("mono"))
+            except Exception as e:      # noqa: BLE001 —— 字体缺失只影响美观
+                from ..app.applog import warn as _warn
+                _warn(tr("失败次数列 mono 字体不可用：") + str(e))
+            self.table.setItem(i, 1, it_count)
             # G71-3：三段式（发生了什么 / 为什么 / 怎么办）；不可自动重试时明示
             lines = [
                 tr(str(g.get("title") or g["label"])),
@@ -336,10 +349,19 @@ class FailureDialog(QDialog):
         lay.addWidget(self.panel)
         self.btn_close = QPushButton(tr("关闭"))
         self.btn_close.clicked.connect(self.accept)
+        # G-02：git 命令记录回看入口 —— 「这条仓库的 git 到底说了什么」
+        self.btn_git_log = QPushButton(tr("git 命令记录…"))
+        self.btn_git_log.setToolTip(tr("回看最近执行的 git 命令与输出（已脱敏，最近 500 条）"))
+        self.btn_git_log.clicked.connect(self._open_git_log)
         row = QHBoxLayout()
+        row.addWidget(self.btn_git_log)
         row.addStretch()
         row.addWidget(self.btn_close)
         lay.addLayout(row)
 
     def refresh(self) -> int:
         return self.panel.refresh()
+
+    def _open_git_log(self) -> None:
+        from .git_command_dialog import GitCommandDialog
+        GitCommandDialog(owner=self, parent=self).exec()

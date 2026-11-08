@@ -257,3 +257,20 @@ def import_readme_list(owner) -> None:
         from ..app.applog import warn as _warn
         _warn(f"导入清单：状态栏提示失败（导入已成功）：{e}")
     mb.information(owner, tr("导入清单"), msg)
+
+
+def open_batch_preview(owner) -> None:
+    """Rev10 P-02：执行前预览差异表（纯本地预检，零网络零写盘）。
+
+    与 CLI `--dry-run` / MCP `dry_run` 用同一份 `app/batch_plan.plan_batch`，
+    不写第二份判定。输入区为空时给提示而不是弹空表。
+    """
+    mb = _msgbox()
+    text = owner.repo_input.toPlainText() if hasattr(owner, "repo_input") else ""
+    if not str(text).strip():
+        mb.information(owner, tr("预览"), tr("输入区是空的：先贴一些仓库地址。"))
+        return
+    from ..app.url_lib import host_of  # noqa: F401  （确保模块加载无副作用）
+    from .batch_preview_dialog import BatchPreviewDialog
+    root = owner.target_edit.text().strip() if hasattr(owner, "target_edit") else ""
+    BatchPreviewDialog(text, root or str(owner.data_dir / "clones"), parent=owner).exec()

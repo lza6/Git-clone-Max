@@ -302,6 +302,12 @@ def build_task_list_row(owner) -> QWidget:
         tr("从 README / awesome 清单 / 收藏页文本里批量提取仓库地址并填入输入区"))
     owner.btn_readme_import.clicked.connect(owner.import_readme_list)
     list_row.addWidget(owner.btn_readme_import)
+    # Rev10 P-02：执行前预览差异表（纯本地预检，不联网不写盘）
+    owner.btn_preview = QPushButton(tr("预览…"))
+    owner.btn_preview.setToolTip(
+        tr("看这一批将克隆/更新/删除重建/被占/重复/无效的逐条计划（不联网、不写盘）"))
+    owner.btn_preview.clicked.connect(owner.open_batch_preview)
+    list_row.addWidget(owner.btn_preview)
     list_row.addStretch(1)
     return wrap
 

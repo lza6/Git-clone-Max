@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..i18n import tr
 from ..util.oplog import OpLog, OpRecord
 
 
@@ -46,9 +47,9 @@ def undo_record(oplog: OpLog, owner: Any, rec: OpRecord) -> str:
     「点了撤销没反应」比报错更伤可用性（尼尔森原则①）。
     """
     if rec.undone_at:
-        raise UndoError("这条操作已经撤销过了")
+        raise UndoError(tr("这条操作已经撤销过了"))
     if rec.undoable != 1:
-        raise UndoError("该操作不支持撤销（只记录了操作，没有保存可恢复的旧值）")
+        raise UndoError(tr("该操作不支持撤销（只记录了操作，没有保存可恢复的旧值）"))
     handler = _HANDLERS.get(rec.action)
     if handler is None:
         raise UndoError(f"暂不支持撤销「{rec.action}」")
@@ -81,11 +82,11 @@ def _undo_repo_delete(owner: Any, rec: OpRecord) -> str:
     else:
         snapshots = [dict(rec.before or {})]
     if not snapshots:
-        raise UndoError("这条记录没有可恢复的仓库")
+        raise UndoError(tr("这条记录没有可恢复的仓库"))
 
     db = getattr(owner, "db", None)
     if db is None:
-        raise UndoError("数据库不可用，无法恢复")
+        raise UndoError(tr("数据库不可用，无法恢复"))
 
     done, failed = 0, 0
     for row in snapshots:
@@ -99,7 +100,7 @@ def _undo_repo_delete(owner: Any, rec: OpRecord) -> str:
             failed += 1
     _refresh(owner)
     if not done:
-        raise UndoError("没有任何仓库能恢复（快照数据不完整）")
+        raise UndoError(tr("没有任何仓库能恢复（快照数据不完整）"))
     if failed:
         return f"已恢复 {done} 个仓库，{failed} 个失败（数据不完整）"
     return f"已恢复 {done} 个仓库" if done > 1 else \
@@ -142,29 +143,29 @@ def _undo_repo_tags(owner: Any, rec: OpRecord) -> str:
     row = dict(rec.before or {})
     rid = row.get("repo_id")
     if rid is None:
-        raise UndoError("这条记录缺少仓库 ID，无法恢复标签")
+        raise UndoError(tr("这条记录缺少仓库 ID，无法恢复标签"))
     db = getattr(owner, "db", None)
     if db is None:
-        raise UndoError("数据库不可用，无法恢复")
+        raise UndoError(tr("数据库不可用，无法恢复"))
     db.set_tags(int(rid), list(row.get("tags") or []))
     _refresh(owner)
-    return "已恢复原标签"
+    return tr("已恢复原标签")
 
 
 def _undo_toggle(owner: Any, rec: OpRecord, *, field: str) -> str:
     row = dict(rec.before or {})
     rid = row.get("repo_id")
     if rid is None:
-        raise UndoError("这条记录缺少仓库 ID，无法恢复")
+        raise UndoError(tr("这条记录缺少仓库 ID，无法恢复"))
     db = getattr(owner, "db", None)
     if db is None:
-        raise UndoError("数据库不可用，无法恢复")
+        raise UndoError(tr("数据库不可用，无法恢复"))
     setter = getattr(db, f"set_{field}", None)
     if setter is None:
         raise UndoError(f"数据库没有 set_{field}，无法恢复")
     setter(int(rid), bool(row.get(field)))
     _refresh(owner)
-    return "已恢复原状态"
+    return tr("已恢复原状态")
 
 
 def _undo_repo_favorite(owner: Any, rec: OpRecord) -> str:
@@ -181,10 +182,10 @@ def _undo_list_delete(owner: Any, rec: OpRecord) -> str:
     name = row.get("name") or ""
     lines = row.get("lines")
     if not name or not isinstance(lines, list):
-        raise UndoError("这条记录缺少清单内容，无法恢复")
+        raise UndoError(tr("这条记录缺少清单内容，无法恢复"))
     store = getattr(owner, "lists", None)
     if store is None or not hasattr(store, "save"):
-        raise UndoError("清单存储不可用，无法恢复")
+        raise UndoError(tr("清单存储不可用，无法恢复"))
     store.save(name, [str(x) for x in lines])
     return f"已恢复清单「{name}」"
 
@@ -198,16 +199,16 @@ def _undo_retry_queue_clear(owner: Any, rec: OpRecord) -> str:
     row = dict(rec.before or {})
     entries = row.get("entries")
     if not isinstance(entries, list) or not entries:
-        raise UndoError("这条记录没有可恢复的条目")
+        raise UndoError(tr("这条记录没有可恢复的条目"))
     queue = _find_retry_queue(owner)
     if queue is None:
-        raise UndoError("重试队列不可用，无法恢复")
+        raise UndoError(tr("重试队列不可用，无法恢复"))
     restore = getattr(queue, "restore_entries", None)
     if restore is None:
-        raise UndoError("重试队列没有 restore_entries 方法，无法恢复")
+        raise UndoError(tr("重试队列没有 restore_entries 方法，无法恢复"))
     n = restore([e for e in entries if isinstance(e, dict)])
     if not n:
-        raise UndoError("没有任何条目能恢复（数据格式不匹配）")
+        raise UndoError(tr("没有任何条目能恢复（数据格式不匹配）"))
     return f"已恢复 {n} 条重试任务"
 
 
@@ -235,7 +236,7 @@ def _undo_url_history_clear(owner: Any, rec: OpRecord) -> str:
     items = row.get("items")
     store = getattr(owner, "url_history", None)
     if store is None or not isinstance(items, list):
-        raise UndoError("地址历史不可用，无法恢复")
+        raise UndoError(tr("地址历史不可用，无法恢复"))
     for url in reversed([u for u in items if isinstance(u, str) and u]):
         store.add(url)
     return f"已恢复 {len(items)} 条地址历史"
@@ -246,10 +247,10 @@ def _undo_input_clear(owner: Any, rec: OpRecord) -> str:
     row = dict(rec.before or {})
     text = row.get("text")
     if not isinstance(text, str) or not text.strip():
-        raise UndoError("这条记录没有可恢复的输入内容")
+        raise UndoError(tr("这条记录没有可恢复的输入内容"))
     widget = getattr(owner, "repo_input", None)
     if widget is None:
-        raise UndoError("输入区不可用，无法恢复")
+        raise UndoError(tr("输入区不可用，无法恢复"))
     current = widget.toPlainText()
     restored = text if not current.strip() else current.rstrip("\n") + "\n" + text
     widget.setPlainText(restored)
@@ -281,7 +282,7 @@ _HANDLERS = {
 
 
 def action_label(action: str) -> str:
-    return ACTION_LABELS.get(action, action or "未知操作")
+    return ACTION_LABELS.get(action, action or tr("未知操作"))
 
 
 __all__ = ["ACTION_LABELS", "UndoError", "action_label", "can_undo", "undo_record"]

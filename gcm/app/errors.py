@@ -123,8 +123,15 @@ _DISK_KEYWORDS = (
 )
 _LOCAL_KEYWORDS = (
     "read-only file system", "cannot create directory", "cannot mkdir",
-    "cannot create work tree", "permission denied (publickey)",
+    "cannot create work tree",
     "could not create work tree", "filename too long", "file name too long",
+)
+# S-10：SSH 公钥失败是**认证问题**（查密钥/agent/部署密钥），不是本地 IO ——
+# 此前归 _LOCAL_KEYWORDS，用户会看到「清理磁盘空间」这种毫不相干的建议。
+_SSH_AUTH_KEYWORDS = (
+    "permission denied (publickey)",
+    "no supported authentication methods",
+    "host key verification failed",
 )
 _PLATFORM_KEYWORDS = (
     "invalid path", "file exists", "already exists",
@@ -205,9 +212,21 @@ class ErrorInfo:
                 f"怎么办：{self.action}"]
 
 
+#: 判「数字是 HTTP 状态码」所需的语境词（S-10：`fatal: bad object 404`、
+#: 端口 4031、sha 片段 deadbeef404 此前都会被当成状态码）。
+_HTTP_CONTEXT_WORDS = ("http", "https", "status", "the requested url returned error",
+                       "remote:", "api", "url returned")
+
+
 def _status_code(text: str) -> Optional[int]:
     m = _STATUS_RE.search(text)
-    return int(m.group(1)) if m else None
+    if not m:
+        return None
+    low = text.lower()
+    # 无 HTTP 语境词 → 数字大概率是 sha 片段/端口/对象号，不作状态码
+    if not any(w in low for w in _HTTP_CONTEXT_WORDS):
+        return None
+    return int(m.group(1))
 
 
 def _make(category: str, code: str, *, retryable: bool,
@@ -261,8 +280,10 @@ def classify_error(message: str, detail: str = "",
     # 3.1) 本地环境（只读/权限/长路径）
     elif any(k in low for k in _LOCAL_KEYWORDS):
         info = result(CAT_LOCAL, "local_io", False)
-    # 4) 认证/权限（401/403 优先于泛化 4xx）
-    elif code_status in (401, 403) or any(k in low for k in _AUTH_KEYWORDS):
+    # 4) 认证/权限（401/403 优先于泛化 4xx）；SSH 公钥失败也归这（S-10）
+    elif (code_status in (401, 403)
+          or any(k in low for k in _AUTH_KEYWORDS)
+          or any(k in low for k in _SSH_AUTH_KEYWORDS)):
         info = result(CAT_AUTH, "auth_failed", False)
     # 5) 仓库不存在（404）
     elif code_status == 404 or any(k in low for k in _NOT_FOUND_KEYWORDS):

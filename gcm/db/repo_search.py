@@ -63,7 +63,7 @@ class SearchMixin:
         # 条件全空 → 不做全表扫描（用户还没输入）
         if not (text or parsed.tags or parsed.hosts or parsed.favorite is not None
                 or parsed.updated_within_days or parsed.updated_older_days
-                or plain_host):
+                or parsed.neg_tags or parsed.neg_hosts or plain_host):
             return []
         n = max(1, min(2000, int(limit)))
 
@@ -86,7 +86,9 @@ class SearchMixin:
                 continue
             if parsed.neg_hosts and str(r.get("host") or "").lower() in parsed.neg_hosts:
                 continue
-            tags = [t.strip().lower() for t in str(r.get("tags") or "").split(",") if t.strip()]
+            # S-04：与存储/SQL 侧同一口径 —— 竖线为主、历史逗号归一
+            tags = [t.strip().lower() for t in str(r.get("tags") or "")
+                    .replace(",", "|").split("|") if t.strip()]
             if any(t not in tags for t in parsed.tags):
                 continue
             if any(t in tags for t in parsed.neg_tags):
@@ -124,15 +126,18 @@ class SearchMixin:
         if parsed.favorite is not None:
             sql += " AND favorite=?"
             params.append(1 if parsed.favorite else 0)
-        # 标签按「逗号边界」精确匹配：`','||replace(lower(tags),' ','')||','` LIKE '%,x,%'
-        # —— 避免 `tag:py` 误命中 `python`（子串匹配的经典坑）
-        tag_expr = "',' || replace(lower(coalesce(tags, '')), ' ', '') || ','"
+        # 标签按「竖线边界」精确匹配（S-04）：存储侧 `set_tags` 用 `|` 连接，
+        # 搜索侧必须用同一边界符 —— 此前这里用逗号边界，多标签仓库 `tag:x`
+        # 永久零命中（三种口径之一，实测复现）。仍先去掉空格，避免
+        # `| web | ` 这类带空格写法漏配；`%` 前后拼接保证 `tag:py` 不误中 `python`。
+        # replace 两步：历史数据可能是逗号分隔（旧版/元数据导入），先归一成竖线
+        tag_expr = ("'|' || replace(replace(lower(coalesce(tags, '')), ' ', ''), ',', '|') || '|'")
         for t in parsed.tags:
             sql += f" AND {tag_expr} LIKE ?"
-            params.append(f"%,{t},%")
+            params.append(f"%|{t}|%")
         for t in parsed.neg_tags:
             sql += f" AND {tag_expr} NOT LIKE ?"
-            params.append(f"%,{t},%")
+            params.append(f"%|{t}|%")
         if parsed.updated_within_days:
             sql += " AND last_sync_at >= datetime('now','localtime', ?)"
             params.append(f"-{int(parsed.updated_within_days)} days")

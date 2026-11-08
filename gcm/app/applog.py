@@ -14,6 +14,11 @@ from ..util.redact import redact
 
 _logger: logging.Logger | None = None
 
+# S-01：进程级默认日志路径。生产入口（__main__）启动时第一件事就是设置它，
+# 这样 28 处 `applog.info/warn/error(...)`（全都不传路径）才能真正落盘 ——
+# 此前 handler 挂载权交给「调用方传路径」，而生产调用点零传参 → app.log 从未生成。
+_default_log_path: str | None = None
+
 # 只有出现这些「可能含凭据」的廉价特征才跑正则；避免每条日志都做 5 次 regex。
 _REDACT_HINTS = (
     "://", "authorization", "private-token", "x-auth-token", "x-api-key",
@@ -38,9 +43,23 @@ class RedactingFormatter(logging.Formatter):
         return text
 
 
+def set_default_log_path(path: str | Path | None) -> None:
+    """设置进程级默认日志路径（S-01）。生产入口在拿到 data_dir 后立即调用。
+
+    幂等：重复设置同一路径无副作用；设为 None 则恢复「不落盘」默认。
+    """
+    global _default_log_path
+    _default_log_path = str(Path(path).resolve()) if path is not None else None
+
+
+def _default_path() -> str | None:
+    return _default_log_path
+
+
 def get_logger(log_path: str | Path | None = None) -> logging.Logger:
     """获取应用级 logger（单例；文件 handler 惰性挂载）。
 
+    优先级：显式 `log_path` 参数 > `set_default_log_path` 设置的进程默认路径。
     首次调用若未带 path（如某些导入路径先打日志），后续带 path 的调用仍会
     挂上文件 handler——保证「先无文件后有文件」的场景也能落盘。
     """
@@ -50,6 +69,8 @@ def get_logger(log_path: str | Path | None = None) -> logging.Logger:
         logger.setLevel(logging.INFO)
         logger.propagate = False
         _logger = logger
+    if log_path is None:
+        log_path = _default_path()
     if log_path is not None:
         # G50-3 多路径：显式给定不同 log_path 时也挂新 handler（避免单例夺吃新路径导致无法落盘）
         _target = str(Path(log_path).resolve())
@@ -94,7 +115,7 @@ def error(msg: str, log_path: str | Path | None = None) -> None:
 
 def reset_for_tests() -> None:
     """测试用：重置单例（换临时目录时）。"""
-    global _logger
+    global _logger, _default_log_path
     if _logger is not None:
         try:
             for h in list(_logger.handlers):
@@ -103,3 +124,4 @@ def reset_for_tests() -> None:
         except Exception:
             pass
     _logger = None
+    _default_log_path = None

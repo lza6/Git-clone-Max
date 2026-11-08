@@ -12,7 +12,7 @@ import json
 import time
 from typing import Any, Optional
 
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -38,6 +38,18 @@ def _fmt_time(ts: float) -> str:
         return time.strftime("%H:%M:%S", time.localtime(float(ts)))
     except Exception:
         return "—"
+
+
+# Rev11-C P-03：事件类型/状态直接以协议枚举值作 i18n key（中文名只在
+# `gcm/i18n/zh.py` 里；英文模式下查不到就原样显示枚举值 —— 对 agent 更友好）。
+def _type_label(raw: Any) -> str:
+    key = str(raw or "")
+    return tr(key) if key else ""
+
+
+def _status_label(raw: Any) -> str:
+    key = str(raw or "")
+    return tr(key) if key else ""
 
 
 def _summary(ev: Any) -> str:
@@ -169,12 +181,14 @@ class EventStreamPanel(QWidget):
         self.table.setRowCount(0)
         self.table.setRowCount(len(events))
         for i, ev in enumerate(events):
-            self.table.setItem(i, 0, QTableWidgetItem(str(getattr(ev, "seq", ""))))
-            self.table.setItem(i, 1, QTableWidgetItem(_fmt_time(getattr(ev, "ts", 0))))
-            self.table.setItem(i, 2, QTableWidgetItem(str(getattr(ev, "type", ""))))
             d = getattr(ev, "data", {}) or {}
+            it_seq = QTableWidgetItem(str(getattr(ev, "seq", "")))
+            it_seq.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            self.table.setItem(i, 0, it_seq)
+            self.table.setItem(i, 1, QTableWidgetItem(_fmt_time(getattr(ev, "ts", 0))))
+            self.table.setItem(i, 2, QTableWidgetItem(_type_label(getattr(ev, "type", ""))))
             self.table.setItem(i, 3, QTableWidgetItem(str(d.get("key") or d.get("folder_name") or "")))
-            self.table.setItem(i, 4, QTableWidgetItem(str(d.get("status") or "")))
+            self.table.setItem(i, 4, QTableWidgetItem(_status_label(d.get("status"))))
             item = QTableWidgetItem(_summary(ev))
             # G71-11（审查 S7）：tooltip 不再为每行做 indent JSON（500 行 × 每秒
             # 一次会有明显主线程开销）；只在行数较少时给完整载荷。

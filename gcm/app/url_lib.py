@@ -337,9 +337,15 @@ def parse_any_repo_url(raw: str) -> RepoSpec | None:
     for seg in (owner, repo):
         if seg in ("..", ".", ".git"):
             return None
-    owner = sanitize_name(owner)
-    repo = sanitize_name(repo)
+    # S-05：URL 语义与本地目录名**解耦**。owner/repo 段保持原始值进 URL ——
+    # sanitize_name 是文件名清洗（会改写 CON→CON_、a:b→a_b），用它重拼网络
+    # URL 会静默指向另一个仓库（真实案例：geocar/con → geocar/con_.git = 404）。
+    # 非法字符与保留名的危害只在落盘目录，故只对 folder_name 清洗。
     if not owner or not repo:
+        return None
+    dir_owner = sanitize_name(owner)
+    dir_repo = sanitize_name(repo)
+    if not dir_owner or not dir_repo:
         return None
     # 重建 URL 时保留分组前缀段，避免 gitlab 子组被折叠成错误仓库
     prefix = segments[:-2]
@@ -351,10 +357,10 @@ def parse_any_repo_url(raw: str) -> RepoSpec | None:
         ref = ""
     # 不同 @tag 应克隆到不同目录，避免覆盖（owner__repo@v1 vs owner__repo@v2）
     if host == GITHUB_HOST:
-        folder = f"{owner}__{repo}" if not ref else f"{owner}__{repo}@{ref}"
+        folder = f"{dir_owner}__{dir_repo}" if not ref else f"{dir_owner}__{dir_repo}@{ref}"
     else:
-        folder = (f"{host}__{owner}__{repo}" if not ref
-                  else f"{host}__{owner}__{repo}@{ref}")
+        folder = (f"{host}__{dir_owner}__{dir_repo}" if not ref
+                  else f"{host}__{dir_owner}__{dir_repo}@{ref}")
     return RepoSpec(owner=owner, repo=repo, url_https=url_https,
                     folder_name=folder, ref=ref)
 
@@ -374,13 +380,14 @@ def parse_repo_url(raw: str) -> RepoSpec | None:
     owner, repo = segments[-2], segments[-1]
     if "@" in owner or "@" in repo:
         return None
-    owner = sanitize_name(owner)
-    repo = sanitize_name(repo)
-    if not owner or not repo:
+    # S-05：与 _match_generic 同一纪律 —— URL 保持原始段，目录名才清洗。
+    dir_owner = sanitize_name(owner)
+    dir_repo = sanitize_name(repo)
+    if not owner or not repo or not dir_owner or not dir_repo:
         return None
     return RepoSpec(owner=owner, repo=repo,
                     url_https=f"https://github.com/{owner}/{repo}.git",
-                    folder_name=f"{owner}__{repo}")
+                    folder_name=f"{dir_owner}__{dir_repo}")
 
 
 def parse_urls(text: str) -> tuple[list[RepoSpec], list[str]]:
