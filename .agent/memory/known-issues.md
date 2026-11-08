@@ -92,8 +92,8 @@ owner: memory-keeper
 | test (ubuntu-latest) | ✅ | — |
 | fast-smoke / e2e-smoke / perf-baseline | ✅ | — |
 | packaging | skipped | 仅 tag 触发（见下） |
-| **test (macos-latest)** | ❌ **预存失败** | `test_ui_compact_visibility` 两条：(1240,729) 裁切断言 + 其反向自检。**在 `0890f0e`（本轮改动之前）就同样红**，属 macOS 字体度量差异导致的既有问题，与本轮无关；本机 Windows 无法复现，需 macOS 环境才能修 |
-| **slow** | ❌ → 已修 | `tests/test_scanner.py::test_rows_and_data` 断言大小列为空串；R-06 改显示 `—` 后该断言过期。**已更新断言并复跑通过**（66 例 OK）；该测试在慢集，快集跑不到，所以快集绿也掩盖不了 |
+| **test (macos-latest)** | ❌ **预存失败（环境阻塞）** | `test_ui_compact_visibility` 两条：(1240,729) 裁切断言 + 其反向自检。**在 `0890f0e`（本轮改动之前）逐字相同地红**（同测试名、同尺寸），属 macOS 字体度量差异；本机无 macOS 环境无法复现与验证修法，盲改会危及 Windows（主目标平台）—— 标为环境阻塞，非本轮回归 |
+| **slow** | ✅ 已修 | `tests/test_scanner.py::test_rows_and_data` 断言大小列为空串；R-06 改显示 `—` 后该断言过期 → 已更新断言，慢集 129 例 OK，CI slow job **success** |
 
 **教训（加入 D 系列候选）**：改「用户可见的默认值」时，要 grep **慢集**里的对应断言 ——
 快集口径覆盖不到 `tests/test_scanner.py`，只跑快集就会漏。
