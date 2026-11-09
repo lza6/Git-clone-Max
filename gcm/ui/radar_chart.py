@@ -21,12 +21,12 @@ from ..i18n import tr
 
 # 维度显示名（与 alerts.DIM_LABELS 保持一致；此处复制是为了避免 UI 依赖 app 逻辑）
 DEFAULT_LABELS: dict[str, str] = {
-    "success_rate": "成功率",
-    "freshness": "陈旧度",
-    "conflicts": "冲突健康",
-    "size_score": "仓库大小",
-    "tags_score": "标签完整",
-    "recency": "最近同步",
+    "success_rate": tr("成功率"),
+    "freshness": tr("陈旧度"),
+    "conflicts": tr("冲突健康"),
+    "size_score": tr("仓库大小"),
+    "tags_score": tr("标签完整"),
+    "recency": tr("最近同步"),
 }
 
 _RING_LEVELS = (25, 50, 75, 100)

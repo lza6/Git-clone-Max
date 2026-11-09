@@ -34,6 +34,7 @@ reports/ui-v9*/
 # G84-2：`reports/ui-audit/` 此前漏在忽略规则之外（只忽略 ui-audit-final/），
 # 导致 G83 的 34 张截图一直是未跟踪产物，任何 `git add -A` 都会把它们带进提交。
 reports/ui-audit/
+reports/ui-u18closing/
 
 # 工作流状态文件：按约定不入库（test_g79 白名单守卫会拦）
 workflow_status.md

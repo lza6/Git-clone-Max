@@ -91,7 +91,7 @@ class ProgressTable(QWidget):
         # 进度表（Rev11 V-16：末尾加「耗时」列 → 6 列；既有 0-4 列索引全部不变）
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
-            ["仓库", "进度", "状态", "本次", "详情", "耗时"])
+            [tr(h) for h in ("仓库", "进度", "状态", "本次", "详情", "耗时")])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         for col in (1, 2, 3):
             self.table.horizontalHeader().setSectionResizeMode(
@@ -365,8 +365,8 @@ class ProgressTable(QWidget):
                     and self.owner.engine.pause_task(int(idx))):
                 paused += 1
         self.owner._emit_log(_mw._fmt_dt(), LogLevel.WARN,
-                       f"已请求暂停 {paused} 个任务（其余继续）…")
-        self.owner.statusBar().showMessage(f"正在暂停 {paused} 个任务…")
+                       tr("已请求暂停 {n} 个任务（其余继续）…").format(n=paused))
+        self.owner.statusBar().showMessage(tr("正在暂停 {n} 个任务…").format(n=paused))
 
     # --------------------------------------------------------- G35-1 进度表右键菜单
 
@@ -394,7 +394,7 @@ class ProgressTable(QWidget):
         target = self.owner.target_edit.text().strip() or str(self.owner.data_dir / "clones")
         self.owner._launch([spec], target_root=Path(target),
                      shallow=False, depth=self.owner.depth_spin.value(), clear_input=False)
-        self.owner._emit_log(_mw._fmt_dt(), LogLevel.WARN, f"已重试仓库：{spec.display}")
+        self.owner._emit_log(_mw._fmt_dt(), LogLevel.WARN, tr("已重试仓库：{r}").format(r=spec.display))
 
     def _copy_row_detail(self, row: int):
         """复制该行错误详情（message + detail）到剪贴板。"""
@@ -403,7 +403,7 @@ class ProgressTable(QWidget):
         if msg_item is not None:
             detail = msg_item.toolTip() or msg_item.text()
         _QApp.clipboard().setText(detail)
-        self.owner.statusBar().showMessage("错误详情已复制")
+        self.owner.statusBar().showMessage(tr("错误详情已复制"))
 
     def _open_row_dir(self, row: int):
         """打开该行仓库所在目录（统一走 util/openfolder）。"""
@@ -703,7 +703,7 @@ class ProgressTable(QWidget):
         # 下载完成自动清空输入框
         if getattr(self.owner, "_clear_after_finish", False):
             self.owner.repo_input.clear()
-            self.owner._emit_log(_mw._fmt_dt(), LogLevel.SYSTEM, "下载完成，已自动清空输入框。")
+            self.owner._emit_log(_mw._fmt_dt(), LogLevel.SYSTEM, tr("下载完成，已自动清空输入框。"))
         self.owner._load_db_into_grid()
         # G35-2 完成提示音（设置开关默认开；QApplication.beep 无 UI 影响）
         try:

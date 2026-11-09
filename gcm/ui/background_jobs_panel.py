@@ -30,7 +30,7 @@ from ..app.background_jobs import registry
 from ..i18n import tr
 from .layout import fit_dialog_to_screen
 
-_COLS = ("任务", "状态", "间隔", "上次运行", "下次预计", "上次结果")
+_COLS = tuple(tr(c) for c in ("任务", "状态", "间隔", "上次运行", "下次预计", "上次结果"))
 
 
 def _fmt_ts(ts: float) -> str:
@@ -44,8 +44,8 @@ def _fmt_interval(sec: float) -> str:
         return "—"
     if sec >= 3600:
         hours = sec / 3600.0
-        return f"{hours:g} 小时"
-    return f"{sec / 60.0:g} 分钟"
+        return tr("{hours:g} 小时").format(hours=hours)
+    return tr("{min:g} 分钟").format(min=sec / 60.0)
 
 
 class BackgroundJobsDialog(QDialog):
@@ -150,7 +150,8 @@ class BackgroundJobsDialog(QDialog):
                                  "url_https": sp.url_https,
                                  "folder_name": sp.folder_name} for sp in specs])
         except ValueError as e:
-            QMessageBox.warning(self, tr("创建失败"), str(e))
+            from .error_dialog import show_error  # U-18：三段式 + 动作
+            show_error(self, e, context=tr("创建同步队列"), title=tr("创建失败"))
             return
         self.refresh()
         QMessageBox.information(self, tr("已创建"),

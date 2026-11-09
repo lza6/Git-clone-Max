@@ -47,13 +47,13 @@ __all__ = [
 ]
 
 _CATEGORY_SUGGESTIONS = {
-    CAT_NETWORK: "检查网络/代理后重试，或开启「失败重试」自动重投",
-    CAT_AUTH: "检查并更新 Token / 按平台凭据，再重试该类别",
-    CAT_PLATFORM: "仓库含 Windows 限制内容，建议换 WSL/Linux 或跳过",
-    CAT_LOCAL: "检查磁盘空间 / 目录占用 / 文件权限后重试",
-    CAT_NOT_FOUND: "核对仓库地址；仓库可能已删除/改名/转为私有，重试无效",
-    CAT_CANCELLED: "任务被取消；需要时重新开始即可",
-    CAT_OTHER: "查看日志详情后手动处理",
+    CAT_NETWORK: tr("检查网络/代理后重试，或开启「失败重试」自动重投"),
+    CAT_AUTH: tr("检查并更新 Token / 按平台凭据，再重试该类别"),
+    CAT_PLATFORM: tr("仓库含 Windows 限制内容，建议换 WSL/Linux 或跳过"),
+    CAT_LOCAL: tr("检查磁盘空间 / 目录占用 / 文件权限后重试"),
+    CAT_NOT_FOUND: tr("核对仓库地址；仓库可能已删除/改名/转为私有，重试无效"),
+    CAT_CANCELLED: tr("任务被取消；需要时重新开始即可"),
+    CAT_OTHER: tr("查看日志详情后手动处理"),
 }
 
 
@@ -291,7 +291,7 @@ class FailurePanel(QWidget):
                 keys = []
         self._stuck_keys = keys
         if keys:
-            shown = "、".join(keys[:3]) + (f" 等 {len(keys)} 个" if len(keys) > 3 else "")
+            shown = "、".join(keys[:3]) + (tr(" 等 {n} 个").format(n=len(keys)) if len(keys) > 3 else "")
             self.stuck_lbl.setText(
                 tr("发现 {n} 个疑似卡死任务（超过超时阈值仍未结束）：{items}")
                 .format(n=len(keys), items=shown))

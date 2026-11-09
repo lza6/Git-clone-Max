@@ -14,26 +14,26 @@ from ..i18n import tr
 
 # 状态值（models.SyncStatus.value）→ 文案键
 _STATUS_TEXT: dict[str, str] = {
-    "pending": "等待中",
-    "running": "更新中…",
-    "success": "成功",
-    "failed": "失败",
+    "pending": tr("等待中"),
+    "running": tr("更新中…"),
+    "success": tr("成功"),
+    "failed": tr("失败"),
     # 状态列用独立键「已跳过」：'跳过' 已是首启向导 Skip 按钮的 key，
     # 同一个 dict 里一个 key 只能有一个译文，混用会让按钮和状态抢同一句英文（且 ruff F601）。
-    "skipped": "已跳过",
-    "cancelled": "已取消",
-    "conflict": "冲突",
+    "skipped": tr("已跳过"),
+    "cancelled": tr("已取消"),
+    "conflict": tr("冲突"),
 }
 
 # 动作值（models.SyncAction.value）→ 文案键（`updated` 需要带提交数）
 _ACTION_TEXT: dict[str, str] = {
-    "cloned": "新建克隆",
-    "fetched": "已最新",
-    "empty": "空仓库",
-    "skipped": "跳过",
-    "conflict": "冲突保留",
-    "cancelled": "取消",
-    "failed": "失败",
+    "cloned": tr("新建克隆"),
+    "fetched": tr("已最新"),
+    "empty": tr("空仓库"),
+    "skipped": tr("跳过"),
+    "conflict": tr("冲突保留"),
+    "cancelled": tr("取消"),
+    "failed": tr("失败"),
 }
 
 

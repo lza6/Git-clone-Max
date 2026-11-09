@@ -75,7 +75,7 @@ class LocalReposDialog(QDialog):
         v.addWidget(QLabel(tr("发现以下已有 git 仓库（勾选后点击「导入」纳入管理）：")))
 
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["", "仓库", "远端", "本地路径"])
+        self.table.setHorizontalHeaderLabels(["", tr("仓库"), tr("远端"), tr("本地路径")])
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -110,9 +110,9 @@ class LocalReposDialog(QDialog):
         btns.addButton(self.btn_select_all, QDialogButtonBox.ButtonRole.ActionRole)
         btns.addButton(self.btn_select_none, QDialogButtonBox.ButtonRole.ActionRole)
         btns.addButton(self.chk_overwrite, QDialogButtonBox.ButtonRole.ActionRole)
-        self._import_btn = btns.addButton("导入", QDialogButtonBox.ButtonRole.AcceptRole)
+        self._import_btn = btns.addButton(tr("导入"), QDialogButtonBox.ButtonRole.AcceptRole)
         self._import_btn.clicked.connect(self._on_import)
-        btn_cancel = btns.addButton("取消", QDialogButtonBox.ButtonRole.RejectRole)
+        btn_cancel = btns.addButton(tr("取消"), QDialogButtonBox.ButtonRole.RejectRole)
         # G69-18：取消/关闭必须**先停扫描线程**再退对话框。原实现直接 reject()，
         # 而 `ScanWorker.cancel()` 从未被调用 → 线程继续对着已析构的 QObject
         # `emit`，导致本地扫描「点取消 / 关窗口偶发原生崩溃」。
@@ -187,16 +187,16 @@ class LocalReposDialog(QDialog):
         self._rows = result
         self._set_scanning(False)
         self._render()
-        self.status.setText(f"共发现 {len(result)} 个本地仓库")
+        self.status.setText(tr("共发现 {n} 个本地仓库").format(n=len(result)))
 
     def _on_scan_failed(self, err: str):
         self._set_scanning(False)
-        self.status.setText(f"扫描失败：{err}")
+        self.status.setText(tr("扫描失败：{err}").format(err=err))
         QMessageBox.warning(self, tr("扫描失败"), err)
 
     def _set_scanning(self, on: bool):
         self.progress.setVisible(on)
-        self.status.setText("扫描中…" if on else self.status.text())
+        self.status.setText(tr("扫描中…") if on else self.status.text())
         self.table.setEnabled(not on)
         self.filter_edit.setEnabled(not on)
         self._import_btn.setEnabled(not on)
@@ -261,9 +261,9 @@ class LocalReposDialog(QDialog):
             self.table.setItem(i, 0, chk)
             display = info.display
             if imported:
-                display = f"{display}（已入库）"
+                display = f"{display}" + tr("（已入库）")
             elif half:
-                display = f"{display}（疑似半成品：已取回未检出）"
+                display = f"{display}" + tr("（疑似半成品：已取回未检出）")
             item = QTableWidgetItem(display)
             item.setData(Qt.ItemDataRole.UserRole, info.display)
             self.table.setItem(i, 1, item)
@@ -275,7 +275,7 @@ class LocalReposDialog(QDialog):
                 _remote_show = _redact(info.remote_url or "")
             except Exception:
                 _remote_show = info.remote_url or ""
-            self.table.setItem(i, 2, QTableWidgetItem(_remote_show or "（无远端）"))
+            self.table.setItem(i, 2, QTableWidgetItem(_remote_show or tr("（无远端）")))
             self.table.setItem(i, 3, QTableWidgetItem(info.path))
         self.table.setUpdatesEnabled(True)
 

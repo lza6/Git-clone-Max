@@ -27,18 +27,18 @@ def toggle_batch_pause(owner: Any) -> bool:
         if getattr(eng, "paused", False):
             if eng.resume():
                 owner.btn_pause_batch.setText(tr("暂停"))
-                owner._emit_log(_datetime_label(), _level_info(), "已继续：待发队列恢复补投")
+                owner._emit_log(_datetime_label(), _level_info(), tr("已继续：待发队列恢复补投"))
             return bool(getattr(eng, "paused", False))
         if eng.pause():
             owner.btn_pause_batch.setText(tr("继续"))
             owner._emit_log(_datetime_label(), _level_info(),
-                            "已暂停：不再开始新仓库，在途的会跑完")
+                            tr("已暂停：不再开始新仓库，在途的会跑完"))
         else:
             owner._emit_log(_datetime_label(), _level_warn(),
-                            "当前没有待发任务，无需暂停")
+                            tr("当前没有待发任务，无需暂停"))
         return bool(getattr(eng, "paused", False))
     except Exception as e:      # noqa: BLE001 —— 纯状态切换，失败只提示不拖垮批次
-        owner._emit_log(_datetime_label(), _level_warn(), f"暂停/继续失败：{e}")
+        owner._emit_log(_datetime_label(), _level_warn(), tr("暂停/继续失败：{e}").format(e=e))
         return False
 
 

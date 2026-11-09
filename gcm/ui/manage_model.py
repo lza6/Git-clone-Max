@@ -50,6 +50,9 @@ class ManageModel(QAbstractItemModel):
         self._rows: list[ManageRow] = []
         self._vis: list[bool] = []
         self.db = db  # G47-1 健康度懒加载数据源
+        # Rev11-C P-02：数据读数列走 mono。缓存一个 QFont（QFont 构造含字族解析，
+        # data() 每格每角色都问一次，不能每行每列新建）。
+        self._mono_font = None  # 懒建：QFont 在 QApplication 前构造不可靠
         self._health_cache: dict[int, int] = {}
         # 过期判定缓存：`data()` 每格每角色都会问一次，避免重复解析时间字符串。
         self._stale_cache: dict[tuple[int, int], bool] = {}
@@ -184,7 +187,8 @@ class ManageModel(QAbstractItemModel):
     def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
         return 8
 
-    _HEADERS = ("仓库", "作者/仓库", "本地路径", "上次同步", "HEAD", "历史", "健康", "大小")
+    _HEADERS = tuple(tr(h) for h in (
+        "仓库", "作者/仓库", "本地路径", "上次同步", "HEAD", "历史", "健康", "大小"))
 
     def headerData(self, section, orientation=Qt.Orientation.Horizontal,
                    role=Qt.ItemDataRole.DisplayRole):
@@ -213,6 +217,16 @@ class ManageModel(QAbstractItemModel):
                      (r.local_path if col == 2 else
                       (r.last_sync_at if col == 3 else
                        (r.head_sha if col == 4 else "")))))
+        # Rev11-C P-02：读数列（上次同步/HEAD/健康/大小）走 mono + 数字列右对齐。
+        # 与 failure_panel P-04 同口径：数字是仪表读数，必须可纵向比较（Rev11 原则三）；
+        # 仓库名/路径是标识符但本轮只改读数列，整表等宽化登记为后续可选。
+        if role == Qt.ItemDataRole.FontRole and col in (3, 4, 6, 7):
+            if self._mono_font is None:
+                from .typography import type_font
+                self._mono_font = type_font("mono")
+            return self._mono_font
+        if role == Qt.ItemDataRole.TextAlignmentRole and col in (3, 4, 6, 7):
+            return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         # G84-17：健康/大小两列此前**没有任何解释** —— 表里只有 `5/5` 和空串，
         # 用户既不知道 5/5 怎么来的，也不知道空白是"还在算"还是"算不出来"。
         if role == Qt.ItemDataRole.ToolTipRole and col == 6:
@@ -236,7 +250,7 @@ class ManageModel(QAbstractItemModel):
             except Exception:
                 pass
             if self.is_stale(index.row()):
-                tip = f"{tip}\n超过 {self.stale_days} 天未同步"
+                tip = f"{tip}\n" + tr("超过 {n} 天未同步").format(n=self.stale_days)
             return tip
         # G03-6 过期高亮：背景淡色 + 任意列 tooltip 说明（原先 is_stale 定义了却
         # 没有任何颜色角色——README 宣称的「过期高亮」实际不可见）。

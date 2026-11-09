@@ -25,18 +25,19 @@ def announce_finished(owner: Any, *, ok: int, conflict: int, fail: int,
     # Rev14 F2：全部被跳过时表格可能一行都没有（既有管线会按 engine.specs 重建），
     # 此时用引擎回报的计数兜底 —— 「跳过 N」不能因为这个就消失。
     skip = max(int(skip), int(getattr(owner, "_skipped_count", 0)))
-    skip_part = f" · 跳过 {skip}" if skip else ""
-    completed = f"成功 {ok} · 冲突 {conflict} · 失败 {fail}{skip_part}"
+    skip_part = tr(" · 跳过 {skip}").format(skip=skip) if skip else ""
+    completed = tr("成功 {ok} · 冲突 {conflict} · 失败 {fail}{skip_part}").format(
+        ok=ok, conflict=conflict, fail=fail, skip_part=skip_part)
 
     try:
-        owner.statusBar().showMessage(f"完成：{completed}")
+        owner.statusBar().showMessage(tr("完成：{completed}").format(completed=completed))
     except Exception:      # noqa: BLE001 —— 播报失败不影响批次结论
         pass
 
     try:
         from . import main_window as _mw
         from .theme import LogLevel as _LL
-        owner._emit_log(_mw._fmt_dt(), _LL.SYSTEM, f"全部任务结束：{completed}")
+        owner._emit_log(_mw._fmt_dt(), _LL.SYSTEM, tr("全部任务结束：{completed}").format(completed=completed))
     except Exception:      # noqa: BLE001
         pass
 

@@ -184,7 +184,7 @@ def _network_rows_basic(owner: MainWindow, settings: Settings, f3: QFormLayout) 
     # MAX_CONCURRENCY 为 main_window 模块常量（惰性导入避免循环引用）
     from .main_window import MAX_CONCURRENCY as _MAX_C
     owner.spin_concurrency.setToolTip(
-        f"同时并行下载/更新的仓库数（1–{_MAX_C}）")
+        tr("同时并行下载/更新的仓库数（1–{n}）").format(n=_MAX_C))
     owner.spin_concurrency.valueChanged.connect(owner._save_concurrency)
     f3.addRow(tr("并发数（1–32）："), owner.spin_concurrency)
 
@@ -704,8 +704,8 @@ def _add_im_alert_section(owner, l7, row: int) -> int:
     """
     l7.addWidget(QLabel(tr("企业 IM 告警渠道：")), row, 0)
     owner.combo_im_channel = QComboBox()
-    for _label, _val in ((tr("不启用"), ""), ("钉钉", "dingtalk"),
-                         ("飞书", "feishu"), ("企业微信", "wecom")):
+    for _label, _val in ((tr("不启用"), ""), (tr("钉钉"), "dingtalk"),
+                         (tr("飞书"), "feishu"), (tr("企业微信"), "wecom")):
         owner.combo_im_channel.addItem(_label, _val)
     _cur_ch = str(getattr(owner.settings, "alert_im_channel", "") or "")
     _idx = owner.combo_im_channel.findData(_cur_ch)

@@ -21,6 +21,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from ..i18n import tr
+
 _WS = re.compile(r"\s+")
 _ACCEL = re.compile(r"&(?!&)")
 _ELLIPSIS = ("…", "...")
@@ -43,20 +45,20 @@ def _clean(text: Any) -> str:
 #: 主操作：`属性名 → (accessibleName, accessibleDescription)`。
 #: 描述写「按下去会发生什么」，不是重复名字 —— 读屏用户靠它判断该不该点。
 MAIN_ACTIONS: dict[str, tuple[str, str]] = {
-    "btn_save_list": ("保存当前清单", "把输入区里的仓库地址保存成一个可复用的清单文件"),
-    "combo_load_list": ("选择已保存的清单", "切换要载入的任务清单"),
-    "btn_load_list": ("载入选中清单", "把选中清单里的仓库地址填进输入区"),
-    "btn_star_import": ("导入 Star 仓库", "拉取 GitHub 上自己 Star 过的仓库并填进输入区"),
-    "btn_start": ("开始下载或更新", "按当前输入区与选项开始并行克隆；已在管理的仓库走增量更新"),
-    "btn_cancel": ("取消全部任务", "停止当前批次的全部任务，已完成的仓库保留"),
-    "btn_clear": ("清空输入区", "只清空输入框文本，不影响已经下载的仓库"),
-    "btn_open": ("打开克隆目录", "在资源管理器中打开本次下载的根目录"),
-    "btn_failures": ("查看失败汇总", "按错误类型分组查看本批次失败原因"),
-    "btn_retry_queue": ("打开重试队列", "查看等待自动重试的任务及其下次重试时间"),
-    "btn_diag_bundle": ("生成诊断包", "把脱敏后的日志与配置摘要打包，用于反馈问题"),
-    "btn_edit_quick": ("编辑快捷填充", "增删改输入区上方的快捷填充标签"),
-    "btn_pause_batch": ("暂停或继续批次", "暂停后不会启动新的仓库，已在跑的仓库继续完成"),
-    "btn_more_tools": ("更多工具菜单", "窗口太矮时，工具按钮会收进这个菜单"),
+    "btn_save_list": (tr("保存当前清单"), tr("把输入区里的仓库地址保存成一个可复用的清单文件")),
+    "combo_load_list": (tr("选择已保存的清单"), tr("切换要载入的任务清单")),
+    "btn_load_list": (tr("载入选中清单"), tr("把选中清单里的仓库地址填进输入区")),
+    "btn_star_import": (tr("导入 Star 仓库"), tr("拉取 GitHub 上自己 Star 过的仓库并填进输入区")),
+    "btn_start": (tr("开始下载或更新"), tr("按当前输入区与选项开始并行克隆；已在管理的仓库走增量更新")),
+    "btn_cancel": (tr("取消全部任务"), tr("停止当前批次的全部任务，已完成的仓库保留")),
+    "btn_clear": (tr("清空输入区"), tr("只清空输入框文本，不影响已经下载的仓库")),
+    "btn_open": (tr("打开克隆目录"), tr("在资源管理器中打开本次下载的根目录")),
+    "btn_failures": (tr("查看失败汇总"), tr("按错误类型分组查看本批次失败原因")),
+    "btn_retry_queue": (tr("打开重试队列"), tr("查看等待自动重试的任务及其下次重试时间")),
+    "btn_diag_bundle": (tr("生成诊断包"), tr("把脱敏后的日志与配置摘要打包，用于反馈问题")),
+    "btn_edit_quick": (tr("编辑快捷填充"), tr("增删改输入区上方的快捷填充标签")),
+    "btn_pause_batch": (tr("暂停或继续批次"), tr("暂停后不会启动新的仓库，已在跑的仓库继续完成")),
+    "btn_more_tools": (tr("更多工具菜单"), tr("窗口太矮时，工具按钮会收进这个菜单")),
 }
 
 def apply_main_action_names(owner: Any) -> int:

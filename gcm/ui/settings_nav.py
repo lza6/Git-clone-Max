@@ -7,12 +7,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..i18n import tr
+
 #: 失败面板「去设置」的 section 键 → 设置分组标题关键词（按顺序取第一个命中）。
 SECTION_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "network": ("并行", "网络", "Token", "凭据", "代理", "镜像"),
-    "startup": ("启动",),
-    "insight": ("数据洞察", "统计"),
-    "appearance": ("外观",),
+    "network": tuple(tr(k) for k in ("并行", "网络", "Token", "凭据", "代理", "镜像")),
+    "startup": (tr("启动"),),
+    "insight": (tr("数据洞察"), tr("统计")),
+    "appearance": (tr("外观"),),
 }
 
 

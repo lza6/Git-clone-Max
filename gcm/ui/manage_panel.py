@@ -394,7 +394,7 @@ class ManagePanel(QWidget):
             _mw.QMessageBox.information(self.owner, tr("提示"), tr("请先选择要删除的记录。"))
             return
         if _mw.QMessageBox.question(self.owner, tr("确认删除"),
-                                f"将从数据库中删除 {len(rows)} 条记录（不影响已下载的仓库目录）。\n继续？") != _mw.QMessageBox.StandardButton.Yes:
+                                tr("将从数据库中删除 {n} 条记录（不影响已下载的仓库目录）。\n继续？").format(n=len(rows))) != _mw.QMessageBox.StandardButton.Yes:
             return
         repo_ids = set()
         snaps: list[dict] = []
@@ -409,26 +409,26 @@ class ManagePanel(QWidget):
         for rid in repo_ids:
             self.owner.db.delete_repo(rid)
         self.owner._load_db_into_grid()
-        self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO, f"已删除 {len(repo_ids)} 条数据库记录")
+        self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO, tr("已删除 {n} 条数据库记录").format(n=len(repo_ids)))
         # Rev12 U-06：给一条可撤销的出路（原则③）。单条与批量都记**一条**
         # 可撤销记录：批量把快照放进 before["batch"]，撤销时逐条 upsert 回去。
         if snaps:
             try:
                 if len(snaps) > 1:
                     rec = self.owner.oplog.record(
-                        "repo_delete", f"{len(snaps)} 条记录",
-                        summary=f"批量删除 {len(snaps)} 条仓库记录",
+                        "repo_delete", tr("{n} 条记录").format(n=len(snaps)),
+                        summary=tr("批量删除 {n} 条仓库记录").format(n=len(snaps)),
                         before={"batch": snaps}, undoable=True)
-                    self.owner.offer_undo(rec, f"已删除 {len(snaps)} 条仓库记录")
+                    self.owner.offer_undo(rec, tr("已删除 {n} 条仓库记录").format(n=len(snaps)))
                 else:
                     s = snaps[0]
                     rec = self.owner.oplog.record(
                         "repo_delete", f"{s.get('owner')}/{s.get('repo')}",
                         summary=tr("删除仓库记录"), before=s, undoable=True)
                     self.owner.offer_undo(
-                        rec, f"已删除「{s.get('display') or s.get('repo')}」")
+                        rec, tr("已删除「{name}」").format(name=s.get('display') or s.get('repo')))
             except Exception as e:  # noqa: BLE001 —— 台账失败不该让删除本身失败
-                self.owner._emit_log(_mw._fmt_dt(), LogLevel.WARN, f"操作台账写入失败：{e}")
+                self.owner._emit_log(_mw._fmt_dt(), LogLevel.WARN, tr("操作台账写入失败：{e}").format(e=e))
 
     # --------------------------------------------------------- G35-9 批量操作
 
@@ -457,8 +457,8 @@ class ManagePanel(QWidget):
                     self.owner.db.set_tags(rec["id"], tags)
                     n += 1
         self.owner._load_db_into_grid()
-        self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO, f"已为 {n} 个仓库设置标签：{', '.join(tags)}")
-        self.owner.statusBar().showMessage(f"已为 {n} 个仓库设置标签")
+        self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO, tr("已为 {n} 个仓库设置标签：{tags}").format(n=n, tags=', '.join(tags)))
+        self.owner.statusBar().showMessage(tr("已为 {n} 个仓库设置标签").format(n=n))
 
     def export_selected_csv(self):
         """把选中的仓库导出为 CSV（仅所选行；无历史则同样导出元数据）。"""
@@ -487,10 +487,11 @@ class ManagePanel(QWidget):
                                                    "local_path", "folder_name", "tags"])
                 w.writeheader()
                 w.writerows(sel)
-            self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO, f"已导出所选 {len(sel)} 个仓库：{path}")
-            self.owner.statusBar().showMessage(f"已导出 {len(sel)} 个仓库")
+            self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO, tr("已导出所选 {n} 个仓库：{path}").format(n=len(sel), path=path))
+            self.owner.statusBar().showMessage(tr("已导出 {n} 个仓库").format(n=len(sel)))
         except Exception as e:
-            _mw.QMessageBox.critical(self.owner, tr("导出失败"), str(e))
+            from .error_dialog import show_error  # U-18：三段式 + 动作
+            show_error(self.owner, e, context=tr("导出所选仓库"), title=tr("导出失败"))
 
     def _on_manage_double_clicked(self, index):
         row = index.row()
@@ -775,10 +776,11 @@ class ManagePanel(QWidget):
         try:
             n = self.owner.db.export_metadata_json(path)
             self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO,
-                                 f"已导出 {n} 条仓库元数据：{path}")
-            self.owner.statusBar().showMessage(f"已导出 {n} 条元数据")
+                                 tr("已导出 {n} 条仓库元数据：{path}").format(n=n, path=path))
+            self.owner.statusBar().showMessage(tr("已导出 {n} 条元数据").format(n=n))
         except Exception as e:
-            _mw.QMessageBox.warning(self.owner, tr("导出失败"), str(e))
+            from .error_dialog import show_error  # U-18：三段式 + 动作
+            show_error(self.owner, e, context=tr("导出仓库元数据"), title=tr("导出失败"))
 
     def _import_metadata(self):
         """G47-7：从 JSON 合并导入仓库元数据。"""
@@ -791,7 +793,8 @@ class ManagePanel(QWidget):
             n = self.owner.db.import_metadata_json(path)
             self._load_db_into_grid()
             self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO,
-                                 f"已导入 {n} 条仓库元数据：{path}")
-            self.owner.statusBar().showMessage(f"已导入 {n} 条元数据")
+                                 tr("已导入 {n} 条仓库元数据：{path}").format(n=n, path=path))
+            self.owner.statusBar().showMessage(tr("已导入 {n} 条元数据").format(n=n))
         except Exception as e:
-            _mw.QMessageBox.warning(self.owner, tr("导入失败"), str(e))
+            from .error_dialog import show_error  # U-18：三段式 + 动作
+            show_error(self.owner, e, context=tr("导入仓库元数据"), title=tr("导入失败"))

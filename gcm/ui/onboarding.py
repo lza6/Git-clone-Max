@@ -29,8 +29,8 @@ from ..i18n import tr
 MODE_FULL = "full"
 MODE_SHALLOW = "shallow"
 # 兼容旧调用方：这两个常量在 v9.7.0 前是中文显示文本
-MODE_FULL_TEXT = "满量克隆"
-MODE_SHALLOW_TEXT = "浅克隆"
+MODE_FULL_TEXT = tr("满量克隆")
+MODE_SHALLOW_TEXT = tr("浅克隆")
 
 
 class OnboardingDialog(QDialog):

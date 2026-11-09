@@ -20,15 +20,12 @@ def build_log_filter_row(owner: Any, toolbar: Any) -> QLineEdit:
     import weakref as _wk
     owner_ref = _wk.ref(owner)
     owner.log_filter_edit = QLineEdit()
-    owner.log_filter_edit.setPlaceholderText(
-        owner._tr_safe("按关键字过滤日志…") if hasattr(owner, "_tr_safe")
-        else "按关键字过滤日志…")
+    from ..i18n import tr
+    owner.log_filter_edit.setPlaceholderText(tr("按关键字过滤日志…"))
     owner.log_filter_edit.setObjectName("logFilter")
     owner.log_filter_edit.setClearButtonEnabled(True)
     owner.log_filter_edit.setMaximumWidth(220)
-    owner.log_filter_edit.setToolTip(
-        owner._tr_safe("只显示包含关键字的日志行；清空恢复全部")
-        if hasattr(owner, "_tr_safe") else "只显示包含关键字的日志行；清空恢复全部")
+    owner.log_filter_edit.setToolTip(tr("只显示包含关键字的日志行；清空恢复全部"))
 
     def _on_filter_changed(_text: str) -> None:
         o = owner_ref()

@@ -69,10 +69,10 @@ def repair_halfcloned_row(panel, row: int) -> None:
     p = row_repo_dir(panel, row)
     ok, msg = repair_halfclone(p)
     if ok:
-        panel.owner.statusBar().showMessage(f"已检出修复：{p.name}")
+        panel.owner.statusBar().showMessage(tr("已检出修复：{name}").format(name=p.name))
         from . import main_window as _mw
         panel.owner._emit_log(_mw._fmt_dt(), _level_info(),
-                              f"半成品检出修复成功：{p}（{msg}）")
+                              tr("半成品检出修复成功：{p}（{msg}）").format(p=p, msg=msg))
     else:
         from PyQt6.QtWidgets import QMessageBox
         QMessageBox.warning(panel.owner, tr("无法修复"), f"{p}\n\n{msg}")
@@ -95,14 +95,14 @@ def delete_halfcloned_row(panel, row: int) -> None:
         return
     sure = QMessageBox.question(
         panel.owner, tr("删除半成品目录"),
-        f"将删除该仓库的整个目录（其中只有 .git，没有工作树内容）：\n{p}\n\n继续？",
+        tr("将删除该仓库的整个目录（其中只有 .git，没有工作树内容）：\n{p}\n\n继续？").format(p=p),
         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
     if sure != QMessageBox.StandardButton.Yes:
         return
     delete_halfcloned(p)
-    panel.owner.statusBar().showMessage(f"已删除半成品目录：{p.name}")
+    panel.owner.statusBar().showMessage(tr("已删除半成品目录：{name}").format(name=p.name))
     panel.owner._emit_log(_mw._fmt_dt(), LogLevel.WARN,
-                          f"用户确认删除半成品目录：{p}")
+                          tr("用户确认删除半成品目录：{p}").format(p=p))
 
 
 def _level_info():

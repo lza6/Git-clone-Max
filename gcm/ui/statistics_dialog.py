@@ -66,8 +66,9 @@ class _TrendCanvas(QWidget):
             idx = self.data_at(e.position().x())
             if idx >= 0:
                 d = self._data[idx]
-                tip = (f"{d.get('date', '')}：成功 {d.get('success', 0)} · "
-                       f"失败 {d.get('failed', 0)} · 冲突 {d.get('conflict', 0)}")
+                tip = tr("{date}：成功 {ok} · 失败 {fail} · 冲突 {conf}").format(
+                    date=d.get('date', ''), ok=d.get('success', 0),
+                    fail=d.get('failed', 0), conf=d.get('conflict', 0))
                 self.setToolTip(tip)
                 self._hover_idx = idx
                 self.update()
@@ -86,7 +87,7 @@ class _TrendCanvas(QWidget):
         if not self._data:
             painter.setPen(QColor(pal["text_dim"]))
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter,
-                             "（暂无同步数据）")
+                             tr("（暂无同步数据）"))
             painter.end()
             return
         n = len(self._data)
@@ -198,7 +199,8 @@ class StatisticsDialog(QDialog):
         h_trend = QHBoxLayout()
         h_trend.addWidget(QLabel(tr("同步趋势（绿=成功 红=失败 橙=冲突）")))
         self.period_combo = QComboBox()
-        for _d, _lbl in ((7, "近 7 天"), (30, "近 30 天"), (90, "近 90 天")):
+        for _d, _lbl in ((7, tr("近 7 天")), (30, tr("近 30 天")),
+                         (90, tr("近 90 天"))):
             self.period_combo.addItem(_lbl, _d)
         self.period_combo.setCurrentIndex(1)
         self.period_combo.currentIndexChanged.connect(
@@ -256,13 +258,13 @@ class StatisticsDialog(QDialog):
             ov = {"total_repos": 0, "total_syncs": 0,
                   "success_syncs": 0, "failed_syncs": 0, "by_host": {}}
         self.lbl_summary.setText(
-            f"仓库总数：{ov.get('total_repos', 0)}\n"
-            f"同步总次数：{ov.get('total_syncs', 0)}\n"
-            f"成功：{ov.get('success_syncs', 0)} · 失败：{ov.get('failed_syncs', 0)}")
+            tr("仓库总数：{r}\n同步总次数：{s}\n成功：{ok} · 失败：{fail}").format(
+                r=ov.get("total_repos", 0), s=ov.get("total_syncs", 0),
+                ok=ov.get("success_syncs", 0), fail=ov.get("failed_syncs", 0)))
         by_host = ov.get("by_host") or {}
         if by_host:
             self.lbl_hosts.setText(
-                "平台分布：" + " · ".join(f"{h}: {c}" for h, c in by_host.items()))
+                tr("平台分布：") + " · ".join(f"{h}: {c}" for h, c in by_host.items()))
         else:
             self.lbl_hosts.setText(tr("平台分布：（暂无仓库）"))
 
@@ -287,9 +289,9 @@ class StatisticsDialog(QDialog):
         try:
             usage = self.db.stats_usage()
             self.lbl_usage.setText(
-                f"累计克隆 {usage.get('clones', 0)} 次 · "
-                f"累计更新 {usage.get('updates', 0)} 次 · "
-                f"累计新增提交 {usage.get('commits', 0)} 个")
+                tr("累计克隆 {c} 次 · 累计更新 {u} 次 · 累计新增提交 {k} 个").format(
+                    c=usage.get("clones", 0), u=usage.get("updates", 0),
+                    k=usage.get("commits", 0)))
         except Exception:
             self.lbl_usage.setText(tr("用量统计：（不可用）"))
 
@@ -362,8 +364,9 @@ class StatisticsDialog(QDialog):
                     files = info.get("files", {})
                     fsize = " · ".join(f"{k} {v//1024}KB" for k, v in files.items() if v)
                     storage_text = (
-                        f'占用 {info["total_bytes"]//1024}KB ｜ 磁盘剩余 {info["free_gb"]}GB\n'
-                        f'{fsize}\n{info["suggest"]}')
+                        tr('占用 {used}KB ｜ 磁盘剩余 {free}GB\n').format(
+                            used=info["total_bytes"]//1024, free=info["free_gb"])
+                        + f'{fsize}\n{info["suggest"]}')
                 except Exception:
                     storage_text = None
                 self.finished_with.emit(cards_payload[0], cards_payload[1], storage_text)
@@ -393,14 +396,16 @@ class StatisticsDialog(QDialog):
                 self.radar.set_values({})
             else:
                 labels = {
-                    "success_rate": "成功率", "freshness": "新鲜度",
-                    "conflicts": "冲突健康", "size_score": "仓库大小",
-                    "tags_score": "标签完整", "recency": "最近同步",
+                    "success_rate": tr("成功率"), "freshness": tr("新鲜度"),
+                    "conflicts": tr("冲突健康"), "size_score": tr("仓库大小"),
+                    "tags_score": tr("标签完整"), "recency": tr("最近同步"),
                 }
                 parts = [f"{labels.get(k, k)} {v}" for k, v in (avg or {}).items()]
-                lines = [f'总评 {summary["overall"]}/100 · ' + ' · '.join(parts)]
+                lines = [tr("总评 {n}/100 · {parts}").format(
+                    n=summary["overall"], parts=' · '.join(parts))]
                 for c in summary.get("weakest", [])[:3]:
-                    lines.append(f'  {c["key"]} {c["overall"]}分：{c["suggestions"][0]}')
+                    lines.append(tr("  {key} {n}分：{tip}").format(
+                        key=c["key"], n=c["overall"], tip=c["suggestions"][0]))
                 self.lbl_scorecard.setText("\n".join(lines))
                 self.radar.set_values(avg or {})
         except Exception:
@@ -426,13 +431,13 @@ class StatisticsDialog(QDialog):
         """G47-4：导出趋势图为 PNG。"""
         from pathlib import Path
         path, _ = QFileDialog.getSaveFileName(
-            self, "导出趋势图", str(Path.home() / "trend.png"), "PNG (*.png)")
+            self, tr("导出趋势图"), str(Path.home() / "trend.png"), "PNG (*.png)")
         if not path:
             return
         try:
             ok = self.trend_canvas.grab().save(path)
             if not ok:
-                raise RuntimeError("保存失败")
+                raise RuntimeError(tr("保存失败"))
         except Exception as e:
-            from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.warning(self, tr("导出失败"), str(e))
+            from .error_dialog import show_error  # U-18：三段式 + 动作
+            show_error(self, e, context=tr("导出统计图表"), title=tr("导出失败"))

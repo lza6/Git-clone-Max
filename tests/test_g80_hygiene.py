@@ -94,7 +94,13 @@ GCM = ROOT / "gcm"
 #   ui/failure_panel.py +1（失败次数列 mono 字体不可用 → 落回默认字体；有 applog 出口）
 #   ui/main_window.py +1（就绪清单 plan_batch 计算失败 → 跳过就绪展示、照常启动；有 applog 出口）
 #   两者都在**观测/呈现层**，失败必须放行主流程，且都有可观测出口（非静默），符合红线原意。
-BASELINE_EXCEPT = 763
+# - 2026-11-09（U-14/15/17/18 收口批）+5（except 768 / pass-only 持平 285）：
+#   ui/error_dialog.py +2（U-18：classify/对话框构建失败 → 降级为纯文本 QMessageBox；
+#   有降级出口，不静默）、ui/download_layout.py +1（U-17：历史读不到 → 菜单显示
+#   「暂无历史」空态；出口是语义正确的空态而非吞掉）、ui/main_window.py +2（U-15：
+#   Star 忙态事件发布失败 → applog.warn 留痕；写法上就是 warn 非 pass）。
+#   全部在观测/呈现层，失败放行主流程且都有可观测出口；本轮无 pass-only 新增（main_window 两处写的就是 warn）。
+BASELINE_EXCEPT = 768
 BASELINE_PASS_ONLY = 285
 
 

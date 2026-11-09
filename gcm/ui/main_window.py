@@ -251,8 +251,8 @@ class MainWindow(QMainWindow):
             on_url=self._on_clipboard_url)
         if getattr(self.settings, "clipboard_watch", False):
             self.clipboard_watcher.start()
-        self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"Git-clone-Max 启动，数据目录：{self.data_dir}")
-        self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"并行线程：{self.engine.concurrency}（上限 {MAX_CONCURRENCY}）")
+        self._emit_log(_fmt_dt(), LogLevel.SYSTEM, tr("Git-clone-Max 启动，数据目录：{v}").format(v=self.data_dir))
+        self._emit_log(_fmt_dt(), LogLevel.SYSTEM, tr("并行线程：{n}（上限 {m}）").format(n=self.engine.concurrency, m=MAX_CONCURRENCY))
         # G70：仓库列表不在此加载（见 _on_tab_activated / _ensure_manage_loaded）
         # G22-2 崩溃恢复自检：上次会话有未完成/失败项 → 提示并回填输入区供一键续跑
         try:
@@ -407,12 +407,13 @@ class MainWindow(QMainWindow):
                 fmt=fmt)
             self.report_scheduler.start()
             self._emit_log(_fmt_dt(), LogLevel.INFO,
-                           f"定时报表已启用：每 {int(getattr(self.settings, 'sched_report_interval_min', 1440) or 1440)} "
-                           f"分钟 → {out_dir}")
+                           tr("定时报表已启用：每 {n} 分钟 → {dir}").format(
+                           n=int(getattr(self.settings, 'sched_report_interval_min', 1440) or 1440),
+                           dir=out_dir))
         except Exception as exc:  # noqa: BLE001
             # 启动失败要留痕，不能静默 —— 否则又是「勾了没反应」
             self.report_scheduler = None
-            self._emit_log(_fmt_dt(), LogLevel.WARN, f"定时报表启动失败：{exc}")
+            self._emit_log(_fmt_dt(), LogLevel.WARN, tr("定时报表启动失败：{e}").format(e=exc))
 
     def _restart_auto_update_timer(self):
         """G83：重排自动更新定时器（自适应间隔）。可能失败点只有 QTimer 已销毁。"""
@@ -435,13 +436,14 @@ class MainWindow(QMainWindow):
             self._emit_log(_fmt_dt(), LogLevel.INFO, tr("自动更新跳过：任务运行中"))
             return
         self._emit_log(_fmt_dt(), LogLevel.SYSTEM,
-                       f"自动更新触发（间隔 {self._current_auto_update_minutes()} 分钟，"
-                       f"基础 {self.settings.auto_update_minutes}）")
+                       tr("自动更新触发（间隔 {m} 分钟，基础 {b}）").format(
+                       m=self._current_auto_update_minutes(),
+                       b=self.settings.auto_update_minutes))
         # 每轮结束重算间隔：本轮是否有变更由 _note_batch_change 在结果槽中记录
         try:
             self.update_all()
         except Exception as e:
-            self._emit_log(_fmt_dt(), LogLevel.WARN, f"自动更新失败：{e}")
+            self._emit_log(_fmt_dt(), LogLevel.WARN, tr("自动更新失败：{e}").format(e=e))
 
     def _note_batch_change(self, had_changes: bool) -> None:
         """G83 P1-1：批次结束按是否有变更更新退避计数并重排定时器。"""
@@ -490,7 +492,7 @@ class MainWindow(QMainWindow):
             ChecklistDialog(self._checklist_status(), self).exec()
             return True
         except Exception as exc:  # noqa: BLE001
-            self._emit_log(_fmt_dt(), LogLevel.WARN, f"引导清单打开失败：{exc}")
+            self._emit_log(_fmt_dt(), LogLevel.WARN, tr("引导清单打开失败：{e}").format(e=exc))
             return False
 
     def _maybe_show_checklist(self) -> None:
@@ -548,7 +550,7 @@ class MainWindow(QMainWindow):
             self.settings_store.save(self.settings)
         except Exception as e:
             self._emit_log(_fmt_dt(), LogLevel.WARN,
-                           f"首次运行向导未完成：{e}")
+                           tr("首次运行向导未完成：{e}").format(e=e))
 
     # ------------------------------------------------------------ G36-9 跟随系统深浅色
 
@@ -573,7 +575,7 @@ class MainWindow(QMainWindow):
                 self._rehighlight_log()
                 self.settings.theme = target
                 self._emit_log(_fmt_dt(), LogLevel.INFO,
-                               f"已按系统深浅色切换主题：{target}")
+                               tr("已按系统深浅色切换主题：{t}").format(t=target))
         except Exception:
             pass
 
@@ -593,13 +595,13 @@ class MainWindow(QMainWindow):
         if recover:
             lines.extend(recover)
             self._emit_log(_fmt_dt(), LogLevel.WARN,
-                           f"上次会话有 {len(recover)} 项未完成，已回填输入区，可直接继续。")
+                           tr("上次会话有 {n} 项未完成，已回填输入区，可直接继续。").format(n=len(recover)))
         if failed_keys:
             extra = [k for k in failed_keys if k and k not in lines]
             if extra:
                 lines.extend(extra)
                 self._emit_log(_fmt_dt(), LogLevel.WARN,
-                               f"上次有 {len(failed_keys)} 项失败，已一并回填（可重试）。")
+                               tr("上次有 {n} 项失败，已一并回填（可重试）。").format(n=len(failed_keys)))
         if lines:
             from ..app.url_lib import parse_any_repo_url
             urls = []
@@ -702,7 +704,7 @@ class MainWindow(QMainWindow):
             if _screen_gone:
                 self._emit_log(
                     _fmt_dt(), LogLevel.WARN,
-                    f"上次所在的显示器「{_stored_screen}」已不可用，窗口已回到主屏")
+                    tr("上次所在的显示器「{s}」已不可用，窗口已回到主屏").format(s=_stored_screen))
                 self._center_on_primary_screen(w, h)
             elif x is None or y is None or not self._screen_contains_point(x, y):
                 # 位置不可用（旧格式 / 屏已不在）→ **居中显示**，绝不放到用户看不见的地方
@@ -810,8 +812,8 @@ class MainWindow(QMainWindow):
         self._apply_layout_for_width(self.width())
         self._apply_layout_mode()
         self._emit_log(_fmt_dt(), LogLevel.INFO,
-                       f"显示器变更：当前屏幕 {head['name'] or tr('未知')}，"
-                       f"工作区 {aw}×{ah}，最小窗口 {min_w}×{min_h}")
+                       tr("显示器变更：当前屏幕 {name}，工作区 {aw}×{ah}，最小窗口 {w}×{h}").format(
+                       name=head["name"] or tr("未知"), aw=aw, ah=ah, w=min_w, h=min_h))
 
     def _apply_fold_and_min_heights(self, compact: bool) -> None:
         """Rev13 R13-01/02：矮窗口折叠工具行 + 同步各区块最小高度。
@@ -972,7 +974,7 @@ class MainWindow(QMainWindow):
                 from .download_layout import sync_quick_scroll_height
                 sync_quick_scroll_height(self)
             except Exception as exc:  # noqa: BLE001 —— 纯外观修正，不能拖垮布局切换
-                self._emit_log(_fmt_dt(), LogLevel.WARN, f"快捷填充高度同步失败：{exc}")
+                self._emit_log(_fmt_dt(), LogLevel.WARN, tr("快捷填充高度同步失败：{e}").format(e=exc))
             # G74/G84-16：顶部区与进度表的高度分配 —— 抽成独立方法（Rev14 F1）
             try:
                 # Rev14 V4：原「连算两次」经实测是空转（两次调用之间没有布局回合，
@@ -1349,13 +1351,13 @@ class MainWindow(QMainWindow):
                     capture_output=True, text=True, timeout=10,
                     encoding="utf-8", errors="replace")
                 out = (proc.stdout or "").strip() or (proc.stderr or "").strip()
-                lines.append(f"版本：{out or tr('未知')}")
+                lines.append(tr("版本：{v}").format(v=out or tr("未知")))
             except Exception as e:
-                lines.append(f"版本：读取失败（{e}）")
+                lines.append(tr("版本：读取失败（{e}）").format(e=e))
         from PyQt6.QtCore import PYQT_VERSION_STR
         lines.append(f"PyQt6：{PYQT_VERSION_STR}")
-        lines.append(f"数据目录：{self.data_dir}")
-        lines.append(f"当前并发：{self.engine.concurrency}（上限 {MAX_CONCURRENCY}）")
+        lines.append(tr("数据目录：{v}").format(v=self.data_dir))
+        lines.append(tr("当前并发：{n}（上限 {m}）").format(n=self.engine.concurrency, m=MAX_CONCURRENCY))
         # C3-4：分阶段耗时累计（回答"这些批次慢在传输还是别处"）
         try:
             totals = self.db.stage_totals() if hasattr(self.db, "stage_totals") else {}
@@ -1364,14 +1366,14 @@ class MainWindow(QMainWindow):
         if totals:
             shown = " · ".join(f"{k} {v / 1000:.1f}s" for k, v in
                                sorted(totals.items(), key=lambda kv: -kv[1]))
-            lines.append(f"阶段耗时累计：{shown}")
-        lines.append(f"数据目录可写：{tr('是') if os.access(self.data_dir, os.W_OK) else tr('否')}")
+            lines.append(tr("阶段耗时累计：{v}").format(v=shown))
+        lines.append(tr("数据目录可写：{v}").format(tr("是") if os.access(self.data_dir, os.W_OK) else tr("否")))
         # G33-6 启动耗时：构造完成即记录；>3s 标注较慢（exe 解包/低配机器场景）
         startup_ms = getattr(self, "_startup_ms", 0)
         slow_note = tr("（启动偏慢，可考虑使用便携版）") if startup_ms > 3000 else ""
-        lines.append(f"启动耗时：{startup_ms} ms{slow_note}")
+        lines.append(tr("启动耗时：{ms} ms{note}").format(ms=startup_ms, note=slow_note))
         QMessageBox.information(self, tr("环境自检"), "\n".join(lines))
-        self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"环境自检完成：{' / '.join(lines)}")
+        self._emit_log(_fmt_dt(), LogLevel.SYSTEM, tr("环境自检完成：{v}").format(v=" / ".join(lines)))
         # G33-6 结构化留痕：selftest|startup_ms=…（供长期监控启动性能回归）
         try:
             from ..app import applog
@@ -1567,8 +1569,8 @@ class MainWindow(QMainWindow):
         """剪贴板检测到仓库地址：写日志 + 状态栏提示 + 填入输入框（不自动启动）。"""
         try:
             self.repo_input.appendPlainText(url + "\n")
-            self._emit_log(_fmt_dt(), LogLevel.INFO, f"剪贴板检测到仓库地址：{url}（已填入输入框）")
-            self.statusBar().showMessage(f"检测到仓库地址：{url}", 5000)
+            self._emit_log(_fmt_dt(), LogLevel.INFO, tr("剪贴板检测到仓库地址：{u}（已填入输入框）").format(u=url))
+            self.statusBar().showMessage(tr("检测到仓库地址：{u}").format(u=url), 5000)
         except Exception:
             pass
 
@@ -1917,9 +1919,9 @@ class MainWindow(QMainWindow):
             try:
                 download_archive(url, dest)
                 # 跨线程：只允许 emit，不得触碰任何 QWidget/QAbstractItemModel
-                self.archive_finished.emit(str(dest), True, f"归档下载完成：{dest}")
+                self.archive_finished.emit(str(dest), True, tr("归档下载完成：{d}").format(d=dest))
             except Exception as e:
-                self.archive_finished.emit(str(dest), False, f"归档下载失败：{e}")
+                self.archive_finished.emit(str(dest), False, tr("归档下载失败：{e}").format(e=e))
 
         import threading
         threading.Thread(target=_run, daemon=True).start()
@@ -1928,7 +1930,7 @@ class MainWindow(QMainWindow):
     def _on_archive_finished(self, dest: str, ok: bool, message: str):
         """G67-2：归档完成回主线程（GUI 线程）后更新日志与状态栏。"""
         self._emit_log(_fmt_dt(), LogLevel.INFO if ok else LogLevel.WARN, message)
-        self.statusBar().showMessage(f"归档已保存：{dest}" if ok else message)
+        self.statusBar().showMessage(tr("归档已保存：{d}").format(d=dest) if ok else message)
 
     def _on_notify_sent(self, message: str):
         """G67-2：完成通知 Webhook 发送结果回主线程后更新状态栏。"""
@@ -1948,15 +1950,15 @@ class MainWindow(QMainWindow):
             titles = [str(a.get("title") or a.get("key") or "")
                       for a in alerts if isinstance(a, dict)]
             summary = "；".join(t for t in titles if t) or f"{len(alerts)} 条"
-            self.statusBar().showMessage(f"阈警：{summary}", 8000)
+            self.statusBar().showMessage(tr("阈警：{s}").format(s=summary), 8000)
             self._emit_log(_fmt_dt(), LogLevel.WARN,
-                           f"阈值告警命中 {len(alerts)} 条：{summary}")
+                           tr("阈值告警命中 {n} 条：{s}").format(n=len(alerts), s=summary))
         except Exception as exc:  # noqa: BLE001
             # 告警渲染失败绝不能连带影响扫描线程的收尾；
             # 但**不能静默** —— 否则整批告警无声无息，比不显示更难查。
             try:
                 self._emit_log(_fmt_dt(), LogLevel.WARN,
-                               f"告警渲染失败（{type(exc).__name__}），已跳过本批")
+                               tr("告警渲染失败（{t}），已跳过本批").format(t=type(exc).__name__))
             except Exception:
                 pass
 
@@ -1994,7 +1996,7 @@ class MainWindow(QMainWindow):
         except Exception as exc:  # noqa: BLE001
             # 对话框起不来不能把诊断结果一起吞掉 —— 退化为纯文本
             from PyQt6.QtWidgets import QMessageBox
-            self._emit_log(_fmt_dt(), LogLevel.WARN, f"诊断对话框打开失败：{exc}")
+            self._emit_log(_fmt_dt(), LogLevel.WARN, tr("诊断对话框打开失败：{e}").format(e=exc))
             QMessageBox.information(self, title, body)
 
     def _apply_ssh_key_to_engine(self):
@@ -2020,7 +2022,7 @@ class MainWindow(QMainWindow):
             rows = read_audit(self.data_dir, limit=200)
         except Exception as exc:  # noqa: BLE001
             rows = []
-            self._emit_log(_fmt_dt(), LogLevel.WARN, f"读取通知审计失败：{exc}")
+            self._emit_log(_fmt_dt(), LogLevel.WARN, tr("读取通知审计失败：{e}").format(e=exc))
         if not rows:
             body = tr("还没有通知记录。启用 Webhook 并完成一次任务后会出现。")
         else:
@@ -2045,7 +2047,7 @@ class MainWindow(QMainWindow):
                              data_dir=self.data_dir).exec()
         except Exception as exc:  # noqa: BLE001
             from PyQt6.QtWidgets import QMessageBox
-            self._emit_log(_fmt_dt(), LogLevel.WARN, f"通知审计对话框打开失败：{exc}")
+            self._emit_log(_fmt_dt(), LogLevel.WARN, tr("通知审计对话框打开失败：{e}").format(e=exc))
             QMessageBox.information(self, tr("通知审计"), body)
 
     def _on_input_changed(self) -> None:
@@ -2137,6 +2139,18 @@ class MainWindow(QMainWindow):
             return
         self._last_star_user = user
         self._star_busy = True
+        # Rev12 U-15：拉取期间禁用入口按钮（此前只有日志，用户靠猜）。
+        # 恢复在 _on_starred_fetched（跨线程信号回 GUI 线程的终点）。
+        from .busy import _set_buttons_enabled  # 复用禁用/恢复语义, 不用上下文(跨线程)
+        self._star_buttons_saved = _set_buttons_enabled(self, ("btn_star_import",), False)
+        from ..app.event_bus import EventType as _ET
+        from ..app.event_bus import get_event_bus as _bus
+        try:
+            _bus().publish(_ET.JOB_STARTED, {"job": "star_import",
+                                             "cancellable": "non_cancellable"})
+        except Exception as _e:      # noqa: BLE001 —— 观测失败不影响忙态, 但留痕
+            from ..app.applog import warn as _warn
+            _warn(tr("Star 忙态事件发布失败：{e}").format(e=_e))
         token = str(getattr(self.settings, "token", "") or "").strip()
         self._emit_log(_fmt_dt(), LogLevel.INFO, tr("正在拉取 Star 列表…"))
         # 不把 self 捕进闭包：只捕信号与局部变量；线程结束后闭包随之释放。
@@ -2172,6 +2186,18 @@ class MainWindow(QMainWindow):
     def _on_starred_fetched(self, repos, err) -> None:
         """Star 拉取结束（GUI 线程）：去重后回填输入区。"""
         self._star_busy = False
+        # U-15：无条件恢复按钮（对应入口处的禁用；本槽是链路唯一终点）。
+        from .busy import _restore_buttons
+        _restore_buttons(self, getattr(self, "_star_buttons_saved", {}))
+        from ..app.event_bus import EventType as _ET2
+        from ..app.event_bus import get_event_bus as _bus
+        try:
+            _bus().publish(_ET2.JOB_FINISHED, {"job": "star_import",
+                                               "result": "failed" if err else "ok",
+                                               "cancellable": "non_cancellable"})
+        except Exception as _e:      # noqa: BLE001 —— 同上, 留痕
+            from ..app.applog import warn as _warn2
+            _warn2(tr("Star 忙态结束事件发布失败：{e}").format(e=_e))
         if err:
             self._emit_log(_fmt_dt(), LogLevel.WARN, tr("Star 列表获取失败") + "：" + err)
         names = [str(x).strip() for x in (repos or []) if str(x).strip()]
@@ -2232,7 +2258,7 @@ class MainWindow(QMainWindow):
         try:
             rate = getattr(self.engine, "batch_fail_rate", None)
             if rate is not None:
-                text = f"{text}（近批失败率 {rate:.0f}%）"
+                text = text + tr("（近批失败率 {r}%）").format(r=f"{rate:.0f}")
             self.statusBar().showMessage(text)
             self._emit_log(_fmt_dt(), LogLevel.WARN, text)
         except Exception:
@@ -2271,13 +2297,13 @@ class MainWindow(QMainWindow):
                             added_lines.append(line)
                 except Exception as exc:
                     self._emit_log(_fmt_dt(), LogLevel.WARN,
-                                   f"读取拖入文件失败：{p}（{exc}）")
+                                   tr("读取拖入文件失败：{p}（{e}）").format(p=p, e=exc))
             elif p.is_dir():
                 dirs.append(str(p))
         if added_lines:
             self.repo_input.appendPlainText("\n".join(added_lines) + "\n")
             self._emit_log(_fmt_dt(), LogLevel.INFO,
-                           f"已从拖入文件导入 {len(added_lines)} 行地址。")
+                           tr("已从拖入文件导入 {n} 行地址。").format(n=len(added_lines)))
         if dirs:
             # 复用本地导入扫描通道（默认扫描拖入目录）
             try:
@@ -2287,10 +2313,10 @@ class MainWindow(QMainWindow):
                 if dlg.selected:
                     n = dlg.import_selected()
                     self._load_db_into_grid()
-                    self._emit_log(_fmt_dt(), LogLevel.INFO, f"已从拖入目录导入 {n} 个本地仓库")
-                    self.statusBar().showMessage(f"已导入 {n} 个本地仓库")
+                    self._emit_log(_fmt_dt(), LogLevel.INFO, tr("已从拖入目录导入 {n} 个本地仓库").format(n=n))
+                    self.statusBar().showMessage(tr("已导入 {n} 个本地仓库").format(n=n))
             except Exception as exc:
-                self._emit_log(_fmt_dt(), LogLevel.WARN, f"拖入目录导入失败：{exc}")
+                self._emit_log(_fmt_dt(), LogLevel.WARN, tr("拖入目录导入失败：{e}").format(e=exc))
 
     def _clear_url_history(self):
         from .download_tools import clear_url_history as _cuh
@@ -2319,10 +2345,11 @@ class MainWindow(QMainWindow):
         try:
             self.task_lists.save(name.strip(), items)
             self._refresh_task_lists()
-            self._emit_log(_fmt_dt(), LogLevel.INFO, f"已保存任务清单：{name.strip()}（{len(items)} 行）")
-            self.statusBar().showMessage(f"已保存清单：{name.strip()}")
+            self._emit_log(_fmt_dt(), LogLevel.INFO, tr("已保存任务清单：{name}（{n} 行）").format(name=name.strip(), n=len(items)))
+            self.statusBar().showMessage(tr("已保存清单：{name}").format(name=name.strip()))
         except Exception as e:
-            QMessageBox.warning(self, tr("保存失败"), str(e))
+            from .error_dialog import show_error  # U-18：三段式 + 动作
+            show_error(self, e, context=tr("保存任务清单"), title=tr("保存失败"))
 
     def _load_task_list(self):
         """把所选清单的地址填入输入区。"""
@@ -2332,11 +2359,11 @@ class MainWindow(QMainWindow):
             return
         items = self.task_lists.items(name)
         if not items:
-            QMessageBox.information(self, tr("提示"), f"清单「{name}」为空或不存在。")
+            QMessageBox.information(self, tr("提示"), tr("清单「{name}」为空或不存在。").format(name=name))
             return
         self.repo_input.appendPlainText("\n".join(items) + "\n")
-        self._emit_log(_fmt_dt(), LogLevel.INFO, f"已载入任务清单：{name}（{len(items)} 行）")
-        self.statusBar().showMessage(f"已载入清单：{name}")
+        self._emit_log(_fmt_dt(), LogLevel.INFO, tr("已载入任务清单：{name}（{n} 行）").format(name=name, n=len(items)))
+        self.statusBar().showMessage(tr("已载入清单：{name}").format(name=name))
 
     def import_readme_list(self):
         """G84-18：从清单文件导入仓库地址（本地解析，不联网）。"""
@@ -2364,21 +2391,21 @@ class MainWindow(QMainWindow):
         if not specs:
             QMessageBox.information(
                 self, tr("提示"),
-                "没有可用的 GitHub 地址。\n\n有效示例：\n"
-                "https://github.com/vercel-labs/skills\ngit@github.com:microsoft/azure-skills.git\n"
-                "vercel-labs/agent-skills")
+                tr("没有可用的 GitHub 地址。\n\n有效示例：\n"
+                   "https://github.com/vercel-labs/skills\ngit@github.com:microsoft/azure-skills.git\n"
+                   "vercel-labs/agent-skills"))
             return
         if invalid:
             shown = "\n".join(f"  - {line}" for line in invalid)
             ret = QMessageBox.question(
                 self, tr("无效地址（忽略并继续？）"),
-                f"{len(invalid)} 行不是有效的 GitHub 仓库地址：\n{shown}\n\n"
-                "继续将只同步有效行，是否忽略无效行？",
+                tr("{n} 行不是有效的 GitHub 仓库地址：\n{shown}\n\n"
+                   "继续将只同步有效行，是否忽略无效行？").format(n=len(invalid), shown=shown),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if ret != QMessageBox.StandardButton.Yes:
                 return
             self._emit_log(_fmt_dt(), LogLevel.WARN,
-                            f"已忽略 {len(invalid)} 行无效地址：{', '.join(invalid)}")
+                            tr("已忽略 {n} 行无效地址：{list}").format(n=len(invalid), list=", ".join(invalid)))
         target = self.target_edit.text().strip()
         if not target:
             QMessageBox.warning(self, tr("提示"), tr("请先选择下载目录。"))
@@ -2386,7 +2413,7 @@ class MainWindow(QMainWindow):
         try:
             Path(target).mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            QMessageBox.warning(self, tr("提示"), f"无法创建下载目录：{e}")
+            QMessageBox.warning(self, tr("提示"), tr("无法创建下载目录：{e}").format(e=e))
             return
         # G38-4：模式 1=浅克隆、2=单分支浅克隆（都走 shallow 路径，后者加 --single-branch）
         mode_idx = self.mode_combo.currentIndex()
@@ -2456,7 +2483,7 @@ class MainWindow(QMainWindow):
             return  # 当前组仍在运行，等 finished 槽再拉下一组
         root, rows = self._multi_root_update.pop(0)
         specs = self._rows_to_specs(rows)
-        self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"一键更新：处理根目录 {root}（{len(specs)} 个仓库）")
+        self._emit_log(_fmt_dt(), LogLevel.SYSTEM, tr("一键更新：处理根目录 {root}（{n} 个仓库）").format(root=root, n=len(specs)))
         self._launch(specs, target_root=Path(root), shallow=False, depth=1,
                      multi_root_relay=True)
 
@@ -2491,7 +2518,7 @@ class MainWindow(QMainWindow):
         try:
             self.status_strip.begin(len(specs))
         except Exception as exc:  # noqa: BLE001 —— 齿条只是观测件，不能拖垮下载链路
-            self._emit_log(_fmt_dt(), LogLevel.WARN, f"仪表齿条未能启动：{exc}")
+            self._emit_log(_fmt_dt(), LogLevel.WARN, tr("仪表齿条未能启动：{e}").format(e=exc))
         # Rev11（V-09）：结论条切入运行态（动效受 reduced_motion 支配，组件内自判）。
         # getattr 兜底而非 try/except pass（异常预算棘轮只降不升）。
         _bc = getattr(self, "batch_conclusion", None)
@@ -2509,8 +2536,10 @@ class MainWindow(QMainWindow):
         self.depth_spin.setEnabled(False)
 
         self._emit_log(_fmt_dt(), LogLevel.SYSTEM,
-                        f"开始并行同步 {len(specs)} 个仓库（{tr('浅克隆 depth=') + str(depth) if shallow else tr('满量')}）")
-        self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"根目录：{target_root}")
+                        tr("开始并行同步 {n} 个仓库（{mode}）").format(
+                        n=len(specs),
+                        mode=(tr("浅克隆 depth=") + str(depth)) if shallow else tr("满量")))
+        self._emit_log(_fmt_dt(), LogLevel.SYSTEM, tr("根目录：{v}").format(v=target_root))
 
         # 下载完成后自动清空输入框（默认开启）
         self._clear_after_finish = clear_input and not multi_root_relay
@@ -2626,7 +2655,7 @@ class MainWindow(QMainWindow):
                 self.row_specs[i] = spec
             self.progress_panel.end_bulk()
             self._pending_count = n
-            self.statusBar().showMessage(f"并行同步中：{n} 个仓库…")
+            self.statusBar().showMessage(tr("并行同步中：{n} 个仓库…").format(n=n))
             return
 
     # ------------------------------------------------------------ 槽
@@ -2832,7 +2861,7 @@ class MainWindow(QMainWindow):
                 allow_mutate=False, event_bus=get_event_bus())
         except Exception as e:  # noqa: BLE001 —— 端口占用/权限不足不能拖垮 GUI
             self._emit_log(_fmt_dt(), LogLevel.WARN,
-                           f"本地 API 启动失败（127.0.0.1:{port}）：{e}")
+                           tr("本地 API 启动失败（127.0.0.1:{port}）：{e}").format(port=port, e=e))
             return                       # 旧服务（若有）保持运行
         th = threading.Thread(target=httpd.serve_forever, daemon=True,
                               name="gcm-local-api")
@@ -2843,8 +2872,7 @@ class MainWindow(QMainWindow):
         if old is not None:
             self._shutdown_local_api_async(old, old_th)
         self._emit_log(_fmt_dt(), LogLevel.SYSTEM,
-                       f"本地只读 API 已启动：http://127.0.0.1:{port}"
-                       "（GET /api/events 为 SSE 事件流）")
+                       tr("本地只读 API 已启动：http://127.0.0.1:{port}（GET /api/events 为 SSE 事件流）").format(port=port))
 
     @staticmethod
     def _shutdown_local_api_async(httpd, th) -> None:
@@ -2908,7 +2936,7 @@ class MainWindow(QMainWindow):
             dlg.diagnostics_requested.connect(self._export_diag_bundle)
             dlg.exec()
         except Exception as e:
-            self._emit_log(_fmt_dt(), LogLevel.WARN, f"失败汇总打开失败：{e}")
+            self._emit_log(_fmt_dt(), LogLevel.WARN, tr("失败汇总打开失败：{e}").format(e=e))
 
     def _open_retry_dialog(self):
         """G71-4：打开「失败重试队列」对话框（可查看/立即重试/移除）。"""
@@ -2926,38 +2954,39 @@ class MainWindow(QMainWindow):
             from .retry_panel import RetryQueueDialog
             RetryQueueDialog(owner=self, parent=self).exec()
         except Exception as e:
-            self._emit_log(_fmt_dt(), LogLevel.WARN, f"重试队列打开失败：{e}")
+            self._emit_log(_fmt_dt(), LogLevel.WARN, tr("重试队列打开失败：{e}").format(e=e))
 
     def _diag_status_report(self) -> str:
         """构造诊断包的文本报告（纯读；不触发网络/子进程）。"""
         from .. import __version__
         lines = [
             f"Git-clone-Max {__version__}",
-            f"生成时间：{_fmt_dt()}",
+            tr("生成时间：{t}").format(t=_fmt_dt()),
             f"数据目录：{self.data_dir}",
-            f"下载目录：{getattr(self.settings, 'download_dir', '') or tr('(未设置)')}",
-            f"引擎：busy={bool(getattr(self, 'busy', False))} "
-            f"concurrency={getattr(getattr(self, 'engine', None), 'concurrency', '-')}",
+            tr("下载目录：{v}").format(v=getattr(self.settings, "download_dir", "") or tr("(未设置)")),
+            tr("引擎：busy={b} concurrency={c}").format(
+            b=bool(getattr(self, "busy", False)),
+            c=getattr(getattr(self, "engine", None), "concurrency", "-")),
         ]
         try:
             st = self.db.stats_overview()
-            lines.append(f"数据库：{st}")
+            lines.append(tr("数据库：{v}").format(v=st))
         except Exception as e:  # noqa: BLE001
-            lines.append(f"数据库统计失败：{e}")
+            lines.append(tr("数据库统计失败：{e}").format(e=e))
         try:
             eng = getattr(self, "engine", None)
             q = getattr(eng, "retry_queue", None) if eng is not None else None
             if q is not None:
-                lines.append(f"重试队列：{q.stats()}")
+                lines.append(tr("重试队列：{v}").format(v=q.stats()))
             else:
                 lines.append(tr("重试队列：未启用"))
         except Exception as e:  # noqa: BLE001
-            lines.append(f"重试队列统计失败：{e}")
+            lines.append(tr("重试队列统计失败：{e}").format(e=e))
         try:
             from ..app.event_bus import get_event_bus
-            lines.append(f"事件总线：{get_event_bus().stats()}")
+            lines.append(tr("事件总线：{v}").format(v=get_event_bus().stats()))
         except Exception as e:  # noqa: BLE001
-            lines.append(f"事件总线统计失败：{e}")
+            lines.append(tr("事件总线统计失败：{e}").format(e=e))
         return "\n".join(lines)
 
     def _export_diag_bundle(self):
@@ -2983,12 +3012,13 @@ class MainWindow(QMainWindow):
                     report_text=self._diag_status_report(),
                     event_bus=get_event_bus(),
                     extra_manifest={"tab": self.tabs.currentIndex() if hasattr(self, "tabs") else 0})
-            self._emit_log(_fmt_dt(), LogLevel.SYSTEM, f"诊断包已导出：{out}")
+            self._emit_log(_fmt_dt(), LogLevel.SYSTEM, tr("诊断包已导出：{v}").format(v=out))
             QMessageBox.information(self, tr("诊断包已导出"), str(out))
         except Exception as e:  # noqa: BLE001
-            self._emit_log(_fmt_dt(), LogLevel.WARN, f"诊断包导出失败：{e}")
+            self._emit_log(_fmt_dt(), LogLevel.WARN, tr("诊断包导出失败：{e}").format(e=e))
             try:
-                QMessageBox.warning(self, tr("导出失败"), str(e))
+                from .error_dialog import show_error  # U-18：三段式 + 动作
+                show_error(self, e, context=tr("导出诊断包"), title=tr("导出失败"))
             except Exception:
                 pass
 
@@ -3019,7 +3049,7 @@ class MainWindow(QMainWindow):
                 self._launch(specs, target_root=root, shallow=False, depth=1,
                              clear_input=False, single_branch=False)
         except Exception as e:
-            self._emit_log(_fmt_dt(), LogLevel.WARN, f"失败类别重试失败：{e}")
+            self._emit_log(_fmt_dt(), LogLevel.WARN, tr("失败类别重试失败：{e}").format(e=e))
 
     # ------------------------------------------------------------ G52-2 启动续跑对话框
     def _schedule_resume_check(self) -> None:
@@ -3050,7 +3080,7 @@ class MainWindow(QMainWindow):
             ret = QMessageBox.question(
                 self,
                 tr("检测到未完成任务"),
-                tr(f"上次会话有 {len(specs)} 个任务未完成：\n{names}\n\n是否续跑？"),
+                tr("上次会话有 {n} 个任务未完成：\n{names}\n\n是否续跑？").format(n=len(specs), names=names),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.Yes)
             if ret == QMessageBox.StandardButton.Yes:
@@ -3070,12 +3100,12 @@ class MainWindow(QMainWindow):
                 return
             if not getattr(self.watchdog, "silent", False):
                 self._emit_log(_fmt_dt(), LogLevel.SYSTEM,
-                               f"看门狗检测到 {len(specs)} 个未完成任务，自动续跑")
+                               tr("看门狗检测到 {n} 个未完成任务，自动续跑").format(n=len(specs)))
             root = Path(getattr(self.settings, "download_dir", "") or self.data_dir / "clones")
             self._launch(specs, target_root=root, shallow=False, depth=1,
                          clear_input=False, single_branch=False)
         except Exception as e:
-            self._emit_log(_fmt_dt(), LogLevel.WARN, f"看门狗续跑失败：{e}")
+            self._emit_log(_fmt_dt(), LogLevel.WARN, tr("看门狗续跑失败：{e}").format(e=e))
 
     def _on_engine_finished(self):
         """G45-6 转发 progress_table.py（行为零变化；G52-3 复位看门狗）。"""
@@ -3110,7 +3140,7 @@ class MainWindow(QMainWindow):
             from .command_palette import open_palette
             open_palette(self)
         except Exception as e:  # noqa: BLE001 —— 面板打不开不该影响主流程
-            self._emit_log(_fmt_dt(), LogLevel.WARN, f"命令面板打开失败：{e}")
+            self._emit_log(_fmt_dt(), LogLevel.WARN, tr("命令面板打开失败：{e}").format(e=e))
 
     def toggle_batch_pause(self):
         """C2-6：暂停 / 继续本批次（实现见 `ui/batch_actions.py`）。"""
@@ -3161,7 +3191,7 @@ class MainWindow(QMainWindow):
                     summary=tr("清空输入区"), before={"text": text}, undoable=True)
                 self.offer_undo(rec, tr("已清空输入区"))
             except Exception as e:  # noqa: BLE001 —— 台账失败不该影响清空本身
-                self._emit_log(_fmt_dt(), LogLevel.WARN, f"操作台账写入失败：{e}")
+                self._emit_log(_fmt_dt(), LogLevel.WARN, tr("操作台账写入失败：{e}").format(e=e))
 
     def _any_cancel(self):
         """G45-6 转发 progress_table.py（行为零变化）。"""
@@ -3216,8 +3246,8 @@ class MainWindow(QMainWindow):
         if dlg.selected:
             n = dlg.import_selected()
             self._load_db_into_grid()
-            self._emit_log(_fmt_dt(), LogLevel.INFO, f"已导入 {n} 个本地仓库")
-            self.statusBar().showMessage(f"已导入 {n} 个本地仓库")
+            self._emit_log(_fmt_dt(), LogLevel.INFO, tr("已导入 {n} 个本地仓库").format(n=n))
+            self.statusBar().showMessage(tr("已导入 {n} 个本地仓库").format(n=n))
 
     def show_history(self, repo_id: int):
         """打开仓库详情对话框；记录已不存在时回退为纯文本历史提示。"""
@@ -3498,12 +3528,12 @@ class MainWindow(QMainWindow):
                 summary = undo_record(self.oplog, self, rec)
             except UndoError as e:
                 self.statusBar().showMessage(str(e), 6000)
-                self._emit_log(_fmt_dt(), LogLevel.WARN, f"撤销失败：{e}")
+                self._emit_log(_fmt_dt(), LogLevel.WARN, tr("撤销失败：{e}").format(e=e))
                 return
             self.statusBar().showMessage(summary, 5000)
             self._emit_log(_fmt_dt(), LogLevel.INFO, summary)
         except Exception as e:  # noqa: BLE001 —— 撤销入口故障不该影响主流程
-            self._emit_log(_fmt_dt(), LogLevel.WARN, f"撤销入口异常：{e}")
+            self._emit_log(_fmt_dt(), LogLevel.WARN, tr("撤销入口异常：{e}").format(e=e))
 
     def undo_op(self, record_id: str) -> tuple[bool, str]:
         """按 id 撤销（UndoBar 调用）。返回 (是否成功, 给用户看的文案)。"""
@@ -3527,7 +3557,7 @@ class MainWindow(QMainWindow):
             if bar is not None and record is not None:
                 bar.offer(record.id, text)
         except Exception as e:  # noqa: BLE001 —— 浮条失败不影响操作本身已完成
-            self._emit_log(_fmt_dt(), LogLevel.WARN, f"撤销浮条显示失败：{e}")
+            self._emit_log(_fmt_dt(), LogLevel.WARN, tr("撤销浮条显示失败：{e}").format(e=e))
 
     def open_oplog_dialog(self):
         """编辑 → 操作历史…：列出最近可撤销记录。"""
@@ -3535,7 +3565,7 @@ class MainWindow(QMainWindow):
             from .undo_bar import build_oplog_dialog
             build_oplog_dialog(self).exec()
         except Exception as e:  # noqa: BLE001
-            self._emit_log(_fmt_dt(), LogLevel.WARN, f"操作历史打开失败：{e}")
+            self._emit_log(_fmt_dt(), LogLevel.WARN, tr("操作历史打开失败：{e}").format(e=e))
 
     def menu_goto_tab(self):
         """视图 → 切页签（读 sender 的 tab_index 属性，避免 lambda 捕获 self）。"""
@@ -3544,7 +3574,7 @@ class MainWindow(QMainWindow):
             idx = int(act.property("tab_index")) if act is not None else 0
             self.tabs.setCurrentIndex(max(0, min(self.tabs.count() - 1, idx)))
         except Exception as e:  # noqa: BLE001
-            self._emit_log(_fmt_dt(), LogLevel.WARN, f"切换页签失败：{e}")
+            self._emit_log(_fmt_dt(), LogLevel.WARN, tr("切换页签失败：{e}").format(e=e))
 
     def open_help(self):
         """帮助 → 使用说明（F1）。与设置页「使用说明」走**同一个**槽，防漂移。"""

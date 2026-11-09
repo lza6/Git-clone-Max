@@ -73,7 +73,7 @@ class RepoDetailDialog(QDialog):
 
         owner = str(repo.get("owner", ""))
         name = str(repo.get("repo", ""))
-        self.setWindowTitle(f"{owner}/{name} - 仓库详情")
+        self.setWindowTitle(f"{owner}/{name} " + tr("- 仓库详情"))
         from .layout import fit_dialog_to_screen
         fit_dialog_to_screen(self, 860, 560, 680, 420)
 
@@ -129,9 +129,11 @@ class RepoDetailDialog(QDialog):
             avg = sum(durs) // total if total else 0
             stats = {"total": total, "success": ok, "failed": fail,
                      "conflict": conf, "cancelled": canc, "avg_duration_ms": avg}
-        text = (f"共 {stats.get('total', 0)} 次同步 · 成功 {stats.get('success', 0)} · "
-                f"失败 {stats.get('failed', 0)} · 冲突 {stats.get('conflict', 0)} · "
-                f"取消 {stats.get('cancelled', 0)} · 平均耗时 {stats.get('avg_duration_ms', 0) / 1000:.1f}s")
+        text = tr("共 {n} 次同步 · 成功 {ok} · 失败 {fail} · 冲突 {conf} · 取消 {canc} · 平均耗时 {avg}s").format(
+            n=stats.get('total', 0), ok=stats.get('success', 0),
+            fail=stats.get('failed', 0), conf=stats.get('conflict', 0),
+            canc=stats.get('cancelled', 0),
+            avg=f"{stats.get('avg_duration_ms', 0) / 1000:.1f}")
         self.lbl_stats = QLabel(text)
         self.lbl_stats.setObjectName("muted")
         return self.lbl_stats
@@ -268,7 +270,8 @@ class RepoDetailDialog(QDialog):
             self.repo["note"] = note
             QMessageBox.information(self, tr("备注"), tr("备注已保存。"))
         except Exception as e:
-            QMessageBox.warning(self, tr("保存失败"), str(e))
+            from .error_dialog import show_error  # U-18：三段式 + 动作
+            show_error(self, e, context=tr("保存仓库备注"), title=tr("保存失败"))
 
     # ------------------------------------------------------------ 仓库级 SSH key（G80-B8）
     def _db_or_none(self):
@@ -307,7 +310,8 @@ class RepoDetailDialog(QDialog):
         try:
             db.set_ssh_key(rid, raw)
         except Exception as e:  # noqa: BLE001 - 保存失败必须让用户看到
-            QMessageBox.warning(self, tr("保存失败"), str(e))
+            from .error_dialog import show_error  # U-18：三段式 + 动作
+            show_error(self, e, context=tr("保存 SSH 私钥"), title=tr("保存失败"))
             return
         self.repo["ssh_key"] = raw
         QMessageBox.information(self, tr("SSH 私钥"), tr("已保存（下次同步生效）"))
@@ -322,7 +326,8 @@ class RepoDetailDialog(QDialog):
         try:
             db.set_ssh_key(rid, "")
         except Exception as e:  # noqa: BLE001 - 清除失败必须让用户看到
-            QMessageBox.warning(self, tr("保存失败"), str(e))
+            from .error_dialog import show_error  # U-18：三段式 + 动作
+            show_error(self, e, context=tr("清除 SSH 私钥"), title=tr("保存失败"))
             return
         self.ssh_edit.clear()
         self.repo["ssh_key"] = ""
@@ -425,9 +430,9 @@ class RepoDetailDialog(QDialog):
         path = str(self.repo.get("local_path") or "")
         if path and os.path.isdir(path):
             if not open_folder(path):
-                QMessageBox.warning(self, tr("无法打开目录"), f"系统未找到文件管理器：\n{path}")
+                QMessageBox.warning(self, tr("无法打开目录"), tr("系统未找到文件管理器：\n{path}").format(path=path))
         else:
-            QMessageBox.warning(self, tr("目录不存在"), f"仓库目录不存在：\n{path or tr('（路径为空）')}")
+            QMessageBox.warning(self, tr("目录不存在"), tr("仓库目录不存在：\n{path}").format(path=path or tr("（路径为空）")))
 
     def copy_path(self) -> None:
         """复制本地路径到剪贴板。"""
@@ -528,7 +533,7 @@ class RepoDetailDialog(QDialog):
                 capture_output=True, text=True, encoding="utf-8",
                 errors="replace", timeout=30)
         except Exception as e:  # noqa: BLE001
-            return f"体检失败：{e}"
+            return tr("体检失败：{e}").format(e=e)
         size_line = ""
         for line in (count.stdout or "").splitlines():
             if line.startswith("size-pack"):
@@ -537,8 +542,8 @@ class RepoDetailDialog(QDialog):
         if fsck.returncode != 0 or (fsck.stderr or "").strip():
             err = (fsck.stderr or fsck.stdout or "").strip().splitlines()
             first = err[0] if err else f"rc={fsck.returncode}"
-            return f"对象库异常：{first[:120]}"
-        return f"健康（对象库 {size_line or tr('正常')}）"
+            return tr("对象库异常：{e}").format(e=first[:120])
+        return tr("健康（对象库 {e}）").format(e=size_line or tr('正常'))
 
     def _finish_health_check(self, text: str) -> None:
         """主线程收尾（health_checked 的槽）。"""

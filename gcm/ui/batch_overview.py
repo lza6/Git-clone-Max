@@ -69,7 +69,7 @@ class BatchOverview(QWidget):
             return
         pct = min(100, round(done / total * 100))
         rate = round(ok / done * 100) if done else 0
-        self.label.setText(f"已完成 {done}/{total} · 成功率 {rate}%")
+        self.label.setText(tr("已完成 {done}/{total} · 成功率 {rate}%").format(done=done, total=total, rate=rate))
         self.bar.setValue(pct)
 
 

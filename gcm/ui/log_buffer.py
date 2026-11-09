@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Optional
 
 from PyQt6.QtCore import QObject, QTimer
 
+from ..i18n import tr
+
 if TYPE_CHECKING:  # 仅类型标注（避免循环导入）
     from PyQt6.QtWidgets import QPlainTextEdit
 
@@ -78,9 +80,9 @@ class LogBuffer(QObject):
             if kw and kw not in ev.text.lower():
                 continue
             prefix = {
-                LogLevel.WARN: "[警告] ",
-                LogLevel.ERROR: "[错误] ",
-                LogLevel.SYSTEM: "[系统] ",
+                LogLevel.WARN: tr("[警告] "),
+                LogLevel.ERROR: tr("[错误] "),
+                LogLevel.SYSTEM: tr("[系统] "),
             }.get(ev.level, "")
             cur.appendPlainText(f"[{ev.time}] {prefix}{ev.text}")
         # 滚动跟随（仅在用户已处于底部时）
@@ -116,8 +118,8 @@ class LogBuffer(QObject):
             if kw and kw not in ev.text.lower():
                 continue
             prefix = {
-                LogLevel.WARN: "[警告] ",
-                LogLevel.ERROR: "[错误] ",
-                LogLevel.SYSTEM: "[系统] ",
+                LogLevel.WARN: tr("[警告] "),
+                LogLevel.ERROR: tr("[错误] "),
+                LogLevel.SYSTEM: tr("[系统] "),
             }.get(ev.level, "")
             cur.appendPlainText(f"[{ev.time}] {prefix}{ev.text}")

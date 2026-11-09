@@ -24,10 +24,10 @@ def build_progress_menu(panel, row: int):
     if name_item is None or status_item is None:
         return menu
     status_key = status_item.data(Qt.ItemDataRole.UserRole) or ""
-    act_retry = menu.addAction(tr("⟳ 重试此仓库"))
+    act_retry = menu.addAction(tr("重试此仓库"))
     retryable = status_key in ("failed", "cancelled")
     act_retry.setEnabled(retryable)
-    act_retry.setToolTip("仅失败/已取消行可重试" if not retryable else "重新调度该仓库")
+    act_retry.setToolTip(tr("仅失败/已取消行可重试") if not retryable else tr("重新调度该仓库"))
     act_retry.triggered.connect(
         lambda _=False, r=row: panel._retry_table_row(r))
     menu.addSeparator()

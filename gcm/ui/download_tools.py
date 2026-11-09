@@ -35,12 +35,12 @@ def _msgbox():
 def save_log(owner, fmt_dt) -> None:
     """导出黑匣子日志到文本文件。"""
     path, _ = _fd().getSaveFileName(
-        owner, tr("导出日志"), str(owner.data_dir / "clone_log.txt"), "文本文件 (*.txt)")
+        owner, tr("导出日志"), str(owner.data_dir / "clone_log.txt"), tr("文本文件 (*.txt)"))
     if not path:
         return
     try:
         Path(path).write_text(owner.log.to_plain_text(), encoding="utf-8")
-        owner._emit_log(fmt_dt(), LogLevel.INFO, f"日志已导出：{path}")
+        owner._emit_log(fmt_dt(), LogLevel.INFO, tr("日志已导出：{p}").format(p=path))
     except Exception as e:
         _msgbox().critical(owner, tr("导出失败"), str(e))
 
@@ -71,8 +71,8 @@ def export_report(owner, fmt_dt) -> None:
             else:
                 n = export_csv(owner.db, path)
         owner._emit_log(fmt_dt(), LogLevel.INFO,
-                        f"报表已导出：{path}（{n} 行）")
-        owner.statusBar().showMessage(f"报表已导出：{path}（{n} 行）")
+                        tr("报表已导出：{p}（{n} 行）").format(p=path, n=n))
+        owner.statusBar().showMessage(tr("报表已导出：{p}（{n} 行）").format(p=path, n=n))
     except Exception as e:
         _msgbox().critical(owner, tr("导出失败"), str(e))
 
@@ -115,15 +115,15 @@ def clear_url_history(owner, fmt_dt) -> None:
         except Exception:  # noqa: BLE001 —— 取不到快照时退化为「只记录、不可撤销」
             items = []
         owner.url_history.clear()
-        owner._emit_log(fmt_dt(), LogLevel.INFO, "URL 历史已清空。")
+        owner._emit_log(fmt_dt(), LogLevel.INFO, tr("URL 历史已清空。"))
         if items:
             try:
                 rec = owner.oplog.record(
-                    "url_history_clear", f"{len(items)} 条地址",
-                    summary="清空地址历史", before={"items": items}, undoable=True)
-                owner.offer_undo(rec, f"已清空 {len(items)} 条地址历史")
+                    "url_history_clear", tr("{n} 条地址").format(n=len(items)),
+                    summary=tr("清空地址历史"), before={"items": items}, undoable=True)
+                owner.offer_undo(rec, tr("已清空 {n} 条地址历史").format(n=len(items)))
             except Exception as e:  # noqa: BLE001 —— 台账失败不影响清空本身
-                owner._emit_log(fmt_dt(), LogLevel.WARN, f"操作台账写入失败：{e}")
+                owner._emit_log(fmt_dt(), LogLevel.WARN, tr("操作台账写入失败：{e}").format(e=e))
     except Exception:
         pass
 
@@ -154,7 +154,7 @@ def _classify_mkdir_error(e: BaseException) -> str:
         return tr("盘符或路径不存在：请检查目标路径")
     if eno == errno.EMFILE or eno == errno.ENFILE:
         return tr("系统文件句柄已用尽：请稍后重试")
-    return f"目录创建失败：{e}"
+    return tr("目录创建失败：{e}").format(e=e)
 
 
 def choose_target(owner) -> None:

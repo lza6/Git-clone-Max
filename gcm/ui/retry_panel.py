@@ -35,14 +35,14 @@ from PyQt6.QtWidgets import (
 from ..app.errors import category_label, classify_error
 from ..i18n import tr
 
-_COLS = ("仓库", "次数", "下次重试", "类别", "为什么 / 怎么办", "状态")
+_COLS = tuple(tr(c) for c in ("仓库", "次数", "下次重试", "类别", "为什么 / 怎么办", "状态"))
 
 
 _STATE_LABELS = {
-    "queued": "排队中",
-    "due": "待重试",
-    "retrying": "重试中",
-    "dropped": "已放弃",
+    "queued": tr("排队中"),
+    "due": tr("待重试"),
+    "retrying": tr("重试中"),
+    "dropped": tr("已放弃"),
 }
 
 

@@ -46,7 +46,7 @@ def check_now(win) -> None:
         return  # 防连点：worker 未回前不重复发起
     win._update_checking = True
     try:
-        win.statusBar().showMessage("正在检查更新…", 3000)
+        win.statusBar().showMessage(tr("正在检查更新…"), 3000)
     except Exception:  # noqa: BLE001 —— 状态栏不可用不该拦住检查
         pass
 
@@ -56,7 +56,7 @@ def check_now(win) -> None:
             # G76：带 sha256 的检查（`check_latest_with_sha` 此前零生产调用）
             has_new, ver, url, err, sha = check_latest_with_sha()
         except Exception as e:  # noqa: BLE001 —— 兜底成 err，绝不从线程抛出
-            has_new, ver, url, err, sha = False, "", "", f"检查更新失败：{e}", ""
+            has_new, ver, url, err, sha = False, "", "", tr("检查更新失败：{e}").format(e=e), ""
         win._update_sha256 = str(sha or "")
         # 跨线程 emit：Qt 自动走 QueuedConnection，槽在 GUI 线程执行
         win.update_checked.emit(bool(has_new), str(ver or ""), str(url or ""), str(err or ""))
@@ -80,12 +80,12 @@ def on_checked(win, has_new: bool, ver: str, url: str, err: str,
     if sha:
         win._last_release_sha = sha
     from .. import __version__
-    msg = (err or (f"发现新版本 {ver}，可到设置页下载" if has_new
-                   else f"已是最新版本（{__version__}）"))
+    msg = (err or (tr("发现新版本 {v}，可到设置页下载").format(v=ver) if has_new
+                   else tr("已是最新版本（{v}）").format(v=__version__)))
     if not win._can_show_modal():
         # 没有可见窗口 → 不弹模态（会永久阻塞），改为写日志留痕
         try:
-            win._emit_log(_fmt_dt(), LogLevel.INFO, f"检查更新：{msg}")
+            win._emit_log(_fmt_dt(), LogLevel.INFO, tr("检查更新：{m}").format(m=msg))
         except Exception:  # noqa: BLE001 —— 日志失败不该让检查流程崩
             pass
         return
@@ -98,19 +98,19 @@ def on_checked(win, has_new: bool, ver: str, url: str, err: str,
         elif has_new:
             extra = ""
             if sha:
-                extra = (f"\n\n发布方公布的 SHA256：\n{sha}\n"
-                         f"（下载后可用 `certutil -hashfile <文件> SHA256` 核对）")
+                extra = ("\n\n" + tr("发布方公布的 SHA256：\n{sha}\n"
+                         "（下载后可用 `certutil -hashfile <文件> SHA256` 核对）").format(sha=sha))
             ret = mb.question(
                 win, tr("发现新版本"),
-                f"当前版本 {__version__}，最新版本 {ver}。\n是否打开下载页面？{extra}",
+                tr("当前版本 {cur}，最新版本 {new}。\n是否打开下载页面？{extra}").format(cur=__version__, new=ver, extra=extra),
                 mb.StandardButton.Yes | mb.StandardButton.No)
             if ret == mb.StandardButton.Yes and url:
                 import webbrowser
                 webbrowser.open(url)
         else:
-            mb.information(win, tr("检查更新"), f"已是最新版本（{__version__}）")
+            mb.information(win, tr("检查更新"), tr("已是最新版本（{v}）").format(v=__version__))
     except Exception as e:  # noqa: BLE001 —— 弹窗失败只能降级成再弹一次提示
-        mb.information(win, tr("检查更新"), f"检查更新失败：{e}")
+        mb.information(win, tr("检查更新"), tr("检查更新失败：{e}").format(e=e))
 
 
 def verify_downloaded_file(win) -> None:
@@ -134,23 +134,24 @@ def verify_downloaded_file(win) -> None:
         # 没有发布方校验值时不弹文件选择器，直接说清怎么拿到基准值
         _msgbox().information(
             win, tr("校验下载的文件"),
-            "还没有拿到发布方公布的 SHA256。\n"
-            "请先点「检查更新」——拿到版本信息后，这里才有可比对的基准值。")
+            tr("还没有拿到发布方公布的 SHA256。\n"
+               "请先点「检查更新」——拿到版本信息后，这里才有可比对的基准值。"))
         return
     path, _ = QFileDialog.getOpenFileName(
-        win, "选择下载的安装包", "", "安装包 (*.exe *.zip);;所有文件 (*)")
+        win, tr("选择下载的安装包"), "", tr("安装包 (*.exe *.zip);;所有文件 (*)"))
     if not path:
         return
     ok, actual, outcome = verify_by_sha256(path, expected)
     if outcome == OUTCOME_MATCH:
         _msgbox().information(win, tr("校验通过"),
-                              f"文件与发布方公布值一致。\nSHA256：{actual}")
+                              tr("文件与发布方公布值一致。\nSHA256：{v}").format(v=actual))
     elif outcome == OUTCOME_MISMATCH:
         _msgbox().warning(
             win, tr("校验不通过"),
-            "文件与发布方公布值**不一致**，请勿安装。\n\n"
-            f"期望：{expected}\n实际：{actual}\n\n"
-            "可能原因：下载不完整、代理/镜像篡改、或下到了别的版本。建议重新从 Release 页面下载。")
+            tr("文件与发布方公布值【不一致】，请勿安装。\n\n"
+               "期望：{exp}\n实际：{act}\n\n"
+               "可能原因：下载不完整、代理/镜像篡改、或下到了别的版本。建议重新从 Release 页面下载。").format(
+                exp=expected, act=actual))
     elif outcome == OUTCOME_UNREADABLE:
         _msgbox().warning(win, tr("无法读取"), tr("这个文件读不了（可能被杀毒软件占用或权限不足）。"))
     else:  # 防御性：理论上到不了（no_baseline 已在前面拦住）
@@ -185,16 +186,18 @@ def check_silent(win) -> None:
                     pass
                 return
             _bj.notify_run(_bj.JOB_AUTO_UPDATE,
-                           result=(f"发现新版本 {ver}" if has_new else "已是最新"))
+                           result=(tr("发现新版本 {v}").format(v=ver) if has_new
+                                   else tr("已是最新")))
             if has_new:
                 # G67-9：**工作线程内只能走 emit 桥**，不得直接调 _emit_log
                 win.emit_log_from_worker(
                     _fmt_dt(), LogLevel.INFO,
-                    f"发现新版本 {ver}（当前 {__version__}），可到设置页检查更新。")
+                    tr("发现新版本 {v}（当前 {cur}），可到设置页检查更新。").format(
+                        v=ver, cur=__version__))
                 try:
                     if getattr(win, "tray", None) is not None:
-                        win.tray.notify("Git-clone-Max 有新版本",
-                                        f"最新 {ver}，可下载更新")
+                        win.tray.notify(tr("Git-clone-Max 有新版本"),
+                                        tr("最新 {v}，可下载更新").format(v=ver))
                 except Exception:  # noqa: BLE001 —— 托盘不可用不该影响检查结果
                     pass
         except Exception:  # noqa: BLE001 —— 静默检查绝不把异常抛到线程外

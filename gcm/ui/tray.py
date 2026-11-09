@@ -135,9 +135,11 @@ class TrayController(QObject):
             return
         c = self._counts
         if c["running"] > 0:
-            tip = f"{self._base_title} · 运行中 {c['running']} · 完成 {c['ok']} · 失败 {c['bad']}"
+            tip = tr("{t} · 运行中 {r} · 完成 {ok} · 失败 {bad}").format(
+                t=self._base_title, r=c["running"], ok=c["ok"], bad=c["bad"])
         elif c["ok"] or c["bad"]:
-            tip = f"{self._base_title} · 上轮完成 {c['ok']} · 失败 {c['bad']}"
+            tip = tr("{t} · 上轮完成 {ok} · 失败 {bad}").format(
+                t=self._base_title, ok=c["ok"], bad=c["bad"])
         else:
             tip = self._base_title
         try:

@@ -30,7 +30,7 @@ from PyQt6.QtWidgets import (
 from ..app.event_bus import EventType, get_event_bus
 from ..i18n import tr
 
-_COLS = ("#", "时间", "类型", "仓库", "状态", "摘要")
+_COLS = tuple(tr(c) for c in ("#", "时间", "类型", "仓库", "状态", "摘要"))
 
 
 def _fmt_time(ts: float) -> str:

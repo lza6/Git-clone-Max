@@ -13,6 +13,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
 
+from ..i18n import tr
 from .progress_delegate import DETAIL_ROLE
 from .result_labels import format_duration as _format_duration
 from .theme import current_palette
@@ -29,7 +30,7 @@ def build_row_items(spec) -> list[QTableWidgetItem]:
     prog_item = QTableWidgetItem("")
     prog_item.setData(DETAIL_ROLE, "")
     prog_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-    status_item = QTableWidgetItem("等待中")
+    status_item = QTableWidgetItem(tr("等待中"))
     status_item.setData(Qt.ItemDataRole.UserRole, "pending")  # 供排序
     status_item.setForeground(QColor(pal["text_dim"]))
     act_item = QTableWidgetItem("—")

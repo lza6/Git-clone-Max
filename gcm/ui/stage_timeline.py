@@ -23,10 +23,10 @@ from ..i18n import tr
 STAGE_ORDER = ("precheck", "transfer", "checkout", "hook")
 
 STAGE_LABELS = {
-    "precheck": "预检",
-    "transfer": "传输",
-    "checkout": "检出",
-    "hook": "钩子",
+    "precheck": tr("预检"),
+    "transfer": tr("传输"),
+    "checkout": tr("检出"),
+    "hook": tr("钩子"),
 }
 
 
@@ -51,7 +51,7 @@ def tooltip_text(stages: list[tuple[str, float]]) -> str:
     """四段明细的整条 tooltip（毫秒 → 与 result_labels.format_duration 同形态）。"""
     from .result_labels import format_duration
     if not stages:
-        return "暂无分阶段耗时数据"
+        return tr("暂无分阶段耗时数据")
     parts = [f"{STAGE_LABELS.get(k, k)} {format_duration(int(ms))}"
              for k, ms in stages]
     return " · ".join(parts)

@@ -197,6 +197,61 @@ def build_download_top(owner) -> QWidget:
     owner.btn_edit_quick.setSizePolicy(
         QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
     quick_row.addWidget(owner.btn_edit_quick)
+    # Rev12 U-17：地址历史从「右键菜单深处」提到快捷填充行的常驻入口。
+    # 不新增布局行（与快捷填充/编辑同一行，挤占的是已有 stretch），下拉列前 10 条。
+    from PyQt6.QtWidgets import QMenu as _QMenu
+    from PyQt6.QtWidgets import QToolButton
+    owner.btn_recent = QToolButton()
+    owner.btn_recent.setText(tr("历史 ▾"))
+    owner.btn_recent.setToolTip(tr("最近同步过的地址（也可在输入框里右键打开）"))
+    owner.btn_recent.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+    owner.btn_recent.setObjectName("ghost")
+    owner.btn_recent.setAccessibleName(tr("最近地址历史"))
+    owner._recent_menu = _QMenu(owner.btn_recent)
+
+    # U-17 实测教训：闭包捕 `owner` 会形成 owner↔闭包引用环（历史 SIGSEGV 同根因，
+    # g78 多窗串联测试在第二窗构造时挂起，stash 对照确认回归来自本改动）。
+    # 改 weakref 范式（照 undo_bar 先例）：槽经弱引用解引用，动作回填同样不捕 owner。
+    import weakref as _weakref
+    _owner_ref = _weakref.ref(owner)
+    _menu_ref = _weakref.ref(owner._recent_menu)
+
+    def _recent_append(url: str) -> None:
+        w = _owner_ref()
+        if w is not None:
+            w.repo_input.appendPlainText(url + "\n")
+
+    def _rebuild_recent_menu() -> None:
+        """重建历史下拉（每次点开前刷新，条目随同步滚动）。"""
+        w = _owner_ref()
+        m = _menu_ref()
+        if w is None or m is None:
+            return
+        m.clear()
+        try:
+            items = (w.url_history.items() or [])[:10]
+        except Exception:   # noqa: BLE001 —— 历史读不到时菜单显示空态
+            items = []
+        if not items:
+            empty = m.addAction(tr("（暂无历史）"))
+            empty.setEnabled(False)
+            return
+        for u in items:
+            act = m.addAction(u)
+            act.triggered.connect(
+                lambda _ch=False, url=u: _recent_append(url))
+
+    def _show_recent_menu() -> None:
+        _rebuild_recent_menu()
+        m = _menu_ref()
+        w = _owner_ref()
+        if m is None or w is None:
+            return
+        m.exec(w.btn_recent.mapToGlobal(w.btn_recent.rect().bottomLeft()))
+
+    owner._rebuild_recent_menu = _rebuild_recent_menu
+    owner.btn_recent.clicked.connect(_show_recent_menu)
+    quick_row.addWidget(owner.btn_recent)
 
     top = QWidget()
     tv = QVBoxLayout(top)
@@ -312,6 +367,19 @@ def build_task_list_row(owner) -> QWidget:
     return wrap
 
 
+def build_more_tools_button(owner) -> QToolButton:
+    """R13-02：折叠态的「更多 ▸」按钮（矮窗时承接四个工具入口，入口与槽不变）。"""
+    btn = QToolButton()
+    btn.setText(tr("更多 ▸"))
+    btn.setObjectName("ghost")  # Rev11-C R-03: 折叠态同一权重
+    btn.setToolTip(tr("打开克隆目录 / 失败汇总 / 重试队列 / 诊断包"))
+    btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+    btn.setAccessibleName(tr("更多工具菜单"))
+    btn.hide()
+    owner.btn_more_tools = btn
+    return btn
+
+
 def build_download_actions(owner) -> QWidget:
     """G74：主操作区（固定在滚动区之外，任何分辨率都可见）。
 
@@ -335,15 +403,18 @@ def build_download_actions(owner) -> QWidget:
     owner.btn_start.clicked.connect(owner.start_all)
     owner.btn_start.setIcon(owner._std_icon("play", owner.btn_start))
     owner.btn_cancel = QPushButton(tr("取消全部"))
+    owner.btn_cancel.setObjectName("secondary")  # Rev11-C R-03: 批次控制区权重
     owner.btn_cancel.setEnabled(False)
     owner.btn_cancel.setAccessibleName(tr("取消全部任务"))
     owner.btn_cancel.clicked.connect(owner.cancel_all)
     owner.btn_cancel.setIcon(owner._std_icon("stop", owner.btn_cancel))
     owner.btn_clear = QPushButton(tr("清空输入区"))  # A5-4/U-18：原名「清空列表」与行为不符
+    owner.btn_clear.setObjectName("ghost")  # Rev11-C R-03: 有确认+撤销兜底, 低频权重
     owner.btn_clear.clicked.connect(owner.confirm_clear_input)
     # C2-6 / Rev7 B2-2：批次级「暂停/继续」——原来只有"单仓库暂停"和"全部取消"，
     # 挂机刷几百个仓库时想"先停十分钟再接着跑"做不到，只能取消重来。
     owner.btn_pause_batch = QPushButton(tr("暂停"))
+    owner.btn_pause_batch.setObjectName("secondary")  # Rev11-C R-03: 批次控制区权重
     owner.btn_pause_batch.setEnabled(False)
     owner.btn_pause_batch.setToolTip(tr(
         "暂停后不再开始新仓库；正在跑的会自然结束。再点一次继续。\n"
@@ -360,21 +431,25 @@ def build_download_actions(owner) -> QWidget:
 
     row2 = QHBoxLayout()
     owner.btn_open = QPushButton(tr("打开克隆目录"))
+    owner.btn_open.setObjectName("ghost")  # Rev11-C R-03: 工具区权重
     owner.btn_open.clicked.connect(owner.open_target)
     owner.btn_open.setIcon(owner._std_icon("open_dir", owner.btn_open))
     row2.addWidget(owner.btn_open)
     # G52-5：失败原因聚合面板入口
     owner.btn_failures = QPushButton(tr("失败汇总"))
+    owner.btn_failures.setObjectName("ghost")  # Rev11-C R-03: 工具区权重
     owner.btn_failures.clicked.connect(owner._open_failure_dialog)
     row2.addWidget(owner.btn_failures)
     # G71-4：重试队列可见化
     owner.btn_retry_queue = QPushButton(tr("重试队列"))
+    owner.btn_retry_queue.setObjectName("ghost")  # Rev11-C R-03: 工具区权重
     owner.btn_retry_queue.setToolTip(
         tr("查看自动重试队列：失败次数、下次重试时间、原因与处理建议"))
     owner.btn_retry_queue.clicked.connect(owner._open_retry_dialog)
     row2.addWidget(owner.btn_retry_queue)
     # G71-6：一键导出诊断包
     owner.btn_diag_bundle = QPushButton(tr("诊断包"))
+    owner.btn_diag_bundle.setObjectName("ghost")  # Rev11-C R-03: 工具区权重
     owner.btn_diag_bundle.setToolTip(
         tr("导出 zip 诊断包：状态报告 + 最近事件 + 日志尾部（全部已打码）"))
     owner.btn_diag_bundle.clicked.connect(owner._export_diag_bundle)
@@ -385,15 +460,7 @@ def build_download_actions(owner) -> QWidget:
     # 放不下这第二行 —— 实测工具行被裁到 27/42px。此时把四个工具按钮折进一个
     # 「更多 ▸」按钮的菜单里：入口仍在（点开就能用），但不再占一整行高度。
     # 正常高度下这行保持原样展开（gui_helpers.set_tools_row_folded 控制）。
-    owner.btn_more_tools = QToolButton()
-    owner.btn_more_tools.setText(tr("更多 ▸"))
-    owner.btn_more_tools.setToolTip(
-        tr("打开克隆目录 / 失败汇总 / 重试队列 / 诊断包"))
-    owner.btn_more_tools.setPopupMode(
-        QToolButton.ToolButtonPopupMode.InstantPopup)
-    owner.btn_more_tools.setAccessibleName(tr("更多工具菜单"))
-    owner.btn_more_tools.hide()
-    v.addWidget(owner.btn_more_tools)
+    v.addWidget(build_more_tools_button(owner))
     # v9.12.1：动作区**绝不允许被压扁**。清单行搬进来后总共三行，在声明的最小窗口
     # 1020×560 下 Qt 会按比例压缩这个容器，按钮被切成 31/42px（看起来像被裁）。
     # 这里把纵向策略钉成 Fixed 并给出最小高度，让**可滚动**的顶部区去吸收压缩。

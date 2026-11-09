@@ -222,7 +222,8 @@ class SettingsPanel(QWidget):
             n = self.owner.db.prune_history(days) if hasattr(self.owner.db, "prune_history") else 0
             QMessageBox.information(self.owner, tr("清理完成"), tr("已清理 {n} 条历史记录（保留 {days} 天）").format(n=n, days=days))
         except Exception as e:
-            QMessageBox.warning(self.owner, tr("清理失败"), str(e))
+            from .error_dialog import show_error  # U-18：三段式 + 动作
+            show_error(self.owner, e, context=tr("清理同步历史"), title=tr("清理失败"))
 
     def _save_g53_sched(self, checked):
         self.owner.settings.sched_report_enabled = bool(checked)
@@ -321,7 +322,7 @@ class SettingsPanel(QWidget):
         self.owner.settings.concurrency = int(value)
         if hasattr(self.owner, "engine") and self.owner.engine is not None:
             self.owner.engine.set_concurrency(int(value))
-            self.owner.thread_lbl.setText(f"并行线程 {self.owner.engine.concurrency}")
+            self.owner.thread_lbl.setText(tr("并行线程 {n}").format(n=self.owner.engine.concurrency))
         self.owner.settings_store.save(self.owner.settings)
 
     def _save_fetch_timeout(self, value):
@@ -345,13 +346,13 @@ class SettingsPanel(QWidget):
                 self.owner.edit_proxy.setText(val)
                 self.owner.settings.proxy = val
                 self.owner.settings_store.save(self.owner.settings)
-                self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO, f"已自动检测到代理：{val}")
-                self.owner.statusBar().showMessage(f"代理已填入：{val}")
+                self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO, tr("已自动检测到代理：{v}").format(v=val))
+                self.owner.statusBar().showMessage(tr("代理已填入：{v}").format(v=val))
             else:
-                self.owner._emit_log(_mw._fmt_dt(), LogLevel.WARN, "未检测到系统代理。")
-                self.owner.statusBar().showMessage("未检测到系统代理")
+                self.owner._emit_log(_mw._fmt_dt(), LogLevel.WARN, tr("未检测到系统代理。"))
+                self.owner.statusBar().showMessage(tr("未检测到系统代理"))
         except Exception as e:
-            self.owner._emit_log(_mw._fmt_dt(), LogLevel.WARN, f"自动检测代理失败：{e}")
+            self.owner._emit_log(_mw._fmt_dt(), LogLevel.WARN, tr("自动检测代理失败：{e}").format(e=e))
 
     def _save_rate_limit(self, value):
         """G04-4 保存下载限速（KiB/s，0=不限）。"""
@@ -483,7 +484,7 @@ class SettingsPanel(QWidget):
         usable.sort(key=lambda r: int(r.get("ms", 0) or 0))
         prefixes = [str(r.get("url") or "")[: -len("/" + sample)] for r in usable]
         summary = " · ".join(
-            f"{str(r.get('url') or '')[: -len('/' + sample)] or '(源站)'} "
+            f"{str(r.get('url') or '')[: -len('/' + sample)] or tr('(源站)')} "
             f"{r.get('ms', 0)}ms {'OK' if r.get('ok') else 'FAIL'}"
             for r in (results or []) if r.get("url"))
         if summary:
@@ -577,10 +578,10 @@ class SettingsPanel(QWidget):
             self.owner.clipboard_watcher._enabled_flag = bool(checked)
             if checked:
                 self.owner.clipboard_watcher.start()
-                self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO, "剪贴板监听已开启。")
+                self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO, tr("剪贴板监听已开启。"))
             else:
                 self.owner.clipboard_watcher.stop()
-                self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO, "剪贴板监听已关闭。")
+                self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO, tr("剪贴板监听已关闭。"))
         except Exception:
             pass
 
@@ -665,7 +666,7 @@ class SettingsPanel(QWidget):
             pass
         try:
             self.owner._emit_log(_mw._fmt_dt(), LogLevel.INFO,
-                                 "已恢复默认设置（token/窗口位置保留）")
+                                 tr("已恢复默认设置（token/窗口位置保留）"))
         except Exception:
             pass
 
@@ -724,7 +725,7 @@ class SettingsPanel(QWidget):
         self.owner.settings_store.save(self.owner.settings)
         try:
             self.owner.statusBar().showMessage(
-                "语言已保存，重启后生效（Language saved, restart to apply）", 6000)
+                tr("语言已保存，重启后生效（Language saved, restart to apply）"), 6000)
         except Exception:
             pass
 
@@ -765,10 +766,10 @@ class SettingsPanel(QWidget):
                     proxy=str(getattr(self.owner.settings, "proxy", "") or ""),
                     extra_hosts=tuple(getattr(self.owner.settings, "custom_hosts", ()) or ()))
                 lines = [f"[{r['status']}] {r['name']}: {r['detail']}" for r in reports]
-                title = "体检与网络诊断：" + grade(reports)
+                title = tr("体检与网络诊断：") + grade(reports)
                 copy_text = copy_paste_report(reports, app_version=str(__version__))
             except Exception as e:  # noqa: BLE001
-                lines, title, copy_text = [f"诊断失败：{e}"], "诊断：失败", ""
+                lines, title, copy_text = [tr("诊断失败：{e}").format(e=e)], tr("诊断：失败"), ""
             # 跨线程：只允许 emit
             try:
                 self.owner.diag_finished.emit(title, "\n".join(lines), copy_text)

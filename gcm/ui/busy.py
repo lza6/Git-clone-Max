@@ -35,6 +35,40 @@ def _emit(owner: Any, event_type: str, **payload: Any) -> None:
         _warn(f"忙态事件发布失败（{event_type}）：{e}")
 
 
+def _set_buttons_enabled(owner: Any, buttons: Iterable[str],
+                         enabled: bool) -> dict[str, bool]:
+    """批量置/复位按钮并返回 {属性名: 原状态}（跨线程入口复用 U-15）。
+
+    与 `busy()` 的进入段同语义；跨线程链路没法用上下文管理器
+    （进入与退出在两个槽里），所以拆出这两个纯函数。
+    """
+    saved: dict[str, bool] = {}
+    for name in buttons:
+        w = getattr(owner, name, None)
+        if w is None:
+            continue
+        try:
+            saved[name] = bool(w.isEnabled())
+            w.setEnabled(enabled)
+        except Exception as e:      # noqa: BLE001 —— 单控件失败不拖垮整段
+            from ..app.applog import warn as _warn
+            _warn(f"忙态设置控件 {name} 失败：{e}")
+    return saved
+
+
+def _restore_buttons(owner: Any, saved: dict[str, bool]) -> None:
+    """按 saved 快照恢复按钮（与 busy() 退出段同语义，恢复失败留痕）。"""
+    for name, was_enabled in saved.items():
+        w = getattr(owner, name, None)
+        if w is None:
+            continue
+        try:
+            w.setEnabled(was_enabled)
+        except Exception as e:      # noqa: BLE001 —— 恢复失败也要留痕
+            from ..app.applog import warn as _warn
+            _warn(f"忙态恢复控件 {name} 失败（可能永久灰掉）：{e}")
+
+
 @contextlib.contextmanager
 def busy(owner: Any, job_id: str, *, buttons: Iterable[str] = (),
          cancellable: str = "immediate") -> Iterator[dict[str, Any]]:
@@ -48,17 +82,7 @@ def busy(owner: Any, job_id: str, *, buttons: Iterable[str] = (),
             ...耗时操作...
     """
     kind = cancellable if cancellable in CANCELLABLE_KINDS else "immediate"
-    saved: dict[str, bool] = {}
-    for name in buttons:
-        w = getattr(owner, name, None)
-        if w is None:
-            continue
-        try:
-            saved[name] = bool(w.isEnabled())
-            w.setEnabled(False)
-        except Exception as e:      # noqa: BLE001 —— 单个控件异常不该让整段忙态失效
-            from ..app.applog import warn as _warn
-            _warn(f"忙态禁用控件 {name} 失败：{e}")
+    saved = _set_buttons_enabled(owner, buttons, False)
     from ..app.event_bus import EventType as _ET
     _emit(owner, _ET.JOB_STARTED, job=job_id, cancellable=kind)
     outcome = "ok"
@@ -68,14 +92,6 @@ def busy(owner: Any, job_id: str, *, buttons: Iterable[str] = (),
         outcome = "failed"
         raise
     finally:
-        for name, was_enabled in saved.items():
-            w = getattr(owner, name, None)
-            if w is None:
-                continue
-            try:
-                w.setEnabled(was_enabled)
-            except Exception as e:  # noqa: BLE001 —— 恢复失败也要留痕（否则按钮永久灰掉）
-                from ..app.applog import warn as _warn
-                _warn(f"忙态恢复控件 {name} 失败（可能永久灰掉）：{e}")
+        _restore_buttons(owner, saved)
         from ..app.event_bus import EventType as _ET2
         _emit(owner, _ET2.JOB_FINISHED, job=job_id, result=outcome, cancellable=kind)

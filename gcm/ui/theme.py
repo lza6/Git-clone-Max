@@ -23,6 +23,8 @@ from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat
 from PyQt6.QtWidgets import QStyle  # QStyle.StandardPixmap 在 QtWidgets 命名空间
 
+from ..i18n import tr
+
 # --- 再导出（G75 拆分后的唯一兼容面，勿删）-----------------------------------
 from .palettes import (  # noqa: F401
     ACCENT_PRESETS,
@@ -185,10 +187,10 @@ def current_theme() -> str:
 
 # 主题名 → 中文标签（设置页下拉选项）
 THEMES = {
-    "deep": "墨黑 (Ink)",
-    "light": "暖纸 (Paper)",
-    "nord": "Nord 极简",
-    "hc": "高对比 (HC)",
+    "deep": tr("墨黑 (Ink)"),
+    "light": tr("暖纸 (Paper)"),
+    "nord": tr("Nord 极简"),
+    "hc": tr("高对比 (HC)"),
 }
 
 # 兼容：默认主题 = deep（历史引用 PALETTE 的代码不受影响）
@@ -308,7 +310,7 @@ def maybe_validate_url(text: str) -> Optional[str]:
     from ..app.url_lib import parse_any_repo_url
     raw = (text or "").strip()
     if not raw:
-        return "地址为空"
+        return tr("地址为空")
     if parse_any_repo_url(raw) is None:
-        return "不是可识别的仓库地址（支持 GitHub/GitLab/Gitee/Codeberg/Bitbucket/自建主机）"
+        return tr("不是可识别的仓库地址（支持 GitHub/GitLab/Gitee/Codeberg/Bitbucket/自建主机）")
     return None

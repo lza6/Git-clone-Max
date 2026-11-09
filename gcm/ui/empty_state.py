@@ -80,7 +80,7 @@ class DownloadEmptyState:
         show = visible_rows == 0
         filtering = bool(self._filter_text() if self._filter_text else False)
         self._overlay.setText(
-            "没有匹配的仓库\n（清空搜索框查看全部）"
+            tr("没有匹配的仓库\n（清空搜索框查看全部）")
             if (show and filtering and self._table.rowCount() > 0)
             else self._default_text)
         self._overlay.setVisible(show)
