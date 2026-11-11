@@ -70,20 +70,20 @@
 | ADR-003 | 凭据加密落盘（DPAPI/Keyring/XOR 降级）+ redact 全出口打码 |
 | ADR-004 | 生态 agent 化：CLI --json 契约 + MCP 只读 + HTTP API 默认只读（显式 enable 才可写） |
 
-## 4. 模块规模基线（2026-11-08 v9.19.0 实测，`python scripts/dev_metrics.py` 可一键复测）
+## 4. 模块规模基线（2026-11-11 v9.19.0 实测，`python scripts/dev_metrics.py` 可一键复测）
 
 | 模块 | 行数 | 职责 |
 |------|------|------|
-| `gcm/ui/main_window.py` | 3635 | 主窗编排（已登记技术债；引擎构造在 `engine_factory.py`、顶栏齿条在 `status_strip.py`、批次结论条在 `batch_conclusion.py`） |
+| `gcm/ui/main_window.py` | 3622 | 主窗编排（已登记技术债；引擎构造在 `engine_factory.py`、顶栏齿条在 `status_strip.py`、批次结论条在 `batch_conclusion.py`） |
 | `gcm/git/service.py` | 1990 | Git 操作全链路（`_update` 已拆为 `_update_bare_mirror`/`_fetch_remote`/`_merge_remote`） |
 | `gcm/app/engine.py` | 1714 | 调度/并发/进度/重试/会话/事件发布 |
-| `gcm/ui/progress_table.py` | 771 | 进度表（delegate→`progress_delegate.py`、批次总览→`batch_overview.py`、结果文案→`result_labels.py`、行动效→`row_anim.py`、左缘刻度→`edge_ruler.py`） |
-| `gcm/db/repo_db.py` | 750 | SQLite 数据层 |
-| `gcm/ui/settings_panel.py` | 791 | 设置 UI（分组构建器在 `settings_groups.py`） |
-| `gcm/ui/settings_groups.py` | 786 | 设置分组构建器（7 个组） |
-| `gcm/ui/theme.py` | 314 | 主题状态（当前主题/强调色）+ 日志模型 + 兼容再导出 |
+| `gcm/ui/progress_table.py` | 775 | 进度表（delegate→`progress_delegate.py`、批次总览→`batch_overview.py`、结果文案→`result_labels.py`、行动效→`row_anim.py`、左缘刻度→`edge_ruler.py`） |
+| `gcm/db/repo_db.py` | 752 | SQLite 数据层 |
+| `gcm/ui/settings_panel.py` | 746 | 设置 UI（分组构建器在 `settings_groups.py`） |
+| `gcm/ui/settings_groups.py` | 790 | 设置分组构建器（7 个组） |
+| `gcm/ui/theme.py` | 347 | 主题状态（当前主题/强调色）+ 日志模型 + 兼容再导出 |
 | `gcm/ui/typography.py` | 113 | 三字族 + 七级字号阶梯（QSS 字符串 + QFont 两条路径） |
-| `gcm/ui/palettes.py` | 271 | 四套色板 + 设计 token + 对比度工具（Rev11：panel_primary/signal_dim、6 档 accent 预设） |
+| `gcm/ui/palettes.py` | 274 | 四套色板 + 设计 token + 对比度工具（Rev11：panel_primary/signal_dim、6 档 accent 预设） |
 | `gcm/ui/qss_build.py` | 386 | QSS 拼装（由色板/token/排版角色生成，含 reduced-motion 分支；Rev11：三档卡面权重） |
 | `gcm/ui/status_strip.py` | 249 | 仪表齿条（进程运行态读数） |
 | `gcm/ui/status_pill.py` | 165 | 状态形状编码 + 表格 pill delegate |
@@ -91,9 +91,13 @@
 | `gcm/ui/result_labels.py` | 82 | 状态/动作/耗时用户可见文案（唯一来源，走 tr） |
 | `gcm/ui/settings_actions.py` | 334 | 设置页动作型回调（字段写入 wiring / 钩子确认 / 数据目录迁移） |
 | `gcm/ui/update_flow.py` | 205 | 更新检查三段（手动/结果槽/启动静默）+ 唯一 patch 点约定 |
+| `gcm/ui/settings_workspace.py` | 237 | 设置页 72/28 分割 + 窄窗分组下拉（Rev15 R15-03/04） |
+| `gcm/ui/log_panel.py` | 62 | 黑匣子日志组构建（Rev15 R15-00 从 settings_panel 迁出） |
+| `gcm/ui/manage_table.py` | 143 | 管理页列宽策略/持久化 mixin（Rev15 R15-00 从 manage_panel 迁出） |
 
-> 当前 **3 个**文件超项目硬上限 800 行（`main_window` / `service` / `engine`），
-> 已登记为显式接受的技术债（见 `CLAUDE.md` §6）。行数会随迭代漂移，故本表的数字由
+> 当前 **5 个**文件超项目硬上限 800 行（`main_window` / `service` / `engine`，
+> 以及生成式字典 `gcm/i18n/zh.py` / `gcm/i18n/en.py`；后两者一行一条文案，
+> 拆分无意义），已登记为显式接受的技术债（见 `CLAUDE.md` §6）。行数会随迭代漂移，故本表的数字由
 > `scripts/doc_drift_check.py` 守卫（容差 ±5 行）：改代码不更新本表 → `DRIFT n` 非 0 退出。
 >
 > G75 的边界补充：视觉层不再"什么都塞 `theme.py`"。**新增颜色/字号/文案/自绘控件必须先想清楚

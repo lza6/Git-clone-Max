@@ -96,7 +96,8 @@ def delete_halfcloned_row(panel, row: int) -> None:
     sure = QMessageBox.question(
         panel.owner, tr("删除半成品目录"),
         tr("将删除该仓库的整个目录（其中只有 .git，没有工作树内容）：\n{p}\n\n继续？").format(p=p),
-        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        QMessageBox.StandardButton.No)
     if sure != QMessageBox.StandardButton.Yes:
         return
     delete_halfcloned(p)

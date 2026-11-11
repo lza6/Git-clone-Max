@@ -3,16 +3,16 @@
   "main_actions_missing": [],
   "by_class": {
     "QPushButton": {
-      "total": 56,
+      "total": 57,
       "missing": 0
     },
     "QToolButton": {
-      "total": 8,
-      "missing": 5
+      "total": 4,
+      "missing": 0
     },
     "QLineEdit": {
-      "total": 36,
-      "missing": 21
+      "total": 17,
+      "missing": 0
     },
     "QCheckBox": {
       "total": 22,
@@ -20,16 +20,16 @@
     },
     "QComboBox": {
       "total": 8,
-      "missing": 1
+      "missing": 0
     },
     "QSpinBox": {
       "total": 19,
-      "missing": 1
+      "missing": 0
     },
     "QPlainTextEdit": {
       "total": 2,
       "missing": 0
     }
   },
-  "missing_total": 28
+  "missing_total": 0
 }

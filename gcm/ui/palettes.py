@@ -146,6 +146,9 @@ TOKENS: dict[str, dict[str, object]] = {
     #   default=主流档  wide=大屏档（Rev14 R14-01 的 L 档）  touch=触摸屏下限
     #   manage=管理页表格（G74 定宽列配套）
     "row": {"default": 26, "wide": 28, "touch": 34, "manage": 34},
+    # 触摸屏上的主操作最小高度（WCAG 2.1 AA 目标 ≥44 CSS px 的桌面等价物）；
+    # 桌面鼠标场景仍用控件自身 38/42，不强制拉高。
+    "control": {"touch": 44},
 }
 
 #: 刻意不提供消费点的 token（Rev14 R14-13）。列在这里是**显式声明**，不是遗漏：

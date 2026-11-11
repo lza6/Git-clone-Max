@@ -30,6 +30,14 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+# Windows 控制台/CI 可能是 GBK：`✗/✓` 打印会抛 UnicodeEncodeError，且发生在
+# `except` 里回滚之前，会把版本文件停在半改状态（2026-11-11 真实复现）。
+# 与 `health_check.py` 同一处置：输出统一 UTF-8。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
+
 ROOT = Path(__file__).resolve().parent.parent
 # `python scripts/bump_version.py` 的 sys.path[0] 是 scripts/，不是仓库根 ——
 # 不自插的话 `from gcm import ...` 会 ModuleNotFoundError（实测踩过）。

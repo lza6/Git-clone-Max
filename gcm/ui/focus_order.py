@@ -46,7 +46,7 @@ MANAGE_CHAIN: tuple[str, ...] = (
 #: （60+ 个设置项逐个声明既脆弱又没收益：它们在同一个滚动容器里创建顺序
 #: 与视觉顺序本来就一致）。
 SETTINGS_CHAIN: tuple[str, ...] = (
-    "settings_nav", "settings_search", "settings_scroll",
+    "settings_nav", "settings_nav_combo", "settings_search", "settings_scroll",
     "log_filter_edit", "log_view",
 )
 

@@ -5,7 +5,7 @@
 > 这边是**跑了证明什么**（接缝 ↔ 用例 ↔ 最后结果）。
 > 只记录本轮真实运行过的结果；引用历史结果必须标日期。
 
-**最后更新**：2026-11-08（v9.19.0：Rev13 新增 S50–S51 两条适配接缝；Rev11 于 2026-11-04 新增 S47–S49）。各接缝的**引入版本**写在下表 S 行的括号里 —— 这里不再堆版本沿革（堆一行会让每次发版都撞版本守卫，且读者也读不出哪条是什么时候加的）。
+**最后更新**：2026-11-11（v9.19.0：Rev13 新增 S50–S51 两条适配接缝；Rev11 于 2026-11-04 新增 S47–S49）。各接缝的**引入版本**写在下表 S 行的括号里 —— 这里不再堆版本沿革（堆一行会让每次发版都撞版本守卫，且读者也读不出哪条是什么时候加的）。
 
 ---
 
@@ -74,6 +74,14 @@
 | S51 | **窄窗 → 管理页列折叠**（Rev13 / R13-03） | `ui/layout.NARROW_WIDTH`（= WINDOW_MIN[0]） | `main_window._apply_layout_for_width()` → `manage_model.headerData()` | ①用真实模型列名判定（不再用不存在的 `QTableView.horizontalHeaderItem`）；②只折叠「大小/健康」，非次要列不许误隐；③宽窗必须全部恢复 | `tests/test_g57_responsive.TestNarrowFoldOnRealModel`（1）+ `TestWindowLayoutBand`（2） |
 > **编号说明（避免与并行会话撞号）**：并行会话产出的《下一步改进指南》（位于 `docs/plans/`）在其 §9B 建议了 S35–S42（定时队列 / 引擎参数契约 / 忙态令牌 / 错误动作 / 全文索引 / 事件持久化 / 契约 schema 导出 / 自更新校验），**那些都是未落地的规划**。本轮 S35/S36 是**已落地**的真实接缝，先占号。**2026-11-01 更正**：G82 已用掉 S37–S40（重试队列/闸门/子进程/统计线程），Rev7 的计划落地时请从 **S41** 起 —— 本表 S41–S46 即 v9.12.0（Rev7 C1 批）真实落地的六条接缝。
 
+| S57 | **a11y 审计 → Qt 内部控件过滤**（Rev15 / R15-05） | `gcm/ui/a11y.is_qt_internal_widget()` | `scripts/a11y_audit.py`（审计计数）· `tests/test_rev14_a11y`（棘轮） | ①`QSpinBox` 内部 `QLineEdit`、`QLineEdit` 清除按钮、菜单栏扩展按钮不计入缺名；②裸 `QLineEdit` 必须计入（反向自检）；③脚本与守卫共用同一函数，不各写一份 | `tests/test_r15_a11y_truth`（4）· `tests/test_rev14_a11y`（9） |
+| S58 | **健康检查 → 启动耗时口径**（Rev15 / R15-02） | `scripts/health_check._run_smoke()` 返回 `smoke_ms` | `scripts/bench_startup._read_exe_ms()`（只读 `smoke_ms`，缺字段返回 None） | ①`smoke_ms` 只覆盖启动到生成数据文件；②`elapsed_ms` 保留为总检查耗时，不混用；③旧台账缺 `smoke_ms` 时不再拿 `elapsed_ms` 冒充 | 真跑 `health_check --json evidence/health_rev15.json`（smoke_ms=1802）· `bench_startup`（exe_ms=1802） |
+| S59 | **auto 主题 → 设置/主窗解析**（Rev15 / R15-09） | `gcm/ui/theme.resolve_theme_name()` | `ui/settings_panel._save_theme()` · `main_window._themed_qss()` / `_wire_theme_watcher()` | ①手动主题原样返回；②`auto` 按 Qt `colorScheme`/注册表解析；③保存后 `settings.theme` 仍是 auto；④`colorSchemeChanged` 只在 auto 时重刷 | `tests/test_r15_auto_theme`（4）· `tests/test_g36_ui`（自动主题 3 例） |
+| S60 | **设置页工作区 → 比例持久化**（Rev15 / R15-03） | `ui/settings_workspace.SettingsWorkspace`（QSplitter） | `settings.ui_state["settings_split"]` → 下次 `apply_saved_sizes()` | ①首次 72/28；②拖动防抖 300ms 落盘；③损坏值夹回，不崩；④日志可折叠；⑤1024 设置区 ≥300px、日志 ≥80px | `tests/test_r15_settings_workspace`（7） |
+| S61 | **窄窗设置导航 → 下拉替代**（Rev15 / R15-04） | `settings_workspace.build_settings_workspace()` | `main_window._apply_layout_mode()` → `set_compact_nav()` | ①<1000 列表隐藏、下拉可见；②≥1000 列表可见、下拉隐藏；③两者分组数一致；④下拉进 Tab 链 | 同上（7） |
+| S62 | **管理页档位 → 列显隐**（Rev15 / R15-07） | `manage_table.ManageColumnMixin.COLUMN_SPECS` + `main_window._apply_layout_for_width()` | `QTableView.setColumnHidden()` | ①<1100 隐健康/大小；②≥1100 恢复；③日期/HEAD 窄窗下限保持可读；④列宽持久化不丢 | `tests/test_r15_manage_columns`（4）· `tests/test_rev14_feedback`（列宽 4） |
+| S63 | **触屏 → 主操作 44px**（Rev15 / R15-08） | `palettes.TOKENS["control"]["touch"]` | `main_window._apply_wide_layout()` | ①触屏主操作 ≥44、行 34；②桌面仍 38/28；③离屏平台不误判触屏；④token 有生产消费点 | `tests/test_r15_touch`（2）· `tests/test_rev14_feedback`（token 守卫） |
+
 ---
 
 ## 2. Test Status（本轮真实结果）
@@ -112,6 +120,17 @@
 | **G79 卫生守卫（红→绿）** | `unittest tests.test_g79_repo_hygiene` | 首跑 **FAILED (failures=4)**（38 PNG 入库 / cli.py+z.png / README 135≠137 / CLAUDE 113≠137）→ 修复后 **Ran 9 · OK** | 2026-10-24 |
 | **G79 僵尸字段（红→绿）** | `unittest tests.test_g69_regressions.TestG69_18NoZombieSettingsFields` | 收紧口径后 **FAILED** 并精确点名 `['depth']` → 删除字段后 **Ran 2 · OK** | 2026-10-24 |
 | G79 版本单源 + 打包同步 | `unittest tests.test_g66_patch.TestContractVersionSingleSource TestPackagingVersionSync` | `Ran 11 · OK`（9.10.0 已同步 spec filevers/prodvers/installer.iss/pyproject/agent-contract/README） | 2026-10-24 |
+
+### 2.1.1 Rev15 本轮结果（2026-11-11）
+
+| 项 | 命令 | 结果 |
+|----|------|------|
+| 快集全量 | `coverage run --source=gcm scripts/ci_run_fast.py` | `Ran 2220 · failures=0 · errors=0 · skipped=4 · 覆盖 81%` |
+| Rev15 新守卫 | `unittest tests.test_r15_a11y_truth tests.test_r15_destructive_defaults tests.test_r15_auto_theme tests.test_r15_settings_workspace tests.test_r15_manage_columns tests.test_r15_touch` | `Ran 23 · OK` |
+| a11y 审计 | `python scripts/a11y_audit.py` | `missing_total=0`（真实缺名 0） |
+| 健康检查 | `python scripts/health_check.py --json evidence/health_rev15.json` | `smoke_ms=1802`；7 项 OK |
+| 启动基准 | `python scripts/bench_startup.py` | `exe_ms=2303`；`total_ms=294.1` |
+| 静态 | `ruff check gcm` / `mypy gcm` / `doc_drift_check` / `i18n_coverage` | 全绿 / Success / DRIFT 0 / I18N OK |
 
 ### 2.2 按接缝的覆盖状态
 

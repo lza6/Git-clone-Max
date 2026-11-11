@@ -5,7 +5,7 @@
 所以"排版"天然有两条落地路径（QSS 字符串 + 控件级 QFont），把它塞回 `theme.py`
 会同时撑爆 800 行硬上限与职责边界。
 
-**字族为什么是这三个**（详见 `docs/计划书/` 的 UI 指南 §2.2）：
+**字族为什么是这三个**（详见 `docs/design-system.md` §4）：
 - `Bahnschrift`：Windows 10 内置的 DIN 血统工业窄体，用于标题与数字读数；
 - `Microsoft YaHei UI`：中文正文（Bahnschrift 无中文字形，靠回退）；
 - `Cascadia Mono`：URL / 路径 / 时间戳 / 计数 / 日志 —— 数字等宽才对齐。

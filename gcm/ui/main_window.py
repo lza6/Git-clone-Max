@@ -12,7 +12,6 @@ from PyQt6.QtGui import QCloseEvent
 from PyQt6.QtWidgets import (
     QFileDialog,  # noqa: F401  — 测试 mock 引用（download_tools 经本模块访问）
     QFrame,
-    QHBoxLayout,
     QInputDialog,
     QLabel,
     QLineEdit,
@@ -200,10 +199,14 @@ class MainWindow(QMainWindow):
         self.starred_fetched.connect(self._on_starred_fetched)
         # Rev14 R14-02：屏幕增删 / 主屏切换 → 按新屏重算最小尺寸与布局档
         self._wire_screen_watchers()
+        # 系统深浅色变化时，仅 theme=auto 需要重刷（手动主题不受影响）
+        self._wire_theme_watcher()
 
         # G05-1 应用持久化主题（默认 deep）+ G10-1 字号缩放
         from ..ui import theme as _th
-        _th.apply_theme(getattr(self.settings, "theme", "deep"))
+        _resolved = _th.resolve_theme_name(getattr(self.settings, "theme", "deep"))
+        if _resolved:
+            _th.apply_theme(_resolved)
         self.setStyleSheet(self._themed_qss())
         # G10-1 快捷键 Ctrl+= 放大 / Ctrl+- 缩小 / Ctrl+0 复位
         from PyQt6.QtGui import QKeySequence, QShortcut
@@ -568,12 +571,12 @@ class MainWindow(QMainWindow):
             pref = detect_system_light_theme()
             target = map_system_to_theme(pref)
             if target and target in ("light", "deep"):
-                from ..ui import theme as _th
-                _th.apply_theme(target)
+                # 不在这里显式 apply：`_themed_qss()` 会解析 auto 并应用一次，
+                # 两处都调会让 `apply_theme` 被调用两次（G36 测试实际抓到）。
                 self.setStyleSheet(self._themed_qss())
                 self._apply_theme_to_children()
                 self._rehighlight_log()
-                self.settings.theme = target
+                # 保持 settings.theme="auto"：下次启动仍按系统解析，不能写成 light/deep。
                 self._emit_log(_fmt_dt(), LogLevel.INFO,
                                tr("已按系统深浅色切换主题：{t}").format(t=target))
         except Exception:
@@ -795,6 +798,24 @@ class MainWindow(QMainWindow):
                 _sig.connect(self._on_screen_changed)
         self._screen_watchers_wired = True
 
+    def _wire_theme_watcher(self) -> None:
+        """监听 Qt 系统配色变化；只有 `theme="auto"` 的窗口需要重刷。"""
+        from PyQt6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app is None:
+            return
+        hints = app.styleHints()
+        sig = getattr(hints, "colorSchemeChanged", None)
+        if sig is not None:
+            sig.connect(self._on_system_color_scheme_changed)
+            self._theme_watcher_wired = True
+
+    def _on_system_color_scheme_changed(self, *_args) -> None:
+        """系统深浅色变化：auto 模式重刷；手动主题不动。"""
+        if getattr(self.settings, "theme", "deep") != "auto":
+            return
+        self._maybe_apply_system_theme()
+
     def _on_screen_changed(self, *_args) -> None:
         """屏幕集合变化 → 按新屏重算最小尺寸、夹取窗口、重算布局档。"""
         from .layout import clamp_window_size, minimum_for_screen, resolve_screen
@@ -898,8 +919,16 @@ class MainWindow(QMainWindow):
         # `tests/test_rev14_feedback.TestTokensHaveNoDeadEntries` 只认直接读取，
         # 别名会让它看不见这处耦合，于是"token 有没有人用"就查不出来了。
         row_h = int(TOKENS["row"]["wide"] if wide else TOKENS["row"]["default"])
-        if has_touchscreen():
+        touch = has_touchscreen()
+        if touch:
             row_h = max(row_h, int(TOKENS["row"]["touch"]))
+        # Rev15 R15-08：触摸屏主操作 44px；桌面鼠标保持 38/42，不无差别拉高。
+        _btn_h = int(TOKENS["control"]["touch"]) if touch else 38
+        for _name in ("btn_start", "btn_cancel", "btn_pause_batch", "btn_clear",
+                      "btn_open", "btn_failures", "btn_retry_queue", "btn_diag_bundle"):
+            _btn = getattr(self, _name, None)
+            if _btn is not None:
+                _btn.setMinimumHeight(_btn_h)
         pp = getattr(self, "progress_panel", None)
         table = getattr(pp, "table", None) if pp is not None else None
         if table is not None:
@@ -993,11 +1022,14 @@ class MainWindow(QMainWindow):
                         pass
             except Exception:
                 pass
-            nav = getattr(self, "settings_nav", None)
-            if nav is not None:
-                # G74：1024 宽仍放得下 150px 导航；只有更窄时才隐藏，
-                # 否则用户在小屏上失去分组定位入口。
-                nav.setVisible(self.width() >= 1000)
+            ws = getattr(self, "settings_workspace", None)
+            if ws is not None:
+                # 窄窗用下拉替代左侧列表，不再把导航整块隐藏（Rev15 R15-04）。
+                ws.set_compact_nav(self.width() < 1000)
+            else:
+                nav = getattr(self, "settings_nav", None)
+                if nav is not None:
+                    nav.setVisible(self.width() >= 1000)
         except Exception:
             pass
 
@@ -1271,60 +1303,12 @@ class MainWindow(QMainWindow):
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(10)
 
-        # 设置区：所有设置分组放入可滚动区域（日志区固定在下、不被滚动带跑）
-        from .settings_panel import build_log_box, build_settings_ui
+        # 设置区：设置滚动区 + 日志区放进可调 QSplitter（Rev15 R15-03）
+        from .settings_panel import build_settings_ui
+        from .settings_workspace import build_settings_workspace
         self.settings_scroll = build_settings_ui(self)
-        # G74：设置内容禁止横向滚动（WidgetResizable 已让它跟随视口），
-        # 同时把易撑宽的 SpinBox 限宽，避免右侧控件被裁。
-        from PyQt6.QtWidgets import QComboBox, QSpinBox
-        self.settings_scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        for _g in (list(getattr(self, "settings_groups", []))
-                   + list(getattr(self, "settings_groups_extra", []))):
-            for _sp in _g.findChildren(QSpinBox):
-                _sp.setMaximumWidth(200)
-            for _cb in _g.findChildren(QComboBox):
-                if _cb.minimumWidth() < 320:
-                    _cb.setMaximumWidth(420)
-        # G70：≥1100 宽时提供左侧分组导航（设置项已很长，纯滚动难定位）
-        from PyQt6.QtWidgets import QListWidget
-        self.settings_nav = QListWidget()
-        self.settings_nav.setObjectName("settingsNav")
-        self.settings_nav.setMaximumWidth(220)
-        self.settings_nav.setMinimumWidth(150)
-        # G74：导航用短标题 + tooltip 全称；原来长标题被裁成
-        # "并行与网络（并发 / 超时 / 重试 /..."，且底部出现横向滚动条。
-        self.settings_nav.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.settings_nav.setTextElideMode(Qt.TextElideMode.ElideRight)
-        for _grp in (list(getattr(self, "settings_groups", []))
-                     + list(getattr(self, "settings_groups_extra", []))):
-            try:
-                _full = _grp.title()
-                _short = _full.split("（")[0].strip() or _full
-                # G75：编号让左导航像仪器通道号（01…07），扫视时不必逐行读中文
-                _idx = self.settings_nav.count() + 1
-                self.settings_nav.addItem(f"{_idx:02d}  {_short}")
-                _item = self.settings_nav.item(self.settings_nav.count() - 1)
-                if _item is not None:
-                    _item.setToolTip(_full)
-            except Exception:
-                self.settings_nav.addItem("")
-        self.settings_nav.currentRowChanged.connect(self._scroll_to_settings_group)
-        from .empty_state import build_empty_state
-        self.settings_empty_lbl = build_empty_state(
-            tr("没有匹配的设置项"), tr("换个关键词试试"), parent=self)
-        self.settings_empty_lbl.setVisible(False)
-        v.addWidget(self.settings_empty_lbl)
-        _row = QHBoxLayout()
-        _row.setSpacing(10)
-        _row.addWidget(self.settings_nav)
-        _row.addWidget(self.settings_scroll, 1)
-        v.addLayout(_row, 1)
-
-        # ---- 黑匣子日志（实时）：固定在下、占剩余空间，日志滚动由控件自身负责
-        g2 = build_log_box(self)
-        v.addWidget(g2, 1)
+        self.settings_workspace = build_settings_workspace(self, self.settings_scroll)
+        v.addWidget(self.settings_workspace, 1)
 
     def show_statistics(self):
         """G07-1 打开统计中心对话框。"""
@@ -1367,7 +1351,8 @@ class MainWindow(QMainWindow):
             shown = " · ".join(f"{k} {v / 1000:.1f}s" for k, v in
                                sorted(totals.items(), key=lambda kv: -kv[1]))
             lines.append(tr("阶段耗时累计：{v}").format(v=shown))
-        lines.append(tr("数据目录可写：{v}").format(tr("是") if os.access(self.data_dir, os.W_OK) else tr("否")))
+        writable = tr("是") if os.access(self.data_dir, os.W_OK) else tr("否")
+        lines.append(tr("数据目录可写：{v}").format(v=writable))
         # G33-6 启动耗时：构造完成即记录；>3s 标注较慢（exe 解包/低配机器场景）
         startup_ms = getattr(self, "_startup_ms", 0)
         slow_note = tr("（启动偏慢，可考虑使用便携版）") if startup_ms > 3000 else ""
@@ -1673,10 +1658,10 @@ class MainWindow(QMainWindow):
         # G75：主题/强调色同步进模块状态 —— 自绘 delegate、日志高亮、托盘图标都读它，
         # 否则会出现"QSS 一套颜色、自绘另一套颜色"的双真相（G75 实测过）。
         theme_name = getattr(self.settings, "theme", "deep")
-        # theme="auto" 时由 _maybe_apply_system_theme 解析成 light/deep 并写回设置；
-        # 这里若拿 "auto" 去 apply_theme 会退化成 deep，与已解析的色板打架。
-        if theme_name in _th.PALETTES:
-            _th.apply_theme(theme_name)
+        # auto 必须先解析成实际主题；直接把 "auto" 交给 apply_theme 会退化成 deep。
+        resolved_theme = _th.resolve_theme_name(theme_name)
+        if resolved_theme in _th.PALETTES:
+            _th.apply_theme(resolved_theme)
         _th.apply_accent_preset(
             getattr(self.settings, "accent_preset", _th.DEFAULT_ACCENT_PRESET))
         pal = _th.current_palette()
@@ -3314,12 +3299,12 @@ class MainWindow(QMainWindow):
            （`layout.ABSOLUTE_MIN`），窗口不可能窄过 900。
 
         现在：用 `model().headerData()` 读列名（真实来源），阈值取
-        `layout.NARROW_WIDTH = 1020`（= `WINDOW_MIN[0]`，真实可达），
+        `layout.COMPACT_WIDTH = 1100`（S 档上限），
         只折叠「大小 / 健康」两列（真正的次要数据，主列与「历史」入口不动）。
         """
         from PyQt6.QtCore import Qt as _Qt
 
-        from .layout import NARROW_WIDTH
+        from .layout import COMPACT_WIDTH
         # 异常策略：LBYL（getattr 链）—— 异常预算棘轮只降不升，纯外观修正不加 except。
         table = getattr(self, "manage_table", None)
         if table is None:
@@ -3327,7 +3312,8 @@ class MainWindow(QMainWindow):
         model = table.model()
         if model is None:
             return
-        narrow = int(w) < int(NARROW_WIDTH)
+        # Rev15 R15-07：S 档（<1100）也隐「大小/健康」，把宽度还给仓库名/路径。
+        narrow = int(w) < int(COMPACT_WIDTH)
         hide_names = (tr("大小"), tr("健康"))
         for col in range(model.columnCount()):
             name = model.headerData(
@@ -3435,7 +3421,8 @@ class MainWindow(QMainWindow):
             ret = QMessageBox.question(
                 self, tr("确认退出"),
                 tr("有任务正在运行，退出将中断（已下载内容不会丢失）。确定退出？"),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No)
             if ret != QMessageBox.StandardButton.Yes:
                 e.ignore()
                 return

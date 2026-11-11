@@ -34,14 +34,19 @@ BUDGET = {"ctor_ms": 120, "first_frame_ms": 50}
 
 
 def _read_exe_ms() -> int | None:
-    """读最近一次打包健康检查的 `elapsed_ms`（没有就 None，不猜）。"""
+    """读最近一次打包健康检查的 **smoke_ms**（没有就 None，不猜）。
+
+    `elapsed_ms` 是整个健康检查的耗时（含 42MB exe + 82MB zip 的 SHA-256 与
+    版本提取），把它当启动耗时是历史误判。旧台账没有 `smoke_ms` 时返回 None，
+    不再用 `elapsed_ms` 冒充 —— 宁可缺一个数字，也不混两个口径。
+    """
     best: tuple[str, int] | None = None
     for p in sorted((ROOT / "evidence").glob("health_*.json")):
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        ms = data.get("elapsed_ms")
+        ms = data.get("smoke_ms")
         if isinstance(ms, int) and ms > 0 and (best is None or p.name > best[0]):
             best = (p.name, ms)
     return best[1] if best else None

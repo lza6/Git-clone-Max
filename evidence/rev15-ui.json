@@ -1,0 +1,155 @@
+{
+  "task_id": "REV15-UI",
+  "status": "passed",
+  "timestamp": "2026-11-11T06:40:00+08:00",
+  "baseline": {
+    "head": "0a6e6b1",
+    "version": "9.19.0"
+  },
+  "commands_executed": [
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_r15_settings_workspace tests.test_r15_manage_columns tests.test_r15_touch",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 10 tests in ...\n\nOK"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_rev14_feedback tests.test_rev14_keyboard tests.test_g57_responsive tests.test_g74_ui_layout tests.test_g75_visual_system tests.test_ui_compact_visibility tests.test_r15_settings_workspace tests.test_r15_manage_columns tests.test_r15_touch",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 110 tests in 12.860s\n\nOK (skipped=1)"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_rev13_adapt tests.test_ui_compact_visibility tests.test_settings_scroll tests.test_g70_coverage",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 32 tests in 20.209s\n\nOK"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_g79_repo_hygiene tests.test_g67_docs_freshness tests.test_g68_settings_ui",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 34 tests in 1.680s\n\nOK"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_rev14_a11y tests.test_r15_a11y_truth tests.test_r15_destructive_defaults tests.test_r15_auto_theme",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 18 tests in 0.372s\n\nOK"
+    },
+    {
+      "cmd": "PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe -m coverage run --source=gcm scripts/ci_run_fast.py",
+      "exit_code": 0,
+      "raw_output_tail": "[ci_run_fast] 合计：Ran 2220 tests · failures=0 errors=0 skipped=4\n[ci_run_fast] OK",
+      "output_file": "fast_rev15_uifinal.log"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe -m coverage report --include=\"gcm/*\"",
+      "exit_code": 0,
+      "raw_output_tail": "TOTAL 19838 3381 5070 895 81%"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe -m ruff check gcm",
+      "exit_code": 0,
+      "raw_output_tail": "All checks passed!"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe -m mypy gcm",
+      "exit_code": 0,
+      "raw_output_tail": "Success: no issues found in 149 source files"
+    },
+    {
+      "cmd": "PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe scripts/doc_drift_check.py",
+      "exit_code": 0,
+      "raw_output_tail": "DRIFT 0"
+    },
+    {
+      "cmd": "PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe scripts/i18n_coverage.py",
+      "exit_code": 0,
+      "raw_output_tail": "I18N OK"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe scripts/ui_screenshot_audit.py reports/ui-rev15-workspace",
+      "exit_code": 0,
+      "raw_output_tail": "34 PNG generated (see reports/ui-rev15-workspace)"
+    }
+  ],
+  "files_changed": [
+    "CLAUDE.md",
+    "README.md",
+    "docs/architecture.md",
+    "docs/design-system.md",
+    "docs/验证记录-2026-11-11-Rev15-UI.md",
+    "docs/验收矩阵-Rev15-2026-11-11.md",
+    ".agent/skills/ui-layout-qa.md",
+    "gcm/ui/main_window.py",
+    "gcm/ui/settings_panel.py",
+    "gcm/ui/manage_panel.py",
+    "gcm/ui/palettes.py",
+    "gcm/ui/focus_order.py",
+    "gcm/i18n/zh.py",
+    "gcm/i18n/en.py",
+    "test_ledger.md",
+    "tests/test_g79_repo_hygiene.py"
+  ],
+  "bench": {"startup_total_ms": 294.1, "exe_ms": 2303, "resize_over_budget": [], "resize_late_moves": 0},
+  "dpi_matrix": {"scales": ["1.25", "1.5", "1.75", "2.0"], "ok": true, "clipped": []},
+  "real_calls": {"dry_run": "exit 0; 1 clone / 1 invalid", "diag": "exit 0; grade green", "clone_round1": "cloned", "clone_round2": "fetched / already up to date", "mcp_contract_tests": "Ran 27 OK", "ui_regression_tests": "Ran 60 OK", "button_wiring_tests": "Ran 69 OK"},
+  "build": {"performed": true, "isolated_dist": "out/dist (temporary; removed after verification; see evidence/rev15-build.txt)", "exe_sha256_prefix": "a2631d309df92bbe", "health_smoke_ms": 2303, "health_ok": true},
+  "files_added": [
+    "evidence/health_rev15_rebuild.json",
+    "evidence/rev15-build.txt",
+    "gcm/ui/settings_workspace.py",
+    "gcm/ui/log_panel.py",
+    "gcm/ui/manage_table.py",
+    "tests/test_r15_settings_workspace.py",
+    "tests/test_r15_manage_columns.py",
+    "tests/test_r15_touch.py"
+  ],
+  "measurements": {
+    "settings_split_1440x900": [555, 215],
+    "settings_scroll_1440x900": 555,
+    "log_view_1440x900": 127,
+    "settings_split_1024x768": [460, 178],
+    "settings_scroll_1024x768": 460,
+    "log_view_1024x768": 90,
+    "settings_split_900x480": [286, 168],
+    "settings_scroll_900x480": 244,
+    "log_view_900x480": 80,
+    "manage_columns_hidden_at_1024": [6, 7],
+    "manage_columns_visible_at_1100": [6, 7],
+    "touch_button_min_height": 44,
+    "touch_row_height": 34
+  },
+  "independent_review": {
+    "performed": true,
+    "p1_found": 3,
+    "p1_fixed": 4,
+    "findings": [
+      "窄窗 setColumnHidden/apply_column_budget 的 400ms 防抖覆盖用户列宽",
+      "settings_split 按绝对像素保存，换高度后比例失真",
+      "设置区本身可被 QSplitter 拖到 0",
+      "bump_version GBK stdout 在回滚前抛 UnicodeEncodeError，留下半改版本"
+    ]
+  },
+  "tests": [
+    {"name": "Rev15 settings workspace", "type": "unit", "status": "passed", "evidence": "tests/test_r15_settings_workspace.py"},
+    {"name": "Rev15 manage columns", "type": "unit", "status": "passed", "evidence": "tests/test_r15_manage_columns.py"},
+    {"name": "Rev15 touch density", "type": "unit", "status": "passed", "evidence": "tests/test_r15_touch.py"},
+    {"name": "fast suite", "type": "integration", "status": "passed", "evidence": "evidence/rev15-fast.txt"},
+    {"name": "slow suite", "type": "e2e", "status": "passed", "evidence": "evidence/rev15-slow.txt", "detail": "Ran 129 OK, 71.4s"}
+  ],
+  "coverage_summary": {
+    "lines": 81,
+    "branches": null,
+    "functions": null,
+    "statements": null
+  },
+  "seams_touched": ["S60", "S61", "S62", "S63"],
+  "browser_validation": {
+    "performed": false,
+    "paths": [],
+    "screenshots": ["reports/ui-rev15-workspace/tab_settings_1024x768.png", "reports/ui-rev15-workspace/tab_manage_1024x768.png", "reports/ui-rev15-workspace/tab_settings_1440x900.png", "reports/ui-rev15-workspace/settings_900x480.png"]
+  },
+  "limitations": [
+    "1024x768 日志视图 90px，低于计划原写的 120px 目标；设置区 460px 优先，日志可拖动放大",
+    "真实触摸屏 / 双屏拔插 / 屏幕阅读器未验证",
+    "R15-11 截图基线未提交固定基线，只完成生成截图与既有 pixel_diff 自检",
+    "未 commit / push / tag / Release；桌面单机无 staging/生产部署面"
+  ]
+}

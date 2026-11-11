@@ -28,6 +28,10 @@ ACCEPTED_OVERSIZED = {
     "gcm/ui/main_window.py",
     "gcm/git/service.py",
     "gcm/app/engine.py",
+    # i18n 字典是生成文件（key 即中文、一行一条），行数随文案量线性增长；
+    # `tests/test_g79_repo_hygiene` 已登记，这里必须同口径。
+    "gcm/i18n/zh.py",
+    "gcm/i18n/en.py",
 }
 OVERSIZED_LIMIT = 800
 FUNCTION_LIMIT = 100

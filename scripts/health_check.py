@@ -14,6 +14,7 @@
      JSON 台账如实记录 archive_version 与差异；不改产物、不改源码。
 4. started_ok      : QT_QPA_PLATFORM=offscreen + GCM_DATA_DIR=<临时目录>，
      Popen 启动 exe，最多等待 60s（首次解包/杀软扫描可能较慢），进程仍存活（未闪退）。
+     同时记录 `smoke_ms`（启动到生成数据文件）；`elapsed_ms` 含大文件哈希，不能混用。
 5. repos_db_created: 冒烟期间临时数据目录生成 repos.db 或 settings.json。
    冒烟结束：`_terminate_tree()`（Windows taskkill /T /F；POSIX killpg）回收
    PyInstaller onefile 的父子进程，删除临时目录，不残留进程/文件。
@@ -165,8 +166,12 @@ def _terminate_tree(proc: subprocess.Popen) -> None:
         pass
 
 
-def _run_smoke(exe_path: Path, wait_s: float) -> tuple[bool, bool, str]:
-    """离屏启动冒烟；返回 (started_ok, repos_db_created, note)。"""
+def _run_smoke(exe_path: Path, wait_s: float) -> tuple[bool, bool, str, int]:
+    """离屏启动冒烟；返回 (started_ok, repos_db_created, note, smoke_ms)。
+
+    `smoke_ms` 只覆盖「启动到生成 repos.db/settings.json」这一段；不要拿
+    `main()` 的 `elapsed_ms`（含大文件 SHA-256 与版本提取）当启动耗时。
+    """
     tmp = Path(tempfile.mkdtemp(prefix="gcm_health_"))
     proc: subprocess.Popen | None = None
     out_fh = err_fh = None
@@ -179,8 +184,8 @@ def _run_smoke(exe_path: Path, wait_s: float) -> tuple[bool, bool, str]:
         proc = subprocess.Popen([str(exe_path)], env=env,
                                 stdout=out_fh, stderr=err_fh,
                                 start_new_session=(os.name != "nt"))
-        start_t = time.time()
-        while time.time() < start_t + wait_s:
+        start_t = time.perf_counter()
+        while time.perf_counter() < start_t + wait_s:
             if proc.poll() is not None:
                 break
             if (tmp / "repos.db").is_file() or (tmp / "settings.json").is_file():
@@ -193,21 +198,24 @@ def _run_smoke(exe_path: Path, wait_s: float) -> tuple[bool, bool, str]:
                     _tail = ""
                 if "DLL load failed" in _tail:
                     _terminate_tree(proc)
-                    return False, False, "startup failed; stderr head=" + repr(_tail[:400])
+                    smoke_ms = int((time.perf_counter() - start_t) * 1000)
+                    note = "startup failed; stderr head=" + repr(_tail[:400])
+                    return False, False, note, smoke_ms
             time.sleep(0.5)
         time.sleep(0.3)
+        smoke_ms = int((time.perf_counter() - start_t) * 1000)
         if proc.poll() is None:
             db_ok = (tmp / "repos.db").is_file()
             settings_ok = (tmp / "settings.json").is_file()
-            note = f"alive after {wait_s:g}s; repos.db={db_ok} settings.json={settings_ok}"
+            note = f"ready after {smoke_ms}ms; repos.db={db_ok} settings.json={settings_ok}"
             _terminate_tree(proc)
-            return True, db_ok or settings_ok, note
-        note = f"exited early rc={proc.returncode}"
+            return True, db_ok or settings_ok, note, smoke_ms
+        note = f"exited early rc={proc.returncode} after {smoke_ms}ms"
         errlog = tmp / "error.log"
         if errlog.is_file():
             note += "; data/error.log=" + repr(
                 errlog.read_text(encoding="utf-8", errors="replace")[:400])
-        return False, False, note
+        return False, False, note, smoke_ms
     finally:
         for fh in (out_fh, err_fh):
             if fh is not None:
@@ -252,7 +260,7 @@ def main() -> int:
     report(version_ok, "version_match",
            f"src={src_v!r} artifact={art_v!r} ({art_src})")
 
-    started_ok, db_ok, note = _run_smoke(args.exe, args.wait)
+    started_ok, db_ok, note, smoke_ms = _run_smoke(args.exe, args.wait)
     report(started_ok, "started_ok", note)
     report(db_ok, "repos_db_created",
            "repos.db/settings.json 已生成于 GCM_DATA_DIR" if db_ok else "缺失")
@@ -266,6 +274,8 @@ def main() -> int:
         "zip_size": args.zip.stat().st_size if args.zip.is_file() else 0,
         "started_ok": started_ok,
         "repos_db_created": db_ok,
+        # smoke_ms = 真实启动到生成数据文件；elapsed_ms = 整个健康检查（含大文件哈希）
+        "smoke_ms": smoke_ms,
         "elapsed_ms": int((time.perf_counter() - started) * 1000),
         "checked_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "artifacts_exist": artifacts_exist,

@@ -24,10 +24,11 @@ from PyQt6.QtWidgets import (
 
 from ..i18n import tr
 from . import main_window as _mw  # 兼容测试对 main_window.QMessageBox 等模块级 patch
+from .manage_table import ManageColumnMixin
 from .theme import LogLevel
 
 
-class ManagePanel(QWidget):
+class ManagePanel(ManageColumnMixin, QWidget):
     """仓库管理页面板。跨窗口动作经信号回传 MainWindow。"""
 
     update_all_requested = pyqtSignal()
@@ -67,21 +68,19 @@ class ManagePanel(QWidget):
     def _build_ui(self):
         v = QVBoxLayout(self)
         v.setSpacing(8)
-        # G74：统计信息独占一行（原先与 9 个按钮挤在同一 QHBoxLayout，
-        # 1024 宽时被压成 "共 12 个仓库 | github.com: 7 · bitbucke..."）。
+        # G74：统计信息独占一行（原先与 9 个按钮挤在同一 QHBoxLayout，1024 宽时被压成 "共 12 个仓库 | github.com: 7 · bitbucke..."）。
         self.manage_stats = QLabel(tr("共 0 个仓库"))
         self.manage_stats.setObjectName("muted")
         self.manage_stats.setWordWrap(True)
         v.addWidget(self.manage_stats)
-        # G03-1 管理页搜索过滤
         self._filter_text = ""
         self.manage_search = QLineEdit()
         self.manage_search.setPlaceholderText(tr("搜索仓库 / 作者 / 标签 / host"))
+        self.manage_search.setAccessibleName(tr("搜索仓库"))
         self.manage_search.setClearButtonEnabled(True)
         self.manage_search.setMinimumWidth(180)
         self.manage_search.setMaximumWidth(360)
-        # Rev11-C P-01：权重按语义统一赋（primary=主操作 / danger=中断或破坏 /
-        # secondary=常用有替代路径 / ghost=低频），规则见 qss_build 的三档 QSS。
+        # Rev11-C P-01：权重按语义统一赋（primary=主操作 / danger=中断或破坏 /secondary=常用有替代路径 / ghost=低频），规则见 qss_build 的三档 QSS。
         self.btn_update_all = QPushButton(tr("一键更新全部"))
         self.btn_update_all.clicked.connect(lambda _=False: self.update_all_requested.emit())
         self.btn_update_all.setIcon(self.owner._std_icon("refresh", self.btn_update_all))
@@ -242,95 +241,6 @@ class ManagePanel(QWidget):
         ov.setVisible(True)
         ov.raise_()
 
-    # ---- Rev14 R14-06：管理页定宽列的自适应下限与持久化
-
-    #: 定宽列 → (默认宽, 窄窗下限, L 档宽)。三档都要写在表里，
-    #: 免得 `apply_column_budget` 里散落魔法数字。
-    #: 下限存在的理由：窄窗把「上次同步」压到 60px 以下时，日期会省略成
-    #: 「2026-10-..0:23:35」—— 读不出是几号几分，等于该列失效。
-    COLUMN_SPECS: dict[int, tuple[int, int, int]] = {
-        3: (150, 96, 150),   # 上次同步
-        4: (78, 54, 78),     # HEAD
-        5: (70, 70, 96),     # 历史（每行一个「查看」按钮，L 档给更大点击区）
-        6: (64, 48, 64),     # 健康
-        7: (84, 52, 84),     # 大小
-    }
-
-    def _ui_state_dict(self) -> dict:
-        """当前 settings.ui_state（拿不到就给空 dict，调用方只读）。"""
-        st = getattr(self.owner, "settings", None)
-        raw = getattr(st, "ui_state", None) if st is not None else None
-        return raw if isinstance(raw, dict) else {}
-
-    def _set_column_widths(self, widths: dict[int, int]) -> None:
-        """程序化设置列宽，期间**不**触发落盘（否则恢复动作会写回自己）。"""
-        self._col_width_restoring = True
-        try:
-            for col, w in widths.items():
-                self.manage_table.setColumnWidth(int(col), int(w))
-        finally:
-            self._col_width_restoring = False
-
-    def _restore_column_widths(self) -> None:
-        """恢复用户上次拖出来的列宽（非法/越界值夹回区间，不抛异常）。"""
-        from .layout import coerce_int
-
-        saved = self._ui_state_dict().get("manage_columns")
-        if not isinstance(saved, dict):
-            return
-        widths: dict[int, int] = {}
-        for col, (default_w, floor_w, _wide_w) in self.COLUMN_SPECS.items():
-            w = coerce_int(saved.get(str(col), saved.get(col, 0)), 0)
-            widths[col] = max(floor_w, min(400, w)) if w > 0 else default_w
-        self._set_column_widths(widths)
-
-    def _on_section_resized(self, *_args) -> None:
-        """列宽变化 → 防抖 400ms 落盘。
-
-        直接写会把磁盘打满：用户拖动分隔线时每移动一像素都发一次信号。
-        """
-        if getattr(self, "_col_width_restoring", False):
-            return
-        self._col_width_timer.start()
-
-    def _save_column_widths(self) -> None:
-        """把当前定宽列写进 `settings.ui_state`（写侧接线，读侧见 `_restore`）。"""
-        st = getattr(self.owner, "settings", None)
-        store = getattr(self.owner, "settings_store", None)
-        if st is None or store is None:
-            return
-        cur = self._ui_state_dict()
-        cur["manage_columns"] = {
-            str(col): int(self.manage_table.columnWidth(col))
-            for col in self.COLUMN_SPECS
-        }
-        st.ui_state = cur
-        store.save(st)
-
-    def apply_column_budget(self, narrow: bool, wide: bool = False) -> None:
-        """按窗口档位重排定宽列（Rev14 R14-06）。
-
-        - 窄窗（`narrow`）：压到各自**下限**，把宽度还给仓库名/路径；
-        - L 档（`wide`）：用偏宽的档位（「历史」列 96，点击目标更大）；
-        - 其余：用用户保存的宽度（没有保存值就是默认值）。
-        """
-        from .layout import coerce_int
-
-        saved = self._ui_state_dict().get("manage_columns")
-        widths: dict[int, int] = {}
-        for col, (default_w, floor_w, wide_w) in self.COLUMN_SPECS.items():
-            if narrow:
-                widths[col] = floor_w
-                continue
-            want = default_w
-            if isinstance(saved, dict):
-                want = max(floor_w, min(400, coerce_int(
-                    saved.get(str(col), saved.get(col, default_w)), default_w)))
-            if wide:
-                want = max(want, wide_w)
-            widths[col] = want
-        self._set_column_widths(widths)
-
     def _load_db_into_grid(self):
         """从 DB 加载仓库列表到模型（全 host，含本地导入仓库；批量懒渲染）。"""
         self.manage_model.set_rows(self.owner.db.list_repos())
@@ -394,7 +304,9 @@ class ManagePanel(QWidget):
             _mw.QMessageBox.information(self.owner, tr("提示"), tr("请先选择要删除的记录。"))
             return
         if _mw.QMessageBox.question(self.owner, tr("确认删除"),
-                                tr("将从数据库中删除 {n} 条记录（不影响已下载的仓库目录）。\n继续？").format(n=len(rows))) != _mw.QMessageBox.StandardButton.Yes:
+                tr("将从数据库中删除 {n} 条记录（不影响已下载的仓库目录）。\n继续？").format(n=len(rows)),
+                _mw.QMessageBox.StandardButton.Yes | _mw.QMessageBox.StandardButton.No,
+                _mw.QMessageBox.StandardButton.No) != _mw.QMessageBox.StandardButton.Yes:
             return
         repo_ids = set()
         snaps: list[dict] = []

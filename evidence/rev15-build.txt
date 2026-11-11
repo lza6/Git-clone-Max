@@ -1,0 +1,94 @@
+208 INFO: PyInstaller: 6.22.2, contrib hooks: 2026.7
+208 INFO: Python: 3.14.3
+267 INFO: Platform: Windows-10-10.0.19045-SP0
+267 INFO: Python environment: D:\参考项目\GitHub仓库下载工具\Git-clone-Max\.venv
+407 WARNING: collect_data_files - skipping data collection for module 'PyQt6.QtCore' as it is not a package.
+538 WARNING: collect_dynamic_libs - skipping library collection for module 'PyQt6.QtCore' as it is not a package.
+1790 WARNING: collect_data_files - skipping data collection for module 'PyQt6.QtGui' as it is not a package.
+1878 WARNING: collect_dynamic_libs - skipping library collection for module 'PyQt6.QtGui' as it is not a package.
+2424 WARNING: collect_data_files - skipping data collection for module 'PyQt6.QtWidgets' as it is not a package.
+2513 WARNING: collect_dynamic_libs - skipping library collection for module 'PyQt6.QtWidgets' as it is not a package.
+2986 INFO: Module search paths (PYTHONPATH):
+['D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max',
+ 'C:\\Python314\\python314.zip',
+ 'C:\\Python314\\DLLs',
+ 'C:\\Python314\\Lib',
+ 'C:\\Python314',
+ 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv',
+ 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages',
+ 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\win32',
+ 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\win32\\lib',
+ 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\pythonwin',
+ 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max']
+3391 INFO: Appending 'datas' from .spec
+3405 INFO: checking Analysis
+3405 INFO: Building Analysis because Analysis-00.toc is non existent
+3406 INFO: Looking for Python shared library...
+3406 INFO: Using Python shared library: C:\Python314\python314.dll
+3406 INFO: Running Analysis Analysis-00.toc
+3406 INFO: Target bytecode optimization level: 0
+3406 INFO: Initializing module dependency graph...
+3407 INFO: Initializing module graph hook caches...
+3436 INFO: Analyzing modules for base_library.zip ...
+5105 INFO: Processing standard module hook 'hook-math.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+5123 INFO: Processing standard module hook 'hook-heapq.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+5597 INFO: Processing standard module hook 'hook-encodings.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+7912 INFO: Processing standard module hook 'hook-difflib.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+8079 INFO: Processing standard module hook 'hook-pickle.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+10826 INFO: Caching module dependency graph...
+10846 INFO: Analyzing D:\参考项目\GitHub仓库下载工具\Git-clone-Max\gcm\__main__.py
+11302 INFO: Processing standard module hook 'hook-PyQt6.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+12141 INFO: Processing standard module hook 'hook-PyQt6.QtCore.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+14851 INFO: Processing standard module hook 'hook-PyQt6.QtWidgets.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+17734 INFO: Processing standard module hook 'hook-PyQt6.QtGui.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+34737 INFO: Processing standard module hook 'hook-sysconfig.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+34751 INFO: Processing standard module hook 'hook-_ctypes.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+34805 INFO: Processing standard module hook 'hook-sqlite3.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+35835 INFO: Processing standard module hook 'hook-platform.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+35992 INFO: Processing standard module hook 'hook-openpyxl.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+36396 INFO: Processing standard module hook 'hook-xml.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+36446 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+38489 INFO: Processing standard module hook 'hook-webbrowser.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+38750 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+39506 INFO: Processing module hooks (post-graph stage)...
+39654 INFO: Performing binary vs. data reclassification (415 entries)
+40342 INFO: Looking for ctypes DLLs
+40361 INFO: Analyzing run-time hooks ...
+40363 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+40373 INFO: Including run-time hook 'pyi_rth_pyqt6.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+40381 INFO: Processing pre-find-module-path hook 'hook-_pyi_rth_utils.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+40388 INFO: Processing standard module hook 'hook-_pyi_rth_utils.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+40401 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+40409 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+40428 INFO: Creating base_library.zip...
+40441 INFO: Looking for dynamic libraries
+40860 INFO: Extra DLL search directories (AddDllDirectory): ['D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyQt6\\Qt6\\bin']
+40860 INFO: Extra DLL search directories (PATH): ['D:\\参考项目\\GitHub仓库下载工具\\Git-clone-Max\\.venv\\Lib\\site-packages\\PyQt6\\Qt6\\bin']
+41992 INFO: Warnings written to D:\参考项目\GitHub仓库下载工具\Git-clone-Max\out\build\Git-clone-Max\warn-Git-clone-Max.txt
+42020 INFO: Graph cross-reference written to D:\参考项目\GitHub仓库下载工具\Git-clone-Max\out\build\Git-clone-Max\xref-Git-clone-Max.html
+42072 INFO: checking PYZ
+42072 INFO: Building PYZ because PYZ-00.toc is non existent
+42072 INFO: Building PYZ (ZlibArchive) D:\参考项目\GitHub仓库下载工具\Git-clone-Max\out\build\Git-clone-Max\PYZ-00.pyz
+42279 INFO: Building PYZ (ZlibArchive) D:\参考项目\GitHub仓库下载工具\Git-clone-Max\out\build\Git-clone-Max\PYZ-00.pyz completed successfully.
+42292 INFO: checking PKG
+42292 INFO: Building PKG because PKG-00.toc is non existent
+42292 INFO: Building PKG (CArchive) Git-clone-Max.pkg
+46063 INFO: Building PKG (CArchive) Git-clone-Max.pkg completed successfully.
+46070 INFO: Bootloader D:\参考项目\GitHub仓库下载工具\Git-clone-Max\.venv\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe
+46070 INFO: checking EXE
+46070 INFO: Building EXE because EXE-00.toc is non existent
+46070 INFO: Building EXE from EXE-00.toc
+46070 INFO: Copying bootloader EXE to D:\参考项目\GitHub仓库下载工具\Git-clone-Max\out\dist\Git-clone-Max.exe
+46131 INFO: Copying icon to EXE
+46163 INFO: Copying version information to EXE
+46193 INFO: Copying 0 resources to EXE
+46193 INFO: Embedding manifest in EXE
+46223 INFO: Appending PKG archive to EXE
+46285 INFO: Fixing EXE headers
+46668 INFO: Building EXE from EXE-00.toc completed successfully.
+46677 INFO: checking COLLECT
+46677 INFO: Building COLLECT because COLLECT-00.toc is non existent
+46677 INFO: Building COLLECT COLLECT-00.toc
+47138 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+47144 INFO: Build complete! The results are available in: D:\参考项目\GitHub仓库下载工具\Git-clone-Max\out\dist
+EXIT=0

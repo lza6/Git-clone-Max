@@ -176,3 +176,29 @@ def effective_name(widget: Any) -> str:
         if text:
             return text
     return _tooltip_text(widget)
+
+
+def is_qt_internal_widget(widget: Any) -> bool:
+    """Qt 自动生成的内部子控件，不是用户需要独立命名的输入。
+
+    三类会污染 a11y 计数：
+    - `QSpinBox` 内部的 `QLineEdit`（名字由 `QSpinBox` 承担）；
+    - `QLineEdit` 的清除按钮（`QToolButton`）；
+    - 菜单栏溢出按钮（`qt_menubar_ext_button`）。
+
+    这里只做判定，不做命名。审计脚本与守卫共用同一口径，避免
+    「脚本过滤了、测试仍按原始数」——那会重演基线虚高、真缺口被噪音淹没。
+    """
+    if widget is None:
+        return False
+    from PyQt6.QtWidgets import QAbstractSpinBox, QLineEdit, QToolButton
+
+    if str(getattr(widget, "objectName", lambda: "")() or "") == "qt_menubar_ext_button":
+        return True
+    parent = widget.parentWidget()
+    if isinstance(widget, QLineEdit):
+        return isinstance(parent, QAbstractSpinBox) or (
+            str(widget.objectName() or "") == "qt_spinbox_lineedit")
+    if isinstance(widget, QToolButton):
+        return isinstance(parent, QLineEdit)
+    return False

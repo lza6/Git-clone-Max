@@ -8,71 +8,18 @@ from __future__ import annotations
 
 import threading
 import weakref
-from typing import TYPE_CHECKING
 
-from PyQt6.QtWidgets import (
-    QFileDialog,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QMessageBox,
-    QPlainTextEdit,
-    QPushButton,
-    QVBoxLayout,
-    QWidget,
-)
+from PyQt6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
 from ..i18n import tr  # G49-1
 from . import main_window as _mw  # noqa: F401 - 迁移回调引用 main_window 模块级符号
-from .theme import LogLevel, make_highlighter
-
-if TYPE_CHECKING:  # 仅类型标注（避免循环导入）
-    pass
-from .main_window import MainWindow
+from .log_panel import build_log_box  # noqa: F401
 
 # G68-1：设置页各分组的构建器已拆到 `settings_groups.py`（原 `build_settings_ui` 单函数
 # **432 行**，是项目 50 行上限的 8.6 倍）。这里原样再导出，`main_window` 的导入路径不变；
 # 三个文本辅助函数（_host_tokens_text 等）随之迁走，仅该处使用。
 from .settings_groups import build_settings_ui  # noqa: F401
-
-
-def build_log_box(owner: MainWindow) -> QGroupBox:
-    """构建黑匣子日志区（固定在下，控件挂 owner.log_count/log_view/btn_save_log/btn_clear_log）。"""
-    g2 = QGroupBox(tr("黑匣子日志（实时）"))
-    g2.setToolTip(tr("应用运行日志实时输出；可导出为文本文件排查问题"))
-    l2 = QVBoxLayout(g2)
-    tb = QHBoxLayout()
-    owner.log_count = QLabel(tr("0 条"))
-    owner.log_count.setObjectName("muted")
-    tb.addWidget(owner.log_count)
-    tb.addStretch()
-    owner.btn_save_log = QPushButton(tr("导出日志…"))
-    owner.btn_save_log.setToolTip(tr("把当前日志内容导出为文本文件"))
-    owner.btn_save_log.clicked.connect(owner.save_log)
-    owner.btn_clear_log = QPushButton(tr("清空日志"))
-    owner.btn_clear_log.clicked.connect(owner.clear_log)
-    tb.addWidget(owner.btn_save_log)
-    tb.addWidget(owner.btn_clear_log)
-    # Rev8 C6-4：关键字过滤（显示层；模型永远全量，清空即重放恢复）
-    # 逻辑在 log_filter.py（本文件贴 800 行硬上限）
-    from .log_filter import build_log_filter_row
-    build_log_filter_row(owner, tb)
-    l2.addLayout(tb)
-    owner.log_view = QPlainTextEdit()
-    owner.log_view.setObjectName("console")
-    owner.log_view.setReadOnly(True)
-    owner.log_view.setMaximumBlockCount(4000)
-    owner.log_view.setMinimumHeight(80)
-    owner.log_view.setAccessibleName(tr("黑匣子日志"))
-    l2.addWidget(owner.log_view, 1)
-    # 关键字高亮：`theme.make_highlighter` 早已实现，但此前从未安装到日志视图
-    # （README 宣称的「关键字高亮」实际不可见）。保留在 owner 上，避免包装对象被回收。
-    try:
-        owner.log_highlighter = make_highlighter(owner.log_view.document())
-    except Exception:
-        owner.log_highlighter = None
-    return g2
-
+from .theme import LogLevel
 
 
 class SettingsPanel(QWidget):
@@ -785,7 +732,10 @@ class SettingsPanel(QWidget):
         self.owner.settings_store.save(self.owner.settings)
         try:
             from ..ui import theme as _th
-            _th.apply_theme(key)
+            # auto 不能直接传给 apply_theme（它会回退 deep）；先解析成实际主题。
+            resolved = _th.resolve_theme_name(key)
+            if resolved:
+                _th.apply_theme(resolved)
             # G70：与对话框同源（含强调色 + reduced-motion），避免主窗/对话框样式分叉
             self.owner.setStyleSheet(self.owner._themed_qss())
             self.owner._apply_theme_to_children()

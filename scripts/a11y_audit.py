@@ -51,7 +51,7 @@ def audit() -> dict:
 
     app = QApplication.instance() or QApplication([])
     from gcm.db.settings import SettingsStore
-    from gcm.ui.a11y import effective_name
+    from gcm.ui.a11y import effective_name, is_qt_internal_widget
     from gcm.ui.main_window import MainWindow
 
     tmp = Path(tempfile.mkdtemp())
@@ -68,7 +68,8 @@ def audit() -> dict:
         by_class: dict[str, dict[str, int]] = {}
         for cls in (QPushButton, QToolButton, QLineEdit, QCheckBox, QComboBox,
                     QSpinBox, QPlainTextEdit):
-            items = win.findChildren(cls)
+            items = [w for w in win.findChildren(cls)
+                     if not is_qt_internal_widget(w)]
             named = sum(1 for w in items if effective_name(w))
             by_class[cls.__name__] = {"total": len(items),
                                       "missing": len(items) - named}

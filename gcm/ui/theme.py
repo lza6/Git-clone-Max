@@ -161,6 +161,37 @@ def apply_theme(name: str) -> None:
     _current_theme = name if name in PALETTES else "deep"
 
 
+def resolve_theme_name(name: str, *, scheme=None, light_pref=None) -> str:
+    """把 `auto` 解析成 `light` / `deep`；未知或探测不到返回空串（保持现状）。
+
+    `scheme` / `light_pref` 可注入，便于纯逻辑测试：
+    - `scheme`：Qt `Qt.ColorScheme` 或 "light"/"dark"/"unknown"；
+    - `light_pref`：True/False/None（Windows 注册表兜底）。
+    """
+    text = str(name or "deep")
+    if text != "auto":
+        return text if text in PALETTES else "deep"
+    if scheme is None:
+        from PyQt6.QtWidgets import QApplication
+        app = QApplication.instance()
+        hints = app.styleHints() if app is not None else None
+        scheme = hints.colorScheme() if hints is not None else None
+    s = str(getattr(scheme, "name", scheme) or "").lower()
+    if s == "light":
+        return "light"
+    if s == "dark":
+        return "deep"
+    if light_pref is None:
+        from ..app.system_theme import detect_system_light_theme
+        light_pref = detect_system_light_theme()
+    if light_pref is True:
+        return "light"
+    if light_pref is False:
+        return "deep"
+    return ""
+
+
+
 def apply_accent_preset(name: str) -> None:
     """切换当前强调色预设（未知回退默认）。
 

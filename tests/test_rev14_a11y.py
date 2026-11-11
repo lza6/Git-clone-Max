@@ -42,6 +42,7 @@ class TestMainActionNames(unittest.TestCase):
         from PyQt6.QtWidgets import QApplication
         cls._app = QApplication.instance() or QApplication([])
         from gcm.db.settings import SettingsStore
+        from gcm.ui.a11y import is_qt_internal_widget
         from gcm.ui.main_window import MainWindow
         tmp = Path(tempfile.mkdtemp())
         store = SettingsStore(tmp / "settings.json")
@@ -117,6 +118,7 @@ class TestA11yRatchet(unittest.TestCase):
         )
         app = QApplication.instance() or QApplication([])
         from gcm.db.settings import SettingsStore
+        from gcm.ui.a11y import is_qt_internal_widget
         from gcm.ui.main_window import MainWindow
 
         base_path = ROOT / "scripts" / "a11y_baseline.json"
@@ -136,7 +138,8 @@ class TestA11yRatchet(unittest.TestCase):
             total_missing = 0
             for cls in (QPushButton, QToolButton, QLineEdit, QCheckBox,
                         QComboBox, QSpinBox, QPlainTextEdit):
-                items = win.findChildren(cls)
+                items = [w for w in win.findChildren(cls)
+                         if not is_qt_internal_widget(w)]
                 missing = sum(1 for w in items if not effective_name(w))
                 total_missing += missing
                 allowed = (base.get("by_class", {}).get(cls.__name__) or {}).get(

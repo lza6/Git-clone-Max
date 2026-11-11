@@ -1,0 +1,1388 @@
+[ci_run_fast] 快集模块 206 个；其中 2 个模块只跳过其硬件敏感用例：['test_mem_baseline', 'test_scanner_perf']
+[ci_run_fast] >>> test_a14_queue_runner
+.....队列调度查询引擎状态失败（按忙处理）：boom
+....定时队列「ok」启动失败：boom
+..
+----------------------------------------------------------------------
+Ran 11 tests in 0.710s
+
+OK
+[ci_run_fast] >>> test_a52_rmw_closure
+........
+----------------------------------------------------------------------
+Ran 8 tests in 0.095s
+
+OK
+[ci_run_fast] >>> test_a53_process_termination
+....
+----------------------------------------------------------------------
+Ran 4 tests in 1.624s
+
+OK
+[ci_run_fast] >>> test_a54_destructive_confirm
+............
+----------------------------------------------------------------------
+Ran 12 tests in 1.324s
+
+OK
+[ci_run_fast] >>> test_a55_host_gate
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.164s
+
+OK
+[ci_run_fast] >>> test_applog
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.034s
+
+OK
+[ci_run_fast] >>> test_c1_wiring
+...并发记忆恢复失败（按设置值启动）：Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+..已按上次网络状况临时降至 4 并发（设置上限 8；连续成功后自动回升）
+.已按上次网络状况临时降至 4 并发（设置上限 8；连续成功后自动回升）
+..已按上次网络状况临时降至 4 并发（设置上限 8；连续成功后自动回升）
+..........................已按上次网络状况临时降至 4 并发（设置上限 8；连续成功后自动回升）
+....同步历史容量治理失败（不影响本批结果）：int() argument must be a string, a bytes-like object or a real number, not 'Mock'
+全文索引重建失败（搜索降级为 LIKE）：int() argument must be a string, a bytes-like object or a real number, not 'Mock'
+.同步历史容量治理失败（不影响本批结果）：int() argument must be a string, a bytes-like object or a real number, not 'Mock'
+全文索引重建失败（搜索降级为 LIKE）：int() argument must be a string, a bytes-like object or a real number, not 'Mock'
+WAL 收缩失败（不影响本批结果）：connection closed
+.
+----------------------------------------------------------------------
+Ran 40 tests in 5.427s
+
+OK
+[ci_run_fast] >>> test_c2_ux
+.............................
+----------------------------------------------------------------------
+Ran 29 tests in 25.297s
+
+OK
+[ci_run_fast] >>> test_c3_chinese_error_classify
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.001s
+
+OK
+[ci_run_fast] >>> test_c3_data
+......同步历史容量治理失败（跳过本次）：x
+.........
+----------------------------------------------------------------------
+Ran 15 tests in 1.615s
+
+OK
+[ci_run_fast] >>> test_c4_search
+..........FTS 查询失败（本次降级为 LIKE）：no such table: repo_fts
+..............
+----------------------------------------------------------------------
+Ran 24 tests in 1.235s
+
+OK
+[ci_run_fast] >>> test_c5_agent_contract
+................
+----------------------------------------------------------------------
+Ran 16 tests in 1.340s
+
+OK
+[ci_run_fast] >>> test_c6_health_check
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.501s
+
+OK
+[ci_run_fast] >>> test_c6_log_filter
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.001s
+
+OK
+[ci_run_fast] >>> test_c6_sparkline
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.002s
+
+OK
+[ci_run_fast] >>> test_clipboard
+..........
+----------------------------------------------------------------------
+Ran 10 tests in 0.001s
+
+OK
+[ci_run_fast] >>> test_cover_gaps
+............
+----------------------------------------------------------------------
+Ran 12 tests in 0.324s
+
+OK
+[ci_run_fast] >>> test_db_lists
+...............
+----------------------------------------------------------------------
+Ran 15 tests in 0.115s
+
+OK
+[ci_run_fast] >>> test_db_migration
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.463s
+
+OK
+[ci_run_fast] >>> test_db_prune_backup
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 1.165s
+
+OK
+[ci_run_fast] >>> test_doc_drift_guard
+........
+----------------------------------------------------------------------
+Ran 8 tests in 0.217s
+
+OK
+DRIFT 0
+[ci_run_fast] >>> test_download_tools
+..........
+----------------------------------------------------------------------
+Ran 10 tests in 1.090s
+
+OK
+[ci_run_fast] >>> test_exc_dump
+Traceback (most recent call last):
+  File "D:\参考项目\GitHub仓库下载工具\Git-clone-Max\tests\test_exc_dump.py", line 37, in test_install_excepthook_captures
+    1 / 0
+    ~~^~~
+ZeroDivisionError: division by zero
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.013s
+
+OK
+[ci_run_fast] >>> test_follow_system_theme
+.............
+----------------------------------------------------------------------
+Ran 13 tests in 0.001s
+
+OK
+[ci_run_fast] >>> test_font_scale
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.339s
+
+OK
+[ci_run_fast] >>> test_function_size_budget
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.191s
+
+OK
+[ci_run_fast] >>> test_g33_startup
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.340s
+
+OK
+[ci_run_fast] >>> test_g35_ui
+............
+----------------------------------------------------------------------
+Ran 12 tests in 1.571s
+
+OK
+[通知] 全部任务完成: 成功 0 · 冲突 0 · 失败 0
+[通知] 全部任务完成: 成功 0 · 冲突 0 · 失败 0
+[ci_run_fast] >>> test_g36_ui
+..............
+----------------------------------------------------------------------
+Ran 14 tests in 1.806s
+
+OK
+[通知] 全部任务完成: 成功 1 · 冲突 1 · 失败 1
+[ci_run_fast] >>> test_g374_376
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 0.955s
+
+OK
+[ci_run_fast] >>> test_g37_stats
+.......
+----------------------------------------------------------------------
+Ran 7 tests in 0.418s
+
+OK
+[ci_run_fast] >>> test_g381_host_tokens
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 0.033s
+
+OK
+[ci_run_fast] >>> test_g381_ui_callbacks
+..............
+----------------------------------------------------------------------
+Ran 14 tests in 1.828s
+
+OK
+[通知] 全部任务完成: 成功 0 · 冲突 0 · 失败 0
+[通知] 全部任务完成: 成功 0 · 冲突 0 · 失败 0
+[ci_run_fast] >>> test_g38_network
+................
+----------------------------------------------------------------------
+Ran 16 tests in 0.038s
+
+OK
+[ci_run_fast] >>> test_g43_engine
+.......
+----------------------------------------------------------------------
+Ran 7 tests in 0.008s
+
+OK
+[ci_run_fast] >>> test_g43_stats_slow
+...........
+----------------------------------------------------------------------
+Ran 11 tests in 0.582s
+
+OK
+[ci_run_fast] >>> test_g44_secure
+.......
+----------------------------------------------------------------------
+Ran 7 tests in 0.738s
+
+OK
+[ci_run_fast] >>> test_g44_secure_mainside
+............
+----------------------------------------------------------------------
+Ran 12 tests in 0.007s
+
+OK
+[ci_run_fast] >>> test_g44_url_updater
+.............
+----------------------------------------------------------------------
+Ran 13 tests in 0.001s
+
+OK
+[ci_run_fast] >>> test_g46_nav_batch
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.623s
+
+OK
+[ci_run_fast] >>> test_g46_settings
+.......
+----------------------------------------------------------------------
+Ran 7 tests in 0.644s
+
+OK
+[ci_run_fast] >>> test_g46_theme
+...........
+----------------------------------------------------------------------
+Ran 11 tests in 0.001s
+
+OK
+[ci_run_fast] >>> test_g46_tray_help
+........
+----------------------------------------------------------------------
+Ran 8 tests in 0.017s
+
+OK
+[ci_run_fast] >>> test_g47_data
+..........
+----------------------------------------------------------------------
+Ran 10 tests in 0.782s
+
+OK
+[ci_run_fast] >>> test_g47_g48_cover
+........
+----------------------------------------------------------------------
+Ran 8 tests in 4.616s
+
+OK
+[ci_run_fast] >>> test_g48_git
+............
+----------------------------------------------------------------------
+Ran 12 tests in 1.009s
+
+OK
+[ci_run_fast] >>> test_g49_autostart
+........
+----------------------------------------------------------------------
+Ran 8 tests in 0.002s
+
+OK
+[ci_run_fast] >>> test_g49_cli
+..
+----------------------------------------------------------------------
+Ran 2 tests in 1.315s
+
+OK
+[CLI] 开始并行克隆 3 个仓库（目标根：C:\Users\ADMINI~1.DES\AppData\Local\Temp\gcm_cli_5jwneukh\out）…
+  [OK] r0 :: 克隆完成
+  [OK] r1 :: 克隆完成
+  [OK] r2 :: 克隆完成
+  | 开始并行同步 3 个仓库（满量）
+  | 开始克隆 gcm_cli_5jwneukh/r0 …
+  | Cloning into 'C:\Users\ADMINI~1.DES\AppData\Local\Temp\gcm_cli_5jwneukh\out\r0'...
+  | done.
+  | 开始克隆 gcm_cli_5jwneukh/r2 …
+  | Cloning into 'C:\Users\ADMINI~1.DES\AppData\Local\Temp\gcm_cli_5jwneukh\out\r2'...
+  | done.
+  | 开始克隆 gcm_cli_5jwneukh/r1 …
+  | Cloning into 'C:\Users\ADMINI~1.DES\AppData\Local\Temp\gcm_cli_5jwneukh\out\r1'...
+  | done.
+[CLI] 完成：成功 3 · 失败 0 · 其它 0（共 3）
+[CLI] 未提供仓库地址（文件为空或 stdin 无输入）
+[CLI] --dir 缺少目录参数
+[ci_run_fast] >>> test_g49_i18n
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.004s
+
+OK
+[ci_run_fast] >>> test_g49_minimized
+........
+----------------------------------------------------------------------
+Ran 8 tests in 0.990s
+
+OK
+[ci_run_fast] >>> test_g49_notify
+.......
+----------------------------------------------------------------------
+Ran 7 tests in 0.002s
+
+OK
+[ci_run_fast] >>> test_g52_engine_integration
+......
+----------------------------------------------------------------------
+Ran 6 tests in 1.402s
+
+OK
+[ci_run_fast] >>> test_g52_failure_panel
+............
+----------------------------------------------------------------------
+Ran 12 tests in 0.011s
+
+OK
+[ci_run_fast] >>> test_g52_mainwindow_extra
+...........
+----------------------------------------------------------------------
+Ran 11 tests in 0.127s
+
+OK
+[ci_run_fast] >>> test_g52_mainwindow_methods
+........
+----------------------------------------------------------------------
+Ran 8 tests in 0.018s
+
+OK
+[ci_run_fast] >>> test_g52_progress_gc
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.029s
+
+OK
+[ci_run_fast] >>> test_g52_progress_table_extra
+........
+----------------------------------------------------------------------
+Ran 8 tests in 0.011s
+
+OK
+[ci_run_fast] >>> test_g52_resume_dialog
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.025s
+
+OK
+[ci_run_fast] >>> test_g52_retry_queue_extra
+............
+----------------------------------------------------------------------
+Ran 12 tests in 0.180s
+
+OK
+[ci_run_fast] >>> test_g52_watchdog
+.......
+----------------------------------------------------------------------
+Ran 7 tests in 0.040s
+
+OK
+[ci_run_fast] >>> test_g53_extra
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 2.506s
+
+OK
+[ci_run_fast] >>> test_g53_radar
+..........
+----------------------------------------------------------------------
+Ran 10 tests in 0.393s
+
+OK
+[ci_run_fast] >>> test_g53_reports
+....定时报表生成失败：boom
+...
+----------------------------------------------------------------------
+Ran 7 tests in 0.721s
+
+OK
+[ci_run_fast] >>> test_g53_scorecards
+...........
+----------------------------------------------------------------------
+Ran 11 tests in 0.003s
+
+OK
+[ci_run_fast] >>> test_g53_settings_ui
+........
+----------------------------------------------------------------------
+Ran 8 tests in 0.173s
+
+OK
+[ci_run_fast] >>> test_g54_ux
+........
+----------------------------------------------------------------------
+Ran 8 tests in 1.185s
+
+OK
+[ci_run_fast] >>> test_g56_api_extra
+...........
+----------------------------------------------------------------------
+Ran 11 tests in 5.457s
+
+OK
+[ci_run_fast] >>> test_g56_api_write
+....
+----------------------------------------------------------------------
+Ran 4 tests in 2.892s
+
+OK
+[ci_run_fast] >>> test_g56_cli_extra
+[DIAG] 诊断失败：boom
+...[CLI] 开始并行克隆 1 个仓库（目标根：C:\Users\ADMINI~1.DES\AppData\Local\Temp\tmptynr32ef\out）…
+  [OK] r0 :: 克隆完成
+  | 开始并行同步 1 个仓库（满量）
+  | 开始克隆 tmptynr32ef/r0 …
+  | Cloning into 'C:\Users\ADMINI~1.DES\AppData\Local\Temp\tmptynr32ef\out\r0'...
+  | done.
+....
+----------------------------------------------------------------------
+Ran 7 tests in 0.418s
+
+OK
+[ci_run_fast] >>> test_g56_cli_json
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 2.110s
+
+OK
+[ci_run_fast] >>> test_g56_contract
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.573s
+
+OK
+[ci_run_fast] >>> test_g56_mcp
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.218s
+
+OK
+[ci_run_fast] >>> test_g56_mcp_extra
+.............
+----------------------------------------------------------------------
+Ran 13 tests in 0.796s
+
+OK
+[ci_run_fast] >>> test_g57_responsive
+........
+----------------------------------------------------------------------
+Ran 8 tests in 0.119s
+
+OK
+[ci_run_fast] >>> test_g58_5_auth_header
+.......
+----------------------------------------------------------------------
+Ran 7 tests in 0.238s
+
+OK
+[ci_run_fast] >>> test_g58_mirror_failover
+..........................................................
+----------------------------------------------------------------------
+Ran 58 tests in 2.727s
+
+OK
+[ci_run_fast] >>> test_g58_network
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.002s
+
+OK
+[ci_run_fast] >>> test_g59_dir_size
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.002s
+
+OK
+[ci_run_fast] >>> test_g59_im_notify
+............
+----------------------------------------------------------------------
+Ran 12 tests in 0.001s
+
+OK
+[ci_run_fast] >>> test_g59_im_settings
+..
+----------------------------------------------------------------------
+Ran 2 tests in 0.011s
+
+OK
+[ci_run_fast] >>> test_g66_patch
+..........s............[SERVE] 启动被拒绝：[WinError 10013] 以一种访问权限不允许的方式做了一个访问套接字的尝试。
+.[SERVE] 启动被拒绝：拒绝绑定非回环地址 '0.0.0.0'：本地 HTTP API 无鉴权，只允许 ['127.0.0.1', '127.0.0.2', '127.0.0.3', 'localhost']（默认 127.0.0.1）。如需远程访问，请自行用带鉴权的反向代理转发到回环地址。
+[SERVE] 启动被拒绝：IPv6 绑定暂不支持（'::1'）：本地 HTTP API 基于 AF_INET 实现。请用 127.0.0.1 / localhost。
+..........................................
+----------------------------------------------------------------------
+Ran 66 tests in 16.880s
+
+OK (skipped=1)
+[ci_run_fast] >>> test_g67_closure
+..................
+----------------------------------------------------------------------
+Ran 18 tests in 14.858s
+
+OK
+[ci_run_fast] >>> test_g67_docs_freshness
+...........
+----------------------------------------------------------------------
+Ran 11 tests in 0.109s
+
+OK
+[ci_run_fast] >>> test_g68_filename_safety
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.298s
+
+OK
+[ci_run_fast] >>> test_g68_settings_ui
+.............
+----------------------------------------------------------------------
+Ran 13 tests in 1.281s
+
+OK
+[ci_run_fast] >>> test_g69_checklist
+...........
+----------------------------------------------------------------------
+Ran 11 tests in 0.672s
+
+OK
+[ci_run_fast] >>> test_g69_notify_hardening
+................
+----------------------------------------------------------------------
+Ran 16 tests in 0.085s
+
+OK
+[ci_run_fast] >>> test_g69_regressions
+.........................................................
+----------------------------------------------------------------------
+Ran 57 tests in 13.821s
+
+OK
+[ci_run_fast] >>> test_g69_security_fixes
+.....................
+----------------------------------------------------------------------
+Ran 21 tests in 2.584s
+
+OK
+[ci_run_fast] >>> test_g69_wiring_gaps
+.......................
+----------------------------------------------------------------------
+Ran 23 tests in 2.308s
+
+OK
+[ci_run_fast] >>> test_g70_coverage
+.................
+----------------------------------------------------------------------
+Ran 17 tests in 2.837s
+
+OK
+[ci_run_fast] >>> test_g70_ui_upgrade
+..................................
+----------------------------------------------------------------------
+Ran 34 tests in 3.298s
+
+OK
+[ci_run_fast] >>> test_g71_event_stream
+......................................................
+----------------------------------------------------------------------
+Ran 54 tests in 7.376s
+
+OK
+[ci_run_fast] >>> test_g72_hardening
+................
+----------------------------------------------------------------------
+Ran 16 tests in 2.062s
+
+OK
+[ci_run_fast] >>> test_g73_dlq
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.028s
+
+OK
+[ci_run_fast] >>> test_g74_ui_layout
+..............
+----------------------------------------------------------------------
+Ran 14 tests in 1.650s
+
+OK
+[ci_run_fast] >>> test_g75_update_flow
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.544s
+
+OK
+[ci_run_fast] >>> test_g75_visual_system
+...s..........................................
+----------------------------------------------------------------------
+Ran 46 tests in 0.283s
+
+OK (skipped=1)
+[ci_run_fast] >>> test_g76_wiring
+..........................
+----------------------------------------------------------------------
+Ran 26 tests in 3.249s
+
+OK
+[ci_run_fast] >>> test_g78_quick_scroll
+...
+----------------------------------------------------------------------
+Ran 3 tests in 2.966s
+
+OK
+[ci_run_fast] >>> test_g79_repo_hygiene
+..........
+----------------------------------------------------------------------
+Ran 10 tests in 0.123s
+
+OK
+[ci_run_fast] >>> test_g80_background_jobs
+.............定时报表生成失败：磁盘满
+...
+----------------------------------------------------------------------
+Ran 16 tests in 0.128s
+
+OK
+[ci_run_fast] >>> test_g80_boundaries
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.806s
+
+OK
+[ci_run_fast] >>> test_g80_checkout_visible
+......
+----------------------------------------------------------------------
+Ran 6 tests in 1.891s
+
+OK
+[ci_run_fast] >>> test_g80_contract
+............
+----------------------------------------------------------------------
+Ran 12 tests in 0.183s
+
+OK
+[ci_run_fast] >>> test_g80_halfclone_ui
+........
+----------------------------------------------------------------------
+Ran 8 tests in 0.108s
+
+OK
+[ci_run_fast] >>> test_g80_http_hardening
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 4.505s
+
+OK
+[ci_run_fast] >>> test_g80_hygiene
+..........
+----------------------------------------------------------------------
+Ran 10 tests in 0.671s
+
+OK
+[ci_run_fast] >>> test_g80_queue
+..............
+----------------------------------------------------------------------
+Ran 14 tests in 0.438s
+
+OK
+[ci_run_fast] >>> test_g80_repo_ssh_key
+...................
+----------------------------------------------------------------------
+Ran 19 tests in 0.713s
+
+OK
+[ci_run_fast] >>> test_g80_settings_validation
+.............
+----------------------------------------------------------------------
+Ran 13 tests in 0.023s
+
+OK
+[ci_run_fast] >>> test_g80_stuck_task
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 0.011s
+
+OK
+[ci_run_fast] >>> test_g80_verify_file
+............
+----------------------------------------------------------------------
+Ran 12 tests in 0.041s
+
+OK
+[ci_run_fast] >>> test_g80_winget_manifest
+[FAIL] lza6.Git-clone-Max.installer.yaml 与产物不一致（版本或 sha256 变了？）
+.[FAIL] 找不到产物：C:\Users\ADMINI~1.DES\AppData\Local\Temp\tmpz41redyx\nope.exe（先跑 PyInstaller）
+......
+----------------------------------------------------------------------
+Ran 7 tests in 0.078s
+
+OK
+[OK] 已生成 3 份清单到 C:\Users\ADMINI~1.DES\AppData\Local\Temp\tmpbb610f1k\winget（版本 9.19.0 · sha256 941ef2fd249e…）
+[OK] winget 清单与产物一致（9.19.0 · 941ef2fd249e…）
+[ci_run_fast] >>> test_g81_changelog
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 0.198s
+
+OK
+[ci_run_fast] >>> test_g81_ecosystem
+.................
+----------------------------------------------------------------------
+Ran 17 tests in 0.038s
+
+OK
+[ci_run_fast] >>> test_g81_knowledge
+.......................
+----------------------------------------------------------------------
+Ran 23 tests in 0.452s
+
+OK
+[ci_run_fast] >>> test_g83_adaptive_interval
+.......
+----------------------------------------------------------------------
+Ran 7 tests in 0.000s
+
+OK
+[ci_run_fast] >>> test_g83_adaptive_wiring
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.631s
+
+OK
+[ci_run_fast] >>> test_g83_zero_assert
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.499s
+
+OK
+[ci_run_fast] >>> test_g84_backup_atomic
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.391s
+
+OK
+[ci_run_fast] >>> test_g84_batch_plan
+.............
+----------------------------------------------------------------------
+Ran 13 tests in 0.069s
+
+OK
+[ci_run_fast] >>> test_g84_bump_version
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 0.138s
+
+OK
+版本：9.19.0 → 9.19.1
+   gcm/__init__.py: 1 处
+   pyproject.toml: 1 处
+   Git-clone-Max.spec: 1 处
+   Git-clone-Max.spec: 1 处
+   Git-clone-Max.spec: 1 处
+   Git-clone-Max.spec: 1 处
+   packaging/installer.iss: 1 处
+   packaging/installer.iss: 1 处
+   .claude-plugin/plugin.json: 1 处
+   docs/contract/cli_json.schema.json: 1 处
+   docs/contract/http_endpoints.schema.json: 1 处
+   docs/agent-contract.md: 1 处
+   docs/agent-contract.md: 3 处
+   docs/agent-contract.md: 1 处
+   packaging/winget/lza6.Git-clone-Max.yaml: 1 处
+   packaging/winget/lza6.Git-clone-Max.installer.yaml: 1 处
+   packaging/winget/lza6.Git-clone-Max.installer.yaml: 1 处
+   packaging/winget/lza6.Git-clone-Max.locale.zh-CN.yaml: 1 处
+   docs/architecture.md: 1 处
+   test_ledger.md: 1 处
+   README.md: 1 处
+   README.md: 3 处
+! gcm.__changelog__ 里没有 9.19.1: 条目 —— 版本守卫会红。
+  正确顺序：python scripts/changelog.py new --category … && python scripts/changelog.py build --version 9.19.1
+
+（dry-run：未写盘。加 --write 执行）
+版本：9.19.0 → 9.19.1
+   gcm/__init__.py: 1 处
+   pyproject.toml: 1 处
+   Git-clone-Max.spec: 1 处
+   Git-clone-Max.spec: 1 处
+   Git-clone-Max.spec: 1 处
+   Git-clone-Max.spec: 1 处
+   packaging/installer.iss: 1 处
+   packaging/installer.iss: 1 处
+   .claude-plugin/plugin.json: 1 处
+   docs/contract/cli_json.schema.json: 1 处
+   docs/contract/http_endpoints.schema.json: 1 处
+   docs/agent-contract.md: 1 处
+   docs/agent-contract.md: 3 处
+   docs/agent-contract.md: 1 处
+   packaging/winget/lza6.Git-clone-Max.yaml: 1 处
+   packaging/winget/lza6.Git-clone-Max.installer.yaml: 1 处
+   packaging/winget/lza6.Git-clone-Max.installer.yaml: 1 处
+   packaging/winget/lza6.Git-clone-Max.locale.zh-CN.yaml: 1 处
+   docs/architecture.md: 1 处
+   test_ledger.md: 1 处
+   README.md: 1 处
+   README.md: 3 处
+! gcm.__changelog__ 里没有 9.19.1: 条目 —— 版本守卫会红。
+  正确顺序：python scripts/changelog.py new --category … && python scripts/changelog.py build --version 9.19.1
+✗ 工作区有未提交改动 —— 拒绝在脏树上 bump（会把别人的改动混进来）。
+  先提交/暂存，或用 --allow-dirty 显式放行。
+版本：9.19.0 → 9.19.1
+   gcm/__init__.py: 1 处
+   pyproject.toml: 1 处
+   Git-clone-Max.spec: 1 处
+   Git-clone-Max.spec: 1 处
+   Git-clone-Max.spec: 1 处
+   Git-clone-Max.spec: 1 处
+   packaging/installer.iss: 1 处
+   packaging/installer.iss: 1 处
+   .claude-plugin/plugin.json: 1 处
+   docs/contract/cli_json.schema.json: 1 处
+   docs/contract/http_endpoints.schema.json: 1 处
+   docs/agent-contract.md: 1 处
+   docs/agent-contract.md: 3 处
+   docs/agent-contract.md: 1 处
+   packaging/winget/lza6.Git-clone-Max.yaml: 1 处
+   packaging/winget/lza6.Git-clone-Max.installer.yaml: 1 处
+   packaging/winget/lza6.Git-clone-Max.installer.yaml: 1 处
+   packaging/winget/lza6.Git-clone-Max.locale.zh-CN.yaml: 1 处
+   docs/architecture.md: 1 处
+   test_ledger.md: 1 处
+   README.md: 1 处
+   README.md: 3 处
+! gcm.__changelog__ 里没有 9.19.1: 条目 —— 版本守卫会红。
+  正确顺序：python scripts/changelog.py new --category … && python scripts/changelog.py build --version 9.19.1
+✗ 版本守卫未通过；回滚 14 个文件
+[ci_run_fast] >>> test_g84_exc_redact
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.044s
+
+OK
+[ci_run_fast] >>> test_g84_mcp_jobs
+.................
+----------------------------------------------------------------------
+Ran 17 tests in 0.109s
+
+OK
+[ci_run_fast] >>> test_g84_mcp_resources
+.......
+----------------------------------------------------------------------
+Ran 7 tests in 0.831s
+
+OK
+[ci_run_fast] >>> test_g84_quality_gates
+...........
+----------------------------------------------------------------------
+Ran 11 tests in 4.401s
+
+OK
+✗ ack gcm/ui/x.py:lines 必须带 --reason（无理由的豁免等于关闭门禁）
+[ci_run_fast] >>> test_g84_readme_import
+...........
+----------------------------------------------------------------------
+Ran 11 tests in 0.044s
+
+OK
+[ci_run_fast] >>> test_g84_settings_safety
+............
+----------------------------------------------------------------------
+Ran 12 tests in 0.152s
+
+OK
+[ci_run_fast] >>> test_g84_shutdown_and_cancel
+........
+----------------------------------------------------------------------
+Ran 8 tests in 0.695s
+
+OK
+[ci_run_fast] >>> test_g84_wiring
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 0.765s
+
+OK
+[ci_run_fast] >>> test_gh_api
+................
+----------------------------------------------------------------------
+Ran 16 tests in 0.003s
+
+OK
+[ci_run_fast] >>> test_git_thread_exit
+...
+----------------------------------------------------------------------
+Ran 3 tests in 5.033s
+
+OK
+[ci_run_fast] >>> test_history_delegate
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.001s
+
+OK
+[ci_run_fast] >>> test_i18n_coverage
+......
+----------------------------------------------------------------------
+Ran 6 tests in 1.725s
+
+OK
+[ci_run_fast] >>> test_launcher
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.446s
+
+OK
+[ci_run_fast] >>> test_local_dialog
+........................
+----------------------------------------------------------------------
+Ran 24 tests in 1.221s
+
+OK
+[ci_run_fast] >>> test_main
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.016s
+
+OK
+[ci_run_fast] >>> test_manage_ui
+...........................
+----------------------------------------------------------------------
+Ran 27 tests in 4.831s
+
+OK
+[ci_run_fast] >>> test_mem_baseline
+...s.
+----------------------------------------------------------------------
+Ran 5 tests in 0.022s
+
+OK (skipped=1)
+[ci_run_fast] >>> test_multi_url
+..................................
+----------------------------------------------------------------------
+Ran 34 tests in 0.002s
+
+OK
+[ci_run_fast] >>> test_mutation_smoke
+...........
+----------------------------------------------------------------------
+Ran 11 tests in 0.535s
+
+OK
+[ci_run_fast] >>> test_onboarding
+.............
+----------------------------------------------------------------------
+Ran 13 tests in 0.011s
+
+OK
+[ci_run_fast] >>> test_p11_halfclone_repair
+..............
+----------------------------------------------------------------------
+Ran 14 tests in 1.374s
+
+OK
+[ci_run_fast] >>> test_p14_skill_versioning
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.090s
+
+OK
+[ci_run_fast] >>> test_platform_branches
+..........
+----------------------------------------------------------------------
+Ran 10 tests in 0.025s
+
+OK
+[ci_run_fast] >>> test_progress_ui
+............
+----------------------------------------------------------------------
+Ran 12 tests in 0.763s
+
+OK
+[ci_run_fast] >>> test_proxy_detect
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.000s
+
+OK
+[ci_run_fast] >>> test_qss_validate
+...............
+----------------------------------------------------------------------
+Ran 15 tests in 0.096s
+
+OK
+[ci_run_fast] >>> test_qss_validate_extra
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 0.000s
+
+OK
+[ci_run_fast] >>> test_r01_prune
+...........
+----------------------------------------------------------------------
+Ran 11 tests in 0.600s
+
+OK
+[ci_run_fast] >>> test_r01_ready_wiring
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.273s
+
+OK
+[ci_run_fast] >>> test_r15_a11y_truth
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.000s
+
+OK
+[ci_run_fast] >>> test_r15_auto_theme
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.001s
+
+OK
+[ci_run_fast] >>> test_r15_destructive_defaults
+..
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+[ci_run_fast] >>> test_r15_manage_columns
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.988s
+
+OK
+[ci_run_fast] >>> test_r15_settings_workspace
+.......
+----------------------------------------------------------------------
+Ran 7 tests in 1.010s
+
+OK
+[ci_run_fast] >>> test_r15_touch
+..
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+[ci_run_fast] >>> test_rate_limit
+........
+----------------------------------------------------------------------
+Ran 8 tests in 0.014s
+
+OK
+[ci_run_fast] >>> test_redact
+...................
+----------------------------------------------------------------------
+Ran 19 tests in 0.001s
+
+OK
+[ci_run_fast] >>> test_repo_detail
+................
+----------------------------------------------------------------------
+Ran 16 tests in 0.054s
+
+OK
+[ci_run_fast] >>> test_repo_tags
+.......
+----------------------------------------------------------------------
+Ran 7 tests in 0.377s
+
+OK
+[ci_run_fast] >>> test_reports
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.269s
+
+OK
+[ci_run_fast] >>> test_reports2
+..............
+----------------------------------------------------------------------
+Ran 14 tests in 0.930s
+
+OK
+[ci_run_fast] >>> test_rev11_visual
+..................
+----------------------------------------------------------------------
+Ran 18 tests in 0.039s
+
+OK
+[ci_run_fast] >>> test_rev11_w2
+...................
+----------------------------------------------------------------------
+Ran 19 tests in 0.005s
+
+OK
+[ci_run_fast] >>> test_rev11_w4
+.................
+----------------------------------------------------------------------
+Ran 17 tests in 0.044s
+
+OK
+[ci_run_fast] >>> test_rev12_usability
+............................
+----------------------------------------------------------------------
+Ran 28 tests in 1.533s
+
+OK
+[ci_run_fast] >>> test_rev13_adapt
+.......
+----------------------------------------------------------------------
+Ran 7 tests in 8.739s
+
+OK
+[ci_run_fast] >>> test_rev14_a11y
+........
+----------------------------------------------------------------------
+Ran 8 tests in 0.232s
+
+OK
+[ci_run_fast] >>> test_rev14_adapt
+...............
+----------------------------------------------------------------------
+Ran 15 tests in 0.462s
+
+OK
+[ci_run_fast] >>> test_rev14_feedback
+..................
+----------------------------------------------------------------------
+Ran 18 tests in 1.308s
+
+OK
+[ci_run_fast] >>> test_rev14_keyboard
+...........
+----------------------------------------------------------------------
+Ran 11 tests in 0.185s
+
+OK
+[ci_run_fast] >>> test_rev14_pixel
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.039s
+
+OK
+[ci_run_fast] >>> test_rev14_skipped
+...
+----------------------------------------------------------------------
+Ran 3 tests in 5.293s
+
+OK
+[通知] 全部任务完成: 成功 0 · 冲突 0 · 失败 0 · 跳过 1
+[通知] 全部任务完成: 成功 0 · 冲突 0 · 失败 0 · 跳过 1
+[通知] 全部任务完成: 成功 0 · 冲突 0 · 失败 0 · 跳过 1
+[ci_run_fast] >>> test_s01_applog_default_path
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.017s
+
+OK
+[ci_run_fast] >>> test_s02_write_txn
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.410s
+
+OK
+[ci_run_fast] >>> test_s03_migration_atomic
+..FTS5/trigram 不可用，全文搜索降级为 LIKE：no such module: fts5
+.
+----------------------------------------------------------------------
+Ran 3 tests in 0.435s
+
+OK
+[ci_run_fast] >>> test_s04_tag_parity
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.442s
+
+OK
+[ci_run_fast] >>> test_s05_url_semantics
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.000s
+
+OK
+[ci_run_fast] >>> test_s06_queue_dedup
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.134s
+
+OK
+[ci_run_fast] >>> test_s07_rmw
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.361s
+
+OK
+[ci_run_fast] >>> test_s08_batch_results
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.134s
+
+OK
+[ci_run_fast] >>> test_s10_error_classify
+.......
+----------------------------------------------------------------------
+Ran 7 tests in 0.000s
+
+OK
+[ci_run_fast] >>> test_s11_command_log_and_preview
+..git 命令记录失败（观测缺一条，不影响主流程）：'NoneType' object is not subscriptable
+......
+----------------------------------------------------------------------
+Ran 8 tests in 0.035s
+
+OK
+[ci_run_fast] >>> test_scanner_perf
+........s.
+----------------------------------------------------------------------
+Ran 10 tests in 3.608s
+
+OK (skipped=1)
+[ci_run_fast] >>> test_security_hardening
+..........
+----------------------------------------------------------------------
+Ran 10 tests in 0.002s
+
+OK
+[ci_run_fast] >>> test_setting_ui
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.633s
+
+OK
+[ci_run_fast] >>> test_settings_scroll
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.694s
+
+OK
+[ci_run_fast] >>> test_settings_search
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.890s
+
+OK
+[ci_run_fast] >>> test_single_instance
+............
+----------------------------------------------------------------------
+Ran 12 tests in 4.098s
+
+OK
+[ci_run_fast] >>> test_single_instance_more
+....................
+----------------------------------------------------------------------
+Ran 20 tests in 0.024s
+
+OK
+[ci_run_fast] >>> test_statistics_dialog
+..
+----------------------------------------------------------------------
+Ran 2 tests in 0.160s
+
+OK
+[ci_run_fast] >>> test_statistics_dialog_more
+..........
+----------------------------------------------------------------------
+Ran 10 tests in 0.204s
+
+OK
+[ci_run_fast] >>> test_stats
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.238s
+
+OK
+[ci_run_fast] >>> test_themes
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 0.138s
+
+OK
+[ci_run_fast] >>> test_token
+..........
+----------------------------------------------------------------------
+Ran 10 tests in 0.592s
+
+OK
+[ci_run_fast] >>> test_token_secure
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 0.051s
+
+OK
+[ci_run_fast] >>> test_tray_progress
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.001s
+
+OK
+[ci_run_fast] >>> test_ui
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.732s
+
+OK
+[通知] 全部任务完成: 成功 0 · 冲突 0 · 失败 0
+[ci_run_fast] >>> test_ui_compact_visibility
+...
+----------------------------------------------------------------------
+Ran 3 tests in 8.241s
+
+OK
+[ci_run_fast] >>> test_update_auto
+......
+----------------------------------------------------------------------
+Ran 6 tests in 3.758s
+
+OK
+[ci_run_fast] >>> test_updater
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 2.001s
+
+OK
+[ci_run_fast] >>> test_updater_retry
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.129s
+
+OK
+[ci_run_fast] >>> test_url_history
+......
+----------------------------------------------------------------------
+Ran 6 tests in 1.045s
+
+OK
+[ci_run_fast] >>> test_v7_reliability
+...
+----------------------------------------------------------------------
+Ran 3 tests in 1.435s
+
+OK
+
+[ci_run_fast] 合计：Ran 2220 tests · failures=0 errors=0 skipped=4
+[ci_run_fast] OK
+
+[ci_run_fast] 进程退出，最后进入的模块：<全部完成>
+EXIT=0

@@ -1,0 +1,139 @@
+{
+  "task_id": "REV15-AUDIT-1",
+  "status": "partial",
+  "timestamp": "2026-11-10T22:30:00+08:00",
+  "baseline": {
+    "branch": "main",
+    "head": "0a6e6b1",
+    "version": "9.19.0"
+  },
+  "scope": "首轮全量审计 + 8 项低风险修复；未执行发布/部署",
+  "commands_executed": [
+    {
+      "cmd": "PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe -m coverage run --source=gcm scripts/ci_run_fast.py",
+      "exit_code": 0,
+      "raw_output_tail": "[ci_run_fast] 合计：Ran 2207 tests · failures=0 errors=0 skipped=4\n[ci_run_fast] OK",
+      "output_file": "fast_rev15_final.log"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe -m coverage report --include=\"gcm/*\"",
+      "exit_code": 0,
+      "raw_output_tail": "TOTAL 19698 3373 5036 884 81%"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_r15_a11y_truth tests.test_r15_destructive_defaults tests.test_r15_auto_theme",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 10 tests in ...\n\nOK"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_g33_startup tests.test_settings_scroll tests.test_g80_hygiene tests.test_r15_auto_theme",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 22 tests in ...\n\nOK"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe -m ruff check gcm",
+      "exit_code": 0,
+      "raw_output_tail": "All checks passed!"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe -m mypy gcm",
+      "exit_code": 0,
+      "raw_output_tail": "Success: no issues found in 146 source files"
+    },
+    {
+      "cmd": "PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe scripts/doc_drift_check.py",
+      "exit_code": 0,
+      "raw_output_tail": "DRIFT 0"
+    },
+    {
+      "cmd": "PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe scripts/i18n_coverage.py",
+      "exit_code": 0,
+      "raw_output_tail": "I18N OK"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe scripts/a11y_audit.py",
+      "exit_code": 0,
+      "raw_output_tail": "\"missing_total\": 0\n主操作 100% 有名字"
+    },
+    {
+      "cmd": "PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe scripts/health_check.py --json evidence/health_rev15.json",
+      "exit_code": 0,
+      "raw_output_tail": "[OK] started_ok: ready after 1802ms; repos.db=True settings.json=False\n{\"smoke_ms\": 1802, \"elapsed_ms\": 2270, \"started_ok\": true}",
+      "output_file": "evidence/health_rev15.json"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe scripts/bench_startup.py",
+      "exit_code": 0,
+      "raw_output_tail": "{\"qt_import_ms\": 20.7, \"ui_import_ms\": 91.1, \"ctor_ms\": 153.3, \"first_frame_ms\": 12.4, \"total_ms\": 283.5, \"exe_ms\": 1802}"
+    },
+    {
+      "cmd": "./.venv/Scripts/python.exe scripts/changelog.py check",
+      "exit_code": 0,
+      "raw_output_tail": "[OK] changelog 一致：88 条历史，4 条待发布碎片"
+    }
+  ],
+  "files_changed": [
+    "CLAUDE.md",
+    "README.md",
+    "docs/RELEASE_CHECKLIST.md",
+    "docs/architecture.md",
+    "docs/验证记录-2026-11-10-Rev15.md",
+    "gcm/i18n/en.py",
+    "gcm/i18n/zh.py",
+    "gcm/ui/a11y.py",
+    "gcm/ui/halfclone_actions.py",
+    "gcm/ui/main_window.py",
+    "gcm/ui/manage_panel.py",
+    "gcm/ui/settings_panel.py",
+    "gcm/ui/theme.py",
+    "gcm/ui/typography.py",
+    "scripts/a11y_audit.py",
+    "scripts/a11y_baseline.json",
+    "scripts/bench_startup.py",
+    "scripts/dev_metrics.py",
+    "scripts/health_check.py",
+    "test_ledger.md",
+    "tests/test_g79_repo_hygiene.py",
+    "tests/test_rev14_a11y.py"
+  ],
+  "files_added": [
+    "tests/test_r15_a11y_truth.py",
+    "tests/test_r15_auto_theme.py",
+    "tests/test_r15_destructive_defaults.py",
+    "evidence/health_rev15.json",
+    "changelog.d/theme-auto-immediate.fixed.md",
+    "changelog.d/destructive-default-no.fixed.md",
+    "changelog.d/health-smoke-ms.internal.md",
+    "changelog.d/a11y-audit-internal.internal.md",
+    "计划书/UI-跨设备适配与设计系统-Rev15-20261110.md"
+  ],
+  "tests": [
+    {"name": "Rev15 a11y truth", "type": "unit", "status": "passed", "evidence": "tests/test_r15_a11y_truth.py"},
+    {"name": "Rev15 destructive defaults", "type": "unit", "status": "passed", "evidence": "tests/test_r15_destructive_defaults.py"},
+    {"name": "Rev15 auto theme", "type": "unit", "status": "passed", "evidence": "tests/test_r15_auto_theme.py"},
+    {"name": "fast suite", "type": "integration", "status": "passed", "evidence": "fast_rev15_final.log"},
+    {"name": "health_check real exe", "type": "smoke", "status": "passed", "evidence": "evidence/health_rev15.json"},
+    {"name": "pytest? not used", "type": "unit", "status": "skipped", "evidence": "项目使用 unittest"}
+  ],
+  "coverage_summary": {
+    "lines": 81,
+    "branches": null,
+    "functions": null,
+    "statements": null
+  },
+  "seams_touched": ["S57", "S58", "S59"],
+  "mock_scenarios_covered": [],
+  "browser_validation": {
+    "performed": false,
+    "paths": [],
+    "screenshots": []
+  },
+  "limitations": [
+    "四路只读子代理因上游 API 504 全部中断，本轮为单流审计，未覆盖全部 37k 行代码的逐行审查",
+    "设置页 72/28、900px 导航、管理页列优先级、触摸 44px 未实施（属于 Rev15 计划，待用户审阅）",
+    "真实双屏拔插 / 混合 DPI / NVDA/JAWS 未验证（本机单屏，需真人交互环境）",
+    "macOS/Linux 未在本机运行；CI 由远端承接",
+    "test_g76_wiring 单模块直接运行 exit 127 在干净 HEAD 同样复现，属预存问题；快集 2207 例通过",
+    "未 commit / push / tag / Release / 部署；桌面单机无 staging/生产部署面"
+  ]
+}
