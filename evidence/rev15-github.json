@@ -1,0 +1,43 @@
+{
+  "task_id": "REV15-GITHUB-PUSH",
+  "status": "pushed_with_known_ci_block",
+  "timestamp": "2026-11-11T11:10:00+08:00",
+  "commit": "59fd382a7879f4b43ad8f003b94776c280ad8a67",
+  "branch": "main",
+  "remote": "https://github.com/lza6/Git-clone-Max.git",
+  "push": {
+    "command": "git push origin main",
+    "result": "0a6e6b1..59fd382 main -> main",
+    "exit_code": 0
+  },
+  "ci": {
+    "workflow": "CI",
+    "run_id": 42949364883,
+    "status": "completed",
+    "conclusion": "failure",
+    "green_jobs": [
+      "fast-smoke", "e2e-smoke", "perf-baseline",
+      "test (windows-latest)", "test (ubuntu-latest)", "slow"
+    ],
+    "skipped_jobs": ["packaging"],
+    "failed_jobs": ["test (macos-latest)"],
+    "failed_test": "tests.test_ui_compact_visibility.TestMainActionAreaFullyVisible at (1240,729)",
+    "known_issue": "macOS 字体度量差异导致的预存失败；此前 0a6e6b1 同样红，不是本轮 UI 回归；本机无 macOS 无法盲改验证",
+    "local_equivalent": "Windows 快集 2220 例 0 失败；慢集 129 例 OK"
+  },
+  "artifact_build": {
+    "performed": true,
+    "isolated_dist": "out/dist (removed after verification)",
+    "health_smoke_ms": 2303,
+    "health_ok": true,
+    "release": false
+  },
+  "release_blockers": [
+    "SettingsStore.update 缺失 / 旧快照覆盖",
+    "_DEFAULTS 浅拷贝污染",
+    "CLI 600s 超时仍返回 0/ok=true",
+    "自动重试/立即重试结果错行",
+    "MCP clone_batch/job_cancel 无审计行",
+    "macOS CI 预存失败未闭环"
+  ]
+}
