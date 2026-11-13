@@ -150,6 +150,9 @@ class MainWindow(QMainWindow):
         self.engine.result.connect(self._on_worker_result)
         # Rev14 F2：断点续传跳过的仓库也要把行推到终态（否则永远「等待中」）
         self.engine.skipped.connect(self._on_engine_skipped)
+        # Rev16 C4：重投批次是"新批次" —— UI 重建行 + 置回运行态。progress_panel
+        # 在 __init__ 后段才创建，这里连 self 的薄转发（转发时 getattr 防护）
+        self.engine.retry_batch_started.connect(self._on_retry_batch_started)
         self.engine.finished.connect(self._on_engine_finished)
         self.engine.adapt_changed.connect(self._on_adapt_changed)  # G48-1
         # 兼容旧引用（测试/托盘可能读 pool）
@@ -867,6 +870,15 @@ class MainWindow(QMainWindow):
         # 压扁，G78 为 chip 踩过同一个坑），所以每次布局切换按**当前** sizeHint 重设
         # 最小高度；矮窗口里让「可滚动」的顶部区先让位，而不是切掉常驻按钮。
         # 折叠后 sizeHint 自然变小，这里跟着走（不写死两套数字）。
+        # Rev16 B3：极矮折叠窗（<560，真机 911×512@150%）物理装不下全部 ——
+        # 输入框从 112 压到 96（QPlainTextEdit 内部可滚，地址不丢），让出的
+        # 16px 保「更多 ▸」完整可见（四个工具入口在那里）。
+        _ri = getattr(self, "repo_input", None)
+        if _ri is not None:
+            _h0 = int(self.height())
+            _ri.setMaximumHeight(96 if (_h0 <= 560 and
+                                        bool(getattr(self, "_tools_folded", False)))
+                                 else 112)
         _act = getattr(self, "download_actions", None)
         if _act is not None:
             # Rev14 F1：取 `sizeHint` 与 `minimumSizeHint` 的**较大者** —— 折叠后
@@ -891,9 +903,15 @@ class MainWindow(QMainWindow):
                 # 地址 + 选项 + 动作 + 进度**四块加起来超过整个可用高度**，物理上装不下：
                 # 此时保「更多 ▸」可达（四个工具入口在那里），地址退回可滚动 40 ——
                 # 这也是 Rev13 当年在同一尺寸上的取舍，实测一致（累计 408 > 369）。
+                # 复审 P1 更正：≥560 的折叠态本批曾误抬到 120，字号 1.3/1.6 极限窗
+                # （1020×584@1.3 / 900×480@1.6）的「更多 ▸」被裁到 7~15px —— 折叠态
+                # 的方向是**让位**，恢复 Rev15 的 110。
                 _min = 110 if _h >= 560 else 40
             else:
-                _min = 180 if not compact else (110 if _h < 640 else 120)
+                # Rev16 B3：180→150 / 120→96 —— 快捷填充行常驻后顶部固定需求 +42px，
+                # 1366/1024 的进度表被压到 2 行。顶部是**可滚动区**，让位符合
+                # 「可滚动的先吸收压缩」的既有原则；输入框 80px + 校验条仍放得下。
+                _min = 156 if not compact else (102 if _h < 640 else 114)
             self.download_top_scroll.setMinimumHeight(_min)
 
     def _apply_wide_layout(self, wide: bool) -> None:
@@ -936,6 +954,40 @@ class MainWindow(QMainWindow):
             if vh is not None and vh.defaultSectionSize() != row_h:
                 vh.setDefaultSectionSize(row_h)
 
+    def _apply_compact_visibility(self, compact: bool) -> None:
+        """Rev16 B3：紧凑/折叠态下的结论条、进度表、总览条与工具行让位。
+
+        从 `_apply_layout_mode` 抽出（该函数超 100 行守卫）。
+        """
+        _bc = getattr(self, "batch_conclusion", None)
+        if _bc is not None:
+            _bc.set_compact(compact)
+            # Rev14 F1：最矮的窗口（折叠态，<720）连结论条也要让位 ——
+            # 实测 1020×584@1.3/1.6 下第一行按钮还差 4–10px，结论条 22px+间距
+            # 正好补上。齿条仍显示「成功/失败」计数，信息不会丢；窗口一变大就恢复。
+            _bc.setVisible(not bool(getattr(self, "_tools_folded", False)))
+        # Rev11：紧凑下进度表 minH 120→94 —— 结论条占了顶部 ~24px 后，
+        # splitter 两侧 minHint 之和超过可用高度，会把动作区按钮裁 21px。
+        _pp = getattr(self, "progress_panel", None)
+        if _pp is not None:
+            # Rev13：折叠态下进度表也得再让位。Rev16 B3 再校正：折叠态压到 0 的
+            # 代价是 1366/1024/900 只能看到 2 行结果（挂机用户主要盯结果）——
+            # 折叠态保 3 行（~94px）；真机 900×504 的极限场景由「更多 ▸」+
+            # scroll=40 兜底，这里的 94 只在 ≥560 的折叠窗口生效。
+            if bool(getattr(self, "_tools_folded", False)):
+                _pp.table.setMinimumHeight(94)
+            else:
+                _pp.table.setMinimumHeight(94 if compact else 120)
+        # Rev14 F1：折叠态再让**信息重复**的条（batch_overview 与结论条同义）
+        # 与进度区的「搜索 / 自动排序 / 暂停选中」行（34px 正是「更多 ▸」被压的来源）。
+        _folded_now = bool(getattr(self, "_tools_folded", False))
+        _bo = getattr(_pp, "batch_overview", None) if _pp is not None else None
+        if _bo is not None:
+            _bo.setVisible(not _folded_now)
+        _tr_w = getattr(_pp, "_tools_row", None) if _pp is not None else None
+        if _tr_w is not None:
+            _tr_w.setVisible(not _folded_now)
+
     def _apply_layout_mode(self):
         """G70：Compact 下隐藏快捷填充按钮与设置分组导航（功能仍可手输）。"""
         try:
@@ -954,49 +1006,17 @@ class MainWindow(QMainWindow):
             # 实测 1024×768 截图里该行只剩一个**无标签的孤立「编辑」按钮**，
             # 既不是「整行隐藏」，也让人不知道它在编辑什么。现在保留标签，
             # 紧凑模式下这一行明确读作「快捷填充：［编辑］」，小屏仍够得到该入口。
-            for _name in ("quick_scroll",):
-                _w = getattr(self, _name, None)
-                if _w is not None:
-                    _w.setVisible(not compact)
-            # Rev11：结论条紧凑化（1020×560 硬地板；紧凑下只留铭牌+读数一行）。
-            # getattr 兜底而非 try/except pass（异常预算棘轮只降不升）。
-            _bc = getattr(self, "batch_conclusion", None)
-            if _bc is not None:
-                _bc.set_compact(compact)
-                # Rev14 F1：最矮的窗口（折叠态，<720）连结论条也要让位 ——
-                # 实测 1020×584@1.3/1.6 下第一行按钮还差 4–10px，结论条 22px+间距
-                # 正好补上。齿条仍显示「成功/失败」计数，信息不会丢；窗口一变大就恢复。
-                _bc.setVisible(not bool(getattr(self, "_tools_folded", False)))
-            # Rev11：紧凑下进度表 minH 120→94 —— 结论条占了顶部 ~24px 后，
-            # splitter 两侧 minHint 之和超过可用高度，会把动作区按钮裁 21px
-            # （test_ui_compact_visibility 1020×560 抓到的真回归）。表格是可滚动区，
-            # 让它让位符合「可滚动的先吸收压缩」的既有原则。
-            _pp = getattr(self, "progress_panel", None)
-            if _pp is not None:
-                # Rev13：折叠态下进度表也得再让位 —— 实测 900×480（真机 911×512）
-                # 时顶部 minHint 194 + 进度区 minHint 196 = 390 > splitter 361，
-                # 两个区一起被压 → 「更多 ▸」只剩 6/20px。进度表本身可滚动，
-                # 压到它自己的 minimumSizeHint（66）不影响可用性。
-                if bool(getattr(self, "_tools_folded", False)):
-                    # Rev14 F1：折叠态（窗口 < 720）下把表格让到 0 —— QSplitter 按子控件
-                    # 的 minimumSizeHint 夹取，表格每多要 1px 就是从动作区扣 1px。
-                    # 表格本身可滚动，压到 0 不伤可用性；常驻按钮被切才是真缺陷。
-                    _pp.table.setMinimumHeight(0)
-                else:
-                    _pp.table.setMinimumHeight(94 if compact else 120)
-            # Rev14 F1：折叠态再让一个**信息重复**的条 —— `batch_overview`
-            # （本批次完成度进度条）与结论条「已完成 x/y · 成功率」说的是同一件事，
-            # 最矮的窗口上留结论条（全屏唯一 display 读数）更要紧。
-            _folded_now = bool(getattr(self, "_tools_folded", False))
-            _bo = getattr(_pp, "batch_overview", None) if _pp is not None else None
-            if _bo is not None:
-                _bo.setVisible(not _folded_now)
-            # Rev14 F1：进度区的「搜索 / 自动排序 / 暂停选中」行在最矮窗口里也整行收起
-            # —— 它占 34px，而 QSplitter 按子控件 minimumSizeHint 夹取，这 34px 正是
-            # 动作区「更多 ▸」被压到 10/20px 的原因。
-            _tr_w = getattr(_pp, "_tools_row", None) if _pp is not None else None
-            if _tr_w is not None:
-                _tr_w.setVisible(not _folded_now)
+            # 复审 P2 更正：compact **未折叠**时只隐 chip 滚动区（quick_scroll），
+            # 保留「编辑/历史」入口（G79b 的既有契约：快捷填充行在紧凑档
+            # 读作「快捷填充：［编辑］」）。折叠态（<560 极矮窗）才整行让位。
+            _q_scroll = getattr(self, "quick_scroll", None)
+            if _q_scroll is not None:
+                _q_scroll.setVisible(not compact)
+            _q_host = getattr(self, "_quick_row_host", None)
+            if _q_host is not None:
+                _q_host.setVisible(
+                    not bool(getattr(self, "_tools_folded", False)))
+            self._apply_compact_visibility(compact)
             # G78：布局模式/缩放变化后，按 chip 真实高度重算滚动区高度
             # （构建时窗口还没定型，父级会把它压扁 → chip 底部被裁）
             try:
@@ -1051,20 +1071,24 @@ class MainWindow(QMainWindow):
         if _h <= 200:
             self.download_splitter.setSizes([380, 380])
             return
-        _top = max(240, min(380 if compact else 420, int(_h * 0.55)))
+        # Rev16 B3：快捷填充行搬进常驻链后，顶部固定需求 +42px。再按 55% 给顶部
+        # 会把 1366/1024 的进度表压到 2 行（挂机用户主要看结果）。改为：
+        # 顶部按**实际需求**给足，但不再保 240 下限 —— 进度表保底 3 行（~3*28+表头）。
+        _top = min(380 if compact else 420, int(_h * 0.48))
         _rest = max(120, _h - _top)
         _tc = self.download_splitter.widget(0)
         if _tc is not None:
             _need = int(_tc.minimumSizeHint().height())
             _pp = getattr(self, "progress_panel", None)
             _pp_need = int(_pp.minimumSizeHint().height()) if _pp is not None else 0
-            if _need + _pp_need <= _h:
-                _top = max(_top, _need)
-                _rest = max(_pp_need, _h - _top)
+            # 进度表保底：表头 + 3 行（挂机场景至少能看到 3 条结果在动）
+            _pp_rows_floor = max(_pp_need, 128)
+            if _need + _pp_rows_floor <= _h:
+                _rest = max(_pp_rows_floor, _h - max(_top, _need))
                 _top = max(0, _h - _rest)
             else:
                 _pp_floor = max(48, _pp_need // 3)
-                _top = max(_top, min(_need, max(0, _h - _pp_floor)))
+                _top = max(0, min(_need, max(0, _h - _pp_floor)))
                 _rest = max(0, _h - _top)
         self.download_splitter.setSizes([_top, _rest])
 
@@ -1243,6 +1267,11 @@ class MainWindow(QMainWindow):
         tc.setContentsMargins(0, 0, 0, 0)
         tc.setSpacing(6)
         tc.addWidget(self.batch_conclusion)
+        # Rev16 B3：快捷填充行常驻（原来在 download_top_scroll 里，1366/1024/900
+        # 首屏不可见）。放在结论条之后、滚动区之前 —— 一行 42px，高频入口全程可达。
+        _quick_host = getattr(self, "_quick_row_host", None)
+        if _quick_host is not None:
+            tc.addWidget(_quick_host)
         tc.addWidget(self.download_top_scroll, 1)
         tc.addWidget(options)
         tc.addWidget(actions)
@@ -2569,6 +2598,9 @@ class MainWindow(QMainWindow):
         self.engine.result.connect(self._on_worker_result)
         # Rev14 F2：断点续传跳过的仓库也要把行推到终态（否则永远「等待中」）
         self.engine.skipped.connect(self._on_engine_skipped)
+        # Rev16 C4：重投批次是"新批次" —— UI 重建行 + 置回运行态。progress_panel
+        # 在 __init__ 后段才创建，这里连 self 的薄转发（转发时 getattr 防护）
+        self.engine.retry_batch_started.connect(self._on_retry_batch_started)
         self.engine.finished.connect(self._on_engine_finished)
         self.pool = self.engine.pool
         # G22-4：托盘进度计数接入（托盘未安装时 update_counts 静默无效）
@@ -3091,6 +3123,12 @@ class MainWindow(QMainWindow):
                          clear_input=False, single_branch=False)
         except Exception as e:
             self._emit_log(_fmt_dt(), LogLevel.WARN, tr("看门狗续跑失败：{e}").format(e=e))
+
+    def _on_retry_batch_started(self, n: int):
+        """Rev16 C4：重投批次开始 → 转发给进度表（progress_panel 可能尚未创建）。"""
+        panel = getattr(self, "progress_panel", None)
+        if panel is not None:
+            panel._on_retry_batch_started(n)
 
     def _on_engine_finished(self):
         """G45-6 转发 progress_table.py（行为零变化；G52-3 复位看门狗）。"""

@@ -608,8 +608,19 @@ class ProgressTable(QWidget):
         if strip is not None:
             strip.note_result(getattr(res.status, "value", str(res.status)))
             strip.note_active(len(self._strip_running))
-        # G35-8 状态格 tooltip：message + detail 拼接（与详情列 tooltip 互补）
-        st.setToolTip(f"{res.message or ''}" + (f"\n{res.detail or ''}" if res.detail else ""))
+        # G35-8 状态格 tooltip：message + detail 拼接（与详情列 tooltip 互补）。
+        # Rev16 D3：取数通道（mirror_used）/降级链（degrade_path）此前只到
+        # CLI --json，GUI 用户看不到。有值才拼进状态格 tooltip。
+        _mu = str(getattr(res, "mirror_used", "") or "")
+        _dp = str(getattr(res, "degrade_path", "") or "")
+        _tip = res.message or ""
+        if res.detail:
+            _tip = (_tip + chr(10) + res.detail) if _tip else res.detail
+        if _mu:
+            _tip += chr(10) + tr("镜像") + ": " + _mu
+        if _dp:
+            _tip += chr(10) + tr("降级链") + ": " + _dp
+        st.setToolTip(_tip)
         act = self.table.item(row, 3)
         action_label = _action_text(res.action, res.commits)
         if act is not None:
@@ -661,6 +672,12 @@ class ProgressTable(QWidget):
                        f"[{index}] {text}" if index is not None else text)
 
     @pyqtSlot()
+
+    def _on_retry_batch_started(self, n: int):
+        """Rev16 C4：转发到 retry_batch.py（本文件 800 行红线，见模块头）。"""
+        from .retry_batch import on_retry_batch_started
+        on_retry_batch_started(self.owner, n)
+
     def _on_engine_finished(self):
         if not self.owner.busy:
             return

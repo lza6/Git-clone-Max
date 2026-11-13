@@ -45,6 +45,17 @@ _MAIN_ACTION_WIDGETS = (
 )
 
 #: 见模块 docstring：每个尺寸都有来源，不是随手写的。
+def _font_diag() -> str:
+    """失败消息附带字体度量（macOS CI 1240×729 预存红的定位信息）。"""
+    try:
+        from PyQt6.QtWidgets import QApplication
+        f = QApplication.font()
+        return (f"[诊断] 字体={f.family()}({f.pointSize()}pt) "
+                f"像素大小={f.pixelSize()}")
+    except Exception:
+        return "[诊断] 字体信息不可用"
+
+
 _SIZES = (
     (1920, 1080), (1440, 900), (1366, 768), (1280, 800),
     (1240, 729), (1216, 684), (1093, 614), (1024, 768), (1020, 560),
@@ -126,7 +137,8 @@ class TestMainActionAreaFullyVisible(unittest.TestCase):
                     bad, [],
                     f"{size} 下主操作区控件被裁切/缺失：{bad}\n"
                     "主操作区必须常驻可见，或（仅工具行）折叠进「更多 ▸」菜单里可点开；"
-                    "顶部可滚动区可以让位，这些不行")
+                    "顶部可滚动区可以让位，这些不行\n"
+                    + _font_diag())
 
     def test_the_two_real_laptop_sizes_are_exactly_what_clamp_produces(self):
         """反向自检：被判定的两个「笔记本尺寸」必须是真的由 clamp 算出来的。

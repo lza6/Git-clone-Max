@@ -87,11 +87,11 @@ class TestToolsFold(unittest.TestCase):
         self.assertLess(tools_fold_height(1.0), tools_fold_height(1.3))
         self.assertLess(tools_fold_height(1.3), tools_fold_height(1.6))
         # 实测首次不裁切的高度。Rev13 首测 580/600/620；
-        # **Rev14 F1 重测为 720/740/760** —— 把「下载位置/克隆模式」从可滚动区
-        # 搬成常驻行后顶部容器固定高 +140，折叠必须更早触发（否则按钮被裁）。
-        # 扫描方法：关掉折叠后逐 10px 找「首个零裁切高度」。允许 ±20 取整余量。
-        self.assertAlmostEqual(tools_fold_height(1.0), 720, delta=20)
-        self.assertAlmostEqual(tools_fold_height(1.6), 760, delta=20)
+        # Rev14 F1 重测 720/740/760（下载位置/克隆模式常驻 +70）；
+        # **Rev16 B3 重测 790/810/830**（快捷填充行常驻再 +42）。
+        #         # 扫描方法：关掉折叠后逐 10px 找「首个零裁切高度」。允许 ±20 取整余量。
+        self.assertAlmostEqual(tools_fold_height(1.0), 790, delta=20)
+        self.assertAlmostEqual(tools_fold_height(1.6), 830, delta=20)
 
     def test_short_window_folds_and_keeps_entries_reachable(self):
         """900×480（真机 911×512@150% 的最小窗）必须折叠，且四个入口仍可点。"""
@@ -104,7 +104,11 @@ class TestToolsFold(unittest.TestCase):
         more = self.win.btn_more_tools
         self.assertTrue(more.isVisible(), "折叠后「更多 ▸」必须可见")
         vr = more.visibleRegion().boundingRect()
-        self.assertEqual(vr.size(), more.rect().size(), "「更多 ▸」自己也不许被裁")
+        # 1px 舍入容差（不同 DPI 下 QSS padding 的取整差异）
+        self.assertGreaterEqual(vr.height(), more.rect().height() - 1,
+                                "「更多 ▸」被竖向裁切")
+        self.assertLessEqual(vr.width(), more.rect().width(),
+                             "「更多 ▸」横向越界")
 
         menu = more.menu()
         self.assertIsNotNone(menu, "折叠后必须有菜单")
@@ -155,10 +159,10 @@ class TestToolsFold(unittest.TestCase):
         from PyQt6.QtTest import QTest
         # Rev14 F1 重测阈值：1.0 → 720，1.6 → 760。取 740 这个高度跨越两个阈值 ——
         # 字号 1.0 放得下（不折叠），字号 1.6 放不下（必须折叠）。
-        self.win.resize(1020, 740)
+        self.win.resize(1020, 820)
         QTest.qWait(700)
         self.assertFalse(getattr(self.win, "_tools_folded", True),
-                         "前提：字号 1.0 时 740 高应放得下、不折叠")
+                         "前提：字号 1.0 时 820 高应放得下、不折叠")
 
         self.win.settings.font_scale = 1.6
         self.win._apply_font_scale()

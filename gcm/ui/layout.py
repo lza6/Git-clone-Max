@@ -45,7 +45,7 @@ def should_fold_tools(top_available: int, top_needed: int) -> bool:
 # 顶部容器固定高 +70，同一个窗口高度下留给动作区的空间少了 70 → 折叠必须更早触发，
 # 否则工具行会被裁（实测 1216×684 下 btn_open 只剩 16/42）。
 # 这次抬高是**用滚动换常驻**的必然代价：搬出来的两个控件原先被裁到 6px（更严重）。
-TOOLS_FOLD_HEIGHT_BASE = 720
+TOOLS_FOLD_HEIGHT_BASE = 790
 TOOLS_FOLD_HEIGHT_SLOPE = 66.7
 
 

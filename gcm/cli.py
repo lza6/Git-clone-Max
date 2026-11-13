@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time as _time
 from pathlib import Path
 
 from gcm import __version__ as CONTRACT_VERSION
@@ -33,6 +34,36 @@ ECODE_MCP_DISABLED = 3
 # G80-B1 修复：原实现只看 failed，conflict/cancelled 会返回 0 且 ok=true，
 # 下游自动化把「冲突保留」「被取消」当成成功 —— 与文档承诺不一致。
 _FAILURE_STATUSES = ("failed", "conflict", "cancelled")
+# Rev16 C3：run_clone 的兜底等待窗口（原 600.0 内联值，提出来供测试压缩与契约锚定）
+_CLI_TIMEOUT_SEC = 600.0
+
+
+def _timeout_finalize(app, engine, results: list, json_mode: bool) -> None:
+    """兜底窗口到期仍在跑：取消 + 给未完成项合成 CANCELLED 终态（Rev16 C3）。
+
+    原行为：循环退出后直接按已收结果算退出码 —— 引擎 busy=True、部分仓库
+    永远没有 result，CLI 却返回 `ok=true` / exit 0，下游自动化把「部分成功」
+    当「全成功」。复现：stub 引擎睡死，1 成功 / 8 请求 → ok=true。
+
+    现行为：`cancel_all()` 让引擎为待发队列合成 CANCELLED；在跑的 worker 会
+    在下一次取消检查点退出并报 CANCELLED，轮询泵到它们落地；引擎回到非 busy
+    后再算退出码 —— 有 cancelled 就是非 0，契约与行为一致。
+    """
+    # cancel_all 内部对每个 flag/pending 项都有自己的兜底；它若仍抛出，让异常
+    # 传到 run_clone 调用方（进程退出码非 0），好过静默返回 ok=true。
+    engine.cancel_all()
+    deadline = _time.time() + _CLI_TIMEOUT_FINALIZE_SEC
+    while engine.busy and _time.time() < deadline:
+        app.processEvents()
+        _time.sleep(0.02)
+    if engine.busy and json_mode:
+        # worker 卡死在不可取消的子进程里：如实上报，不再谎报成功
+        _eprint("[CLI] engine still busy after timeout finalize "
+                "(worker stuck in uncancellable subprocess)")
+
+
+# 超时收尾最多再等 30s 让 worker 走完取消检查点
+_CLI_TIMEOUT_FINALIZE_SEC = 30.0
 
 
 def _exit_code_of(counts: dict[str, int]) -> int:
@@ -179,8 +210,6 @@ def run_clone(app, specs, invalid: list[str], root: Path, json_mode: bool,
     后续 `QEventLoop.exec()` 会立即返回（实测 0.0s、结果为空），CLI 误报成功。
     轮询在当前进程里始终可用，语义等价（同样的 600s 上限）。
     """
-    import time as _time
-
     from gcm.app.engine import SyncEngine
     root.mkdir(parents=True, exist_ok=True)
     # v9.12.1：内置国内镜像已永久清空（实测比直连慢 8 倍），CLI 一律直连源站。
@@ -214,11 +243,17 @@ def run_clone(app, specs, invalid: list[str], root: Path, json_mode: bool,
             print("[CLI] 无可调度任务")
         return 0
     # 10 分钟兜底，避免无限等待；用轮询而非 QEventLoop（见 docstring）。
-    deadline = _time.time() + 600.0
+    deadline = _time.time() + _CLI_TIMEOUT_SEC
     while engine.busy and _time.time() < deadline:
         app.processEvents()
         _time.sleep(0.02)
     app.processEvents()
+    if engine.busy:
+        # Rev16 C3：兜底窗口到期仍在跑 = 有仓库未收敛。取消并给未完成项合成
+        # CANCELLED 终态，退出码按「有 cancelled」算 1 —— agent/MCP/HTTP 消费
+        # 方不能再把「部分成功」当「全成功」（复审实测：1 成功 / 8 请求 →
+        # ok=true / exit 0）。
+        _timeout_finalize(app, engine, results, json_mode)
     counts = _counts_of(results)
     ok = counts.get("success", 0)
     fail = counts.get("failed", 0)

@@ -54,3 +54,8 @@ workflow_status.md
 reports/ui-s011/
 reports/ui-s012/
 reports/ui-s013/
+
+# Rev16 B4：固定像素基线（小样本，随仓库版本化）。它**不是**可重建产物 ——
+# 是 UI 回归的比对基准；更新基线必须走 scripts/update_ui_baseline.py 并在
+# 验证记录里说明原因（哪张图、为什么合法变化）。
+!docs/screenshots/

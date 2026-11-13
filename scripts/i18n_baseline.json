@@ -1,5 +1,5 @@
 {
-  "total": 744,
+  "total": 746,
   "by_file": {
     "gcm/git/service.py": 121,
     "gcm/mcp_server.py": 69,
@@ -55,6 +55,7 @@
     "gcm/db/repo_search.py": 2,
     "gcm/db/stage_stats.py": 2,
     "gcm/ui/download_tools.py": 2,
+    "gcm/ui/retry_batch.py": 2,
     "gcm/util/dpapi.py": 2,
     "gcm/util/filelock.py": 2,
     "gcm/app/diag_bundle.py": 1,

@@ -70,14 +70,14 @@
 | ADR-003 | 凭据加密落盘（DPAPI/Keyring/XOR 降级）+ redact 全出口打码 |
 | ADR-004 | 生态 agent 化：CLI --json 契约 + MCP 只读 + HTTP API 默认只读（显式 enable 才可写） |
 
-## 4. 模块规模基线（2026-11-11 v9.19.0 实测，`python scripts/dev_metrics.py` 可一键复测）
+## 4. 模块规模基线（2026-11-13 v9.19.1 实测，`python scripts/dev_metrics.py` 可一键复测）
 
 | 模块 | 行数 | 职责 |
 |------|------|------|
-| `gcm/ui/main_window.py` | 3622 | 主窗编排（已登记技术债；引擎构造在 `engine_factory.py`、顶栏齿条在 `status_strip.py`、批次结论条在 `batch_conclusion.py`） |
+| `gcm/ui/main_window.py` | 3660 | 主窗编排（已登记技术债；引擎构造在 `engine_factory.py`、顶栏齿条在 `status_strip.py`、批次结论条在 `batch_conclusion.py`） |
 | `gcm/git/service.py` | 1990 | Git 操作全链路（`_update` 已拆为 `_update_bare_mirror`/`_fetch_remote`/`_merge_remote`） |
-| `gcm/app/engine.py` | 1714 | 调度/并发/进度/重试/会话/事件发布 |
-| `gcm/ui/progress_table.py` | 775 | 进度表（delegate→`progress_delegate.py`、批次总览→`batch_overview.py`、结果文案→`result_labels.py`、行动效→`row_anim.py`、左缘刻度→`edge_ruler.py`） |
+| `gcm/app/engine.py` | 1723 | 调度/并发/进度/重试/会话/事件发布 |
+| `gcm/ui/progress_table.py` | 792 | 进度表（delegate→`progress_delegate.py`、批次总览→`batch_overview.py`、结果文案→`result_labels.py`、行动效→`row_anim.py`、左缘刻度→`edge_ruler.py`） |
 | `gcm/db/repo_db.py` | 752 | SQLite 数据层 |
 | `gcm/ui/settings_panel.py` | 746 | 设置 UI（分组构建器在 `settings_groups.py`） |
 | `gcm/ui/settings_groups.py` | 790 | 设置分组构建器（7 个组） |
@@ -93,7 +93,7 @@
 | `gcm/ui/update_flow.py` | 205 | 更新检查三段（手动/结果槽/启动静默）+ 唯一 patch 点约定 |
 | `gcm/ui/settings_workspace.py` | 237 | 设置页 72/28 分割 + 窄窗分组下拉（Rev15 R15-03/04） |
 | `gcm/ui/log_panel.py` | 62 | 黑匣子日志组构建（Rev15 R15-00 从 settings_panel 迁出） |
-| `gcm/ui/manage_table.py` | 143 | 管理页列宽策略/持久化 mixin（Rev15 R15-00 从 manage_panel 迁出） |
+| `gcm/ui/manage_table.py` | 152 | 管理页列宽策略/持久化 mixin（Rev15 R15-00 从 manage_panel 迁出） |
 
 > 当前 **5 个**文件超项目硬上限 800 行（`main_window` / `service` / `engine`，
 > 以及生成式字典 `gcm/i18n/zh.py` / `gcm/i18n/en.py`；后两者一行一条文案，

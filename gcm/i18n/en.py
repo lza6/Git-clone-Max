@@ -8,6 +8,8 @@ EN = {
     '有效 {ok} / 无效 {bad}：{items}{more}': 'Valid {ok} / invalid {bad}: {items}{more}',
     '开始使用清单': 'Getting-started checklist',
     '列出从零开始需要做的几件事，并显示完成进度': 'List the steps to get going, with progress',
+    '镜像': 'Mirror',
+    '降级链': 'Degrade chain',
     '引导清单': 'Checklist',
     '按顺序做完这几件事，就能稳定地批量下载了（已完成 {done}/{total}）': 'Finish these in order and batch downloads will just work ({done}/{total} done)',
     '设置下载目录': 'Set the download directory',

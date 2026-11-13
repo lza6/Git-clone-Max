@@ -7,6 +7,7 @@ G06-1：token 安全存储 —— 落盘前加密（Windows DPAPI / macOS Keycha
 from __future__ import annotations
 
 import base64
+import copy
 import json
 import os
 import threading
@@ -430,8 +431,10 @@ class SettingsStore:
                 except Exception:
                     # 主文件损坏 → 尝试从 .bak 恢复，仍失败则兜底默认值不崩
                     raw = self._try_restore_backup()
-            # 只取已知字段的类型安全合并
-            merged = dict(_DEFAULTS)
+            # 只取已知字段的类型安全合并。必须**深拷贝**：`dict(_DEFAULTS)` 浅拷贝
+            # 让嵌套 dict（ui_state / host_tokens）与模块级默认值共享同一对象，
+            # 第一个实例就地改写 `ui_state` 后，之后所有新实例的「默认值」都被污染。
+            merged = copy.deepcopy(_DEFAULTS)
             for k in _DEFAULTS:
                 if k in raw:
                     try:
@@ -476,100 +479,132 @@ class SettingsStore:
             pass
         return {}
 
+    def update(self, **patch) -> None:
+        """锁内读-改-写：只改 `patch` 里的字段，其余字段保留磁盘现值。
+
+        Rev16 C1（changelog 9.18.9 假闭环的补齐）：此前 UI 各回调走
+        `save(旧快照)` —— 两个实例同时开着时，「随手拖一下列宽」会把另一个
+        实例刚改的并发数/凭据回滚成旧值。`update()` 在同一个跨进程临界区内
+        重读磁盘，只覆盖显式给出的字段，多写者不再互相踩。
+        加密字段（token/host_tokens/proxy/webhook/IM）传**明文**进来即可，
+        走与 `save()` 同一套落盘加密；未提及的字段密文原样保留。
+        """
+        if not patch:
+            return
+        with self._lock, cross_process_lock(self.path, label="settings.json"):
+            s = self.load()
+            for k, v in patch.items():
+                if not hasattr(s, k):
+                    raise ValueError(f"unknown settings field: {k}")
+                setattr(s, k, v)
+            normalize_settings(s)
+            self._save_locked(s)
+
     def save(self, s: Settings) -> None:
         """原子写 settings.json；token 加密落盘。每次保存前把当前文件备份到 .bak。
 
         G67-10：整个「备份 → 写 tmp → os.replace」都在跨进程临界区内完成 ——
         否则两个实例并发保存时，各自基于旧内容写 .bak / 覆盖主文件，仍会丢更新。
+
+        语义约定（Rev16 复审后确立）：`save()` 的调用契约是「调用方刚改过
+        这个快照并要求整份生效」—— 多字段联动保存（设置页 40+ 回调）与
+        凭据显式清除（`forget_undecryptable` 后清空）都依赖它原样落盘，
+        **不做**磁盘合并（启发式会拦住合法的清空操作）。只想改个别字段、
+        不确定快照新旧的多写者场景（列宽/分割比例等 UI 工作区写入点）
+        用 `update()`。
         """
         with self._lock, cross_process_lock(self.path, label="settings.json"):
-            payload = asdict(s)
-            # G06-1：token 落盘前加密（绝不明文）
-            if payload.get("token"):
-                payload["token"] = _encrypt_token(payload["token"])
-            # G38-1：host_tokens 逐条目加密（杜绝任一 host 凭据明文落盘）
-            ht = payload.get("host_tokens") or {}
-            if isinstance(ht, dict):
-                ht = {str(k): _encrypt_token(str(v)) for k, v in ht.items() if str(k)}
-                payload["host_tokens"] = ht
-            # G49-7：Webhook token 与主 token 同策略加密落盘
-            if payload.get("notify_webhook_token"):
-                payload["notify_webhook_token"] = _encrypt_token(payload["notify_webhook_token"])
-            # G59-7：企业 IM webhook token 同策略加密落盘
-            if payload.get("alert_im_token"):
-                payload["alert_im_token"] = _encrypt_token(payload["alert_im_token"])
-            # G58-3：HTTP 代理串可能内嵌 `user:pass@` —— 与 token 同策略加密落盘。
-            # 原实现直接 `asdict` 落盘 → 代理口令**明文**留在 settings.json，
-            # 与「凭据绝不明文落盘」的项目红线冲突（token/host_tokens/webhook/IM
-            # 都已加密，唯独 proxy 漏了）。
-            if payload.get("proxy"):
-                payload["proxy"] = _encrypt_token(payload["proxy"])
-            # G84-8：**解密失败的密文必须原样保回**（本函数末尾之前的最后一步，
-            # 因为上面各步会对值做 `_encrypt_token`，而它不幂等 —— 对已是密文的值
-            # 再加密一次就彻底废了）。触发场景：换机器/系统密钥变更/DPAPI 后端缺失
-            # → `load()` 把该字段读成空串 → 用户只是改了个并发数 → save() 把空串
-            # 加密落盘 → 用户原本还能手工救回的密文永久消失。
-            for _field, _cipher in self._undecryptable.items():
-                if _field.startswith("host_tokens."):
-                    _key = _field.split(".", 1)[1]
-                    _ht = payload.get("host_tokens") or {}
-                    # R9（审查发现）：只有**该 host 仍存在且值为空**才保留原密文。
-                    # 用户在「按平台凭据」里整行删掉某个 host = 明确要删除它，
-                    # 原实现会把这个 key 又塞回去（等于删不掉）。
-                    if isinstance(_ht, dict) and _key in _ht and not str(_ht.get(_key) or ""):
-                        _ht[_key] = _cipher
-                        payload["host_tokens"] = _ht
-                elif not str(payload.get(_field) or ""):
-                    payload[_field] = _cipher
-            # G67-23：tmp 文件名**必须含 pid+线程 id**。
-            # 原实现固定用 `settings.json.tmp`：同进程多线程并发保存时，两个线程
-            # 会同时 open 同一个 tmp 路径 —— 后开者截断前者的内容，先完成者
-            # `os.replace` 走了 tmp，后完成者就撞上 `PermissionError [WinError 5]`
-            # （Windows 不允许替换/删除仍被占用的文件）。
-            # 实测：8 线程 x 全速 churn 时 3 次失败 —— 不丢已有数据（原子替换本身安全），
-            # 但那一次保存被**静默丢弃**（save 只抛给调用方，UI 层没兜住），
-            # 用户表现为「刚改的设置没保存」。
-            tmp = self.path.with_name(
-                f"{self.path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-            # G84-9：写完必须 flush+fsync **再** replace。
-            # 原来只有 `write_text` → `os.replace`：`replace` 只保证「目录项原子」，
-            # 不保证「内容已经落盘」。掉电/蓝屏时可能出现目录项已指向新 inode、
-            # 但文件内容仍是零长度的情形 —— 而 settings.json 里装着全部凭据，
-            # 这一次丢失等于全丢。这里补上 `atomic_io` 早就有的那半个语义。
-            _write_text_synced(
-                tmp, json.dumps(payload, ensure_ascii=False, indent=2))
-            # G06-8：备份当前磁盘上的旧文件到 .bak（读入内存再写，避免 replace 后取不到旧内容）
+            self._save_locked(s)
+
+    def _save_locked(self, s: Settings) -> None:
+        """写盘主体（调用方必须已持有 `_lock` + 文件锁）。"""
+        payload = asdict(s)
+        # G06-1：token 落盘前加密（绝不明文）
+        if payload.get("token"):
+            payload["token"] = _encrypt_token(payload["token"])
+        # G38-1：host_tokens 逐条目加密（杜绝任一 host 凭据明文落盘）
+        ht = payload.get("host_tokens") or {}
+        if isinstance(ht, dict):
+            ht = {str(k): _encrypt_token(str(v)) for k, v in ht.items() if str(k)}
+            payload["host_tokens"] = ht
+        # G49-7：Webhook token 与主 token 同策略加密落盘
+        if payload.get("notify_webhook_token"):
+            payload["notify_webhook_token"] = _encrypt_token(payload["notify_webhook_token"])
+        # G59-7：企业 IM webhook token 同策略加密落盘
+        if payload.get("alert_im_token"):
+            payload["alert_im_token"] = _encrypt_token(payload["alert_im_token"])
+        # G58-3：HTTP 代理串可能内嵌 `user:pass@` —— 与 token 同策略加密落盘。
+        # 原实现直接 `asdict` 落盘 → 代理口令**明文**留在 settings.json，
+        # 与「凭据绝不明文落盘」的项目红线冲突（token/host_tokens/webhook/IM
+        # 都已加密，唯独 proxy 漏了）。
+        if payload.get("proxy"):
+            payload["proxy"] = _encrypt_token(payload["proxy"])
+        # G84-8：**解密失败的密文必须原样保回**（本函数末尾之前的最后一步，
+        # 因为上面各步会对值做 `_encrypt_token`，而它不幂等 —— 对已是密文的值
+        # 再加密一次就彻底废了）。触发场景：换机器/系统密钥变更/DPAPI 后端缺失
+        # → `load()` 把该字段读成空串 → 用户只是改了个并发数 → save() 把空串
+        # 加密落盘 → 用户原本还能手工救回的密文永久消失。
+        for _field, _cipher in self._undecryptable.items():
+            if _field.startswith("host_tokens."):
+                _key = _field.split(".", 1)[1]
+                _ht = payload.get("host_tokens") or {}
+                # R9（审查发现）：只有**该 host 仍存在且值为空**才保留原密文。
+                # 用户在「按平台凭据」里整行删掉某个 host = 明确要删除它，
+                # 原实现会把这个 key 又塞回去（等于删不掉）。
+                if isinstance(_ht, dict) and _key in _ht and not str(_ht.get(_key) or ""):
+                    _ht[_key] = _cipher
+                    payload["host_tokens"] = _ht
+            elif not str(payload.get(_field) or ""):
+                payload[_field] = _cipher
+        # G67-23：tmp 文件名**必须含 pid+线程 id**。
+        # 原实现固定用 `settings.json.tmp`：同进程多线程并发保存时，两个线程
+        # 会同时 open 同一个 tmp 路径 —— 后开者截断前者的内容，先完成者
+        # `os.replace` 走了 tmp，后完成者就撞上 `PermissionError [WinError 5]`
+        # （Windows 不允许替换/删除仍被占用的文件）。
+        # 实测：8 线程 x 全速 churn 时 3 次失败 —— 不丢已有数据（原子替换本身安全），
+        # 但那一次保存被**静默丢弃**（save 只抛给调用方，UI 层没兜住），
+        # 用户表现为「刚改的设置没保存」。
+        tmp = self.path.with_name(
+            f"{self.path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        # G84-9：写完必须 flush+fsync **再** replace。
+        # 原来只有 `write_text` → `os.replace`：`replace` 只保证「目录项原子」，
+        # 不保证「内容已经落盘」。掉电/蓝屏时可能出现目录项已指向新 inode、
+        # 但文件内容仍是零长度的情形 —— 而 settings.json 里装着全部凭据，
+        # 这一次丢失等于全丢。这里补上 `atomic_io` 早就有的那半个语义。
+        _write_text_synced(
+            tmp, json.dumps(payload, ensure_ascii=False, indent=2))
+        # G06-8：备份当前磁盘上的旧文件到 .bak（读入内存再写，避免 replace 后取不到旧内容）
+        old = b""
+        try:
+            if self.path.exists():
+                old = self.path.read_bytes()
+        except Exception:
             old = b""
+        if old:
             try:
-                if self.path.exists():
-                    old = self.path.read_bytes()
+                bak = self.path.with_suffix(".json.bak")
+                _write_bytes_synced(bak, old)
             except Exception:
-                old = b""
-            if old:
-                try:
-                    bak = self.path.with_suffix(".json.bak")
-                    _write_bytes_synced(bak, old)
-                except Exception:
-                    pass
-            # G67-23：`os.replace` 在 Windows 上会因**目标文件被他人打开读取**而报
-            # `PermissionError [WinError 5]`（读写共享冲突）—— 即使 tmp 名唯一、
-            # 且我们持有跨进程写锁，同进程的读者仍可能恰好持有目标句柄。
-            # 因此做有限次退避重试；仍失败才上抛（不静默吞掉，那是上一版的另一个坑）。
-            last_err: Exception | None = None
-            for attempt in range(_REPLACE_RETRIES):
-                try:
-                    os.replace(tmp, self.path)  # 原子写
-                    last_err = None
-                    break
-                except PermissionError as e:
-                    last_err = e
-                    time.sleep(_REPLACE_BACKOFF_SEC * (attempt + 1))
-            if last_err is not None:
-                try:
-                    tmp.unlink(missing_ok=True)
-                except Exception:
-                    pass
-                raise last_err
+                pass
+        # G67-23：`os.replace` 在 Windows 上会因**目标文件被他人打开读取**而报
+        # `PermissionError [WinError 5]`（读写共享冲突）—— 即使 tmp 名唯一、
+        # 且我们持有跨进程写锁，同进程的读者仍可能恰好持有目标句柄。
+        # 因此做有限次退避重试；仍失败才上抛（不静默吞掉，那是上一版的另一个坑）。
+        last_err: Exception | None = None
+        for attempt in range(_REPLACE_RETRIES):
+            try:
+                os.replace(tmp, self.path)  # 原子写
+                last_err = None
+                break
+            except PermissionError as e:
+                last_err = e
+                time.sleep(_REPLACE_BACKOFF_SEC * (attempt + 1))
+        if last_err is not None:
+            try:
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+            raise last_err
 
 
 def _coerce(key: str, val):

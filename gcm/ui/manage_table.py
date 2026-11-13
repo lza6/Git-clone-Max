@@ -112,8 +112,11 @@ class ManageColumnMixin:
                 widths[str(col)] = cur
         cur_state = self._ui_state_dict()
         cur_state["manage_columns"] = widths
+        # Rev16 C1：走 `update()`（锁内读-改-写）。此前 `store.save(st)` 用旧快照
+        # 整份覆盖 —— 两个实例同时开着时，拖一下列宽就把另一窗口刚改的并发数
+        # 回滚掉；凭据类字段也绝不能被陈旧快照写盘。
         st.ui_state = cur_state
-        store.save(st)
+        store.update(ui_state=cur_state)
 
     def apply_column_budget(self, narrow: bool, wide: bool = False) -> None:
         """按窗口档位重排定宽列（Rev14 R14-06）。
@@ -137,6 +140,12 @@ class ManageColumnMixin:
             if wide:
                 want = max(want, wide_w)
             widths[col] = want
+        # Rev16 D1：布局重排（resize/最大化/主题切换触发）会 `_set_column_widths`
+        # → `timer.stop()`。若用户刚拖完列宽（400ms 防抖还没到），待落盘宽度
+        # 会被一起吞掉。重排前先把防抖定时器里挂着的宽度同步落盘。
+        timer = getattr(self, "_col_width_timer", None)
+        if timer is not None and timer.isActive():
+            self._save_column_widths()
         self._set_column_widths(widths)
 
 

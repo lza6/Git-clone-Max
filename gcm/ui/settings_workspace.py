@@ -122,7 +122,9 @@ class SettingsWorkspace(QSplitter):
         # 存比例而不是绝对像素：换屏/最大化/DPI 变化后仍保持 72/28。
         cur["settings_split"] = [top_ratio, round(1.0 - top_ratio, 4)]
         st.ui_state = cur
-        store.save(st)
+        # Rev16 C1：update() 锁内读-改-写；save(旧快照) 会把另一实例刚改的
+        # 字段整份回滚（列宽保存是最频繁的写路径，最先迁过来）。
+        store.update(ui_state=cur)
 
     def set_compact_nav(self, compact: bool) -> None:
         """窄窗（<1000）用下拉替代左侧列表，避免设置导航整块消失。"""

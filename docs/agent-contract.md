@@ -1,6 +1,6 @@
 # Git-clone-Max Agent 契约（G56-5）
 
-> 适用版本：v9.19.0。本文档是所有 agent 接入点
+> 适用版本：v9.19.1。本文档是所有 agent 接入点
 > （CLI `--json` / MCP server / 本地 HTTP API / `skills/gcm-*`）的统一契约。
 > 任何实现与本文档冲突时，以实际输出为准（测试 `tests/test_g56_contract.py` 抽样断言）。
 
@@ -27,7 +27,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ```json
 {
-  "version": "9.19.0",
+  "version": "9.19.1",
   "ok": true,
   "counts": {"success": 2, "failed": 0, "other": 0, "total": 2},
   "results": [
@@ -66,7 +66,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ```json
 {
-  "version": "9.19.0",
+  "version": "9.19.1",
   "ok": true,
   "mode": "dry_run",
   "plan": {
@@ -94,7 +94,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ```json
 {
-  "version": "9.19.0",
+  "version": "9.19.1",
   "ok": true,
   "mode": "prune:prune",
   "pruned": 1,
@@ -161,6 +161,15 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 范围约定：`message` 可直接打日志；`redacted` 用于用户可见输出，保证 URL/Token 不出屏。
 
+**包装层差异（Rev16 D4 校正，以代码为准）**：
+
+- HTTP API 的错误响应把上述对象包在 `error` 键里：
+  `{"error": {"code": 403, "message": "...", "redacted": "..."}}`
+  （`gcm/http_api.py:_send_json`，客户端取 `resp["error"]["code"]`）。
+- MCP `clone_batch`（同步路径）返回 `{"clone_result": <CLI 顶层 JSON>, "cli_exit_code": 0|1|2}`
+  —— 不是「CLI 顶层契约」直接透传；`clone_result` 里才是 §2 的 schema。
+  `job_status` / `job_cancel` 返回作业快照（`{job_id, status, ...}`）。
+
 ## 4. MCP server（G56-2）
 
 - 启用：`GCM_MCP_ENABLE=1` 后才启动（否则退出码 3，见 §6）。
@@ -215,7 +224,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ```
 → {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{}}}
-← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"gcm","version":"9.19.0"}}}
+← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"gcm","version":"9.19.1"}}}
 → {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
 ← {"jsonrpc":"2.0","id":2,"result":{"tools":[{...list_repos...}, ...]}}
 → {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_repos","arguments":{}}}
@@ -369,7 +378,9 @@ mcpproxy 的隔离区模型），让 agent 生态的接入方一眼看懂本工�
 - "放行"是**显式、每次启动、按入口**的：`--allow-mutate` / `--allow-export` /
   `GCM_MCP_ENABLE=1` 三者互不隐含。没有"一次放行、永久生效"的路径。
 - 放行后的写操作**必须审计**（事件入总线前 redact，app.log 落盘打码）——
-  治理与可观测绑定，不允许"放行但无声"。
+  治理与可观测绑定，不允许"放行但无声"。HTTP 落 `<data>/.gcm-api-audit.jsonl`，
+  MCP 落 `<data>/.gcm-mcp-audit.jsonl`（Rev16 A7；`clone_batch` 的 `dry_run`
+  预览不审计，未放行的拒绝也不审计）。
 
 ### 10.3 接入方自查清单（agent 接入前过一遍）
 

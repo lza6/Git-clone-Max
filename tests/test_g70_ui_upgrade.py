@@ -384,6 +384,12 @@ class TestWindowMinimum(unittest.TestCase):
             w.show()
             _app.processEvents()
             w.resize(1020, 560)
+            # Rev16 B3：布局重算是 150ms 防抖定时器（首帧才是 0ms）——
+            # 只 processEvents 拿到的是**上一帧**几何（未折叠、scroll 156 → 输入框被裁 3px）。
+            # 等防抖落地再断言。
+            _app.processEvents()
+            from PyQt6.QtTest import QTest
+            QTest.qWait(250)
             _app.processEvents()
             visible = w.repo_input.visibleRegion().boundingRect().height()
             self.assertEqual(visible, w.repo_input.height(),

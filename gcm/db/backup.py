@@ -43,7 +43,19 @@ class BackupMixin:
         dest.parent.mkdir(parents=True, exist_ok=True)
         with self._lock:
             try:
-                self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+                # Rev16 D2：checkpoint 可能只做了一部分（busy/并发读者），
+                # 返回 (busy, log_pages, checkpointed_pages) —— busy=1 或
+                # log>checkpointed 说明快照会「完整但落后」。重试一次仍不行
+                # 就如实告警（备份仍是 quick_check 校验过的完整文件，只是
+                # 不含最新 WAL 尾部，调用方值得知道）。
+                for _attempt in range(2):
+                    row = self._conn.execute(
+                        "PRAGMA wal_checkpoint(TRUNCATE);").fetchone()
+                    if row and int(row[0] or 0) == 0:
+                        break
+                else:
+                    _warn("wal_checkpoint(TRUNCATE) incomplete before "
+                          "backup; snapshot may miss latest transactions")
             except Exception as e:      # noqa: BLE001 —— 非 WAL 也要能备份
                 _warn(f"备份前 wal_checkpoint 失败（按非 WAL 处理，继续备份）：{e}")
             self._conn.commit()

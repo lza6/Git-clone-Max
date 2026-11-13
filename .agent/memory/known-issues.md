@@ -102,6 +102,20 @@ owner: memory-keeper
 
 （当前无。所有登记项均已关闭或判定不适用。）
 
+## Rev16 B4 复核（2026-11-13）
+
+- **repo_input maxHeight 96 分支为真机-only 路径**（Rev16 复审 P3）：`_h0 <= 560 and folded`
+  在 offscreen/本机因 `effective_minimum` 夹取（实际最小高 584）不可达；真机
+  1366×768@150% 夹出 900×504 时可达。行为已实测正确（压 96 / 恢复 112），
+  属屏幕夹取逻辑耦合的盲区，无自动化覆盖。
+- **`test_g76_wiring` 单模块 exit 127 已更正登记**：本机实测（venv 解释器，bash 与
+  PowerShell 双通道）26 例全绿、退出码 0；`exit 127` 的历史现象是调用方用了
+  **裸 `python`**（系统 3.14，无项目依赖）——命令解析/依赖导入失败所致，
+  与测试隔离无关。守卫命令必须用 `./.venv/Scripts/python.exe`。
+- **固定像素基线已入库**：`docs/screenshots/`（34 张，B3 布局改完后整集刷新），
+  `scripts/update_ui_baseline.py --verify/--update` 是唯一更新入口；2px 平移
+  反向自检实测报警（10.8% 超容差）。
+
 ## G69-21 独立审查整改（2026-10-18，v9.6.0）
 
 > 对抗式审查发现 2 个阻塞项 + 8 项 Required；已全部修复并有守卫。

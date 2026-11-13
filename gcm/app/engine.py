@@ -76,6 +76,10 @@ class SyncEngine(QObject):
     # 只能用 key 回报给 UI 让它把对应行推到终态。CLI 不连这个信号 → 契约零变化。
     skipped = pyqtSignal(str, str)
     adapt_changed = pyqtSignal(int, str)     # G48-1 并发自适应：当前并发, 说明
+    # Rev16 C4：自动重投批次对 UI 是一个**新批次** —— 必须重建表格行并置回
+    # 运行态，否则旧批残留行的 UserRole index 会把结果写到别的仓库那一行，
+    # 且收尾播报因 owner.busy=False 被跳过。参数 = 本批实际调度数。
+    retry_batch_started = pyqtSignal(int)
     finished = pyqtSignal()                 # 全部 worker 完成（成功/失败/取消都算）
     _arm_flush = pyqtSignal()               # G43-1②：worker 线程请求主线程武装合并窗口定时器
 
@@ -555,12 +559,15 @@ class SyncEngine(QObject):
             #      （选「浅克隆」却按满量拉，或反之）。
             ctx = self._last_batch_ctx or {}
             try:
-                self.launch(specs, check_existing=False, clear_input=False,
-                            host_by_key=dict(ctx.get("host_by_key") or {}),
-                            fetch_depth=int(ctx.get("fetch_depth") or 0),
-                            unshallow=bool(ctx.get("unshallow")),
-                            mirror=bool(ctx.get("mirror")),
-                            session_merge=True)  # A5-2/C-18：不抹掉未投的失败项
+                launched = self.launch(specs, check_existing=False, clear_input=False,
+                                       host_by_key=dict(ctx.get("host_by_key") or {}),
+                                       fetch_depth=int(ctx.get("fetch_depth") or 0),
+                                       unshallow=bool(ctx.get("unshallow")),
+                                       mirror=bool(ctx.get("mirror")),
+                                       session_merge=True)  # A5-2/C-18：不抹掉未投的失败项
+                if launched:
+                    # Rev16 C4：UI 按新批次重建行 + 置回运行态（收尾播报才能正常走）
+                    self.retry_batch_started.emit(launched)
             except Exception:
                 pass
 

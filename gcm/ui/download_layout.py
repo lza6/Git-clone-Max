@@ -260,7 +260,20 @@ def build_download_top(owner) -> QWidget:
     tv.addWidget(box)
 
     # G74：快捷填充/清单是次要操作，留在可滚动区里（小高度时可滚出视口）
-    tv.addLayout(quick_row)
+    # Rev16 B3 更正：快捷填充行（chips + 编辑 + 历史）在 1366/1024/900 的
+    # 首屏都不可见（滚动视口 120px，内容最小 172px，该行在视口下方）——
+    # 用户不知道有快捷填充。移出滚动区成为常驻行（与「下载位置/克隆模式」
+    # 同级）；它只有一行 ~42px，换来的是高频入口全程可见。紧凑模式下仍整行
+    # 隐藏（chip 输入方式随 _quick_fill_buttons 一起收起）。
+    quick_host = QWidget()
+    quick_host.setObjectName("quickFillRow")
+    qh = QHBoxLayout(quick_host)
+    qh.setContentsMargins(0, 0, 0, 0)
+    qh.setSpacing(6)
+    qh.addLayout(quick_row)
+    tv.addWidget(quick_host)
+    # 返回常驻宿主，主窗把它插到 top_container（滚动区外）
+    owner._quick_row_host = quick_host
     return top
 
 

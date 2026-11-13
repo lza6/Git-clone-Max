@@ -25,6 +25,7 @@ import os
 import sqlite3
 import sys
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -436,6 +437,49 @@ def _emit_notification(kind: str, payload: dict[str, Any]) -> None:
         _log(f"进度通知发送失败（不影响作业）：{e}")
 
 
+def _audit_mutate(data_dir: Path, tool: str, args: dict[str, Any]) -> None:
+    """Rev16 A7：放行后的写操作审计行（对齐 agent-contract.md §10.2）。
+
+    HTTP 侧每请求落 `.gcm-api-audit.jsonl`，MCP 侧此前无任何审计 ——
+    「放行但无声」违反契约。写 `.gcm-mcp-audit.jsonl` 于数据目录，
+    负载打码（URL 可能内嵌凭据），追加失败写 applog 留痕（审计不阻断工具语义）。
+    """
+    entry = {
+        "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "tool": tool,
+        # 复审 P1 修正：**先打码后截断**。redact 的正则要求完整结构（如
+        # `ghp_+20位`），先 [:500] 截断会把凭据拦腰切成残段原样穿过 redact
+        # （复审实测：60 个 URL 即 2040 字符，多 URL 批次常态化超阈值）。
+        # args 是「打码后的截断文本」，不保证是合法 JSON。
+        "args": redact(json.dumps(args, ensure_ascii=False))[:500],
+    }
+    try:
+        log = data_dir / ".gcm-mcp-audit.jsonl"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        with log.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception as e:  # noqa: BLE001 —— audit failure must not break the tool call
+        _log(f"mcp audit append failed: {e}")
+
+
+def _run_sync_clone(msg_id: Any, data_dir: Path, body: str) -> dict[str, Any]:
+    """同步执行 clone_batch：起 CLI 子进程（≤1h），返回 CLI 顶层 JSON。"""
+    import subprocess as _sp
+    cmd = [sys.executable, "-m", "gcm", "--cli", "--json", "--dir", str(data_dir)]
+    try:
+        proc = _sp.run(cmd, input=body, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", timeout=3600)
+    except Exception as e:  # noqa: BLE001
+        return _error(msg_id, -32603, f"克隆调度失败：{e}")
+    try:
+        payload = json.loads(proc.stdout or "{}")
+    except ValueError:
+        payload = {"error": {"code": -32603, "message": "克隆输出非 JSON",
+                             "redacted": redact(proc.stdout or "")}}
+    return _result(msg_id, {"clone_result": payload,
+                            "cli_exit_code": proc.returncode})
+
+
 def _handle_call(msg_id: Any, params: dict[str, Any], data_dir: Path,
                  allow_export: bool, allow_mutate: bool = False) -> dict[str, Any]:
     """处理 tools/call：只读工具 + 显式开关的 export_report / clone_batch。"""
@@ -470,6 +514,11 @@ def _handle_call(msg_id: Any, params: dict[str, Any], data_dir: Path,
             urls = args.get("urls") or []
             if not isinstance(urls, list) or not urls:
                 return _error(msg_id, -32602, "urls 必须是非空字符串数组")
+            # Rev16 A7：放行即审计（dry_run 是纯预览，不写盘不触网，不审）。
+            # 复审 P2 更正：审计语义 = 「放行后**实际执行**的写」。async 分支
+            # 若作业表满 start_job 会抛 ValueError → 返回 -32602，那次调用没有
+            # 真正执行写操作，先审后跑会产生假阳性行 —— async 路径移到
+            # start_job 成功返回后落审计。
             body = "\n".join(str(u) for u in urls) + "\n"
             if bool(args.get("dry_run")):
                 # G84-13：预览不落盘、不触网（连子进程都不起），与 CLI --dry-run 同源
@@ -488,22 +537,10 @@ def _handle_call(msg_id: Any, params: dict[str, Any], data_dir: Path,
                                             "progress": n, "message": text})
 
                 started = start_job(data_dir, body, token, on_progress=_on_progress)
+                _audit_mutate(data_dir, "clone_batch", args)
                 return _result(msg_id, started)
-            import subprocess as _sp
-            cmd = [sys.executable, "-m", "gcm", "--cli", "--json",
-                   "--dir", str(data_dir)]
-            try:
-                proc = _sp.run(cmd, input=body, capture_output=True, text=True,
-                               encoding="utf-8", errors="replace", timeout=3600)
-            except Exception as e:  # noqa: BLE001
-                return _error(msg_id, -32603, f"克隆调度失败：{e}")
-            try:
-                payload = json.loads(proc.stdout or "{}")
-            except ValueError:
-                payload = {"error": {"code": -32603, "message": "克隆输出非 JSON",
-                                     "redacted": redact(proc.stdout or "")}}
-            return _result(msg_id, {"clone_result": payload,
-                                    "cli_exit_code": proc.returncode})
+            _audit_mutate(data_dir, "clone_batch", args)
+            return _run_sync_clone(msg_id, data_dir, body)
         if name == "job_status":
             job_id = str(args.get("job_id") or "")
             snap = job_snapshot(job_id)
@@ -518,6 +555,8 @@ def _handle_call(msg_id: Any, params: dict[str, Any], data_dir: Path,
             out = cancel_job(job_id)
             if out is None:
                 return _error(msg_id, -32602, f"未知 job_id：{job_id}")
+            # Rev16 A7：取消也是写意图（终止子进程树），落审计
+            _audit_mutate(data_dir, "job_cancel", args)
             return _result(msg_id, out)
         return _error(msg_id, -32601, f"未知工具：{name}")
     except ValueError as e:
