@@ -184,7 +184,7 @@ EN = {
     '取消全部': 'Cancel all',
     '清空列表': 'Clear list',
     '打开克隆目录': 'Open clone folder',
-    '更多 ▸': 'More ▸',
+    '更多': 'More',
     '更多工具菜单': 'More tools menu',
     '打开克隆目录 / 失败汇总 / 重试队列 / 诊断包': 'Open clone folder / Failure summary / Retry queue / Diagnostics bundle',
     '导出日志': 'Export log',
@@ -1208,4 +1208,5 @@ EN = {
     '已跳过（预览未勾选）：{u}': 'Skipped (unchecked in preview): {u}',
     '同步历史（最近 50 条）': 'Sync history (latest 50)',
     '全库最近同步记录（时间/仓库/状态/动作/耗时），agent 判断「上次跑成没成」用': 'Recent syncs across all repos (time/repo/status/action/duration); lets agents check the last run',
+    '已跳过（预览未勾选）：{n} 个': 'Skipped (unchecked in preview): {n}',
 }

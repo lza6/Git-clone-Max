@@ -101,7 +101,11 @@ class BatchPreviewDialog(QDialog):
         row.addWidget(self.btn_confirm)
         row.addWidget(self.btn_close)
         lay.addLayout(row)
+        # Rev17 收尾瑕疵①：itemChanged 只连一次（refresh 可被多次调用，原来在
+        # refresh 里 connect 会层层堆积；_sync_confirm_enabled 是幂等读，堆积
+        # 不出错但白白放大重算次数）。连接放 __init__，refresh 只刷数据。
         self.refresh()
+        self.table.itemChanged.connect(self._sync_confirm_enabled)
         self._sync_confirm_enabled()
 
     def refresh(self) -> int:
@@ -129,7 +133,6 @@ class BatchPreviewDialog(QDialog):
             self.table.setItem(row, 2, _item(r.url))
             self.table.setItem(row, 3, _item(r.target or r.folder))
             self.table.setItem(row, 4, _item(r.reason))
-        self.table.itemChanged.connect(self._sync_confirm_enabled)
         return len(self.plan.rows)
 
     def _sync_confirm_enabled(self, *_args) -> None:

@@ -1,0 +1,67 @@
+{
+  "version": "9.20.0",
+  "date": "2026-11-13",
+  "tracks": {
+    "ui_screenshots": {
+      "verdict": "PASS",
+      "evidence": [
+        "reports/ui-v9200-audit2/ (34 张：4 主题×5 尺寸+8 对话框+预览勾选 2 态)",
+        "逐张审阅：4 主题可读、6 尺寸零裁切、状态 pill 几何形状互异"
+      ],
+      "findings_fixed": [
+        "「更多 ▸」U+25B8 微软雅黑无字形（D22 同类）→ 纯文本「更多」（DownArrow 增高 3px 裁切被 test_rev13 抓出，一并修）",
+        "预览勾选对话框逐按钮真点 9 项 PASS（replace 默认不勾/全不选禁用/勾选与 plan 同源）",
+        "「更多 ▸」U+25B8 微软雅黑无字形 → 纯文本（DownArrow 增高裁切被 test_rev13 抓出，一并修）"
+      ],
+      "findings_open": []
+    },
+    "real_calls": {
+      "verdict": "PASS",
+      "evidence": [
+        "evidence/realcalls-rev17.json (MCP stdio 三跳 8 checks)",
+        "evidence/realcalls-cli-matrix.json (CLI 退出码 0/1/2 矩阵 7 checks)"
+      ],
+      "findings_fixed": [
+        "真下载 E2E 抓出 pick_asset 双形态 AttributeError（已修）"
+      ],
+      "findings_open": []
+    },
+    "e2e": {
+      "verdict": "PASS",
+      "evidence": [
+        "scripts/e2e_smoke.py → E2E_SMOKE_RESULT: PASS",
+        "快集第七轮 2271 例 0 失败",
+        "dist exe 隔离真克隆 octocat success",
+        "health_check started_ok smoke_ms=2305"
+      ],
+      "findings_fixed": [],
+      "findings_open": [
+        "覆盖率精确 80.54%（拍板下轮补）"
+      ]
+    },
+    "independent_review": {
+      "verdict": "PASS（四域：fetch/cli FAIL→修 2 MAJOR+重验、startup PASS、ui FAIL→修中1/中2变体+低8、mcpdb PASS）",
+      "evidence": [
+        "evidence/code-review-fetch-raw.md → 修复后 test_rev17_release_fetch 20 例",
+        "evidence/code-review-startup.md",
+        "evidence/code-review-ui.md → 剔除链路闭环（start_all 同链）+ WA_DeleteOnClose",
+        "evidence/code-review-mcpdb.md"
+      ],
+      "findings_fixed": [
+        "MAJOR-1: download_asset except 顺序（URLError 系 OSError 子类在 OSError 之后 → 重试死代码）——顺序交换 + RemoteDisconnected 入 tuple，行为级验证 attempts=3",
+        "MAJOR-2: 302 跨 host 重定向泄漏 Authorization（G69-21 同款）—— _SafeRedirect 剥离，单元级验证 new_req 无 auth",
+        "UI中-1: 预览勾选「执行勾选行」契约未闭环 → accept 后同链路触发 start_all()",
+        "UI低-8: 预览对话框缺 WA_DeleteOnClose → C++ 侧留存累积"
+      ],
+      "false_positives_rebutted": [
+        "中-2 一行多 URL：parse_urls 只按行切分（实测空格/逗号都不是分隔符），整行剔除=URL 粒度；URL 粒度重写反而回填 .git 形态，保持用户原文",
+        "中-3 归一化差异：plan_batch 内部同走 parse_urls（三形态实测 match=True）",
+        "中-4 detail 清理 diff 缺席：复审快照旧于工作区修复，现状核实在位",
+        "低-6 itemChanged 位置：瑕疵①已在工作区修复",
+        "低-7 selected_rows 零生产调用：S52 接缝契约方法（test_ledger 登记）"
+      ]
+    }
+  },
+  "final_verdict": "PASS",
+  "coverage_note": "精确 80.54%（拍板下轮补 141 单元）"
+}

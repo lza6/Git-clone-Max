@@ -11,6 +11,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from PyQt6.QtCore import Qt
+
 from ..i18n import tr  # G49-1
 from ..util.openfolder import open_folder
 from .theme import LogLevel
@@ -274,25 +276,37 @@ def open_batch_preview(owner) -> None:
     from .batch_preview_dialog import BatchPreviewDialog
     root = owner.target_edit.text().strip() if hasattr(owner, "target_edit") else ""
     dlg = BatchPreviewDialog(text, root or str(owner.data_dir / "clones"), parent=owner)
-    if dlg.exec() != BatchPreviewDialog.DialogCode.Accepted:
-        return
-    # Rev17 T3：勾选执行 —— 未勾选的可执行行从输入区剔除后再走 launch。
-    skip = dlg.unchecked_executable_urls()
-    if not skip:
-        return  # 全选（或无可执行行）：走原路径（用户直接点「开始」即可）
-    kept_lines: list[str] = []
-    for line in str(text).splitlines():
-        u = line.strip()
-        if not u or u.lstrip().startswith("#"):
-            kept_lines.append(line)
-            continue
+    dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)  # 四轨复审低-8：exec 后 C++ 侧释放
+    accepted = dlg.exec() == BatchPreviewDialog.DialogCode.Accepted
+    # Rev17 四轨复审：勾选执行契约闭环 —— 「执行勾选行」= 回填已勾选 URL 后
+    # **直接触发 start_all()**（与人工点「开始」同链路），而不是只回填让用户
+    # 再点一次。reject（关闭）则不动输入区。
+    try:
+        if not accepted:
+            return
+        # 整行剔除（与 plan 行一一对应；parse_urls 只按行切分，一行=一条 URL，
+        # 四轨复审「中-2」的一行多 URL 前提不成立，URL 粒度重写反而把归一化后
+        # 的 .git 形态回填给用户——保持用户原文）。逐行比对未勾选集合。
         from ..app.url_lib import parse_urls as _pu
-        _s, _inv = _pu(u)
-        _urls = {s.url_https for s in _s}
-        if _urls & skip:
-            import time as _t
+        skip = dlg.unchecked_executable_urls()
+        kept_lines: list[str] = []
+        skip_n = 0
+        for line in str(text).splitlines():
+            u = line.strip()
+            if not u or u.lstrip().startswith("#"):
+                kept_lines.append(line)
+                continue
+            _s, _inv = _pu(u)
+            _urls = {s.url_https for s in _s}
+            if _urls & skip:
+                skip_n += 1
+                continue
+            kept_lines.append(line)
+        owner.repo_input.setPlainText(chr(10).join(kept_lines))
+        import time as _t
+        if skip_n:
             owner._emit_log(_t.strftime("%Y-%m-%d %H:%M:%S"), LogLevel.WARN,
-                            tr("已跳过（预览未勾选）：{u}").format(u=u))
-            continue
-        kept_lines.append(line)
-    owner.repo_input.setPlainText(chr(10).join(kept_lines))
+                            tr("已跳过（预览未勾选）：{n} 个").format(n=skip_n))
+        owner.start_all()
+    finally:
+        dlg.deleteLater()

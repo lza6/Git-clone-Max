@@ -82,10 +82,13 @@ def _summary(ev: Any) -> str:
 
 
 def _status_word(s: str) -> str:
-    """状态英文值 → 中文词（7fd-② 摘要可读性）。"""
-    return {"success": tr("成功"), "failed": tr("失败"), "cancelled": tr("已取消"),
-            "conflict": tr("冲突"), "skipped": tr("已跳过"), "running": tr("运行中"),
-            "pending": tr("等待中")}.get(s, s)
+    """状态英文值 → 中文词（7fd-② 摘要可读性）。
+
+    Rev17 收尾瑕疵③：不复刻第二份映射 —— 复用 result_labels.status_label
+    （G75 单一来源：状态词口径只在 result_labels 一处定义）。
+    """
+    from .result_labels import status_label
+    return status_label(s)
 
 
 def filter_events(events: list[Any], mode: str) -> list[Any]:

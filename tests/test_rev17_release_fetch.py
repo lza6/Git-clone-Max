@@ -318,5 +318,88 @@ class TestResumeWithLocalServer(unittest.TestCase):
             download_asset(asset, d)
 
 
+class TestReviewFixes(unittest.TestCase):
+    """四轨独立复审 MAJOR-1/2 的回归守卫。"""
+
+    def test_retry_branch_reachable_before_oserror(self):
+        """MAJOR-1：网络错误 tuple 必须在 except OSError **之前**
+        （URLError/HTTPError/TimeoutError/RemoteDisconnected 都是 OSError 子类，
+        顺序反了重试就是死代码）。"""
+        import ast as _ast
+        import pathlib
+        src = (pathlib.Path(__file__).resolve().parent.parent
+               / "gcm" / "app" / "release_fetch.py").read_text(encoding="utf-8")
+        tree = _ast.parse(src)
+        handlers = [n for n in _ast.walk(tree) if isinstance(n, _ast.ExceptHandler)]
+        names = []
+        for h in handlers:
+            if isinstance(h.type, _ast.Tuple):
+                names.append([_ast.unparse(e) for e in h.type.elts])
+            elif isinstance(h.type, _ast.Name):
+                names.append([_ast.unparse(h.type)])
+        net = next(i for i, ns in enumerate(names) if any("URLError" in n for n in ns))
+        oserr = next(i for i, ns in enumerate(names) if ns == ["OSError"])
+        self.assertLess(net, oserr, "网络 except 必须在 OSError 之前，否则重试不可达")
+
+    def test_safe_redirect_strips_auth_cross_host(self):
+        """MAJOR-2：跨 host 重定向剥离 Authorization（G69-21 同款红线）。"""
+        import urllib.request
+
+        from gcm.app.release_fetch import _SafeRedirect
+        h = _SafeRedirect()
+        req = urllib.request.Request("http://a.example/start",
+                                     headers={"Authorization": "Bearer sekrit"})
+        new = h.redirect_request(req, None, 302, "Found",
+                                 {"location": "http://b.example/final"},
+                                 "http://b.example/final")
+        self.assertIsNotNone(new)
+        headers = {k.lower() for k in new.headers}
+        self.assertNotIn("authorization", headers,
+                         f"跨 host 302 必须剥离 Authorization，实际：{dict(new.headers)}")
+
+    def test_retry_is_not_dead_code_behaviorally(self):
+        """行为级：前两次连接被服务端断开 → 第 3 次成功（重试真的发生）。"""
+        import tempfile
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        from pathlib import Path as _P
+
+        import gcm.app.release_fetch as rf
+
+        class Flaky(BaseHTTPRequestHandler):
+            calls = 0
+            data = b"hello-retry"
+
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                Flaky.calls += 1
+                if Flaky.calls <= 2:
+                    self.close_connection = True
+                    try:
+                        self.wfile.close()
+                    except Exception:
+                        pass
+                    return
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(self.data)))
+                self.end_headers()
+                self.wfile.write(self.data)
+
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), Flaky)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            d = _P(tempfile.mkdtemp())
+            asset = rf.ReleaseAsset(name="x.bin",
+                                    url=f"http://127.0.0.1:{srv.server_address[1]}/x",
+                                    size=len(Flaky.data))
+            out = rf.download_asset(asset, d, timeout=5.0)
+            self.assertEqual(out.read_bytes(), Flaky.data)
+            self.assertEqual(Flaky.calls, 3, f"前 2 次断连后应重试，实际 attempts={Flaky.calls}")
+        finally:
+            srv.shutdown()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,46 @@
+{
+  "track": "realcalls-rev17",
+  "checks": [
+    {
+      "name": "initialize handshake",
+      "ok": true,
+      "detail": "v9.20.0"
+    },
+    {
+      "name": "tools >= 7 (含 job_status/job_cancel)",
+      "ok": true,
+      "detail": "['clone_batch', 'list_repos', 'search_repos', 'export_report', 'status', 'job_status', 'job_cancel']"
+    },
+    {
+      "name": "resources 4 个（含 gcm://history）",
+      "ok": true,
+      "detail": "['gcm://history', 'gcm://report/markdown', 'gcm://repos', 'gcm://status']"
+    },
+    {
+      "name": "gcm://history 合法 JSON 且空库 count=0",
+      "ok": true,
+      "detail": "{'history': [], 'count': 0}"
+    },
+    {
+      "name": "prompts 2 个",
+      "ok": true,
+      "detail": "['clone-batch', 'diagnose-failure']"
+    },
+    {
+      "name": "clone_batch(dry_run) 带 preview_id（32 hex）",
+      "ok": true,
+      "detail": "03842a7f…"
+    },
+    {
+      "name": "plan.counts 齐全",
+      "ok": true,
+      "detail": "{'clone': 1, 'update': 0, 'replace': 0, 'blocked': 0, 'duplicate': 0, 'invalid': 0}"
+    },
+    {
+      "name": "unknown resource errors",
+      "ok": true,
+      "detail": "{'code': -32602, 'message': '未知资源：gcm://no-such（可用：gcm://status, gcm://repos, gc"
+    }
+  ],
+  "verdict": "PASS"
+}

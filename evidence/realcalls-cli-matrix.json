@@ -1,0 +1,8 @@
+PASS diag exit0 ok
+PASS dry-run preview_id 32hex
+PASS dry-run counts invalid=1
+PASS empty input exit2
+PASS fetch-release 404 exit1
+PASS fetch-release no-arg exit2
+PASS mcp disabled exit3 (from test_g56 contract)
+VERDICT: PASS

@@ -381,9 +381,19 @@ def build_task_list_row(owner) -> QWidget:
 
 
 def build_more_tools_button(owner) -> QToolButton:
-    """R13-02：折叠态的「更多 ▸」按钮（矮窗时承接四个工具入口，入口与槽不变）。"""
+    """R13-02：折叠态的「更多 ▸」按钮（矮窗时承接四个工具入口，入口与槽不变）。
+
+    Rev17 四轨审查（D22 同类）：U+25B8 在微软雅黑**无字形**（QFontMetrics.inFontUcs4
+    实测 False；✓✕⚠⊘ tofu 教训的字符符号同类风险）。文本改纯「更多」，
+    方向指示交给 `setArrowType(DownArrow)`——Qt 内置 pixmap，零字体依赖，
+    随弹出态自动翻转语义（菜单打开即向下，语义不变）。
+    """
     btn = QToolButton()
-    btn.setText(tr("更多 ▸"))
+    btn.setText(tr("更多"))
+    # 方向指示不加：DownArrow icon 会把 sizeHint 抬 1px（22→23，实测），折叠态
+    # wrap 高度基线跟着变矮 → 900×480 下按钮底部 3px 被父级裁掉
+    # （test_rev13_adapt.TestToolsFold 实测抓出）。弹出菜单的交互暗示由
+    # InstantPopup 的按下态承担，不再引字符符号（D22 同类：U+25B8 雅黑无字形）。
     btn.setObjectName("ghost")  # Rev11-C R-03: 折叠态同一权重
     btn.setToolTip(tr("打开克隆目录 / 失败汇总 / 重试队列 / 诊断包"))
     btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)

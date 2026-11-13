@@ -569,16 +569,17 @@ class ProgressTable(QWidget):
             return  # 补行失败 → 无可写目标，直接放弃（异常路径已留痕）
         bar = self.table.item(row, 1)
         if bar is not None:
-            # G70：终态优先 —— 清掉可能还在批里的旧进度，避免随后被覆盖。
-            # Rev17（7fd-③）：终态置 -1（未知态）而不是 100 —— 100% 满条在
-            # 「已跳过/已取消」行上视觉上像"跑完了"甚至"还在跑"（残留上次
-            # 速率文本更强化误解）。-1 让 delegate 走 detail-only 分支，
-            # 只显示状态词，不画填充条。
+            # 终态优先（G70）：清掉批里的旧进度，避免随后被覆盖。Rev17/7fd-③：
+            # 置 -1（detail-only）而非 100 —— 满条让「已跳过」行视觉上像在跑。
+            # 收尾瑕疵②：_detail_batch/DETAIL_ROLE 同步清，防 250ms flush 把
+            # 「80% 1.2MB/s」运行态速率写回终态行（实测竞态）。
             try:
                 self._progress_batch.pop(int(index), None)
                 self._progress_values[int(index)] = -1
+                self._detail_batch.pop(int(index), None)
             except (TypeError, ValueError):
                 pass
+            bar.setData(DETAIL_ROLE, "")
         pal = current_palette()
         # G75：文案走 result_labels（唯一来源，含 tr()），颜色走 status_pill（唯一来源）
         from .result_labels import action_label as _action_text

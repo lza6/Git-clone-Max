@@ -67,5 +67,44 @@ class TestTerminalProgressBar(unittest.TestCase):
                          "未知态不应画填充")
 
 
+class TestTerminalDetailCleared(unittest.TestCase):
+    """瑕疵②：终态清 _detail_batch 与 DETAIL_ROLE（竞态：80% 速率 → 终态 → flush）。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_race_fixed(self):
+        import tempfile
+        from pathlib import Path as _P
+        from gcm.db.repo_db import Database
+        from gcm.db.settings import SettingsStore
+        from gcm.ui.main_window import MainWindow
+        from gcm.ui.progress_delegate import DETAIL_ROLE
+        from gcm.models import RepoSpec, SyncResult, SyncStatus, SyncAction
+        d = _P(tempfile.mkdtemp(prefix="gcm_race_"))
+        w = MainWindow(data_dir=d, db=Database(d / "t.db"),
+                       settings=SettingsStore(d / "s.json"))
+        spec = RepoSpec(owner="o", repo="r", url_https="https://github.com/o/r")
+        w.progress_panel._add_table_row(0, spec)
+        w.progress_panel._detail_batch[0] = "1.2MB/s · 3 objects"
+        res = SyncResult(spec=spec, status=SyncStatus.SKIPPED,
+                         action=SyncAction.SKIPPED, message="已存在")
+        w.progress_panel._on_worker_result(0, res)
+        w.progress_panel._flush_detail_batch()
+        it = w.progress_panel.table.item(0, 1)
+        self.assertEqual(it.data(DETAIL_ROLE), "",
+                         "终态行被 flush 写回运行态速率（竞态未修）")
+        w.close()
+
+    def test_status_word_reuses_result_labels(self):
+        """瑕疵③：_status_word 必须走 result_labels（单一来源），不得复刻映射。"""
+        import pathlib
+        src = (pathlib.Path(__file__).resolve().parent.parent
+               / "gcm" / "ui" / "event_panel.py").read_text(encoding="utf-8")
+        self.assertIn("from .result_labels import status_label", src,
+                      "_status_word 未复用 result_labels（第二份真相）")
+
+
 if __name__ == "__main__":
     unittest.main()

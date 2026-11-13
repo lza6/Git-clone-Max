@@ -19,10 +19,12 @@
 """
 from __future__ import annotations
 
+import http.client
 import os
 import re
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -143,6 +145,27 @@ def json_loads(b: bytes) -> dict[str, Any]:
     return json.loads(b.decode("utf-8", errors="replace"))
 
 
+class _SafeRedirect(urllib.request.HTTPRedirectHandler):
+    """跨 host 重定向剥离 Authorization（G69-21 同款红线）。
+
+    GitHub release 下载必然 302 → objects.githubusercontent.com；urllib 默认
+    把除 content-length/type 外的全部头复制过去 → token 出 github.com 域。
+    本 handler：同 host 保留，跨 host 剥离 Authorization（其余头照常）。
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new_req is not None:
+            old_host = urllib.parse.urlsplit(req.full_url).hostname or ""
+            new_host = urllib.parse.urlsplit(newurl).hostname or ""
+            if new_host != old_host:
+                new_req.headers.pop("Authorization", None)
+        return new_req
+
+
+_OPENER = urllib.request.build_opener(_SafeRedirect)
+
+
 def download_asset(asset: ReleaseAsset, dest_dir: str | Path,
                    token: str = "", on_bytes: Callable[[int], None] | None = None,
                    should_abort: Callable[[], bool] | None = None,
@@ -177,7 +200,7 @@ def download_asset(asset: ReleaseAsset, dest_dir: str | Path,
         try:
             req = urllib.request.Request(asset.url, headers=headers)
             try:
-                resp_ctx = urllib.request.urlopen(req, timeout=timeout)
+                resp_ctx = _OPENER.open(req, timeout=timeout)
             except urllib.error.HTTPError as he:
                 if he.code == 416:
                     if asset.size and written == asset.size:
@@ -212,14 +235,18 @@ def download_asset(asset: ReleaseAsset, dest_dir: str | Path,
                         if on_bytes:
                             on_bytes(len(chunk))
                 break  # 正常读完
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
+                http.client.RemoteDisconnected):
+            # 网络类错误退避重试（独立复审 MAJOR-1 修复：URLError/HTTPError/
+            # TimeoutError 都是 OSError 子类，必须放在 OSError **之前**，否则
+            # 本分支 100% 不可达、_NET_RETRIES 成死代码）。末次仍失败 → 抛出
+            #（上层用 classify_error 语义给用户可读提示）。
+            if attempt < _NET_RETRIES:
+                time.sleep(_RETRY_DELAYS[min(attempt, len(_RETRY_DELAYS) - 1)])
         except OSError:
             # 本地 IO 错误（磁盘满/权限）不重试 —— 与网络错误分离（web-crawler 语义）。
             # .part 保留：续传语义下重跑从已写字节继续，删除反而丢进度。
             raise
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError):
-            # 末次重试仍失败 → 抛出（上层用 classify_error 语义给用户可读提示）
-            if attempt < _NET_RETRIES:
-                time.sleep(_RETRY_DELAYS[min(attempt, len(_RETRY_DELAYS) - 1)])
     if asset.size and written != asset.size:
         raise RuntimeError(
             f"下载不完整：{written}/{asset.size} 字节（{asset.name}）")

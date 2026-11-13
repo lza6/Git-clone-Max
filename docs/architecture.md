@@ -77,7 +77,7 @@
 | `gcm/ui/main_window.py` | 3588 | 主窗编排（已登记技术债；引擎构造在 `engine_factory.py`、顶栏齿条在 `status_strip.py`、批次结论条在 `batch_conclusion.py`） |
 | `gcm/git/service.py` | 1990 | Git 操作全链路（`_update` 已拆为 `_update_bare_mirror`/`_fetch_remote`/`_merge_remote`） |
 | `gcm/app/engine.py` | 1723 | 调度/并发/进度/重试/会话/事件发布 |
-| `gcm/ui/progress_table.py` | 792 | 进度表（delegate→`progress_delegate.py`、批次总览→`batch_overview.py`、结果文案→`result_labels.py`、行动效→`row_anim.py`、左缘刻度→`edge_ruler.py`） |
+| `gcm/ui/progress_table.py` | 797 | 进度表（delegate→`progress_delegate.py`、批次总览→`batch_overview.py`、结果文案→`result_labels.py`、行动效→`row_anim.py`、左缘刻度→`edge_ruler.py`） |
 | `gcm/db/repo_db.py` | 766 | SQLite 数据层 |
 | `gcm/ui/settings_panel.py` | 746 | 设置 UI（分组构建器在 `settings_groups.py`） |
 | `gcm/ui/settings_groups.py` | 790 | 设置分组构建器（7 个组） |
