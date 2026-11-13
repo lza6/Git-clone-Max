@@ -1,0 +1,14 @@
+{
+  "version": "9.19.1",
+  "archive_version": "9.19.1",
+  "exe_sha256": "7b3128e8ca1d3c9c2957dce51d7368899e047475bc194065b2b2a57a8aff0d0b",
+  "zip_sha256": "f93fee40730aa83d7aeb7d18e0f60c0575fb4bedad3f9e16e7e61d1b5b16a3c5",
+  "exe_size": 42972858,
+  "zip_size": 82185594,
+  "started_ok": true,
+  "repos_db_created": true,
+  "smoke_ms": 1802,
+  "elapsed_ms": 6316,
+  "checked_at": "2026-11-13T12:30:23+08:00",
+  "artifacts_exist": true
+}
