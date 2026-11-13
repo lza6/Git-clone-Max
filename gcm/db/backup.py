@@ -48,11 +48,16 @@ class BackupMixin:
                 # log>checkpointed 说明快照会「完整但落后」。重试一次仍不行
                 # 就如实告警（备份仍是 quick_check 校验过的完整文件，只是
                 # 不含最新 WAL 尾部，调用方值得知道）。
+                # B6（复审 P3）：两次尝试之间隔 60ms —— 背靠背重试没有意义，
+                # 短暂让出后并发读者大概率已经退出。
                 for _attempt in range(2):
                     row = self._conn.execute(
                         "PRAGMA wal_checkpoint(TRUNCATE);").fetchone()
                     if row and int(row[0] or 0) == 0:
                         break
+                    if _attempt == 0:
+                        import time as _time
+                        _time.sleep(0.06)
                 else:
                     _warn("wal_checkpoint(TRUNCATE) incomplete before "
                           "backup; snapshot may miss latest transactions")

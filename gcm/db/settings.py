@@ -409,6 +409,10 @@ class SettingsStore:
         """
         out = _decrypt_token(raw)
         if out or not raw:
+            # B6（复审 7.1 P2-1）：解密成功 = 该字段已被用户修复或本来就好 ——
+            # 陈旧记账必须清掉，否则「解不开过→修好→再清空」时旧密文被复活。
+            if out:
+                self._undecryptable.pop(field, None)
             return out
         if raw.startswith(_ENC_PREFIX):        # 有效密文却解不开（换机器/后端缺失）
             self._undecryptable[field] = raw
@@ -457,7 +461,17 @@ class SettingsStore:
             s.alert_im_token = self._decrypt_tracked("alert_im_token", str(ait))
             # G58-3：HTTP 代理串可能内嵌 `user:pass@` —— 读回解密；
             # 历史明文**原样保留**（否则升级会把用户代理设置静默清空）。
-            s.proxy = _decrypt_or_keep(str(getattr(s, "proxy", "") or ""))
+            # B6（复审 7.1 P2-1）：改走 `_decrypt_tracked` 记账链路 —— 原来的
+            # `_decrypt_or_keep` 对解不开的密文静默返回空且不记账，换机器场景
+            # 一次 save() 就把 proxy 密文覆盖成空（G84-8 要防的事，唯独 proxy 漏了）。
+            _raw_proxy = str(getattr(s, "proxy", "") or "")
+            _dec_proxy = self._decrypt_tracked("proxy", _raw_proxy)
+            if _dec_proxy or not _raw_proxy:
+                s.proxy = _dec_proxy
+            elif not _raw_proxy.startswith(_ENC_PREFIX):
+                s.proxy = _raw_proxy      # 历史明文原样保留
+            else:
+                s.proxy = ""              # 密文解不开：空值 + 已记账，save 保回
             # G80-B5：声明期取值校验（越界纠正，不抛异常，兼容旧配置脏值）。
             # 放在**读回的最后一步**：无论来自 UI、手改 JSON 还是旧版本，都过同一道闸。
             corrected = normalize_settings(s)
@@ -496,6 +510,17 @@ class SettingsStore:
             for k, v in patch.items():
                 if not hasattr(s, k):
                     raise ValueError(f"unknown settings field: {k}")
+                # B6（复审 7.1 P2-2）：dict 字段做**浅合并** —— `ui_state` 内含
+                # manage_columns / settings_split 等独立 key，多开时整值替换会让
+                # 另一实例刚写的 key 静默丢失（列宽保存是最频繁的写路径）。
+                # 例外：`host_tokens` 保持整值替换 —— 删掉某个 host 行 = 明确要删，
+                # 合并会把用户删掉的 key 又塞回去（R9 语义）。
+                cur = getattr(s, k)
+                if (k != "host_tokens" and isinstance(v, dict)
+                        and isinstance(cur, dict)):
+                    merged = dict(cur)
+                    merged.update(v)
+                    v = merged
                 setattr(s, k, v)
             normalize_settings(s)
             self._save_locked(s)
@@ -544,6 +569,7 @@ class SettingsStore:
         # 再加密一次就彻底废了）。触发场景：换机器/系统密钥变更/DPAPI 后端缺失
         # → `load()` 把该字段读成空串 → 用户只是改了个并发数 → save() 把空串
         # 加密落盘 → 用户原本还能手工救回的密文永久消失。
+        _stale: list[str] = []
         for _field, _cipher in self._undecryptable.items():
             if _field.startswith("host_tokens."):
                 _key = _field.split(".", 1)[1]
@@ -554,8 +580,26 @@ class SettingsStore:
                 if isinstance(_ht, dict) and _key in _ht and not str(_ht.get(_key) or ""):
                     _ht[_key] = _cipher
                     payload["host_tokens"] = _ht
+                else:
+                    # B6（复审 P2-1）：host 被删除或重填了有效值 → 记账使命完成
+                    _stale.append(_field)
             elif not str(payload.get(_field) or ""):
                 payload[_field] = _cipher
+            else:
+                # B6（复审 P2-1）：字段已有**有效新值**落盘 —— 旧密文不再需要
+                # 保回，清掉记账，否则之后 update(field="") 显式清空时旧密文
+                # 会被「保回逻辑」复活。
+                _stale.append(_field)
+        for _f in _stale:
+            self._undecryptable.pop(_f, None)
+        self._atomic_write_payload(payload)
+
+    def _atomic_write_payload(self, payload: dict) -> None:
+        """落盘尾段（B6 从 `_save_locked` 抽出以守 100 行函数预算）。
+
+        备份 → 唯一 tmp + flush/fsync → os.replace（含 PermissionError 退避）。
+        调用方必须已持有 `_lock` + 文件锁。
+        """
         # G67-23：tmp 文件名**必须含 pid+线程 id**。
         # 原实现固定用 `settings.json.tmp`：同进程多线程并发保存时，两个线程
         # 会同时 open 同一个 tmp 路径 —— 后开者截断前者的内容，先完成者

@@ -419,3 +419,88 @@ class TestMcpMutateAudit(_TmpCase):
                           allow_mutate=False)
         self.assertIn("error", resp)
         self.assertEqual(self._audit_lines(), [])
+
+
+# ============================================================
+# B6 拾遗：settings 域复审 P2（记账缺口 + ui_state 粒度）
+# ============================================================
+
+class TestUndecryptableAccounting(_TmpCase):
+    """复审 7.1 P2-1：记账生命周期补全。
+
+    ① 解密成功时必须清掉陈旧记账（否则清空字段时旧密文被复活）；
+    ② proxy 读回必须走记账链路（此前走 _decrypt_or_keep，换机器场景
+       proxy 密文解不开会被空串覆盖，且 undecryptable_fields 不提示）。
+    """
+
+    GARBAGE = "enc:v1:%%%not-base64%%%"
+
+    def _store(self):
+        return S.SettingsStore(self.dir / "s.json")
+
+    def _write(self, payload: dict) -> None:
+        (self.dir / "s.json").write_text(
+            json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    def _read(self) -> dict:
+        return json.loads((self.dir / "s.json").read_text(encoding="utf-8"))
+
+    def test_decrypt_success_clears_stale_entry(self):
+        self._write({"token": self.GARBAGE})
+        store = self._store()
+        s = store.load()
+        self.assertIn("token", store.undecryptable_fields())
+        # 用户重填新 token（有效明文）→ 保存后陈旧记账必须清掉
+        s.token = "valid-plaintext-token"
+        store.save(s)
+        self.assertNotIn("token", store.undecryptable_fields(),
+                         "解密成功后陈旧记账未清除")
+        # 再 update(token="") 显式清空 → 空值落盘（不再被旧密文复活）
+        store.update(token="")
+        self.assertEqual(self._read()["token"], "",
+                         "清空 token 后旧密文被记账复活")
+
+    def test_proxy_undecryptable_is_tracked(self):
+        self._write({"proxy": self.GARBAGE})
+        store = self._store()
+        s = store.load()
+        self.assertIn("proxy", store.undecryptable_fields(),
+                      "proxy 密文解不开应进入记账（否则 save 会把它覆盖成空）")
+        self.assertEqual(s.proxy, "")
+        # 改个无关字段保存 → proxy 密文必须原样保回
+        s.concurrency = 8
+        store.save(s)
+        self.assertEqual(self._read()["proxy"], self.GARBAGE,
+                         "proxy 密文被空串覆盖（换机器场景数据丢失）")
+
+
+class TestUpdateUiStateMerge(_TmpCase):
+    """复审 7.1 P2-2：update() 对 ui_state 做 dict 合并（浅合并）。
+
+    多开场景：A 写 manage_columns，B 写 settings_split —— 两者都该保留。
+    host_tokens 保持整值替换语义（用户删 host 行 = 明确要删）。
+    """
+
+    def _store(self):
+        return S.SettingsStore(self.dir / "s.json")
+
+    def test_ui_state_keys_merge_across_instances(self):
+        path = self.dir / "s.json"
+        a = S.SettingsStore(path)
+        a.update(ui_state={"manage_columns": {"3": 200}})
+        b = S.SettingsStore(path)
+        b.update(ui_state={"settings_split": [0.72, 0.28]})
+        reread = S.SettingsStore(path).load()
+        self.assertEqual(reread.ui_state.get("manage_columns"), {"3": 200},
+                         "A 写的 manage_columns 被 B 的 update 整体覆盖了")
+        self.assertEqual(reread.ui_state.get("settings_split"), [0.72, 0.28])
+
+    def test_same_key_newer_write_wins(self):
+        path = self.dir / "s.json"
+        a = S.SettingsStore(path)
+        a.update(ui_state={"manage_columns": {"3": 200}})
+        b = S.SettingsStore(path)
+        b.update(ui_state={"manage_columns": {"3": 300}})
+        reread = S.SettingsStore(path).load()
+        self.assertEqual(reread.ui_state.get("manage_columns"), {"3": 300},
+                         "后写者应当赢（同 key 语义不变）")
