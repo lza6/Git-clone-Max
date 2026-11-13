@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 import sys
 import tempfile
@@ -44,7 +43,8 @@ def main() -> int:
         check("initialize handshake", info["name"] == "gcm", f"v{info['version']}")
         # notifications/initialized 是通知（无响应）：直接写行，不走 call()
         s._id += 1
-        s.proc.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + chr(10))
+        notif = {"jsonrpc": "2.0", "method": "notifications/initialized"}
+        s.proc.stdin.write(json.dumps(notif) + chr(10))
         s.proc.stdin.flush()
 
         tools = s.call("tools/list")["result"]["tools"]

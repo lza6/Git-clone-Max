@@ -11,6 +11,7 @@ data/
 *.log
 build/
 dist/
+reports/ui-*/
 release-downloads/   # Rev17 Batch C 默认下载目录（真下载 E2E 产物不进库）
 # *.spec  # G50-4: 打包配置入库，随仓库版本化
 .coverage
@@ -20,22 +21,11 @@ _archive_v1/
 /graft/
 
 # G75 截图证据：可重建（python scripts/ui_screenshot_audit.py <dir>），不入库
-reports/ui-baseline-*/
-reports/ui-g75*/
-reports/ui-g78*/
-reports/ui-g82*/
-reports/ui-g82*
 # G79 补漏：ui-audit-final 是 G74 轮产物，同样可重建，此前漏在这条规则之外
-reports/ui-audit-final/
 # v9.12.0 起：截图审计产物一律可重建（python scripts/ui_screenshot_audit.py <dir>），不入库
-reports/ui-v9120*/
 # Rev14 起：按轮次命名的截图目录同样可重建；D29 事故就是 38 张截图误入索引
-reports/ui-rev*/
-reports/ui-v9*/
 # G84-2：`reports/ui-audit/` 此前漏在忽略规则之外（只忽略 ui-audit-final/），
 # 导致 G83 的 34 张截图一直是未跟踪产物，任何 `git add -A` 都会把它们带进提交。
-reports/ui-audit/
-reports/ui-u18closing/
 
 # 工作流状态文件：按约定不入库（test_g79 白名单守卫会拦）
 workflow_status.md
@@ -52,9 +42,6 @@ workflow_status.md
 .beads/.auto-import-issues.jsonl
 
 # 2026-11-08：本轮 UI 验收截图目录（可重建的产物，不进库）
-reports/ui-s011/
-reports/ui-s012/
-reports/ui-s013/
 
 # Rev16 B4：固定像素基线（小样本，随仓库版本化）。它**不是**可重建产物 ——
 # 是 UI 回归的比对基准；更新基线必须走 scripts/update_ui_baseline.py 并在

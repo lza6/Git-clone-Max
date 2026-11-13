@@ -29,7 +29,7 @@
     {
       "name": "clone_batch(dry_run) 带 preview_id（32 hex）",
       "ok": true,
-      "detail": "03842a7f…"
+      "detail": "c6090b79…"
     },
     {
       "name": "plan.counts 齐全",

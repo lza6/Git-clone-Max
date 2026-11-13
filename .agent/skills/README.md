@@ -12,6 +12,7 @@
 | [incident-rollback.md](incident-rollback.md) | 线上/发布后出问题，回滚与止损 |
 | [verification-matrix.md](verification-matrix.md) | 决定「这次改动要跑哪些验证」 |
 | [code-review-checklist.md](code-review-checklist.md) | 自审或发起独立审查 |
+| [four-track-acceptance.md](four-track-acceptance.md) | 四轨验收（UI 截图/真实调用/E2E/独立复审）——v9.20.0 实战版 |
 | [project-audit-sop.md](project-audit-sop.md) | 全项目终局审计 |
 | [high-concurrency-checklist.md](high-concurrency-checklist.md) | 并发/性能/可观测性评审 |
 | [ui-layout-qa.md](ui-layout-qa.md) | 改 UI 布局/分割器/响应式/设计 token/触摸密度时的验收流程 |

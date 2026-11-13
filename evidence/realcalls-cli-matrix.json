@@ -1,8 +1,36 @@
-PASS diag exit0 ok
-PASS dry-run preview_id 32hex
-PASS dry-run counts invalid=1
-PASS empty input exit2
-PASS fetch-release 404 exit1
-PASS fetch-release no-arg exit2
-PASS mcp disabled exit3 (from test_g56 contract)
-VERDICT: PASS
+{
+  "track": "realcalls-cli-matrix",
+  "version": "9.20.0",
+  "date": "2026-11-14",
+  "checks": [
+    {
+      "name": "diag exit0 ok",
+      "ok": true
+    },
+    {
+      "name": "dry-run preview_id 32hex",
+      "ok": true
+    },
+    {
+      "name": "dry-run counts invalid=1",
+      "ok": true
+    },
+    {
+      "name": "empty input exit2",
+      "ok": true
+    },
+    {
+      "name": "fetch-release 404 exit1",
+      "ok": true
+    },
+    {
+      "name": "fetch-release no-arg exit2",
+      "ok": true
+    },
+    {
+      "name": "mcp disabled exit3 (contract test_g56 pinned)",
+      "ok": true
+    }
+  ],
+  "verdict": "PASS"
+}
