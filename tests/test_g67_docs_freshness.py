@@ -96,6 +96,10 @@ _ALLOWED_HISTORICAL_VERSIONS: dict[str, dict[str, str]] = {
     "docs/data-model.md": {
         "8.0.2": "说明「被删的旧 db_structure.md 停在 v8.0.2」这一事实，是考古语境",
     },
+    "docs/agent-contract.md": {
+        "1.2.3": "§2.1e `--fetch-release` 的 JSON 示例里 tag 字段取值 v1.2.3 是"
+                 "release tag 示例（仓库发什么版本号都有可能），不是产品版本",
+    },
     "CLAUDE.md": {
         # §6「已知边界」登记发布链断档：这是一段版本**区间**事实，
         # 版本号本身就是信息，改写会丢失精度。

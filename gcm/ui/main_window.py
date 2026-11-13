@@ -37,6 +37,14 @@ from .theme import LogLevel, LogModel
 DOMAIN = "github.com"
 MAX_CONCURRENCY = 32  # 并发上限：拉满速度（设置 SpinBox 同源）
 
+# Rev17 T1a（Rev16 复审 P3 收口）：极矮折叠窗下输入框压扁常量。
+# 原为 `_apply_compact_visibility` 里的字面量 96/112/560（offscreen 下该分支
+# 不可达、无守卫）。抽成模块常量后由 `tests/test_g78_quick_scroll` 的
+# 常量消费守卫断言「被引用而非字面量」——守卫可达到的最大强度（不证明真机渲染）。
+REPO_INPUT_MAX_FOLDED_SHORT = 96   # 极矮（≤560px）且已折叠时输入框最大高
+REPO_INPUT_MAX_NORMAL = 112        # 常态输入框最大高
+REPO_INPUT_SHORT_WINDOW = 560      # 判定「极矮窗口」的高度阈值
+
 
 def _fmt_dt() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S")
@@ -62,7 +70,6 @@ def _make_alert_emitter(owner: MainWindow):
     这里用弱引用避免让线程强持有窗口（否则窗口永远无法回收），
     并对「C++ 对象已删除」时 PyQt 抛出的 RuntimeError 兜底。
     """
-    import weakref
 
     # 先建引用再定义闭包：虽然闭包延迟绑定也能跑通，但把依赖藏在
     # 「定义顺序」里太脆弱（以后有人调换两行就无声失效）。
@@ -276,111 +283,31 @@ class MainWindow(QMainWindow):
 
         # 启动后静默检查更新：不阻塞、不弹窗，有新版本仅写日志 + 托盘提示
         QTimer.singleShot(2500, self._check_update_silent)  # G21-3 启动后静默检查更新
-        # G33-6 记录本次主窗口启动耗时（含 UI 构建；自检时展示，>3s 提示较慢）
-        self._startup_ms = int((time.perf_counter() - self._startup_start) * 1000)
+        # G33-6 启动耗时写回（Rev17 T4 搬移到 startup_wiring.record_startup_elapsed）
+        from .startup_wiring import record_startup_elapsed
+        record_startup_elapsed(self)
         # G36-1/G36-9：show() 后单次调度——首次运行向导 + 系统深浅色自适应
         QTimer.singleShot(300, self._maybe_show_onboarding)
         # G54-4：清单**不**在这里定时 —— 向导会开嵌套事件循环（dlg.exec()），
         # 600ms 的定时器会在那个嵌套循环里触发，导致清单叠在向导上面。
         # 改为：向导函数返回后再调用（见 _maybe_show_onboarding 末尾）。
         QTimer.singleShot(500, self._maybe_apply_system_theme)
-        # G37-4 自动更新定时器（分钟级；engine 非 busy 时触发一键更新）
-        # G83 P1-1：自适应退避状态（连续无变更轮数；None=尚无历史）
-        self._auto_update_no_change_streak = None
-        self._auto_update_batch_had_changes = False
-        self._auto_update_timer = QTimer(self)
-        self._auto_update_timer.timeout.connect(self._on_auto_update_tick)
-        self._restart_auto_update_timer()
+        # Rev17 T4：自适应自动更新定时器纯搬移到 ui/startup_wiring.py
+        from .startup_wiring import wire_auto_update_timer
+        wire_auto_update_timer(self)
 
-        # G52-2/3：跨会话续跑清单 + 看门狗（数据目录 session_runtime.json）
-        from ..db.runtime_sessions import RuntimeSessionStore
-        self.session_store = RuntimeSessionStore(self.data_dir / "session_runtime.json")
-        from ..app.watchdog import Watchdog
-        self.watchdog = Watchdog(
-            self.data_dir / "session_runtime.json",
-            interval_min=int(getattr(self.settings, "watchdog_interval_min", 5) or 5),
-            silent=bool(getattr(self.settings, "watchdog_silent", False)),
-            engine=self.engine, parent=self)
-        self.watchdog.resume_requested.connect(self._on_watchdog_resume)
-        if bool(getattr(self.settings, "watchdog_enabled", False)):
-            self.watchdog.start()
-        # G59-7：阈值告警后台扫描器（G53-2 落地；开启时启动，支持企业 IM webhook 推送）
-        self.alert_scanner = None
-        try:
-            from ..app.alerts import AlertScanner, scan_alerts
-
-            # G69-18：扫描闭包被 AlertScanner 长期持有 —— 直接捕获 self 同样会
-            # 构成引用环（scanner ← self ← scanner）。改用弱引用，窗口销毁后
-            # 扫描自然返回空，不再需要 GC 才能在窗口死前回收。
-            _self_ref = weakref.ref(self)
-
-            def _scan_repos():
-                me = _self_ref()
-                if me is None:
-                    return []
-                repos = me.db.list_repos(host=None) if hasattr(me.db, "list_repos") else []
-                return scan_alerts(
-                    repos or [],
-                    lambda rid: me.db.history(rid, 20) if hasattr(me.db, "history") else [],
-                    data_dir=me.data_dir,
-                    # 注意：这里也必须走 `me` —— 写成 self 会把 self 重新捕获进闭包，
-                    # 环就又回来了（本轮实测抓到的最后一处）。
-                    stale_days=int(getattr(me.settings, "g53_alerts_stale_days", 30) or 30),
-                    disk_min_gb=int(getattr(me.settings, "g53_alerts_disk_min_gb", 5) or 5))
-
-            self.alert_scanner = AlertScanner(
-                _scan_repos,
-                interval_sec=max(60.0, float(getattr(self.settings, "g53_alerts_interval_min", 60) or 60)) * 60.0,
-                im_channel=str(getattr(self.settings, "alert_im_channel", "") or "").strip(),
-                im_url=str(getattr(self.settings, "alert_im_url", "") or "").strip(),
-                im_token=str(getattr(self.settings, "alert_im_token", "") or "").strip(),
-                # G69-18 修复：此前未接 on_alerts → 告警命中后除（多半未配置的）IM 外
-                # 用户**全程无感**：不弹通知、不写日志、UI 无任何痕迹。
-                # 现改为「worker emit → 主线程槽」：扫描在后台线程，绝不直接碰控件。
-                #
-                # 用弱引用 + 存活标志双重保护：扫描线程比窗口活得久时（测试里
-                # 直接丢引用、或 closeEvent 之后线程仍在收尾），对**已销毁**的
-                # QObject 调 emit 会让进程原生崩溃（SIGSEGV），而不是抛 Python 异常。
-                on_alerts=_make_alert_emitter(self))
-            if bool(getattr(self.settings, "g53_alerts_enabled", False)):
-                self.alert_scanner.start()
-        except Exception:
-            self.alert_scanner = None
-
-        # G69-18 修复：定时报表此前**整条链路是假的** —— 设置页有「启用定时报表」
-        # 勾选框，`ReportScheduler` 却无任何生产实例化点（只在 tests 里被构造）。
-        # 勾了等于没勾。现按设置真实启动，并在 closeEvent 里随窗口收敛。
-        self.report_scheduler = None
-        self._start_report_scheduler()
-        # G80-B7-1：登记 4 个后台任务（自动更新/看门狗/告警/报表）的开关与间隔，
-        # 供「后台任务」面板展示 —— 它们此前在 UI 上完全不可见。
-        try:
-            from ..app.background_jobs import register_default_jobs
-            register_default_jobs(self.settings)
-        except Exception as e:  # noqa: BLE001 - 登记失败不该影响启动
-            from ..app import applog as _bj_applog
-            _bj_applog.warn(f"后台任务登记失败：{e}")
-
-        # G80-B7-3 / S3：定时同步队列编排（有启用的队列才会真正 tick 起来）
-        try:
-            self._setup_queue_runner()
-        except Exception as e:  # noqa: BLE001 - 队列接线失败不该影响启动
-            from ..app import applog as _qr_applog
-            _qr_applog.warn(f"定时同步队列接线失败：{e}")
-
-        # 凭据存储强度：`crypto_warning()` 会说明当前环境是否只做了「可逆混淆」。
-        # 该函数早已实现却从未被调用 —— 而 README 无条件宣称「token 加密落盘」。
-        # 兜底后端（xorfixed）下必须让用户在日志里看得见。
-        try:
-            from ..db.settings import crypto_warning
-            _warn = crypto_warning()
-            if _warn:
-                self._emit_log(_fmt_dt(), LogLevel.WARN, tr("凭据存储：") + _warn)
-        except Exception:
-            pass
+        # Rev17 T4：后台服务装配（看门狗/告警/报表/队列/凭据提示）整段纯搬移到
+        # ui/startup_wiring.py —— __init__ 只保留控件装配顺序。
+        self.report_scheduler = None   # 类型锚：_start_report_scheduler 幂等读它（赋值在 startup_wiring）
+        from .startup_wiring import wire_background_services
+        wire_background_services(self)
 
         # G52-2：启动续跑对话框由 show 后统一调度（_schedule_resume_check），
         # 不在 __init__ 裸调度——避免 closeEvent/drain 泵事件时误弹阻塞对话框。
+
+    def _make_alert_emitter_ref(self):
+        """Rev17 T4：startup_wiring 搬移后经此取告警发射器（原直接调模块级函数）。"""
+        return _make_alert_emitter(self)
 
     def _start_report_scheduler(self) -> None:
         """G69-18：按 settings 启动/重启定时报表调度器（幂等）。
@@ -876,9 +803,10 @@ class MainWindow(QMainWindow):
         _ri = getattr(self, "repo_input", None)
         if _ri is not None:
             _h0 = int(self.height())
-            _ri.setMaximumHeight(96 if (_h0 <= 560 and
-                                        bool(getattr(self, "_tools_folded", False)))
-                                 else 112)
+            _ri.setMaximumHeight(REPO_INPUT_MAX_FOLDED_SHORT
+                                 if (_h0 <= REPO_INPUT_SHORT_WINDOW and
+                                     bool(getattr(self, "_tools_folded", False)))
+                                 else REPO_INPUT_MAX_NORMAL)
         _act = getattr(self, "download_actions", None)
         if _act is not None:
             # Rev14 F1：取 `sizeHint` 与 `minimumSizeHint` 的**较大者** —— 折叠后

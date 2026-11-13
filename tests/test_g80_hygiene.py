@@ -100,7 +100,16 @@ GCM = ROOT / "gcm"
 #   「暂无历史」空态；出口是语义正确的空态而非吞掉）、ui/main_window.py +2（U-15：
 #   Star 忙态事件发布失败 → applog.warn 留痕；写法上就是 warn 非 pass）。
 #   全部在观测/呈现层，失败放行主流程且都有可观测出口；本轮无 pass-only 新增（main_window 两处写的就是 warn）。
-BASELINE_EXCEPT = 768
+# - 2026-11-13（Rev17 Batch C）+2（except 770）：app/release_fetch.py 新模块的两个
+#   except 都是**分类分支**不是吞——OSError（本地磁盘/权限）立即 raise 不重试、
+#   URLError/HTTPError/Timeout 退避重试后抛。下载可靠性语义表（web-crawler 蓝本）
+#   要求「本地错误与网络错误分离」，这是该语义的最小实现形态。
+#   +2（gcm/cli.py --fetch-release）：latest/download 两段网络调用的失败出口——
+#   打印可读错误并返回码 1（BLE001 带注释），CLI 面向 agent 的既有错误口径。
+#   +1（release_fetch 416 语义修正）：416 会被 urlopen 抛成 HTTPError 而非 2xx 返回，
+#   收尾分支改为 except HTTPError 单独拦截（416+完整→收尾 / 416+不完整→重下），
+#   其余 HTTP 错误 re-raise 走统一重试——第三个 except 仍是分类分支不是吞。
+BASELINE_EXCEPT = 773
 BASELINE_PASS_ONLY = 285
 
 

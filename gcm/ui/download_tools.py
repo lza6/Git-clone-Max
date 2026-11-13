@@ -273,4 +273,26 @@ def open_batch_preview(owner) -> None:
     from ..app.url_lib import host_of  # noqa: F401  （确保模块加载无副作用）
     from .batch_preview_dialog import BatchPreviewDialog
     root = owner.target_edit.text().strip() if hasattr(owner, "target_edit") else ""
-    BatchPreviewDialog(text, root or str(owner.data_dir / "clones"), parent=owner).exec()
+    dlg = BatchPreviewDialog(text, root or str(owner.data_dir / "clones"), parent=owner)
+    if dlg.exec() != BatchPreviewDialog.DialogCode.Accepted:
+        return
+    # Rev17 T3：勾选执行 —— 未勾选的可执行行从输入区剔除后再走 launch。
+    skip = dlg.unchecked_executable_urls()
+    if not skip:
+        return  # 全选（或无可执行行）：走原路径（用户直接点「开始」即可）
+    kept_lines: list[str] = []
+    for line in str(text).splitlines():
+        u = line.strip()
+        if not u or u.lstrip().startswith("#"):
+            kept_lines.append(line)
+            continue
+        from ..app.url_lib import parse_urls as _pu
+        _s, _inv = _pu(u)
+        _urls = {s.url_https for s in _s}
+        if _urls & skip:
+            import time as _t
+            owner._emit_log(_t.strftime("%Y-%m-%d %H:%M:%S"), LogLevel.WARN,
+                            tr("已跳过（预览未勾选）：{u}").format(u=u))
+            continue
+        kept_lines.append(line)
+    owner.repo_input.setPlainText(chr(10).join(kept_lines))

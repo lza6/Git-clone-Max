@@ -208,6 +208,7 @@ class StatisticsDialog(QDialog):
         h_trend.addWidget(self.period_combo)
         h_trend.addStretch()
         self.btn_export_png = QPushButton(tr("导出 PNG"))
+        self.btn_export_png.setObjectName("btn_export_png")
         self.btn_export_png.clicked.connect(self._export_png)
         h_trend.addWidget(self.btn_export_png)
         v.addLayout(h_trend)
@@ -428,16 +429,18 @@ class StatisticsDialog(QDialog):
         self._refresh()
 
     def _export_png(self):
-        """G47-4：导出趋势图为 PNG。"""
+        """G47-4：导出趋势图为 PNG。Rev17 T2：渲染大表可能慢，接忙态。"""
         from pathlib import Path
         path, _ = QFileDialog.getSaveFileName(
             self, tr("导出趋势图"), str(Path.home() / "trend.png"), "PNG (*.png)")
         if not path:
             return
+        from .busy import busy
         try:
-            ok = self.trend_canvas.grab().save(path)
-            if not ok:
-                raise RuntimeError(tr("保存失败"))
+            with busy(self, "export_png", buttons=("btn_export_png",)):
+                ok = self.trend_canvas.grab().save(path)
+                if not ok:
+                    raise RuntimeError(tr("保存失败"))
         except Exception as e:
             from .error_dialog import show_error  # U-18：三段式 + 动作
             show_error(self, e, context=tr("导出统计图表"), title=tr("导出失败"))

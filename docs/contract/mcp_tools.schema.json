@@ -162,6 +162,12 @@
       "mimeType": "text/markdown",
       "name": "Markdown 报表",
       "uri": "gcm://report/markdown"
+    },
+    {
+      "description": "全库最近同步记录（时间/仓库/状态/动作/耗时），agent 判断「上次跑成没成」用",
+      "mimeType": "application/json",
+      "name": "同步历史（最近 50 条）",
+      "uri": "gcm://history"
     }
   ],
   "title": "gcm MCP surface"

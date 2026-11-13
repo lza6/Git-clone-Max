@@ -32,6 +32,7 @@ from typing import Any
 
 from gcm import __version__ as CONTRACT_VERSION
 
+from .i18n import tr
 from .mcp_jobs import cancel_job, job_snapshot, start_job
 from .util.redact import redact, redact_row
 
@@ -151,6 +152,13 @@ _RESOURCES: list[dict[str, Any]] = [
         "description": "人类可读的仓库报表（内存生成，不写盘）",
         "mimeType": "text/markdown",
     },
+    {
+        "uri": "gcm://history",
+        "name": tr("同步历史（最近 50 条）"),
+        "description": tr(
+            "全库最近同步记录（时间/仓库/状态/动作/耗时），agent 判断「上次跑成没成」用"),
+        "mimeType": "application/json",
+    },
 ]
 
 #: MCP 提示词（G84-23）：把「怎么用这个服务」写进协议，而不是让人去翻文档。
@@ -188,6 +196,16 @@ def _resource_read(uri: str, data_dir: Path) -> dict[str, Any]:
         if uri == "gcm://repos":
             rows = _list_repos(db, host=None)
             payload = json.dumps({"repos": rows, "count": len(rows)},
+                                 ensure_ascii=False, indent=2)
+            return {"uri": uri, "mimeType": "application/json",
+                    "text": redact(payload)}
+        if uri == "gcm://history":
+            if isinstance(db, _EmptyDB):
+                return {"uri": uri, "mimeType": "application/json",
+                        "text": redact(json.dumps({"history": [], "count": 0},
+                                                  ensure_ascii=False))}
+            rows = db.recent_syncs(limit=50)
+            payload = json.dumps({"history": rows, "count": len(rows)},
                                  ensure_ascii=False, indent=2)
             return {"uri": uri, "mimeType": "application/json",
                     "text": redact(payload)}
@@ -333,6 +351,9 @@ class _EmptyDB:
 
     def search_repos(self, query: str, host: str | None = None,
                      limit: int = 500) -> list[dict[str, Any]]:
+        return []
+
+    def recent_syncs(self, limit: int = 50) -> list[dict[str, Any]]:
         return []
 
     def stats_overview(self) -> dict[str, Any]:
@@ -522,9 +543,13 @@ def _handle_call(msg_id: Any, params: dict[str, Any], data_dir: Path,
             body = "\n".join(str(u) for u in urls) + "\n"
             if bool(args.get("dry_run")):
                 # G84-13：预览不落盘、不触网（连子进程都不起），与 CLI --dry-run 同源
+                # Rev17 T7：preview_id 与 CLI 同语义（进程内 uuid，不落盘）
                 from .app.batch_plan import plan_batch
                 plan = plan_batch(body, data_dir)
-                return _result(msg_id, {"dry_run": True, "plan": plan.to_dict()})
+                import uuid as _uuid
+                return _result(msg_id, {"dry_run": True,
+                                        "preview_id": _uuid.uuid4().hex,
+                                        "plan": plan.to_dict()})
             if bool(args.get("async")):
                 # G84-13：异步作业 —— 立即返回 job_id，通道不再被阻塞 1 小时
                 token = (params.get("_meta") or {}).get("progressToken")

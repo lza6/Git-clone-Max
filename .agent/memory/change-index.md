@@ -15,6 +15,10 @@ owner: memory-keeper
 | `tests/test_ui_compact_visibility.py` | **新增**：主操作区 9 尺寸零裁切 + 变异自检 | v9.12.1 | 新增主操作按钮要加进 `_MAIN_ACTION_WIDGETS` |
 | 模块 | 最近变更 | 版本 | 连带影响 |
 |------|---------|------|---------|
+| `gcm/ui/startup_wiring.py` | **新增（Rev17 T4）**：`__init__` 的看门狗/告警/报表/队列/凭据提示/自动更新定时器/启动耗时七段搬到这里；`__init__` 269→185 行 | v9.20.0 | 改启动期后台装配改这里；告警接线守卫在 `test_g69_regressions.TestG69_18WiringClosure.test_alerts_callback_wired`（读本文件）；**搬移教训**：`_fmt_dt` 是 main_window 模块级函数，本文件要用 `time.strftime` |
+| `gcm/app/release_fetch.py` | **新增（Rev17 Batch C）**：release 附件下载（eget 匹配 + web-crawler 续传语义）+ CLI `--fetch-release` | v9.20.0 | 断点续传四路分支语义（206 偏移校验/200 重下/416 收尾/OSError 不重试）在 docstring；改它必跑 `test_rev17_release_fetch`（17 例真 socket）；except 预算已登记 test_g80_hygiene |
+| `gcm/ui/batch_preview_dialog.py` | **T3 勾选执行**：checkbox 列、replace 默认不选、全不选禁用、`selected_rows()`/`unchecked_executable_urls()`；动作列 0→1 | v9.20.0 | 老的按列读单元格的测试要跟着列号走（test_s11 已改）；`download_tools.open_batch_preview` 负责剔除未勾选行 |
+| `gcm/mcp_server.py` | **T5 新增 `gcm://history` 资源** + history 元数据走 tr()；`repo_db.recent_syncs()` JOIN 供数据 | v9.20.0 | 资源清单改动要同步 agent-contract §4.2 与 `test_g84_mcp_resources`（真 stdio 握手） |
 | `gcm/app/engine.py` | **C1 批 7 处**：删 `_host_concurrency=4` 硬编码；`discard()` 停全定时器；`set_concurrency(by_user=)` 同步天花板并补满待发队列；新增 `batch_start_limit()/_top_up_pending()/_running_count()`；并发记忆恢复不再被 retry_queue 短路；删死常量 `_FLUSH_INTERVAL`；批次收尾 `_maybe_checkpoint_wal()` | v9.12.0 | ①改并发语义前先看 `set_concurrency` docstring（`by_user` 两种语义）；②`_running` 必须与 `_on_worker_done` 严格配对，否则补投停摆/超发；③流控上限现由池上限派生（并发 3 时首批只 3 个） |
 | `gcm/ui/settings_network.py` | **新增**：`host_concurrency` + `time_budget_min` 两行设置（含 0=不限 的说明与提示行） | v9.12.0 | `settings_groups.py` 已 786 行贴 800 上限 → **再加设置项请继续落新模块**；控件上限来自 `db/validators.int_range()` |
 | `gcm/db/validators.py` | `_INT_RANGES` 增 `host_concurrency(0..32)` / `time_budget_min(0..720)` | v9.12.0 | UI `setRange` 与后端钳制自动同源；新增字段若忘登记，UI 用 `int_range()` 会 KeyError（故意的） |

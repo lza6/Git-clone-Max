@@ -242,8 +242,17 @@ class ManagePanel(ManageColumnMixin, QWidget):
         ov.raise_()
 
     def _load_db_into_grid(self):
-        """从 DB 加载仓库列表到模型（全 host，含本地导入仓库；批量懒渲染）。"""
-        self.manage_model.set_rows(self.owner.db.list_repos())
+        """从 DB 加载仓库列表到模型（全 host，含本地导入仓库；批量懒渲染）。
+
+        Rev17 T6：>10k 行时 WARN 一次 —— 让「数据量增长拖慢 UI」从静默退化
+        变成可观测（S-08 实测 5k 行 3ms/仓可接受，10k 是观测阈值不是硬闸）。
+        """
+        rows = self.owner.db.list_repos()
+        if len(rows) > 10000:
+            from ..app.applog import warn as _warn
+            _warn(f"管理页加载 {len(rows)} 行（>10k）：GUI 线程写入变慢属预期，"
+                  "如觉卡顿可考虑归档/清理历史仓库")
+        self.manage_model.set_rows(rows)
         self._apply_manage_filter()
         self._update_empty_manage()
         # G47-5 懒加载磁盘大小

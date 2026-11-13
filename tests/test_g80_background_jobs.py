@@ -277,9 +277,16 @@ class TestPanelAndWiring(unittest.TestCase):
         self.assertIn("BackgroundJobsDialog", mw)
 
     def test_startup_registers_jobs(self):
-        """启动时真的会登记（只加了函数却没在启动处调用 = 伪闭环）。"""
+        """启动时真的会登记（只加了函数却没在启动处调用 = 伪闭环）。
+
+        Rev17 T4：调用点搬移到 ui/startup_wiring.py（纯搬移），守卫跟着走，
+        并要求 main_window 真的调用了 wire_background_services（防搬移链断）。
+        """
         mw = Path("gcm/ui/main_window.py").read_text(encoding="utf-8")
-        self.assertIn("register_default_jobs(self.settings)", mw)
+        self.assertIn("wire_background_services(self)", mw,
+                      "startup_wiring 装配调用点丢失")
+        sw = Path("gcm/ui/startup_wiring.py").read_text(encoding="utf-8")
+        self.assertIn("register_default_jobs(owner.settings)", sw)
 
 
 if __name__ == "__main__":

@@ -96,8 +96,8 @@ class TestPreviewDialog(unittest.TestCase):
         dlg = BatchPreviewDialog(text, "C:/tmp/preview")
         self.addCleanup(dlg.close)
         self.assertEqual(dlg.table.rowCount(), len(plan.rows))
-        # 重复 + 无效行必须给警告色动作
-        actions = [dlg.table.item(i, 0).text() for i in range(dlg.table.rowCount())]
+        # 重复 + 无效行必须给警告色动作（Rev17 T3 后动作列从 0 移到 1，第 0 列是勾选列）
+        actions = [dlg.table.item(i, 1).text() for i in range(dlg.table.rowCount())]
         self.assertIn("重复", actions)
         self.assertIn("无效", actions)
 

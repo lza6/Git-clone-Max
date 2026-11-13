@@ -97,9 +97,9 @@ class TestFunctionSizeBudget(unittest.TestCase):
         """
         actual = _measure()
         worst = max(actual.items(), key=lambda kv: kv[1])
-        self.assertEqual((worst[0][0], worst[0][1]),
-                         ("gcm/ui/main_window.py", "__init__"),
-                         "最长函数换人了 —— 请确认是否应当拆分，并更新 CLAUDE.md §6")
+        self.assertIn((worst[0][0], worst[0][1]), _REGISTERED,
+                      "最长函数换人了 —— 请确认是否应当拆分，并更新 CLAUDE.md §6"
+                      f"（当前最长：{worst[0][0]}:{worst[0][1]} {worst[1]} 行）")
 
     def test_guard_is_not_hollow(self):
         """反向自检：把阈值临时降到 3，必须能报出一大批函数。

@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..i18n import tr
+from .error_dialog import show_error
 
 
 class DiagReportDialog(QDialog):
@@ -92,7 +93,7 @@ class DiagReportDialog(QDialog):
                 extra_manifest={"exported_at": time.strftime("%Y-%m-%d %H:%M:%S")},
             )
         except Exception as exc:  # noqa: BLE001 —— 导出失败必须让用户看到原因
-            QMessageBox.warning(self, tr("导出失败"), str(exc))
+            show_error(self, exc, context=tr("导出诊断包"), title=tr("导出失败"))
             return
         self._btn_export.setText(tr("已导出"))
         QMessageBox.information(self, tr("诊断包已导出"), str(out))

@@ -635,10 +635,17 @@ class TestG69_18WiringClosure(unittest.TestCase):
                          f"引用了从未创建的控件：{missing}")
 
     def test_alerts_callback_wired(self):
-        """AlertScanner 未接 on_alerts → 告警命中后用户全程无感。"""
+        """AlertScanner 未接 on_alerts → 告警命中后用户全程无感。
+
+        Rev17 T4：AlertScanner 构造整段搬移到 ui/startup_wiring.py（纯搬移），
+        源码检查跟着搬 —— 两个文件都要有：main_window 保留 alerts_fired 信号
+        定义与槽，startup_wiring 持有 on_alerts= 接线。
+        """
         src = self._read("gcm/ui/main_window.py")
-        self.assertIn("on_alerts=", src, "AlertScanner 未接 on_alerts 回调")
-        self.assertIn("alerts_fired", src)
+        self.assertIn("alerts_fired", src, "alerts_fired 信号/槽应在 main_window")
+        wiring = self._read("gcm/ui/startup_wiring.py")
+        self.assertIn("on_alerts=", wiring,
+                      "AlertScanner 未接 on_alerts 回调（搬移后应在 startup_wiring）")
 
     def test_alert_slot_is_gui_safe(self):
         """告警槽必须在 GUI 线程执行且不得弹模态（后台周期产物）。

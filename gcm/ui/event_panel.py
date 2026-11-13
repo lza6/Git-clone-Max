@@ -57,7 +57,17 @@ def _summary(ev: Any) -> str:
     d = getattr(ev, "data", {}) or {}
     t = getattr(ev, "type", "")
     if t == EventType.TASK_RESULT:
-        return f"{d.get('status', '')} · {d.get('action', '')} · {d.get('message', '')}"
+        # Rev17（7fd-②）：三段直拼语义混淆 —— status=failed 与 message=克隆完成
+        # 连读自相矛盾（"failed · cloned · 克隆完成"）。改为各段带语义前缀，
+        # 空段跳过；message 本身已可读（"克隆完成"/失败原因），放最后。
+        parts = []
+        if d.get('status'):
+            parts.append(f"{_status_word(str(d['status']))}")
+        if d.get('action') and d.get('action') != 'cloned':
+            parts.append(f"{d['action']}")
+        if d.get('message'):
+            parts.append(str(d['message']))
+        return " · ".join(parts) if parts else "—"
     if t == EventType.TASK_ERROR:
         return f"[{d.get('category', '')}] {d.get('title', '')} · {d.get('action', '')}"
     if t in (EventType.RETRY_QUEUED, EventType.RETRY_DROPPED):
@@ -69,6 +79,13 @@ def _summary(ev: Any) -> str:
     if t == EventType.BATCH_STARTED:
         return f"total={d.get('total', '')} depth={d.get('fetch_depth', '')}"
     return str(d.get('message', ''))[:160]
+
+
+def _status_word(s: str) -> str:
+    """状态英文值 → 中文词（7fd-② 摘要可读性）。"""
+    return {"success": tr("成功"), "failed": tr("失败"), "cancelled": tr("已取消"),
+            "conflict": tr("冲突"), "skipped": tr("已跳过"), "running": tr("运行中"),
+            "pending": tr("等待中")}.get(s, s)
 
 
 def filter_events(events: list[Any], mode: str) -> list[Any]:

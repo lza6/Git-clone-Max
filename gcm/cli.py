@@ -279,6 +279,48 @@ def _serve_main(root: Path, bind: str, allow_mutate: bool, json_mode: bool) -> i
                  allow_mutate=allow_mutate, json_mode=json_mode)
 
 
+def _fetch_release_main(repo: str, out_dir: str | None, json_mode: bool) -> int:
+    """Rev17 Batch C：下载 OWNER/REPO 最新 Release 的本机平台附件。
+
+    退出码：0 成功；1 无匹配资产/下载失败；2 参数错误。--json 输出结构化结果。
+    """
+    from gcm.app.release_fetch import download_asset, latest_release_assets, pick_asset
+    out = Path(out_dir) if out_dir else Path.cwd() / "release-downloads"
+    try:
+        tag, assets = latest_release_assets(repo, timeout=15.0)
+    except Exception as e:  # noqa: BLE001 —— 网络/API 失败必须给用户可读原因
+        if json_mode:
+            print(json.dumps({"ok": False, "error": str(e), "repo": repo}))
+        else:
+            print(f"[CLI] 获取 release 失败：{e}")
+        return 1
+    asset = pick_asset(assets)
+    if asset is None:
+        if json_mode:
+            print(json.dumps({"ok": False, "error": "no matching asset",
+                              "repo": repo, "tag": tag,
+                              "assets": [a.name for a in assets]}))
+        else:
+            print(f"[CLI] {repo} 的最新 release（{tag}）没有匹配本机平台的附件")
+        return 1
+    try:
+        path = download_asset(asset, out)
+    except Exception as e:  # noqa: BLE001 —— 下载失败必须给用户可读原因
+        if json_mode:
+            print(json.dumps({"ok": False, "error": str(e), "repo": repo,
+                              "asset": asset.name}))
+        else:
+            print(f"[CLI] 下载失败：{e}")
+        return 1
+    if json_mode:
+        print(json.dumps({"ok": True, "repo": repo, "tag": tag,
+                          "asset": asset.name, "path": str(path),
+                          "size": asset.size}))
+    else:
+        print(f"[CLI] 已下载 {repo} {tag} → {path}（{asset.size} 字节）")
+    return 0
+
+
 def _diag_main(root: Path, json_mode: bool) -> int:
     """G56-1 网络/环境诊断：复用 gcm.app.diag 探测项，输出统一 schema。"""
     try:
@@ -331,6 +373,8 @@ def _print_help() -> int:
         "  --dry-run       只做本地预检：打印\"将克隆/将更新/目录被占/重复/无效\"，\n"
         "                  不联网、不写盘（配 --json 输出完整计划）\n"
         "  --no-clean      prune 只报告模式：列出远端已删仓库，不删任何东西\n"
+        "  --fetch-release OWNER/REPO [--out <目录>]\n"
+        "                  下载该仓库最新 Release 中匹配本机平台的附件（断点续传）\n"
         "  --prune         删除远端已删仓库的数据库记录（不删本地目录；需 --yes）\n"
         "  --prune-untouched  连本地目录一起删（不可恢复；需 --yes；黑名单仓永不删）\n"
         "  --help, -h      显示本帮助\n"
@@ -389,6 +433,24 @@ def main(argv: list[str] | None = None) -> int:
     dry_run = "--dry-run" in args
     if dry_run:
         args.remove("--dry-run")
+    # Rev17 Batch C：--fetch-release OWNER/REPO 下载最新 release 附件（HTTP 域，
+    # 与 git 克隆分离）。--out <目录> 可选（默认 ./release-downloads）。
+    fetch_repo: str | None = None
+    if "--fetch-release" in args:
+        _fi = args.index("--fetch-release")
+        if _fi + 1 >= len(args):
+            print("[CLI] --fetch-release 缺少 OWNER/REPO 参数")
+            return 2
+        fetch_repo = args[_fi + 1]
+        del args[_fi:_fi + 2]
+    fetch_out: str | None = None
+    if "--out" in args:
+        _oi = args.index("--out")
+        if _oi + 1 >= len(args):
+            print("[CLI] --out 缺少目录参数")
+            return 2
+        fetch_out = args[_oi + 1]
+        del args[_oi:_oi + 2]
     # R-01 prune 三态（互斥；默认 no-clean 只报告不删）
     prune_mode = None
     for flag, m in (("--prune", "prune"),
@@ -413,6 +475,8 @@ def main(argv: list[str] | None = None) -> int:
                            allow_mutate, json_mode)
     if diag:
         return _diag_main(root, json_mode)
+    if fetch_repo is not None:
+        return _fetch_release_main(fetch_repo, fetch_out, json_mode)
     if prune_mode is not None:
         # R-01：prune 扫描全库并按模式清理；不消耗 urls 输入，执行完即返回。
         # 审查 P1：--dry-run 与 prune 同用时，删除模式必须强制降为只报告 ——
@@ -491,7 +555,12 @@ def main(argv: list[str] | None = None) -> int:
         if json_mode:
             # `mode: "dry_run"` 是给消费者的判别位：这份 JSON **不是**克隆结果，
             # `ok` 只表示"预览算出来了"，不代表任何仓库成功（契约漂移防线）。
+            # Rev17 T7：preview_id 是进程内 uuid（不落盘）——agent 可以拿它做
+            # 「同一批输入两次预览是否一致」的比对锚；GUI 预览对话框同源
+            # plan_batch，counts 一致即可确认"看到的就是会执行的"。
+            import uuid as _uuid
             doc = {"version": __version__, "ok": True, "mode": "dry_run",
+                   "preview_id": _uuid.uuid4().hex,
                    "plan": plan.to_dict()}
             print(json.dumps(doc, ensure_ascii=False, indent=2))
         else:

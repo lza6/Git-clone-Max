@@ -408,6 +408,20 @@ class Database(BackupMixin, SshKeyMixin, SearchMixin, RepoProfileMixin,
             ).fetchall()
             return [dict(r) for r in rows]
 
+    def recent_syncs(self, limit: int = 50) -> list[dict[str, Any]]:
+        """全库最近 N 条同步记录（JOIN repos 取 owner/repo；Rev17 T5 MCP gcm://history 用）。"""
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT h.id, h.started_at, h.status, h.action, h.duration_ms,
+                       h.commits, r.owner, r.repo, r.host
+                FROM sync_history h JOIN repos r ON r.id = h.repo_id
+                ORDER BY h.id DESC LIMIT ?
+                """,
+                (int(limit),),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
     # ------------------------------------------------------------ G03-8 / G07-1 统计
     def stats_for_repo(self, repo_id: int) -> dict:
         """单仓库同步聚合：次数/成功/失败/冲突/取消/平均耗时。"""

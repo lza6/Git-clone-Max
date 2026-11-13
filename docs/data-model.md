@@ -102,7 +102,7 @@ SQLite，文件 `data/repos.db`，WAL 模式。
 | 文件 | 用途 | 并发与治理 |
 |------|------|-----------|
 | `progress.json` | 断点续传（`finished` / `in_progress` / `failed`） | 原子写（tmp + `os.replace`）；`cross_process_lock` 双层锁；读-改-写在**同一临界区**内完成；G52-4 滚动裁剪 |
-| `settings.json` | 全部设置（token / host_tokens / webhook token 加密落盘） | `.bak` 备份恢复；`cross_process_lock`；tmp 名含 pid+tid（G67-23） |
+| `settings.json` | 全部设置（token / host_tokens / webhook token 加密落盘） | `.bak` 备份恢复；`cross_process_lock`；tmp 名含 pid+tid（G67-23）；`update(**patch)` 锁内读-改-写，dict 字段浅合并（`ui_state` 保 key、`host_tokens` 整值替换保 R9 删除语义，B6） |
 | `history.json` | URL 历史（去重、上限 200） | — |
 | `lists/` | 任务清单持久化 | — |
 | `session_runtime.json` | 跨会话续跑清单 + 看门狗心跳 | — |

@@ -1203,4 +1203,9 @@ EN = {
     '（无远端）': '(no remote)',
     '（疑似半成品：已取回未检出）': '(suspected half-clone: fetched, not checked out)',
     '（近批失败率 {r}%）': '(recent batch failure rate {r}%)',
+    '执行': 'Run',
+    '执行勾选行': 'Run selected',
+    '已跳过（预览未勾选）：{u}': 'Skipped (unchecked in preview): {u}',
+    '同步历史（最近 50 条）': 'Sync history (latest 50)',
+    '全库最近同步记录（时间/仓库/状态/动作/耗时），agent 判断「上次跑成没成」用': 'Recent syncs across all repos (time/repo/status/action/duration); lets agents check the last run',
 }

@@ -89,8 +89,20 @@ class TestMcpResourcesAndPrompts(unittest.TestCase):
         uris = {r["uri"] for r in res}
         self.assertIn("gcm://status", uris)
         self.assertIn("gcm://repos", uris)
+        self.assertIn("gcm://history", uris)
         for r in res:
             self.assertIn("mimeType", r)
+
+    def test_read_history_resource(self):
+        """Rev17 T5：gcm://history 真实握手 —— 空库返回空数组、合法 JSON。"""
+        out = self.s.call("resources/read", {"uri": "gcm://history"})["result"]
+        content = out["contents"][0]
+        self.assertEqual(content["uri"], "gcm://history")
+        self.assertEqual(content["mimeType"], "application/json")
+        data = json.loads(content["text"])
+        self.assertIn("history", data)
+        self.assertIn("count", data)
+        self.assertEqual(data["count"], len(data["history"]))
 
     def test_read_status_resource(self):
         out = self.s.call("resources/read", {"uri": "gcm://status"})["result"]

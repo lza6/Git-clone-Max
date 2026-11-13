@@ -1,12 +1,12 @@
 {
-  "total": 746,
+  "total": 760,
   "by_file": {
     "gcm/git/service.py": 121,
     "gcm/mcp_server.py": 69,
     "gcm/app/engine.py": 52,
     "gcm/app/errors.py": 42,
     "gcm/http_api.py": 36,
-    "gcm/cli.py": 33,
+    "gcm/cli.py": 41,
     "gcm/app/alerts.py": 27,
     "gcm/app/undo.py": 26,
     "gcm/ui/qss_validate.py": 26,
@@ -31,7 +31,7 @@
     "gcm/app/autostart.py": 6,
     "gcm/ui/background_jobs_panel.py": 6,
     "gcm/ui/command_palette.py": 6,
-    "gcm/ui/manage_panel.py": 6,
+    "gcm/ui/manage_panel.py": 8,
     "gcm/ui/retry_panel.py": 6,
     "gcm/app/mirror_probe.py": 5,
     "gcm/app/sched_reports.py": 5,

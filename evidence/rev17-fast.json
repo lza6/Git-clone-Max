@@ -1,0 +1,44 @@
+{
+  "version": "9.20.0",
+  "final_round": 7,
+  "fast_suite": "2271 tests · failures=0 · errors=0 · skipped=4（含 7fd/T6/T7/pick_asset 修复）",
+  "coverage": {
+    "stmts": 20402,
+    "miss": 3570,
+    "branch": 5278,
+    "partial": 938,
+    "exact_percent": 80.54,
+    "gate_result": "PASS（显示整数口径）"
+  },
+  "static_gates": {
+    "ruff": "All checks passed (152 files)",
+    "mypy": "Success (152 files)",
+    "vulture_min80": "0 hits",
+    "doc_drift": "DRIFT 0",
+    "i18n": "I18N OK"
+  },
+  "mutations_self_check": [
+    "T1a 高度常量守卫",
+    "T3 replace 默认不勾守卫"
+  ],
+  "real_bugs_caught": [
+    "darwin 误中 win 正则（release_fetch）",
+    "中性资产被误排除",
+    "416 走 HTTPError 而非 2xx",
+    "winget sha 漂移（v9.19.1 漏跑 gen_winget）",
+    "T4 搬移 owner._fmt_dt 不存在被静默吞"
+  ],
+  "checked_at": "2026-11-13T21:10:00+08:00",
+  "real_e2e": [
+    "e2e_smoke PASS",
+    "CLI diag ok 9.20.0",
+    "真克隆 octocat success=cloned",
+    "真下载 cli/cli v2.104.0 msi 15425536B 签名一致",
+    "fetch-release 404 出口契约正确"
+  ],
+  "t8_timing": {
+    "test_g7*": "229 例 24.7s",
+    "test_g8*": "313 例 20.3s",
+    "结论": "无 >60s 组合，不合并"
+  }
+}

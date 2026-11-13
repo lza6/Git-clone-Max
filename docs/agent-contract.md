@@ -1,6 +1,6 @@
 # Git-clone-Max Agent 契约（G56-5）
 
-> 适用版本：v9.19.1。本文档是所有 agent 接入点
+> 适用版本：v9.20.0。本文档是所有 agent 接入点
 > （CLI `--json` / MCP server / 本地 HTTP API / `skills/gcm-*`）的统一契约。
 > 任何实现与本文档冲突时，以实际输出为准（测试 `tests/test_g56_contract.py` 抽样断言）。
 
@@ -27,7 +27,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ```json
 {
-  "version": "9.19.1",
+  "version": "9.20.0",
   "ok": true,
   "counts": {"success": 2, "failed": 0, "other": 0, "total": 2},
   "results": [
@@ -66,9 +66,10 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ```json
 {
-  "version": "9.19.1",
+  "version": "9.20.0",
   "ok": true,
   "mode": "dry_run",
+  "preview_id": "0f1e2d3c…（32 位 hex，Rev17 T7）",
   "plan": {
     "root": "/abs/out",
     "dry_run": true,
@@ -84,6 +85,9 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 - **`mode` 字段是判别位**：有它就不是克隆结果，`ok` 只表示"预览算出来了"，
   与任何仓库是否成功无关。消费方必须先判 `mode` 再读 `counts`。
+- **`preview_id`（Rev17 T7）**：进程内 uuid（不落盘）。用途：①同一批输入两次
+  预览的比对锚；②与 GUI 预览对话框同源 `plan_batch`——counts 一致即
+  "看到的就是会执行的"。MCP `clone_batch(dry_run=true)` 响应同字段。
 - `action` 六档语义（与执行器逐条对齐）：
   `clone` 新克隆 · `update` 增量更新 · **`replace`（会先删除目标目录再克隆）** ·
   `blocked`（`local_path` 来自导入元数据 → 执行器不删除，非空非 git 会失败） ·
@@ -94,7 +98,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ```json
 {
-  "version": "9.19.1",
+  "version": "9.20.0",
   "ok": true,
   "mode": "prune:prune",
   "pruned": 1,
@@ -132,6 +136,27 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 因此 `--prune`（扫描 `repos.db`）**看不到**纯 `--cli` 克隆过的仓库 —— 这是
 「无状态」的直接推论，不是缺陷。要入库请用 GUI。
+
+### 2.1e `--fetch-release`（Rev17 Batch C 新增，与批处理无关的独立入口）
+
+```bash
+python -m gcm --cli --fetch-release OWNER/REPO [--out <目录>] [--json]
+```
+
+下载该仓库**最新 Release** 中匹配本机平台（Windows x64 优先，无平台词的通用
+压缩包兜底）的附件到 `<out>`（默认 `./release-downloads`），带断点续传
+（`.part` + Range；206 起始偏移错位宁可重下不拼接；本地磁盘错误立即失败不重试）。
+
+`--json` 形态（与批处理结果**不同形**）：
+
+```json
+{"ok": true, "repo": "OWNER/REPO", "tag": "v1.2.3",
+ "asset": "tool-windows-x86_64.zip", "path": "…/tool-windows-x86_64.zip",
+ "size": 12345}
+```
+
+失败：`{"ok": false, "error": "…"}`（无匹配资产时附 `assets` 名单与 `tag`）。
+token 取自 git credential manager（与检查更新同源），只发给 api/github.com。
 
 ### 2.2 退出码
 
@@ -209,6 +234,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 | `gcm://status` | application/json | 统计概览（与 `status` 工具同源） |
 | `gcm://repos` | application/json | 仓库清单（剔敏感列 + 打码） |
 | `gcm://report/markdown` | text/markdown | 内存生成的报表（不写盘） |
+| `gcm://history` | application/json | 全库最近 50 条同步记录（JOIN owner/repo；agent 判断「上次跑成没成」） |
 
 | 提示词 | 参数 | 用途 |
 |--------|------|------|
@@ -224,7 +250,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
 
 ```
 → {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{}}}
-← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"gcm","version":"9.19.1"}}}
+← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"gcm","version":"9.20.0"}}}
 → {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
 ← {"jsonrpc":"2.0","id":2,"result":{"tools":[{...list_repos...}, ...]}}
 → {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_repos","arguments":{}}}

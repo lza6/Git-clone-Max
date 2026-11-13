@@ -104,3 +104,33 @@ class TestQuickScrollNoClipping(unittest.TestCase):
         class _Owner:       # 还没挂 scroll 的宿主：不得抛
             _quick_fill_buttons = []
         sync_quick_scroll_height(_Owner())   # 不抛即通过
+
+
+class TestRepoInputHeightConstantsConsumed(unittest.TestCase):
+    """Rev17 T1a 守卫：极矮折叠窗的输入框高度分支必须引用模块常量。
+
+    Rev16 复审 P3 的「真机-only 分支无守卫」：offscreen 下 `<560 折叠` 分支
+    不可达。抽常量后本守卫断言**代码引用常量而非字面量** —— 这是 offscreen
+    可达到的最大强度，不证明真机渲染（真机验证仍归 beads ph3）。
+    """
+
+    def test_constants_exist_and_are_referenced(self):
+        import re as _re
+        src = (pathlib.Path(__file__).resolve().parent.parent
+               / "gcm" / "ui" / "main_window.py").read_text(encoding="utf-8")
+        for name in ("REPO_INPUT_MAX_FOLDED_SHORT", "REPO_INPUT_MAX_NORMAL",
+                     "REPO_INPUT_SHORT_WINDOW"):
+            m = _re.search(rf"^{_re.escape(name)}\s*=\s*(\d+)\b", src, _re.M)
+            self.assertIsNotNone(m, f"模块常量 {name} 缺失（被改名/删除？）")
+        # 消费点必须用常量，不得回退到字面量 96/112/560
+        call_site = src[src.index("_ri.setMaximumHeight("):]
+        call_site = call_site[:call_site.index("_act = getattr")]
+        self.assertIn("REPO_INPUT_MAX_FOLDED_SHORT", call_site)
+        self.assertIn("REPO_INPUT_SHORT_WINDOW", call_site)
+        self.assertIn("REPO_INPUT_MAX_NORMAL", call_site)
+        for lit in ("96", "112", "560"):
+            self.assertNotIn(f" {lit} ", call_site.replace(
+                f"REPO_INPUT_MAX_FOLDED_SHORT", " X ").replace(
+                f"REPO_INPUT_SHORT_WINDOW", " X ").replace(
+                f"REPO_INPUT_MAX_NORMAL", " X "),
+                f"高度分支出现字面量 {lit}，应引用模块常量")
