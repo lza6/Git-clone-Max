@@ -1,0 +1,48 @@
+{
+  "task_id": "rev18-post-release-ci-audit",
+  "status": "done",
+  "timestamp": "2026-11-14T21:55:00+08:00",
+  "scope": "发布后 CI 复核：甄别 ubuntu/macos test job 红为 4 个测试平台假设缺陷并修复（beads b75）+ 指南 §6 生命周期归档",
+  "commands_executed": [
+    {"cmd": "git ls-remote origin refs/tags/v9.21.0 refs/heads/main", "exit_code": 0, "note": "tag v9.21.0=8b8ae3e、main=53d4bf2 均已在远端"},
+    {"cmd": "gh release view v9.21.0 --json assets", "exit_code": 0, "note": "双资产在架：exe 43,040,369 B + zip 82,485,084 B，published 2026-11-14T07:45:51Z"},
+    {"cmd": "gh run view 43574449360 --json jobs", "exit_code": 0, "note": "windows/perf/fast-smoke/slow/e2e-smoke success；ubuntu/macos failure"},
+    {"cmd": "gh run view 43413395842 --log-failed", "exit_code": 0, "note": "v9.20.0 时代 ubuntu 已有 rev13/rev17 两预存红（未登记）"},
+    {"cmd": "bd create --title='CI POSIX 侧 4 测试平台假设缺陷…' --type=bug --priority=1", "exit_code": 0, "note": "→ beads-planning-b75"},
+    {"cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_g85_coverage_gap", "exit_code": 0, "output_tail": "Ran 24 tests in 1.4s OK"},
+    {"cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_g85_error_dialog", "exit_code": 0, "output_tail": "Ran 11 tests OK（mkdir 用例真实触发三段式，断言 Errno 13）"},
+    {"cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_rev17_release_fetch", "exit_code": 0, "output_tail": "Ran 20 tests in 21.5s OK"},
+    {"cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_rev13_adapt", "exit_code": 0, "output_tail": "Ran 7 tests OK（Windows 无 skip，像素断言保留）"},
+    {"cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_g85_retry_cleanup tests.test_g79_repo_hygiene tests.test_g80_hygiene", "exit_code": 0, "output_tail": "Ran 29 tests OK"},
+    {"cmd": "./.venv/Scripts/python.exe -m ruff check gcm", "exit_code": 0, "output_tail": "All checks passed!"},
+    {"cmd": "./.venv/Scripts/python.exe -m mypy gcm", "exit_code": 0, "output_tail": "Success: no issues found in 152 source files"},
+    {"cmd": "./.venv/Scripts/python.exe scripts/doc_drift_check.py", "exit_code": 0, "output_tail": "DRIFT 0"},
+    {"cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_g67_docs_freshness", "exit_code": 0, "output_tail": "Ran 11 tests OK（归档后曾抓出验证记录旧路径引用，已修正）"},
+    {"cmd": "bd close beads-planning-b75 --reason='…'", "exit_code": 0, "note": "closed"},
+    {"cmd": "git commit 79a9180 + 5e6c877 && git push origin main", "exit_code": 0, "note": "两批推送成功"}
+  ],
+  "files_changed": [
+    "tests/test_g85_coverage_gap.py",
+    "tests/test_g85_error_dialog.py",
+    "tests/test_rev17_release_fetch.py",
+    "tests/test_rev13_adapt.py",
+    ".agent/memory/known-issues.md",
+    "docs/验证记录-2026-11-14-Rev18.md",
+    "docs/archive/plans/20261114/archive-manifest.md",
+    "docs/plans/下一步改进指南.md → docs/archive/plans/20261114/下一步改进指南-Rev18-20261114.md"
+  ],
+  "tests": [
+    {"name": "test_g85_coverage_gap (24)", "type": "unit", "status": "pass"},
+    {"name": "test_g85_error_dialog (11)", "type": "unit", "status": "pass"},
+    {"name": "test_rev17_release_fetch (20)", "type": "unit", "status": "pass"},
+    {"name": "test_rev13_adapt (7)", "type": "unit", "status": "pass"},
+    {"name": "g85_retry_cleanup+g79+g80 守卫 (29)", "type": "guard", "status": "pass"},
+    {"name": "test_g67_docs_freshness (11)", "type": "doc-guard", "status": "pass"}
+  ],
+  "seams_touched": [],
+  "limitations": [
+    "修复后的 POSIX 侧真实通过以 CI 复跑为准（本机为 Windows，POSIX 分支靠 mock 推演）",
+    "beads 被动导出链缺口维持（13 条 JSONL-only 记录 vs Dolt 库，bd 自动导出拒绝覆盖）——历史问题，任务状态以代码与守卫为准",
+    "B4 真机验收 17 项维持未执行（硬件窗口依赖）"
+  ]
+}
