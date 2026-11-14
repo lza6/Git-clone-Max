@@ -91,7 +91,7 @@ owner: memory-keeper
 | test (windows-latest) | ✅ | 主目标平台 |
 | fast-smoke / e2e-smoke / perf-baseline | ✅ | — |
 | packaging | skipped | 仅 tag 触发（见下） |
-| **test (ubuntu/macos-latest)** | ✅（2026-11-14 修复后待 CI 复跑确认） | **此前 4 个 POSIX 预存红已修**（beads `b75`，全部是测试的平台假设缺陷、非生产 bug）：①`test_g85_coverage_gap` kill_tree 断言 taskkill（POSIX 走 killpg）→ 按平台分派；②`test_g85_error_dialog` mkdir 用 `Z:` 盘符触发 OSError（POSIX 当目录名创建成功）→ mock `Path.mkdir` 跨平台真实触发；③`test_rev17_release_fetch` `_platform_tags` 硬断言 `('windows','amd64')` → 按 `os.name` 分支断言；④`test_rev13_adapt` 像素裁切依赖雅黑度量 → 按 `TestFontFamilies` 同款惯例 skipTest（折叠/可达性断言保留执行）。**教训：v9.20.0 起 ubuntu 就红但未被发现——CI failure 状态被「预存红」惯性掩盖，发布前必须逐 job 核对失败集合而不是只看红/绿** |
+| **test (ubuntu/macos-latest)** | ✅ **CI 实测全绿**（run 43605629455，commit 9cd7eac：三平台 test + slow + smoke×2 + perf 全 success） | **此前 4 个 POSIX 预存红已修**（beads `b75`，commits `5e6c877`/`e091be8`，全部是测试的平台假设缺陷、非生产 bug）：①`test_g85_coverage_gap` kill_tree 断言 taskkill（POSIX 走 killpg）→ 按平台分派；②`test_g85_error_dialog` mkdir 用 `Z:` 盘符触发 OSError（POSIX 当目录名创建成功）→ mock `Path.mkdir` 跨平台真实触发；③`test_rev17_release_fetch` `_platform_tags` 硬断言 `('windows','amd64')` 且 FreeBSD 分支漏 mock `platform.machine` → 按 `os.name` 分支 + 补 mock；④`test_rev13_adapt` 像素裁切依赖雅黑度量 → 按 `TestFontFamilies` 同款惯例 skipTest（折叠/菜单/可达性断言保留执行）。**教训：v9.20.0 起 ubuntu 就红但未被发现——CI failure 状态被「预存红」惯性掩盖，发布前必须逐 job 核对失败集合而不是只看红/绿** |
 | **slow** | ✅ 已修 | `tests/test_scanner.py::test_rows_and_data` 断言大小列为空串；R-06 改显示 `—` 后该断言过期 → 已更新断言，慢集 129 例 OK，CI slow job **success** |
 
 **教训（加入 D 系列候选）**：改「用户可见的默认值」时，要 grep **慢集**里的对应断言 ——
