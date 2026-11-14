@@ -122,7 +122,11 @@ class TestMigrationSites(unittest.TestCase):
     """每处迁移：真实触发错误路径 → 断言走了 show_error/show_error_message。"""
 
     def test_main_window_mkdir_failure_uses_show_error(self):
-        """main_window.py:2358 mkdir OSError → show_error（不再裸 str(e)）。"""
+        """main_window.py:2356 mkdir OSError → show_error（不再裸 str(e)）。
+
+        触发方式跨平台一致：mock `Path.mkdir` 抛 OSError（Windows 上 `Z:` 盘符
+        依赖 NT 盘符语义，POSIX 会当普通目录名创建成功 → 错误路径根本不触发）。
+        """
         from gcm.ui import main_window as mw
 
         w = mw.MainWindow(data_dir=tempfile.mkdtemp(prefix="gcm85_a_"))
@@ -130,19 +134,22 @@ class TestMigrationSites(unittest.TestCase):
             # 第一道门（repo_input 为空 → information 模态）必须先过：
             # 填一个有效地址，让流程走到 target mkdir 的 OSError 分支。
             w.repo_input.setPlainText("https://github.com/o/r")
-            w.target_edit.setText("Z:\__gcm_no_such_drive__\deep\dir")
+            w.target_edit.setText("Z:\\__gcm_no_such_drive__\\deep\\dir")
             holder: list = []
 
             def _factory(info, parent=None, title=None):
                 holder.append(info)
                 return mock.MagicMock()
 
-            with mock.patch.object(error_dialog, "ErrorDialog", side_effect=_factory),                  mock.patch.object(mw.QMessageBox, "question",
-                                   return_value=QMessageBox.StandardButton.Yes):
+            with mock.patch.object(error_dialog, "ErrorDialog", side_effect=_factory), \
+                 mock.patch.object(mw.QMessageBox, "question",
+                                   return_value=QMessageBox.StandardButton.Yes), \
+                 mock.patch.object(mw.Path, "mkdir",
+                                   side_effect=OSError(13, "模拟盘符不存在")):
                 w.start_all()
             self.assertEqual(len(holder), 1,
                              f"mkdir 失败必须走三段式（holder={holder}）")
-            self.assertIn("Z:", str(holder[0].raw))
+            self.assertIn("Errno 13", str(holder[0].raw), "三段式 raw 必须承载 OSError 原文")
         finally:
             w.deleteLater()
 

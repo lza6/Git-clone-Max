@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import os
 import unittest
 
 
@@ -251,9 +252,17 @@ class TestResumeWithLocalServer(unittest.TestCase):
         self.assertEqual(assets[0].name, "tool-windows-x86_64.zip")
 
     def test_platform_tags_windows_and_posix(self):
-        """_platform_tags 双分支（os.name monkeypatch）。"""
+        """_platform_tags 双分支（os.name monkeypatch）；本机分支按 os.name 断言。"""
         import gcm.app.release_fetch as rf
-        self.assertEqual(rf._platform_tags(), ("windows", "amd64"))  # 本机 nt
+        if os.name == "nt":
+            self.assertEqual(rf._platform_tags(), ("windows", "amd64"))
+        else:
+            # POSIX 真机：os_tag 按 system 小写映射（linux/darwin/…），arch 按 machine。
+            import platform as _platform
+            expect_os = {"linux": "linux", "darwin": "darwin"}.get(
+                _platform.system().lower(), _platform.system().lower())
+            self.assertEqual(rf._platform_tags()[0], expect_os)
+            self.assertEqual(rf._platform_tags()[1], _platform.machine().lower())
         orig = rf.os.name
         try:
             rf.os.name = "posix"

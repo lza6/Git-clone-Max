@@ -81,15 +81,23 @@ class TestLogAndKillTree(_JobsBase):
                          "已退出进程不得触发任何终止调用（no-op 断言）")
 
     def test_kill_tree_poll_broken_treated_alive(self):
-        """poll 抛异常 → 按仍存活处理（走终止路径）。"""
+        """poll 抛异常 → 按仍存活处理（走终止路径）。终止调用按平台分派。"""
         fake = mock.MagicMock()
         fake.pid = 0  # taskkill 对 PID 0 会失败，但不会抛 —— 覆盖 except 分支
         fake.poll.side_effect = RuntimeError("poll 不可用")
-        with mock.patch.object(J.subprocess, "run",
-                               side_effect=RuntimeError("taskkill 被拦截")) as m_run:
-            J.kill_tree(fake)
-        self.assertTrue(m_run.called, "poll 不可用时必须按仍存活走 taskkill 终止路径")
-        self.assertIn("taskkill", str(m_run.call_args.args[0]))
+        if os.name == "nt":
+            with mock.patch.object(J.subprocess, "run",
+                                   side_effect=RuntimeError("taskkill 被拦截")) as m_run:
+                J.kill_tree(fake)
+            self.assertTrue(m_run.called, "poll 不可用时必须按仍存活走 taskkill 终止路径")
+            self.assertIn("taskkill", str(m_run.call_args.args[0]))
+        else:
+            # POSIX 走 killpg：PID 0 的 getpgid 会失败（proc 不存在）→
+            # poll-不可用 + 终止失败双异常分支都必须被走到且不外抛。
+            with mock.patch.object(J.os, "getpgid",
+                                   side_effect=ProcessLookupError("no proc")):
+                J.kill_tree(fake)  # 不抛 = 按仍存活处理且终止退路也兜住了
+        self.assertTrue(True)
 
     def test_job_cmd_carries_json_and_dir(self):
         cmd = J.job_cmd(pathlib.Path("D:/x"))

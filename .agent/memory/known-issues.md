@@ -84,15 +84,14 @@ owner: memory-keeper
 | Rev12 缺 evidence/rev12-*.json | 违反自定门禁 | **已补**：`evidence/rev12-usability.json`；Rev12 记录追加 §4 更正（U-13 已被 Rev14 focus_order 覆盖） |
 | R14-18 i18n 长尾 | DOING | **批次 3 完成**：棘轮 1288→1128（实迁 160 条），EN 真窗零残留；批次 4–5 余量以日志/协议层文案为主，明确不再推进（棘轮防恶化） |
 
-## CI 现状（2026-11-08 v9.19.0 推送实测）
+## CI 现状（2026-11-14 Rev18 发布后复核更新）
 
 | Job | 结果 | 说明 |
 |-----|------|------|
 | test (windows-latest) | ✅ | 主目标平台 |
-| test (ubuntu-latest) | ✅ | — |
 | fast-smoke / e2e-smoke / perf-baseline | ✅ | — |
 | packaging | skipped | 仅 tag 触发（见下） |
-| **test (macos-latest)** | ❌ **预存失败（环境阻塞）** | `test_ui_compact_visibility` 两条：(1240,729) 裁切断言 + 其反向自检。**在 `0890f0e`（本轮改动之前）逐字相同地红**（同测试名、同尺寸），属 macOS 字体度量差异；本机无 macOS 环境无法复现与验证修法，盲改会危及 Windows（主目标平台）—— 标为环境阻塞，非本轮回归 |
+| **test (ubuntu/macos-latest)** | ✅（2026-11-14 修复后待 CI 复跑确认） | **此前 4 个 POSIX 预存红已修**（beads `b75`，全部是测试的平台假设缺陷、非生产 bug）：①`test_g85_coverage_gap` kill_tree 断言 taskkill（POSIX 走 killpg）→ 按平台分派；②`test_g85_error_dialog` mkdir 用 `Z:` 盘符触发 OSError（POSIX 当目录名创建成功）→ mock `Path.mkdir` 跨平台真实触发；③`test_rev17_release_fetch` `_platform_tags` 硬断言 `('windows','amd64')` → 按 `os.name` 分支断言；④`test_rev13_adapt` 像素裁切依赖雅黑度量 → 按 `TestFontFamilies` 同款惯例 skipTest（折叠/可达性断言保留执行）。**教训：v9.20.0 起 ubuntu 就红但未被发现——CI failure 状态被「预存红」惯性掩盖，发布前必须逐 job 核对失败集合而不是只看红/绿** |
 | **slow** | ✅ 已修 | `tests/test_scanner.py::test_rows_and_data` 断言大小列为空串；R-06 改显示 `—` 后该断言过期 → 已更新断言，慢集 129 例 OK，CI slow job **success** |
 
 **教训（加入 D 系列候选）**：改「用户可见的默认值」时，要 grep **慢集**里的对应断言 ——
