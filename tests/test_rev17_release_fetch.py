@@ -270,7 +270,9 @@ class TestResumeWithLocalServer(unittest.TestCase):
             with (mock.patch("platform.system", return_value="Linux"),
                  mock.patch("platform.machine", return_value="aarch64")):
                 self.assertEqual(rf._platform_tags(), ("linux", "aarch64"))
-            with mock.patch("platform.system", return_value="FreeBSD"):
+            # arch 来自 platform.machine（原实现漏 mock：在 arch≠amd64 的机器上必炸）
+            with (mock.patch("platform.system", return_value="FreeBSD"),
+                 mock.patch("platform.machine", return_value="amd64")):
                 self.assertEqual(rf._platform_tags(), ("freebsd", "amd64"))
         finally:
             rf.os.name = orig
