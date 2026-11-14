@@ -139,5 +139,20 @@
     "beads issues.jsonl 导出链缺口（embeddeddolt 只读期间创建的 issue 未进被动导出）",
     "B4 真机验收清单未执行（硬件窗口依赖）",
     "macOS CI test_ui_compact_visibility 预存红维持 CUT"
-  ]
+  ],
+  "real_e2e": [
+    "CLI --diag --json v9.21.0 绿（3 items）",
+    "file:// 裸仓全链路克隆 success + worktree 落盘",
+    "单独 --diag stderr WARN 双通道命中（B3-1）",
+    "publish_release 双资产上传 + 服务端 sha256 复验一致（exe 43MB / zip 82MB）",
+    "Release 服务端复验：tag v9.21.0 两资产在架"
+  ],
+  "review": {
+    "rounds": 1,
+    "residual_flagged": [],
+    "redact_check": true,
+    "empty_msg": true,
+    "long_msg_trunc": true,
+    "verdict": "Approve（对抗性自检：残留扫描/redact/空串/超长/AST 守卫全过）"
+  }
 }
