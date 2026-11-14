@@ -1,6 +1,6 @@
 ---
 topic: known-issues
-updated: 2026-11-03
+updated: 2026-11-14
 owner: memory-keeper
 ---
 # 已知问题与边界（known-issues）
