@@ -108,6 +108,26 @@ def _init_applog(portable: bool = False) -> None:
             return
 
 
+def _warn_diag_without_cli(flags: dict) -> None:
+    """B3-1（known-issues #13）：单独 `--diag` 会走 GUI 路径、无诊断输出。
+
+    用户以为跑了诊断，实际只看到「已在运行」/ GUI 启动 —— 必须主动告知
+    `--diag` 需配 `--cli`。双通道：applog（有日志系统时留痕）+ stderr
+    （日志不可用时也可见）。
+    """
+    if not (flags.get("diag") and not flags.get("cli")):
+        return
+    from .i18n import tr
+    msg = tr("--diag 单独使用无诊断效果：需配合 --cli（如 `python -m gcm --cli --diag`）。"
+             "本次将启动 GUI。")
+    try:
+        from gcm.app.applog import warn as _warn
+        _warn(msg)
+    except Exception:           # noqa: BLE001 —— 告警失败不影响主流程
+        pass
+    print(f"[WARN] {msg}", file=sys.stderr)
+
+
 def main(argv=None) -> int:
     flags = _parse_flags(argv)
 
@@ -126,6 +146,9 @@ def main(argv=None) -> int:
         from gcm.cli import main as cli_main
         raw = list(sys.argv[1:] if argv is None else argv)
         return cli_main(_strip_global_flags(raw))
+
+    # B3-1（known-issues #13）：走到这里 = GUI 路径；单独 --diag 在此无诊断效果
+    _warn_diag_without_cli(flags)
 
     from PyQt6.QtCore import Qt
     from PyQt6.QtWidgets import QApplication

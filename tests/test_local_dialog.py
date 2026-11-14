@@ -156,16 +156,28 @@ class TestLocalReposDialog(unittest.TestCase):
             dlg.close()
 
     def test_on_scan_failed_warns_and_resets(self):
-        """扫描失败 → 弹警告、停止扫描态、状态文案含错误、表格恢复可用。"""
+        """扫描失败 → 三段式对话框（U-18）、停止扫描态、状态文案含错误。
+
+        Rev18 B1：`QMessageBox.warning(str)` 迁到 `error_dialog.show_error_message`
+        （classify → ErrorInfo 三段式）。断言同步升级：ErrorDialog 必须被构建且
+        消费了含原始错误文本的 ErrorInfo；exec 被吸收（模态不真跑）。
+        """
         # Arrange
         dlg = LocalReposDialog(parent=None, root_paths=[str(self.tmp)], db=None)
         try:
             # Act
-            with mock.patch("gcm.ui.local_repos_dialog.QMessageBox") as m_msg:
+            from gcm.ui import error_dialog as _ed
+            infos: list = []
+
+            def _factory(info, parent=None, title=None):
+                infos.append(info)
+                return mock.MagicMock()  # exec 被吸收
+
+            with mock.patch.object(_ed, "ErrorDialog", side_effect=_factory):
                 dlg._on_scan_failed("磁盘错误")
             # Assert
-            m_msg.warning.assert_called_once()
-            self.assertIn("磁盘错误", m_msg.warning.call_args.args[2])
+            self.assertEqual(len(infos), 1, "扫描失败必须走三段式 ErrorDialog")
+            self.assertIn("磁盘错误", str(infos[0].raw))
             self.assertIn("扫描失败", dlg.status.text())
             self.assertFalse(dlg.progress.isVisible())
             self.assertIsNone(dlg._worker)

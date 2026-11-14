@@ -1,7 +1,7 @@
 # Git-clone-Max
 
 > GitHub 仓库批量并行下载 / 增量更新 / 入库追踪 的桌面工具（PyQt6）。
-> **当前版本：v9.20.0** · 逐版本历史见 `gcm/__init__.py` 的 `__changelog__`。
+> **当前版本：v9.21.0** · 逐版本历史见 `gcm/__init__.py` 的 `__changelog__`。
 > **v5.0：多平台直克隆** — GitLab / Gitee / Codeberg / Bitbucket / 自建主机（HTTPS/SSH/短格式/子组）同样支持。
 > 克隆目录一律 `host__作者__仓库`（GitHub 为 `作者__仓库`），本地改动永不覆盖。
 
@@ -60,7 +60,7 @@ uv run python -m gcm --portable
 
 | 功能 | 说明 |
 |------|------|
-| 自适应自动更新间隔 | 定时一键更新的间隔会**自适应**：某轮更新发现仓库无任何变更时，下一轮间隔按 ×1.5 退避（封顶 4×），有变更立即回到设置值——仓库没动就不白白请求（v9.20.0） |
+| 自适应自动更新间隔 | 定时一键更新的间隔会**自适应**：某轮更新发现仓库无任何变更时，下一轮间隔按 ×1.5 退避（封顶 4×），有变更立即回到设置值——仓库没动就不白白请求（v9.21.0） |
 | 多平台 | GitHub / GitLab / Gitee / Codeberg / Bitbucket / 自建主机，HTTPS + SSH + 短格式 + 子组 + 自定义主机白名单，直接复制地址即下载 |
 | 指定版本 | `owner/repo@v1.2.0` 语法指定分支/标签（`clone -b`），不改动仓库默认检出 |
 | 仓库级 SSH 私钥 | 仓库详情里可为**单个仓库**指定 SSH 私钥（只记录**路径**，不保存私钥内容）；优先级 仓库级 > 全局设置；清除即回落全局。校验会拒绝「把私钥内容粘进来」、不存在、是目录、非私钥文件 |
@@ -162,7 +162,7 @@ Git-clone-Max/
 ├── skills/                  agent 技能包（gcm-clone/archive/report/diag/resume，各含 SKILL.md）
 ├── scripts/                 启动器（bat/ps1）+ E2E 冒烟 / 健康检查 / 发布 / 基准 / CI 快集
 ├── docs/                    架构 / ADR / 数据模型 / agent 契约 / SOP / 发布清单
-├── tests/                   单元 + 集成 + 真实 git E2E（221 个测试文件）
+├── tests/                   单元 + 集成 + 真实 git E2E（225 个测试文件）
 ├── requirements.txt         运行时依赖（PyQt6）
 └── pyproject.toml           项目元数据 + ruff / mypy 配置
 ```
@@ -281,9 +281,9 @@ python -m coverage run --source=gcm -m unittest discover -s tests
 ## 发布
 
 ```bash
-git tag v9.20.0   # 示例；发版时替换成当次版本（守卫会校验文档里的版本号）
+git tag v9.21.0   # 示例；发版时替换成当次版本（守卫会校验文档里的版本号）
 git push origin main --tags
-python scripts/publish_release.py --tag v9.20.0   # 自动上传 exe 到 GitHub Release
+python scripts/publish_release.py --tag v9.21.0   # 自动上传 exe 到 GitHub Release
 ```
 
 ## License

@@ -1,7 +1,7 @@
 {
-  "total": 760,
+  "total": 762,
   "by_file": {
-    "gcm/git/service.py": 121,
+    "gcm/git/service.py": 123,
     "gcm/mcp_server.py": 69,
     "gcm/app/engine.py": 52,
     "gcm/app/errors.py": 42,

@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ..app.errors import classify_error
 from ..i18n import tr
 
 
@@ -37,9 +38,9 @@ def classify_exception(e: BaseException, context: str = "") -> Any:
     分类不准时 `classify_error` 自会落 CAT_OTHER → 建议「导出诊断包」，比
     裸 `str(e)` 多出「怎么办」一段。
     """
-    from ..app.errors import classify_error
     detail = f"{context}：{e}" if context else str(e)
     return classify_error(str(e), detail)
+
 
 
 def _kind_button(info: Any, parent: QWidget) -> Optional[QPushButton]:
@@ -130,6 +131,26 @@ class ErrorDialog(QDialog):
             str(getattr(info, "raw", "")),
         ) if x.strip())
         QApplication.clipboard().setText(text)
+
+
+def show_error_message(parent: QWidget, message: str, *, context: str = "",
+                       title: Optional[str] = None) -> None:
+    """str 载荷入口：底层 (ok, msg) 返回值 / worker 信号传回的错误文本。
+
+    与 `show_error` 同一分类链（classify_error），只是载荷不是异常对象。
+    worker 传回的字符串通常已是异常的 `str()` 产物（如扫描线程把
+    异常转成信号载荷），分类器对它同样能命中网络/认证/权限类判据。
+    """
+    try:
+        info = classify_error(message, f"{context}：{message}" if context else message)
+    except Exception:       # noqa: BLE001 —— 分类失败退化为纯文本（不比原来差）
+        QMessageBox.warning(parent, title or tr("操作失败"), message)
+        return
+    try:
+        dlg = ErrorDialog(info, parent=parent, title=title)
+        dlg.exec()
+    except Exception:       # noqa: BLE001 —— 对话框构建失败退化为纯文本
+        QMessageBox.warning(parent, title or tr("操作失败"), message)
 
 
 def show_error(parent: QWidget, e: BaseException, *, context: str = "",

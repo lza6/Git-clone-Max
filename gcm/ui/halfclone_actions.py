@@ -74,8 +74,9 @@ def repair_halfcloned_row(panel, row: int) -> None:
         panel.owner._emit_log(_mw._fmt_dt(), _level_info(),
                               tr("半成品检出修复成功：{p}（{msg}）").format(p=p, msg=msg))
     else:
-        from PyQt6.QtWidgets import QMessageBox
-        QMessageBox.warning(panel.owner, tr("无法修复"), f"{p}\n\n{msg}")
+        from .error_dialog import show_error_message  # U-18：三段式
+        show_error_message(panel.owner, msg, context=tr("检出修复半成品"),
+                           title=tr("无法修复"))
 
 
 def delete_halfcloned_row(panel, row: int) -> None:

@@ -144,7 +144,8 @@ def _classify_failure(tail: str) -> tuple:
                     "可尝试在 WSL / Linux / GitHub Codespaces 中克隆。")
         if "exists" in t or "已存在" in tail:
             return ("目标目录已存在（重复提交或残留）",
-                    "同名仓库已被占用或上次克隆残留，已自动去重/清理后重新尝试。")
+                    "同名目录被占用或上次克隆残留。新克隆会先清理半成品目录后重试；"
+                    "若仍失败请检查该目录是否为其他用途。")
         return ("检出工作区失败（平台/文件系统限制）",
                 "可能因长路径、文件系统限制或仓库内含非法文件名导致 checkout 失败。")
     # G71-3：网络类失败给出可解释文案（并让重试队列能识别为可重试）。
@@ -290,6 +291,7 @@ def run_git_ui(cmd: Iterable[str], cwd: str, on_line: LineCallback,
                progress_detail: Optional[Callable[[str], None]] = None,
                thread_probe: Optional[Callable[[threading.Thread], None]] = None,
                budget: float | None = None,
+               before_retry: Optional[Callable[[], None]] = None,
                ) -> tuple[int, str]:
     """运行 git 命令并实时转发输出，带超时与整树终止。
 
@@ -299,10 +301,15 @@ def run_git_ui(cmd: Iterable[str], cwd: str, on_line: LineCallback,
     生产调用方不传，仅用于单测观察读线程生命周期，属向后兼容扩展。
     `budget`：A5-3/C-10 每仓库总时间预算（秒）—— 降级链每档开始前检查剩余预算，
     超预算如实报「已用尽时间预算」，不再让「600s×3 重试×4 候选」叠出 50-60 分钟。
+    `before_retry`：G85-① 重试前回调（克隆场景=清半成品残留目录）。不设时原样重跑
+    —— 对 clone 而言残留目录会让重试必撞 `already exists`（2026-11-14 实测：
+    任务[9] LFS 下载撞 600s 超时，重试秒败且错误分类被污染）。
 
     实现要点：
     - 读线程持续泵 stdout，主线程用 proc.wait(timeout) 兜底，静默挂死也能按时触发超时。
     - 成功（rc==0）立即 break，绝不重复启动子进程。
+    - G85-②：deadline **每轮重算**。原实现 deadline 在循环外算一次，重试轮共用
+      第一轮的 deadline → 重试瞬间被判超时秒死，「超时后自动重试」从未真正工作。
     """
     last_progress = ""
     attempts = 0
@@ -319,6 +326,8 @@ def run_git_ui(cmd: Iterable[str], cwd: str, on_line: LineCallback,
                 level="warn"))
             rc = -1
             break
+        start = time.time()
+        deadline = (start + timeout) if timeout else None
         proc = subprocess.Popen(
             cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding="utf-8", errors="replace", bufsize=1,
@@ -328,7 +337,6 @@ def run_git_ui(cmd: Iterable[str], cwd: str, on_line: LineCallback,
             # 下一次同步撞「不完整目录」。Windows 侧靠 taskkill /T 解决，无需此参数。
             start_new_session=(os.name != "nt"),
         )
-        start = time.time()
         log: list[str] = []
         timed_out = False
         cancelled_flag = False
@@ -386,9 +394,7 @@ def run_git_ui(cmd: Iterable[str], cwd: str, on_line: LineCallback,
         # A5-3/C-1：主线程 100ms 步进轮询 —— 原实现 `proc.wait(timeout+5)` 阻塞，
         # git 静默（TLS 握手/等首包/大 pack 无输出行）时读线程的超时分支永远走不到
         # （它只在读到行时判定），取消请求被完全吞掉。轮询每步查超时与取消 → 秒级生效。
-        # deadline 按 timeout 本身（+5 的缓冲只用于旧版阻塞 wait 的唤醒余量，
-        # 轮询版不再需要；进程终止后的回收见循环外 proc.wait(15)）。
-        deadline = (start + timeout) if timeout else None
+        # G85-②：deadline 已移到循环头按轮重算（见函数 docstring），此处删除旧赋值。
         while True:
             try:
                 proc.wait(timeout=0.1)
@@ -469,10 +475,24 @@ def run_git_ui(cmd: Iterable[str], cwd: str, on_line: LineCallback,
                     level="warn"))
             if attempts < max_attempts - 1 and not cancelled() and budget_left_ok:
                 delay = backoff[attempts] if attempts < len(backoff) else backoff[-1]
-                # G22-7：重试文案含剩余等待秒数与原因（用户可感知重试节奏）
+                if before_retry is not None:
+                    try:
+                        before_retry()
+                    except Exception as e:      # noqa: BLE001 —— 清理失败不阻断重试链
+                        on_line(StreamChunk(
+                            index=0,
+                            text=f"重试前清理残留失败（继续重试）：{e}",
+                            level="warn"))
+                # G22-7：重试文案含剩余等待秒数与原因（用户可感知重试节奏）。
+                # G85-③：行内必须带 "timed out" 标记 —— 该行会进 _last_clone_tail，
+                # `_is_networkish_error` 靠它把超时失败归入网络类
+                # （treeless/depth1 降级链判据），引擎侧 classify_error 也据此
+                # 判可重投。此前文案只有中文「操作超时」，tail 不含任何可分类
+                # 关键词 → 超时失败被误判 other 终态（2026-11-14 实测任务[9]）。
                 on_line(StreamChunk(
                     index=0,
-                    text=f"操作超时，{delay:.0f}s 后自动重试（{attempts + 1}/{max_attempts - 1}）…",
+                    text=f"操作超时（timed out），{delay:.0f}s 后自动重试"
+                         f"（{attempts + 1}/{max_attempts - 1}）…",
                     level="warn"))
                 time.sleep(delay)
                 attempts += 1
@@ -483,6 +503,14 @@ def run_git_ui(cmd: Iterable[str], cwd: str, on_line: LineCallback,
             tail = "\n".join(log[-8:]) if log else ""
             if _is_networkish_error(tail) and attempts < max_attempts - 1:
                 delay = backoff[attempts] if attempts < len(backoff) else backoff[-1]
+                if before_retry is not None:
+                    try:
+                        before_retry()
+                    except Exception as e:      # noqa: BLE001 —— 清理失败不阻断重试链
+                        on_line(StreamChunk(
+                            index=0,
+                            text=f"重试前清理残留失败（继续重试）：{e}",
+                            level="warn"))
                 on_line(StreamChunk(
                     index=0,
                     text=f"网络抖动（原因：{tail.splitlines()[-1].strip() if tail else '未知'}），"
@@ -1426,6 +1454,11 @@ class GitService:
                               retries=(0 if clone_url != source_url else self.retries),
                               backoff=self._backoff,
                               budget=self.time_budget or None,  # A5-3/C-10 单仓预算
+                              # G85-①：超时/网络失败重试前清掉半成品残留目录。
+                              # 对 clone 而言不清理则重试必撞 already exists（残留
+                              # 目录是第一次尝试留下的），tail 被污染后错误分类全错
+                              # —— 修根因而不是在分类器里补关键词。
+                              before_retry=lambda: self._safe_rmtree_partial(repo_dir),
                               progress_detail=getattr(
                                   self, "send_progress_detail", None))
         # G58-2：镜像克隆失败 → 回退源站再试一次（探测通过也可能在 clone 阶段失败）
@@ -1442,6 +1475,7 @@ class GitService:
                                   timeout=self.clone_timeout, retries=self.retries,
                                   backoff=self._backoff,
                                   budget=self.time_budget or None,
+                                  before_retry=lambda: self._safe_rmtree_partial(repo_dir),
                                   progress_detail=getattr(
                                       self, "send_progress_detail", None))
         # G81（N-5）：记录实际取数通道（"" = 直连源站）。必须在 origin 恢复前

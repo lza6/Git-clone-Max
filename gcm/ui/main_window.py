@@ -2355,7 +2355,8 @@ class MainWindow(QMainWindow):
         try:
             Path(target).mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            QMessageBox.warning(self, tr("提示"), tr("无法创建下载目录：{e}").format(e=e))
+            from .error_dialog import show_error  # U-18：三段式（发生了什么/为什么/怎么办）
+            show_error(self, e, context=tr("创建下载目录"), title=tr("提示"))
             return
         # G38-4：模式 1=浅克隆、2=单分支浅克隆（都走 shallow 路径，后者加 --single-branch）
         mode_idx = self.mode_combo.currentIndex()

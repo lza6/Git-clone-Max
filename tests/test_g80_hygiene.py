@@ -109,8 +109,18 @@ GCM = ROOT / "gcm"
 #   +1（release_fetch 416 语义修正）：416 会被 urlopen 抛成 HTTPError 而非 2xx 返回，
 #   收尾分支改为 except HTTPError 单独拦截（416+完整→收尾 / 416+不完整→重下），
 #   其余 HTTP 错误 re-raise 走统一重试——第三个 except 仍是分类分支不是吞。
-BASELINE_EXCEPT = 773
-BASELINE_PASS_ONLY = 285
+# - 2026-11-14（G85 超时重试链修复）+2（except 773→775 / **pass-only 285 未涨**）：
+#   run_git_ui 的 before_retry 回调在超时/网络两条重试路径上各包一层 try ——
+#   清理失败必须 warn 出口并继续重试（不能让残留目录问题变成重试链中断）。
+#   两处都是「有可观测出口非静默」。
+# - 2026-11-14（Rev18 B1/B3）+3（except 775→778 / pass-only 285→286）：
+#   ① ui/error_dialog.show_error_message +2：分类失败与对话框构建失败各退化
+#   为纯文本 QMessageBox（「不比原来差」兜底，非静默——用户仍看到错误文本）；
+#   ② __main__._warn_diag_without_cli +1：applog 不可用时 stderr 直出告警
+#   （告警通道自身失败不得影响启动），带 1 个 pass-only（applog 抛则放弃留痕，
+#   stderr 通道仍送达——双通道设计的关键就是两条独立）。
+BASELINE_EXCEPT = 778
+BASELINE_PASS_ONLY = 286
 
 
 def _py_files() -> list[Path]:

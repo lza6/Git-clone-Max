@@ -5,7 +5,7 @@
 > 这边是**跑了证明什么**（接缝 ↔ 用例 ↔ 最后结果）。
 > 只记录本轮真实运行过的结果；引用历史结果必须标日期。
 
-**最后更新**：2026-11-13（v9.20.0：Rev13 新增 S50–S51 两条适配接缝；Rev11 于 2026-11-04 新增 S47–S49）。各接缝的**引入版本**写在下表 S 行的括号里 —— 这里不再堆版本沿革（堆一行会让每次发版都撞版本守卫，且读者也读不出哪条是什么时候加的）。
+**最后更新**：2026-11-14（v9.21.0：Rev13 新增 S50–S51 两条适配接缝；Rev11 于 2026-11-04 新增 S47–S49）。各接缝的**引入版本**写在下表 S 行的括号里 —— 这里不再堆版本沿革（堆一行会让每次发版都撞版本守卫，且读者也读不出哪条是什么时候加的）。
 
 ---
 
@@ -84,6 +84,8 @@
 | S61 | **窄窗设置导航 → 下拉替代**（Rev15 / R15-04） | `settings_workspace.build_settings_workspace()` | `main_window._apply_layout_mode()` → `set_compact_nav()` | ①<1000 列表隐藏、下拉可见；②≥1000 列表可见、下拉隐藏；③两者分组数一致；④下拉进 Tab 链 | 同上（7） |
 | S62 | **管理页档位 → 列显隐**（Rev15 / R15-07） | `manage_table.ManageColumnMixin.COLUMN_SPECS` + `main_window._apply_layout_for_width()` | `QTableView.setColumnHidden()` | ①<1100 隐健康/大小；②≥1100 恢复；③日期/HEAD 窄窗下限保持可读；④列宽持久化不丢 | `tests/test_r15_manage_columns`（4）· `tests/test_rev14_feedback`（列宽 4） |
 | S63 | **触屏 → 主操作 44px**（Rev15 / R15-08） | `palettes.TOKENS["control"]["touch"]` | `main_window._apply_wide_layout()` | ①触屏主操作 ≥44、行 34；②桌面仍 38/28；③离屏平台不误判触屏；④token 有生产消费点 | `tests/test_r15_touch`（2）· `tests/test_rev14_feedback`（token 守卫） |
+| S64 | **失败弹窗 → 三段式对话框**（Rev18 B1 / U-18 收口） | `ui/error_dialog.show_error`（异常载荷）/ `show_error_message`（str 载荷，分类走 `app/errors.classify_error`） | `main_window.start_all`（mkdir）· `settings_actions.backup_database` / `migrate_data_dir_flow` · `local_repos_dialog._on_scan_failed` · `halfclone_actions.repair_halfcloned_row` | ①6 处迁移点真实触发断言 ErrorInfo 三段非空；②AST 守卫禁新增 `QMessageBox.critical/warning(<异常文本>)`（白名单 error_dialog 兜底，反向自检证明扫描器有效）；③确认类弹窗默认 No 语义不变（R15-06） | `tests/test_g85_error_dialog`（11）+ `test_local_dialog`（24）升级 1 例 |
+| S65 | **单独 --diag → 双通道告警**（Rev18 B3-1 / known-issues #13） | `__main__._warn_diag_without_cli(flags)` | `main()` GUI 分支（CLI 分支不告警） | ①单独 --diag 必 applog WARN + stderr；②`--cli --diag` 不告警；③help 文案含「需配 --cli」防漂移；④文案走 tr()（zh/en 同步） | `tests/test_g85_diag_alone`（4）|
 
 ---
 

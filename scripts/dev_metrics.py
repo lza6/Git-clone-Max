@@ -36,6 +36,10 @@ ACCEPTED_OVERSIZED = {
 OVERSIZED_LIMIT = 800
 FUNCTION_LIMIT = 100
 
+# B3-2（Rev18）：纯文档技能 —— 工作流检查清单类，没有可执行验收物，
+# 缺 scripts/ 不是缺陷（SKILL.md 顶部已声明）。新增纯文档技能时在此登记。
+PURE_DOC_SKILLS = {"gcm-feature"}
+
 
 def py_files(sub: str) -> list[Path]:
     return sorted(p for p in (ROOT / sub).rglob("*.py") if "__pycache__" not in p.parts)
@@ -110,7 +114,9 @@ def collect() -> dict:
         "skills": [p.name for p in skills],
         "skills_count": len(skills),
         "skills_without_scripts": [
-            p.name for p in skills if not (p / "scripts").is_dir()],
+            p.name for p in skills
+            if not (p / "scripts").is_dir() and p.name not in PURE_DOC_SKILLS],
+        "pure_doc_skills": sorted(PURE_DOC_SKILLS),
     }
     data.update(except_budget())
     return data
@@ -133,6 +139,7 @@ def main(argv: list[str]) -> int:
     print(f"except 子句 / pass-only = {data['except_total']} / {data['except_pass_only']}")
     print(f"tests/ test_*.py     = {data['test_files']}   总行数 = {data['test_total_lines']}")
     print(f"skills/ 技能包        = {data['skills_count']} {data['skills']}")
+    print(f"  纯文档技能（无脚本为设计）= {data['pure_doc_skills']}")
     print(f"  缺 scripts/ 的        = {data['skills_without_scripts']}")
     print("\n（覆盖率与快集用例数需另跑，见指南 §1.2：")
     print("  coverage run --source=gcm scripts/ci_run_fast.py && coverage report）")

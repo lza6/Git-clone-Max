@@ -1,0 +1,143 @@
+{
+  "task_id": "rev18-b0-b3",
+  "status": "complete",
+  "timestamp": "2026-11-14",
+  "commands_executed": [
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen python -m unittest tests.test_g85_retry_cleanup -v",
+      "exit_code": 0,
+      "tail": "Ran 9 tests in 9.453s OK"
+    },
+    {
+      "cmd": "python -m unittest [13 family regression for G85]",
+      "exit_code": 0,
+      "tail": "Ran 235 tests in 91.568s OK"
+    },
+    {
+      "cmd": "python -m unittest tests.test_g85_error_dialog",
+      "exit_code": 0,
+      "tail": "Ran 11 tests in 0.784s OK"
+    },
+    {
+      "cmd": "python -m unittest tests.test_g85_diag_alone",
+      "exit_code": 0,
+      "tail": "Ran 4 tests in 0.026s OK"
+    },
+    {
+      "cmd": "python -m unittest tests.test_g85_coverage_gap",
+      "exit_code": 0,
+      "tail": "Ran 24 tests OK"
+    },
+    {
+      "cmd": "coverage run --source=gcm scripts/ci_run_fast.py (final)",
+      "exit_code": 0,
+      "tail": "Ran 2324 tests failures=0 errors=0 skipped=4"
+    },
+    {
+      "cmd": "coverage report --include=gcm/* --precision=2",
+      "exit_code": 0,
+      "tail": "TOTAL 20461 3436 5288 936 81.24%"
+    },
+    {
+      "cmd": "ruff check gcm",
+      "exit_code": 0,
+      "tail": "All checks passed!"
+    },
+    {
+      "cmd": "mypy gcm",
+      "exit_code": 0,
+      "tail": "Success: no issues found in 152 source files"
+    },
+    {
+      "cmd": "scripts/doc_drift_check.py",
+      "exit_code": 0,
+      "tail": "DRIFT 0"
+    },
+    {
+      "cmd": "scripts/i18n_coverage.py",
+      "exit_code": 0,
+      "tail": "I18N OK"
+    },
+    {
+      "cmd": "scripts/bump_version.py --to 9.21.0 --write --allow-dirty",
+      "exit_code": 0,
+      "tail": "版本守卫通过"
+    },
+    {
+      "cmd": "scripts/changelog.py build --version 9.21.0",
+      "exit_code": 0,
+      "tail": "已聚合 4 条碎片"
+    },
+    {
+      "cmd": "python -m unittest tests.test_g81_changelog",
+      "exit_code": 0,
+      "tail": "Ran 9 tests OK"
+    },
+    {
+      "cmd": "test_manage_ui stability (post-fix)",
+      "exit_code": 0,
+      "tail": "10/10 runs OK"
+    }
+  ],
+  "files_changed": [
+    "gcm/ui/error_dialog.py",
+    "gcm/ui/main_window.py",
+    "gcm/ui/settings_actions.py",
+    "gcm/ui/local_repos_dialog.py",
+    "gcm/ui/halfclone_actions.py",
+    "gcm/__main__.py",
+    "gcm/i18n/zh.py",
+    "gcm/i18n/en.py",
+    "scripts/dev_metrics.py",
+    "skills/gcm-feature/SKILL.md",
+    "tests/test_g85_error_dialog.py",
+    "tests/test_g85_diag_alone.py",
+    "tests/test_g85_coverage_gap.py",
+    "tests/test_local_dialog.py",
+    "tests/test_manage_ui.py",
+    "tests/test_g79_repo_hygiene.py",
+    "tests/test_g80_hygiene.py",
+    "docs/archive/plans/20261114/",
+    "docs/真机验收清单-Rev18.md",
+    "docs/验证记录-2026-11-14-Rev18.md",
+    "test_ledger.md",
+    ".agent/memory/known-issues.md"
+  ],
+  "tests": {
+    "new_guards": {
+      "test_g85_error_dialog": 11,
+      "test_g85_diag_alone": 4,
+      "test_g85_coverage_gap": 24
+    },
+    "fast_suite_final": {
+      "total": 2324,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 4
+    },
+    "coverage_exact_percent": 81.24
+  },
+  "coverage_summary": {
+    "before": 80.54,
+    "after": 81.24,
+    "gate": 81,
+    "pass": true
+  },
+  "seams_touched": [
+    "S64",
+    "S65"
+  ],
+  "mock_scenarios_covered": [
+    "classify_failure_degrade",
+    "dialog_build_failure_degrade",
+    "mcp_jobs_cancel_races",
+    "watchdog_timeout",
+    "pump_stdin_cancel"
+  ],
+  "browser_validation": "不适用（桌面 PyQt 应用；UI 交互经 offscreen 测试 + 真机清单交付）",
+  "limitations": [
+    "beads issues.jsonl 导出链缺口（embeddeddolt 只读期间创建的 issue 未进被动导出）",
+    "B4 真机验收清单未执行（硬件窗口依赖）",
+    "macOS CI test_ui_compact_visibility 预存红维持 CUT"
+  ]
+}

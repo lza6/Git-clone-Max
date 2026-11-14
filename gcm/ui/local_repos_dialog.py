@@ -192,7 +192,8 @@ class LocalReposDialog(QDialog):
     def _on_scan_failed(self, err: str):
         self._set_scanning(False)
         self.status.setText(tr("扫描失败：{err}").format(err=err))
-        QMessageBox.warning(self, tr("扫描失败"), err)
+        from .error_dialog import show_error_message  # U-18：三段式
+        show_error_message(self, err, context=tr("扫描本地仓库"), title=tr("扫描失败"))
 
     def _set_scanning(self, on: bool):
         self.progress.setVisible(on)

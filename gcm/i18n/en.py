@@ -1209,4 +1209,9 @@ EN = {
     '同步历史（最近 50 条）': 'Sync history (latest 50)',
     '全库最近同步记录（时间/仓库/状态/动作/耗时），agent 判断「上次跑成没成」用': 'Recent syncs across all repos (time/repo/status/action/duration); lets agents check the last run',
     '已跳过（预览未勾选）：{n} 个': 'Skipped (unchecked in preview): {n}',
+    '创建下载目录': 'Create download directory',
+    '备份失败': 'Backup failed',
+    '扫描本地仓库': 'Scan local repos',
+    '检出修复半成品': 'Repair half-cloned repo',
+    '--diag 单独使用无诊断效果：需配合 --cli（如 `python -m gcm --cli --diag`）。本次将启动 GUI。': '--diag alone has no diagnostic effect: pass --cli (e.g. `python -m gcm --cli --diag`). GUI will start.',
 }

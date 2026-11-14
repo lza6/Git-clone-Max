@@ -8,6 +8,9 @@ description: >
   repository, when fixing a recurring class of defect (version drift, encoding,
   time, security boundary, platform difference), or when taking over the repo
   and unsure which document is authoritative.
+# B3-2（Rev18）：纯文档技能 —— 本技能是工作流检查清单，无可执行验收物，
+# 不含 scripts/（dev_metrics.PURE_DOC_SKILLS 已登记）。
+pure_doc: true
 triggers:
   - "add feature"
   - "add api"

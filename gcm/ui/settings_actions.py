@@ -219,8 +219,8 @@ def backup_database(panel) -> None:
                   cancellable="non_cancellable"):
             n = db.backup_to(dest)
     except Exception as e:      # noqa: BLE001 —— 失败必须可见，不能静默
-        QMessageBox.warning(owner, tr("备份数据库"),
-                            tr("备份失败：{err}").format(err=e))
+        from .error_dialog import show_error  # U-18：三段式 + 分类动作
+        show_error(owner, e, context=tr("备份数据库"), title=tr("备份失败"))
         return
     QMessageBox.information(
         owner, tr("备份数据库"),
@@ -328,7 +328,8 @@ def migrate_data_dir_flow(panel) -> None:
             owner, tr("迁移完成"),
             tr("{msg}。请手动重启应用以使用新数据目录。").format(msg=msg))
     else:
-        QMessageBox.warning(owner, tr("迁移失败"), msg)
+        from .error_dialog import show_error_message  # U-18：str 载荷三段式
+        show_error_message(owner, msg, context=tr("迁移数据目录"), title=tr("迁移失败"))
 
 
 __all__ = ["add_data_dir_section", "save_post_clone_hook", "migrate_data_dir_flow"]

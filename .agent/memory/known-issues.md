@@ -59,7 +59,7 @@ owner: memory-keeper
 | 10 | **断点续传跳过的仓库不产生终态**：用户把已下过的仓库再贴一次点「开始」→ 行永远停在「等待中」、`本次/详情/耗时` 被抹成「—」、通知「成功 0」、状态栏一直「并行同步中」（GUI 实测复现）。根因 `engine.launch()` 的 `_precheck_skip` 命中后只 `_emit_line` + `_mark_done` + `continue`，不 emit result；全跳过时 `finished.emit()` 但零结果 | **已闭环（Rev14 F2，同日）**：引擎新增 `skipped` 信号 + `launch(report_skipped=)`；GUI 行到终态、小结报「跳过 N」；守卫 `tests/test_rev14_skipped`（3 例） |
 | 11 | **小屏「下载位置 / 克隆模式 / 层数」被裁到 6–23px**（几何断言：1024×768 下 `target_edit` 可见 352×6/352×34；1366×768 同样；1440×900 无裁切） | **已闭环（Rev14 F1，同日）**：三个控件移出滚动区成常驻行；契约清单已补入，27 组合 + 900×480 **零裁切**；折叠阈值重扫为 720/740/760 |
 | 12 | ~~验收工具的数据洞：种子不建真实目录/不给 sha/耗时~~ | **已闭环（Rev14 V3 复核 2026-11-08）**：`ui_screenshot_audit.py:91` `_seed` 已为每列造真实数据（真实目录 + `head_sha` + `duration_ms`），docstring 明写「每一列都要有数据」 |
-| 13 | **`--diag` 单独用会静默走 GUI 单实例路径**（`-m gcm --diag` → 打印「已在运行」并 exit 0）；帮助里写的是 `--cli --diag` | **开放（P3）**：help 未说明必须配 `--cli` |
+| 13 | ~~**`--diag` 单独用会静默走 GUI 单实例路径**~~ | **已闭环（Rev18 B3-1，2026-11-14）**：help 早已写明（cli.py:368-369）；GUI 路径新增 `_warn_diag_without_cli` —— 单独 `--diag` 打 applog WARN + stderr 双通道告警；守卫 `tests/test_g85_diag_alone`（4 例） |
 
 ## 2026-11-08 收口（Rev10 稳定性批次 + Rev11-C 悬空项）
 
@@ -209,6 +209,7 @@ owner: memory-keeper
 | `test_g67_closure.TestShutdownClearsInProgress` | 高负载下偶发失败 | 3 次全量里约 1 次 | 子进程 + 立刻 shutdown 的竞态；单独跑稳定 |
 | `test_single_instance.TestSingleInstanceCrossProcess` | 同上 | 同上 | 跨进程锁 + 端口时序 |
 | `test_g66_patch` 的 schtasks 用例 | 已改为与语言无关判据，但**外部工具行为**仍受环境影响 | 低 | 只断言「无 U+FFFD + 可无损回编码」 |
+| ~~`test_manage_ui.test_check_update_new_version_asks_and_opens_browser`~~ | ~~快集全量下偶发~~ | **已根治（Rev18，2026-11-14）**：根因不是线程时序而是**测试隔离缺陷** —— `__init__` 的 `QTimer.singleShot(2500, self._check_update_silent)` 捕获绑定方法，实例属性置换拦不住；定时器到点后走真网络（`check_latest_with_sha` 未 mock 的 urlopen），慢于泵窗口即偶发红。修复：setUp 类级短路该定时器注册 + 补 mock `check_latest_with_sha`。修复后连跑 10/10 全绿 |
 
 ## 环境边界
 

@@ -88,6 +88,22 @@ class TestManageUi(unittest.TestCase):
         # 断言才真正指向被测行为（而不是在与启动定时器抢时间）。
         self.w._check_update_silent = lambda *a, **k: None
         self.w._maybe_show_onboarding = lambda *a, **k: None
+        # Rev18 根因修复：`__init__` 里 `QTimer.singleShot(2500, self._check_update_silent)`
+        # 捕获的是**构造时的绑定方法**——上面的实例属性置换拦不住它。定时器到点后
+        # 静默检查走真网络（`check_latest_with_sha` 未被 mock 的部分真实 urlopen，
+        # 防火墙下可慢至 10s+），慢于 `_pump_until` 的 5s 窗口时手动路径的
+        # question 就被挤出窗口 → 偶发红（实测快集里 ~50% 频率）。在类级把
+        # `_check_update_silent` 的定时器注册短路；其余 singleShot 原样放行。
+        from PyQt6.QtCore import QTimer as _QTimer
+        self._orig_singleShot = _QTimer.singleShot
+
+        def _no_update_silent_shot(ms, fn, *a, **k):
+            if getattr(fn, "__name__", "") == "_check_update_silent":
+                return None
+            return self._orig_singleShot(ms, fn, *a, **k)
+
+        _QTimer.singleShot = staticmethod(_no_update_silent_shot)
+        self.addCleanup(lambda: setattr(_QTimer, "singleShot", self._orig_singleShot))
 
     def tearDown(self):
         # 先停掉日志节流定时器并 flush，再关闭窗口（closeEvent 会收尾引擎/DB）
@@ -156,13 +172,17 @@ class TestManageUi(unittest.TestCase):
         url = "https://github.com/lza6/Git-clone-Max/releases/tag/v9.9.9"
         with mock.patch("gcm.app.updater.check_latest",
                         return_value=(True, "v9.9.9", url, "")) as m_check, \
+                mock.patch("gcm.app.updater.check_latest_with_sha",
+                           return_value=(True, "v9.9.9", url, "", "")), \
                 _msgbox_patch(QMessageBox.StandardButton.Yes) as m_msg, \
                 mock.patch("webbrowser.open") as m_open:
             self.w.check_update_now()
             # G67-9：网络在工作线程，弹窗回 GUI 线程 → 必须泵事件等到槽执行
             self.assertTrue(_pump_until(_app, lambda: m_msg.question.called),
                             "提问框应在信号回主线程后弹出")
-        self.assertTrue(m_check.called, "手动检查必须调用 check_latest")
+        # 手动路径的真实入口是 `check_latest_with_sha`（其内部才调 check_latest）；
+        # 两个入口都被 mock 时 `m_check.called` 不再成立 —— 改断言 question 的
+        # 弹窗文本（含新版本号与当前版本），那才是被测行为的可观察结果。
         m_msg.question.assert_called_once()
         text = m_msg.question.call_args.args[2]
         self.assertIn("最新版本 v9.9.9", text)
