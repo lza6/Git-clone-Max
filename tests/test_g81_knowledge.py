@@ -330,6 +330,14 @@ class TestProfileRealPipeline(unittest.TestCase):
         res.profile = RepoProfile(lang="rust", kind="cli", summary="pipe test",
                                   has_ci=True, langs={"rust": 7})
         eng._on_result(0, res)
+        # S-08：落库走后台执行器（异步）——轮询等待写入完成，最多 2s。
+        import time as _time
+        got = None
+        for _ in range(40):
+            got = db.get_repo_profile("o", "r", "github.com")
+            if got is not None and got.lang:
+                break
+            _time.sleep(0.05)
 
         got = db.get_repo_profile("o", "r", "github.com")
         self.assertEqual(got.lang, "rust", "引擎必须把画像写进 repos.profile_json")

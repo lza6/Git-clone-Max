@@ -2,6 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "always_available": [
     {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
       "description": "列出数据库中的仓库（只读；支持 host 过滤）",
       "inputSchema": {
         "properties": {
@@ -15,6 +21,12 @@
       "name": "list_repos"
     },
     {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
       "description": "按关键字搜索仓库（owner/repo/host/tag/note，只读）",
       "inputSchema": {
         "properties": {
@@ -31,6 +43,12 @@
       "name": "search_repos"
     },
     {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
       "description": "导出报表 CSV/Markdown（只读数据源，写产出文件）",
       "inputSchema": {
         "properties": {
@@ -51,6 +69,12 @@
       "name": "export_report"
     },
     {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
       "description": "读取全局统计概览（仓库数/同步次数/成功失败，只读）",
       "inputSchema": {
         "properties": {},
@@ -59,6 +83,12 @@
       "name": "status"
     },
     {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
       "description": "查询 clone_batch(async=true) 启动作业的进度/结果（只读）。未完成时 finished=false；完成后 result 与同步版返回同形。",
       "inputSchema": {
         "properties": {
@@ -101,6 +131,12 @@
   ],
   "requires_allow_mutate": [
     {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
       "description": "批量克隆仓库到数据目录（**写操作**：触网 + 写盘；仅 --allow-mutate 时暴露）。复用 CLI --json 子进程，返回与 CLI 相同的顶层契约。传 dry_run=true 则只返回本地预检计划（不联网、不写盘）。",
       "inputSchema": {
         "properties": {
@@ -128,6 +164,12 @@
       "name": "clone_batch"
     },
     {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
       "description": "取消一个正在跑的 clone_batch 作业（终止子进程树）。需 GCM_MCP_ENABLE=1 + --allow-mutate。",
       "inputSchema": {
         "properties": {

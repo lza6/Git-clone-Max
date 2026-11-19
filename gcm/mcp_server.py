@@ -40,22 +40,18 @@ _MCP_DISABLED_RC = 3  # 与 gcm/cli.py ECODE_MCP_DISABLED 一致
 _SENSITIVE_COLS = ("token", "host_tokens", "ssh_key", "url")
 
 
-def _annotations(read_only: bool, *, destructive: bool = False,
-                 idempotent: bool = False, open_world: bool = True) -> dict[str, Any]:
-    """批次①：MCP ToolAnnotations 四件套（对齐 modelcontextprotocol/servers 口径）。
+# 批次①：ToolAnnotations 四件套常量（对齐 modelcontextprotocol/servers 口径）。
+# 只读工具：readOnly+幂等、不触外网；clone_batch 触外网但非破坏性；
+# job_cancel 破坏性非幂等；export_report 写产出文件但幂等、不触外网。
+_ANN_RO = {"readOnlyHint": True, "destructiveHint": False,
+           "idempotentHint": True, "openWorldHint": False}
+_ANN_MUTATE_NET = {"readOnlyHint": False, "destructiveHint": False,
+                   "idempotentHint": False, "openWorldHint": True}
+_ANN_MUTATE_LOCAL = {"readOnlyHint": False, "destructiveHint": False,
+                     "idempotentHint": True, "openWorldHint": False}
+_ANN_CANCEL = {"readOnlyHint": False, "destructiveHint": True,
+               "idempotentHint": False, "openWorldHint": False}
 
-    - readOnlyHint：只读工具 True；clone_batch(dry_run) 也算只读（不写盘不联网）。
-    - destructiveHint：删除/取消类 True（仅对非只读工具有意义）。
-    - idempotentHint：status/list/search 等重复调用无副作用 True。
-    - openWorldHint：clone_batch 触外网 True；其余只读本地 DB False。
-    """
-    out: dict[str, Any] = {"readOnlyHint": read_only}
-    if not read_only:
-        out["destructiveHint"] = destructive
-    # 只读工具天然幂等（重复调用无副作用）；显式给出避免客户端各自推断
-    out["idempotentHint"] = True if read_only else idempotent
-    out["openWorldHint"] = open_world
-    return out
 
 
 # 只读工具定义（工具列表即契约，docs/agent-contract.md 同步）
@@ -63,8 +59,7 @@ _TOOLS: list[dict[str, Any]] = [
     {
         "name": "clone_batch",
         "mutate": True,
-        "annotations": _annotations(read_only=False, destructive=False,
-                                    idempotent=False, open_world=True),
+        "annotations": _ANN_MUTATE_NET,
         "description": (
             "批量克隆仓库到数据目录（**写操作**：触网 + 写盘；仅 --allow-mutate "
             "时暴露）。复用 CLI --json 子进程，返回与 CLI 相同的顶层契约。"
@@ -95,7 +90,7 @@ _TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "list_repos",
-        "annotations": _annotations(read_only=True, idempotent=True, open_world=False),
+        "annotations": _ANN_RO,
         "description": "列出数据库中的仓库（只读；支持 host 过滤）",
         "inputSchema": {
             "type": "object",
@@ -104,7 +99,7 @@ _TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "search_repos",
-        "annotations": _annotations(read_only=True, idempotent=True, open_world=False),
+        "annotations": _ANN_RO,
         "description": "按关键字搜索仓库（owner/repo/host/tag/note，只读）",
         "inputSchema": {
             "type": "object",
@@ -114,8 +109,7 @@ _TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "export_report",
-        "annotations": _annotations(read_only=False, destructive=False,
-                                    idempotent=True, open_world=False),
+        "annotations": _ANN_MUTATE_LOCAL,
         "description": "导出报表 CSV/Markdown（只读数据源，写产出文件）",
         "inputSchema": {
             "type": "object",
@@ -127,14 +121,14 @@ _TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "status",
-        "annotations": _annotations(read_only=True, idempotent=True, open_world=False),
+        "annotations": _ANN_RO,
         "description": "读取全局统计概览（仓库数/同步次数/成功失败，只读）",
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
         # G84-13：异步作业的状态查询（只读，任何时候都可用）
         "name": "job_status",
-        "annotations": _annotations(read_only=True, idempotent=True, open_world=False),
+        "annotations": _ANN_RO,
         "description": ("查询 clone_batch(async=true) 启动作业的进度/结果（只读）。"
                         "未完成时 finished=false；完成后 result 与同步版返回同形。"),
         "inputSchema": {
@@ -147,8 +141,7 @@ _TOOLS: list[dict[str, Any]] = [
         # G84-13：取消作业（写操作 → 与 clone_batch 同一条放行门槛）
         "name": "job_cancel",
         "mutate": True,
-        "annotations": _annotations(read_only=False, destructive=True,
-                                    idempotent=False, open_world=False),
+        "annotations": _ANN_CANCEL,
         "description": ("取消一个正在跑的 clone_batch 作业（终止子进程树）。"
                         "需 GCM_MCP_ENABLE=1 + --allow-mutate。"),
         "inputSchema": {
@@ -158,6 +151,7 @@ _TOOLS: list[dict[str, Any]] = [
         },
     },
 ]
+
 
 
 #: MCP 资源（G84-23）：把「只读事实」直接暴露成可寻址的 URI，
