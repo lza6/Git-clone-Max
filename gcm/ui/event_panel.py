@@ -260,9 +260,7 @@ class EventStreamPanel(QWidget):
         btn.setText(tr("已复制"))
         reduced = bool(getattr(self, "_reduced_motion", False))
         if reduced or os.environ.get("QT_QPA_PLATFORM") == "offscreen":
-            QTimer.singleShot(motion.FAST_MS,
-                              lambda: btn.setText(original)
-                              if btn.isVisible() or True else None)
+            QTimer.singleShot(motion.FAST_MS, lambda: btn.setText(original))
             return
         anim = QPropertyAnimation(btn, b"text", self)
         anim.setDuration(motion.FAST_MS)
