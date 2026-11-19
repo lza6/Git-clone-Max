@@ -72,7 +72,8 @@ class TestHealthCheckButton(unittest.TestCase):
             for obj in (repo / ".git/objects").glob("[0-9a-f][0-9a-f]/*"):
                 oid = obj.parent.name + obj.name
                 t = _sp.run(["git", "-C", str(repo), "cat-file", "-t", oid],
-                            capture_output=True, text=True).stdout.strip()
+                            capture_output=True, text=True, encoding="utf-8",
+                            errors="replace").stdout.strip()
                 if t == "commit":
                     obj.chmod(stat.S_IWRITE | stat.S_IREAD)
                     obj.write_bytes(b"corrupted")
