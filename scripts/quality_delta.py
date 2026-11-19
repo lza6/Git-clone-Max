@@ -23,6 +23,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+# G50-3 同款兜底：中文 Windows 终端是 GBK，"✗/✓" 打印会 UnicodeEncodeError
+# （test_ack_requires_reason 实测抓到）。与 health_check.py 同一处置。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
+
 ROOT = Path(__file__).resolve().parent.parent
 PKG = ROOT / "gcm"
 BASELINE = ROOT / "evidence" / "quality_baseline.json"
