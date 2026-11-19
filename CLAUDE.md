@@ -249,7 +249,7 @@ docs/        工程/产品/契约文档
   G76 新增 `settings_actions.py`（G84 后 326，设置页动作型回调）就是为了让这两个设置模块不越线；G77 把更新检查三段抽到 `update_flow.py`（205），主窗从 2750 降到 2658；G78 修 chip 裁切时 +7 行 → 2665；G79b 给紧凑布局补注释 +5 行 → 2670；G80 新增回调+后台任务接线后 2765；G82 A5-4 确认范式 +25 行 → 2790；上一版 C1 批 +1 行 → 2791；本版（X-4 布局修复）+3 行 → **2794**。**超 800 行集合现在有守卫**（`tests/test_g79_repo_hygiene::TestNoNewOversizedModules` 用集合相等断言），新增第 4 个超限文件会直接红。
   G75 把 `theme.py` 从 598 拆到 **347**（色板→`palettes`、字排→`typography`、QSS→`qss_build`），
   并把批次总览/结果文案/齿条/pill 各自成模块；
-  **20 个**函数超 100 行（Rev17 T4 拆分后最大 `qss_build._build_qss` 262 行，`MainWindow.__init__` 已降至 185）。这两条数字（模块行数表 + 超长函数数）
+  **19 个**函数超 100 行（Rev17 T4 拆分后最大 `qss_build._build_qss` 262 行，`MainWindow.__init__` 已降至 185）。这两条数字（模块行数表 + 超长函数数）
   现已由 `scripts/doc_drift_check.py` 守住：改了代码没同步文档 → `DRIFT n` 非 0 退出。
   G71 已完成的长函数拆分：`service._update` **337→105**（拆出 `_update_bare_mirror` /
   `_fetch_remote` / `_merge_remote`）、`MainWindow._launch` **153→129**（参数映射拆到
