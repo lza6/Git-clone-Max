@@ -1,14 +1,14 @@
 {
   "version": "9.21.1",
   "archive_version": "9.21.1",
-  "exe_sha256": "580c656fb699c5e5b6ce9cd97eba1d62849749673100ac5c208515d97e16d667",
-  "zip_sha256": "107122db6dc5935efa92724f60f0f203132567c4bd74fdfbd012d06f135ec529",
-  "exe_size": 43175960,
-  "zip_size": 82726353,
+  "exe_sha256": "05e7fec399665c6505c3dfa61f00c397b6cd2a8b7bd0b0b725cc650267e65921",
+  "zip_sha256": "c7e2c8693ed9678f8bc7f2ca5ba55245c49a028c40326c3af0ad99e843c93716",
+  "exe_size": 43180023,
+  "zip_size": 82733634,
   "started_ok": true,
   "repos_db_created": true,
-  "smoke_ms": 1803,
-  "elapsed_ms": 5444,
-  "checked_at": "2026-11-19T22:02:24+08:00",
+  "smoke_ms": 2303,
+  "elapsed_ms": 5137,
+  "checked_at": "2026-11-19T23:37:50+08:00",
   "artifacts_exist": true
 }
