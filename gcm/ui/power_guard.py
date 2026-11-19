@@ -20,7 +20,7 @@ from ..i18n import tr
 def batch_sleep_guard_start(owner: Any) -> None:
     """批次开始：按设置开启"防休眠"。失败留痕（能力缺失不提示轰炸）。"""
     try:
-        from .power import prevent_sleep_start
+        from ..app.power import prevent_sleep_start
         if not prevent_sleep_start():
             _warn("防休眠开启失败（非 Windows 或电源策略不可用）——批次照常运行")
     except Exception as e:  # noqa: BLE001 —— 电源能力缺失不拖垮主流程
@@ -30,7 +30,7 @@ def batch_sleep_guard_start(owner: Any) -> None:
 def batch_sleep_guard_end(owner: Any) -> None:
     """批次结束：撤防休眠；若开启「完成后睡眠」则起倒计时。"""
     try:
-        from .power import prevent_sleep_end
+        from ..app.power import prevent_sleep_end
         prevent_sleep_end()
     except Exception as e:  # noqa: BLE001
         _warn(f"防休眠撤除异常：{e}")
@@ -76,7 +76,7 @@ def _do_sleep(owner: Any) -> None:
     if bool(getattr(owner, "busy", False)):
         return
     try:
-        from .power import request_sleep
+        from ..app.power import request_sleep
         if not request_sleep():
             _warn("睡眠请求未生效（非 Windows 或电源策略不可用）")
     except Exception as e:  # noqa: BLE001
