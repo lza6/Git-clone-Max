@@ -411,7 +411,12 @@ class TestFastMsCopyFeedback(unittest.TestCase):
             p.deleteLater()
 
     def test_restore_text_on_destroyed_button_is_silent(self):
-        """按钮从面板上摘除（parent 链销毁）：恢复回调必须静默跳过。"""
+        """按钮从面板上摘除（parent 链销毁）：恢复回调必须静默跳过。
+
+        断言形态：回调执行后进程仍活着且按钮 wrapper 可 weakref（未崩）——
+        「崩了测试自然红」在这里不成立（原生崩会带走整个 runner），
+        所以显式断言执行后状态。
+        """
         from gcm.ui.event_panel import _restore_text
         import weakref
         p = self._panel()
@@ -419,7 +424,10 @@ class TestFastMsCopyFeedback(unittest.TestCase):
         btn.setParent(None)   # 脱离面板；不泵事件循环（纪律见类 docstring）
         btn.deleteLater()
         ref = weakref.ref(btn)
-        _restore_text(ref, "任意文案")   # 不得抛（崩了测试自然红）
+        _restore_text(ref, "任意文案")   # 不得抛
+        self.assertIsNotNone(ref(),
+                             "weakref 必须仍指向 wrapper（本用例不依赖析构时序）")
+        self.assertIsNotNone(self._app, "回调执行后 QApplication 仍存活")
 
     def test_reduced_motion_skips_animation_object(self):
         p = self._panel()
