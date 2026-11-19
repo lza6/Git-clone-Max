@@ -87,7 +87,7 @@
 | `BASE_MS` | 220 | 状态切换（进度条填充） |
 | `PULSE_MS` | 180 | 终态脉冲 |
 | `SLOW_MS` | 600 | 行完成消隐 |
-| `FAST_MS` | 120 | 微反馈预留（当前无消费点） |
+| `FAST_MS` | 120 | 微反馈：复制成功按钮文字回弹（`event_panel._flash_copy_feedback`） |
 
 - 统一缓动 `OutCubic`。
 - `prefers_reduced_motion=True` 时 QSS 去掉 hover/pressed 块，所有 `QPropertyAnimation` 跳过。
@@ -107,6 +107,20 @@
 | 对话框 | 最大 90% 宽 / 85% 高；最小 460×320；`apply_parent_theme` |
 | 日志 | `Cascadia Mono` 12px；最多 4000 block；过滤只影响显示层 |
 | 状态 pill | 7 种几何形状；颜色 + 形状双编码；不使用字符 |
+
+**状态 pill 七形状语义表**（唯一来源 `gcm/ui/status_pill.py`，形状间两两几何可辨 = 色盲可辨）：
+
+| 状态 | 形状 | 绘法 | 色板键 |
+|---|---|---|---|
+| success | `disc` | 实心圆 | `success` |
+| failed | `cross` | 交叉双线（×） | `error` |
+| conflict | `split` | 圆环内半填充 | `warning` |
+| skipped | `ring` | 空心圆环 | `text_dim` |
+| cancelled | `dash` | 单横线（−） | `warning` |
+| running | `wedge` | 270° 圆弧（缺 90° 缺口） | `accent` |
+| pending | `hollow_square` | 空心方块 | `text_dim` |
+
+新增/调整状态时必须：① 从 `SHAPES` 七形状里取值（同形状复用 = 色盲不可辨，禁止）；② 同步色板键映射与本表。
 
 ## 7. 图标与插画
 

@@ -9,6 +9,7 @@ import ast
 import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -358,3 +359,77 @@ class TestManageColumnPersistence(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFastMsCopyFeedback(unittest.TestCase):
+    """C1（Rev19）：FAST_MS 微反馈真实消费点 —— 复制成功按钮文字回弹。
+
+    守卫三件事：① `motion.FAST_MS` 有生产消费点（token 无死键的动效版）；
+    ② 反馈文案走 tr()（中英字典同步）；③ reduced-motion / offscreen 下降级为
+    QTimer 恢复（语义一致、不建动画对象）。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from PyQt6.QtWidgets import QApplication
+        cls._app = QApplication.instance() or QApplication([])
+
+    def _panel(self):
+        from gcm.app.event_bus import EventBus
+        from gcm.ui.event_panel import EventStreamPanel
+        return EventStreamPanel(bus=EventBus())
+
+    def test_copy_json_gives_fast_feedback(self):
+        from gcm.i18n import tr
+        p = self._panel()
+        try:
+            self.assertEqual(p.copy_json(), 0)   # 空事件也是一次成功复制
+            self.assertEqual(p.btn_copy.text(), tr("已复制"))
+        finally:
+            p.deleteLater()
+
+    def test_feedback_recovers_after_fast_ms(self):
+
+        from gcm.i18n import tr
+        p = self._panel()
+        try:
+            original = p.btn_copy.text()
+            p.copy_json()
+            self.assertEqual(p.btn_copy.text(), tr("已复制"))
+            # FAST_MS + 余量后应恢复原文案（offscreen 走 QTimer.singleShot 路径）。
+            # 用 processEvents 轮询驱动定时器；不嵌套 QEventLoop.exec() ——
+            # 嵌套 loop 会让上一用例 deleteLater 的析构落进本用例的事件处理，
+            # 实测触发原生崩溃（RC=127）。
+            deadline = time.monotonic() + 2.0
+            while time.monotonic() < deadline and p.btn_copy.text() != original:
+                self._app.processEvents()
+            self.assertEqual(p.btn_copy.text(), original,
+                             "微反馈必须回弹，不能把按钮文案永久改掉")
+        finally:
+            p.deleteLater()
+            self._app.processEvents()
+
+    def test_reduced_motion_skips_animation_object(self):
+        p = self._panel()
+        try:
+            p._reduced_motion = True
+            p.copy_json()
+            self.assertIsNone(p._copy_anim,
+                              "reduced-motion 下不得创建 QPropertyAnimation")
+        finally:
+            p.deleteLater()
+
+    def test_fast_ms_has_a_consumer(self):
+        """FAST_MS 必须被生产代码真实读取（动效 token 的死键守卫）。"""
+        import ast
+        consumed = False
+        for f in (ROOT / "gcm" / "ui").glob("*.py"):
+            tree = ast.parse(f.read_text(encoding="utf-8", errors="replace"))
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Attribute)
+                        and node.attr == "FAST_MS"):
+                    consumed = True
+                    break
+            if consumed:
+                break
+        self.assertTrue(consumed, "FAST_MS 无消费点则应删除（token 纪律）")

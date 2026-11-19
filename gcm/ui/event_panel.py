@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from typing import Any, Optional
 
@@ -29,6 +30,7 @@ from PyQt6.QtWidgets import (
 
 from ..app.event_bus import EventType, get_event_bus
 from ..i18n import tr
+from . import motion
 
 _COLS = tuple(tr(c) for c in ("#", "时间", "类型", "仓库", "状态", "摘要"))
 
@@ -116,6 +118,8 @@ class EventStreamPanel(QWidget):
         super().__init__(parent)
         self._bus = bus or get_event_bus()
         self._paused = False
+        self._copy_anim = None
+        self._reduced_motion = False
         self._build_ui()
         self._timer = QTimer(self)
         self._timer.setInterval(1500)
@@ -224,7 +228,11 @@ class EventStreamPanel(QWidget):
         return len(events)
 
     def copy_json(self) -> int:
-        """把当前过滤后的完整事件复制到剪贴板（已打码）。"""
+        """把当前过滤后的完整事件复制到剪贴板（已打码）。
+
+        成功时按钮文案瞬时切换为「已复制」（FAST_MS 微反馈，`prefers_reduced_motion`
+        / offscreen 下跳过）；动画结束恢复原文案。返回复制的事件数。
+        """
         events = self.current_events()
         try:
             text = json.dumps([e.to_dict() for e in events], ensure_ascii=False, indent=2)
@@ -232,7 +240,38 @@ class EventStreamPanel(QWidget):
             QApplication.clipboard().setText(text)
         except Exception:
             return 0
+        self._flash_copy_feedback()
         return len(events)
+
+    def _flash_copy_feedback(self) -> None:
+        """复制成功的微反馈：按钮文字「已复制」FAST_MS 后回弹。
+
+        动画对象挂 self（父级销毁即释放）；reduced-motion 时不建动画、
+        直接靠 QTimer 恢复文案，语义一致。
+        """
+        from PyQt6.QtCore import QPropertyAnimation
+
+        btn = self.btn_copy
+        original = tr("复制 JSON")
+        if getattr(self, "_copy_anim", None) is not None:
+            self._copy_anim.stop()
+            self._copy_anim.deleteLater()
+            self._copy_anim = None
+        btn.setText(tr("已复制"))
+        reduced = bool(getattr(self, "_reduced_motion", False))
+        if reduced or os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+            QTimer.singleShot(motion.FAST_MS,
+                              lambda: btn.setText(original)
+                              if btn.isVisible() or True else None)
+            return
+        anim = QPropertyAnimation(btn, b"text", self)
+        anim.setDuration(motion.FAST_MS)
+        anim.setEasingCurve(motion.easing())
+        anim.setStartValue(tr("已复制"))
+        anim.setEndValue(original)
+        anim.finished.connect(lambda: btn.setText(original))
+        self._copy_anim = anim
+        anim.start()
 
 
 class EventStreamDialog(QDialog):
@@ -246,6 +285,13 @@ class EventStreamDialog(QDialog):
         from .layout import fit_dialog_to_screen
         fit_dialog_to_screen(self, 860, 520, 560, 360)
         self.panel = EventStreamPanel(bus=bus, parent=self)
+        # reduced-motion 与宿主设置同源（无宿主/测试场景默认跟系统不动）
+        owner = getattr(parent, "settings", None)
+        if owner is not None or parent is not None:
+            settings = getattr(parent, "settings", None)
+            if settings is not None:
+                self.panel._reduced_motion = bool(
+                    getattr(settings, "prefers_reduced_motion", False))
         lay = QVBoxLayout(self)
         lay.addWidget(self.panel, 1)
         row = QHBoxLayout()

@@ -46,6 +46,14 @@
       本地这一步仍要跑一遍 —— CI 绿只证明"那台 runner 上能起来"，而你手上这个 exe 是刚构建的。
       两者不一致时以**本地**为准（杀软/代理/路径差异是本项目历史上最常见的假绿来源）。
 
+## 1b. UI 截图审计（G75 视觉系统；C3 / Rev19 起纳入）
+
+- [ ] `QT_QPA_PLATFORM=offscreen python scripts/ui_screenshot_audit.py reports/ui-<版本号>`
+      → 34 张全出（4 主题 × 5 尺寸 + 页签 + 对话框）；退出码 0
+- [ ] 与上一版基线做像素比对：`python scripts/pixel_diff.py <旧目录> <新目录>` → `ok: True`
+      （非视觉轮次允许逐张目检替代；视觉改动轮必须比对并在验证记录登记差异清单）
+- [ ] 人工目检四主题下：无对比度不足 / 控件裁切 / tofu（✓✕⚠⊘ 字符）
+
 ## 2. 冒烟
 
 - [ ] 双击/命令行启动 exe（或 from source `python -m gcm`）→ 主窗口正常、托盘正常

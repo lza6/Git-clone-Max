@@ -64,8 +64,6 @@ def repair_halfcloned_row(panel, row: int) -> None:
     只对 not_checked_out 生效；判定与修复在 `app/halfclone.py` 单一事实源。
     逻辑放本模块（progress_table 已贴 800 线硬上限），面板只做一行转发。
     """
-    from ..app.halfclone import repair_halfclone
-
     p = row_repo_dir(panel, row)
     ok, msg = repair_halfclone(p)
     if ok:
