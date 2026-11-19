@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import weakref
 from typing import Any, Optional
 
 from PyQt6.QtCore import Qt, QTimer
@@ -33,6 +34,16 @@ from ..i18n import tr
 from . import motion
 
 _COLS = tuple(tr(c) for c in ("#", "时间", "类型", "仓库", "状态", "摘要"))
+
+
+def _restore_text(btn_ref, text: str) -> None:
+    """弱引用回调：按钮还活着才恢复文案（销毁后静默跳过）。"""
+    btn = btn_ref()
+    if btn is not None:
+        try:
+            btn.setText(text)
+        except RuntimeError:  # noqa: BLE001 - C++ 对象已析构
+            pass
 
 
 def _fmt_time(ts: float) -> str:
@@ -246,10 +257,12 @@ class EventStreamPanel(QWidget):
     def _flash_copy_feedback(self) -> None:
         """复制成功的微反馈：按钮文字「已复制」FAST_MS 后回弹。
 
-        动画对象挂 self（父级销毁即释放）；reduced-motion 时不建动画、
-        直接靠 QTimer 恢复文案，语义一致。
+        回调持**弱引用**：singleShot 到期时面板/按钮可能已被销毁（测试里
+        panel.close() 后对象由 GC 回收），强捕获会让 Qt 在派发 Timer 事件时
+        触碰已释放的 C++ 对象（原生崩溃，RC=127，已 A/B 实测定位）。
+        reduced-motion/offscreen 同样走这条弱引用路径（不建 QPropertyAnimation）。
         """
-        from PyQt6.QtCore import QPropertyAnimation
+        from PyQt6.QtCore import QPropertyAnimation, QTimer
 
         btn = self.btn_copy
         original = tr("复制 JSON")
@@ -259,15 +272,16 @@ class EventStreamPanel(QWidget):
             self._copy_anim = None
         btn.setText(tr("已复制"))
         reduced = bool(getattr(self, "_reduced_motion", False))
+        btn_ref = weakref.ref(btn)
         if reduced or os.environ.get("QT_QPA_PLATFORM") == "offscreen":
-            QTimer.singleShot(motion.FAST_MS, lambda: btn.setText(original))
+            QTimer.singleShot(motion.FAST_MS, lambda: _restore_text(btn_ref, original))
             return
         anim = QPropertyAnimation(btn, b"text", self)
         anim.setDuration(motion.FAST_MS)
         anim.setEasingCurve(motion.easing())
         anim.setStartValue(tr("已复制"))
         anim.setEndValue(original)
-        anim.finished.connect(lambda: btn.setText(original))
+        anim.finished.connect(lambda: _restore_text(btn_ref, original))
         self._copy_anim = anim
         anim.start()
 
