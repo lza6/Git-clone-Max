@@ -212,6 +212,18 @@ token 取自 git credential manager（与检查更新同源），只发给 api/g
 | `clone_batch` | `--allow-mutate` | `urls[]`, `dry_run?`, `async?` | 同步：CLI 顶层契约；`dry_run=true`：预览计划；`async=true`：`{job_id,status}` |
 | `job_cancel` | `--allow-mutate` | `job_id` | `{job_id,status:"cancelling"}`，终止子进程树 |
 
+**ToolAnnotations（批次①，对齐 modelcontextprotocol/servers）**：上表所有工具的
+`tools/list` 条目都带 `annotations` 四件套——`readOnlyHint`（只读工具与
+`clone_batch` 的区分）、`destructiveHint`（仅 `job_cancel` 为 true）、
+`idempotentHint`（只读工具天然幂等；`export_report` 重跑覆盖同路径也算幂等）、
+`openWorldHint`（仅 `clone_batch` 触外网为 true）。客户端可据此做只读过滤与
+风险提示；字段语义以 MCP 规范为准。
+
+**server.json（批次①）**：仓库根提供 MCP 服务发现清单 `server.json`
+（name/version/repository/mcpServers 入口 = `python -m gcm.mcp_server` +
+`GCM_MCP_ENABLE=1`）；`version` 由 `scripts/bump_version.py` 载体表同步，
+与 `gcm.__version__` 单源（守卫 `tests/test_mcp_annotations.py`）。
+
 ### 4.1 预览与异步作业（G84 新增，加性）
 - `clone_batch` 传 `dry_run: true` → **不联网、不写盘、不起子进程**，返回
   `{dry_run:true, plan:{counts, writable, rows[], limits}}`。判定口径：

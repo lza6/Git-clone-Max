@@ -73,6 +73,8 @@ CARRIERS: tuple[tuple[str, str, str], ...] = (
      "Git-clone-Max-setup-{new}.exe"),
     # 5. 插件清单（Claude Code / agent-plugins.org 惯例）
     (".claude-plugin/plugin.json", r'"version": "{old}"', '"version": "{new}"'),
+    # 5.5 MCP server 清单（批次①：server.json，模型上下文协议服务发现）
+    ("server.json", r'"version": "{old}"', '"version": "{new}"'),
     # 6-7. 契约 schema（agent 拿到的 version 字段示例值）
     ("docs/contract/cli_json.schema.json", r'"version": "{old}"',
      '"version": "{new}"'),
