@@ -338,6 +338,9 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: python scripts/health_check.py --json dist/health_check.json
 
+      - name: Winget manifest matches built artifact (sha256)
+        run: python scripts/gen_winget_manifest.py --out packaging/winget --check
+
       - name: Upload packaging report + zip
         if: always()
         uses: actions/upload-artifact@v7

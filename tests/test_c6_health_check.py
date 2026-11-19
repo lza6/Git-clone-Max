@@ -8,7 +8,6 @@
 """
 from __future__ import annotations
 
-import ast
 import os
 import subprocess
 import sys
@@ -61,8 +60,11 @@ class TestHealthCheckButton(unittest.TestCase):
         """破坏 commit 对象 → fsck 报错（真实坏仓检测）。
 
         必须破坏 **commit/tree** 而不是 blob：`fsck --connectivity-only`
-        把 blob 当不透明对象跳过解析（新版 git 在 ubuntu CI 上因此测不出
-        blob 损坏，历史偶发假绿）；commit 任何版本都会被解析。
+        把 blob 当不透明对象跳过解析——实测（git 2.53 / Windows 与
+        ubuntu-latest）blob 损坏时 rc=0 且 stderr 空，体检误报「健康」。
+        旧实现用 `next(glob(...))` 破坏字典序第一个对象，而 `_make_repo`
+        的 tree 恰好恒排最前才一直碰巧绿；这里显式按 `cat-file -t` 定位
+        commit，消除对 glob 字典序的依赖。commit 任何 git 版本都会解析。
         """
         with tempfile.TemporaryDirectory() as td:
             repo = _make_repo(Path(td))
