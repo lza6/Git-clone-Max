@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any
 
 
@@ -121,3 +122,36 @@ class BatchState:
             "counts": dict(self.counts),
             "invalid_transitions": int(self.invalid_transitions),
         }
+
+
+# 批次⑤（matterloop 蓝本）：终态原因的形式化。
+# 此前"为什么结束"只能靠 TaskState 字符串 + message 猜；StopReason 把
+# 取消/失败/跳过/冲突/正常完成分成可编程判断的枚举，同时保持 str 兼容
+# （旧代码拿它当字符串比较/落盘都不变）。
+class StopReason(str, Enum):
+    """批次/任务终态原因（str 兼容：`StopReason.CANCELLED == "cancelled"`）。"""
+
+    COMPLETED = "completed"        # 全部任务到达终态（含混合成败）
+    CANCELLED = "cancelled"        # 用户主动取消整批
+    FAILED = "failed"              # 全部失败（无一成功）
+    EXHAUSTED = "exhausted"        # 重试耗尽仍失败
+
+    @classmethod
+    def coerce(cls, value):
+        """旧字符串 → 枚举（未知值回退 COMPLETED，保持向后兼容不抛）。"""
+        if isinstance(value, cls):
+            return value
+        try:
+            return cls(str(value))
+        except ValueError:
+            return cls.COMPLETED
+
+
+# 显式转换表：TaskState 终态 → StopReason（引擎收尾用，避免散落 if 链）
+TASK_STATE_TO_STOP_REASON = {
+    TaskState.SUCCESS: StopReason.COMPLETED,
+    TaskState.CANCELLED: StopReason.CANCELLED,
+    TaskState.FAILED: StopReason.FAILED,
+    TaskState.SKIPPED: StopReason.COMPLETED,
+    TaskState.CONFLICT: StopReason.COMPLETED,
+}

@@ -186,3 +186,55 @@ class TestMirrorDegradeVisibleSuffix(unittest.TestCase):
         joined = ast.dump(tree)
         self.assertIn("mirror_used", joined)
         self.assertIn("degrade_path", joined)
+
+
+class TestStopReason(unittest.TestCase):
+    """批次⑤：终态原因枚举（str 兼容）+ 显式转换表。"""
+
+    def test_str_compatibility(self):
+        from gcm.app.batch_state import StopReason
+        self.assertEqual(StopReason.CANCELLED, "cancelled")
+        self.assertEqual(StopReason.COMPLETED.value, "completed")
+
+    def test_coerce_legacy_strings(self):
+        from gcm.app.batch_state import StopReason
+        self.assertIs(StopReason.coerce("cancelled"), StopReason.CANCELLED)
+        self.assertIs(StopReason.coerce(StopReason.FAILED), StopReason.FAILED)
+        # 未知旧字符串不抛，回退 COMPLETED（向后兼容红线）
+        self.assertIs(StopReason.coerce("whatever-legacy"), StopReason.COMPLETED)
+
+    def test_task_state_conversion_table(self):
+        from gcm.app.batch_state import StopReason, TASK_STATE_TO_STOP_REASON
+        self.assertIs(TASK_STATE_TO_STOP_REASON["failed"], StopReason.FAILED)
+        self.assertIs(TASK_STATE_TO_STOP_REASON["skipped"], StopReason.COMPLETED)
+
+
+class TestProgressCas(unittest.TestCase):
+    """批次⑤：progress.json 的 revision CAS（matterloop checkpoint 语义）。"""
+
+    def test_cas_roundtrip_and_stale_write_rejected(self):
+        from gcm.db.progress_file import (load_progress, load_progress_with_revision,
+                                          save_progress_cas)
+        import tempfile
+        p = Path(tempfile.mkdtemp()) / "progress.json"
+        data, rev = load_progress_with_revision(p)
+        self.assertEqual(rev, 0)
+        self.assertTrue(save_progress_cas(p, data, rev))
+        data2, rev2 = load_progress_with_revision(p)
+        self.assertEqual(rev2, 1)
+        # 陈旧 revision 写入必须被拒绝（不覆盖对方）
+        self.assertFalse(save_progress_cas(p, data2, rev))
+        self.assertTrue(save_progress_cas(p, data2, rev2))
+        self.assertEqual(load_progress_with_revision(p)[1], 2)
+
+    def test_plain_load_ignores_revision_key(self):
+        """普通 load_progress 兼容：_revision 附加键不破坏旧消费方。"""
+        from gcm.db.progress_file import load_progress, save_progress_cas, \
+            load_progress_with_revision
+        import tempfile
+        p = Path(tempfile.mkdtemp()) / "progress.json"
+        data, rev = load_progress_with_revision(p)
+        save_progress_cas(p, data, rev)
+        plain = load_progress(p)
+        self.assertIn("finished", plain)
+        self.assertIn("in_progress", plain)

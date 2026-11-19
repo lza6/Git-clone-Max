@@ -57,6 +57,9 @@ _ROOT_WHITELIST = {
     # 2026-10-31 G81：changelog 碎片目录（发布前累积待发布条目，发版时归档到
     # 其下的 _archive/<版本>/）。与 .claude-plugin 同理：只此一个目录、只放 .md。
     "changelog.d",
+    # 2026-11-19 批次①：MCP 服务发现清单 server.json（modelcontextprotocol
+    # 惯例，版本由 bump_version 载体表同步，守卫 tests/test_mcp_annotations.py）。
+    "server.json",
     # 2026-11-03 G83 登记：bd (beads) 任务跟踪引入（提交 017eb5e）带出的五项——
     # .beads（issue 数据导出）、AGENTS.md（bd 工作流入口）、
     # .agents/skills、.codex（config+hooks，其他 harness 的 agent 配置）、
@@ -95,7 +98,7 @@ _OVERSIZED_LIMIT = 800
 
 # 断言基线：测试文件数与主窗行数（`CLAUDE.md` / `README.md` 必须与实测一致）。
 # 这两个数字会随开发变化，改代码时**同步改这里和文档**，守卫才有意义。
-_EXPECTED_TEST_FILES = 227
+_EXPECTED_TEST_FILES = 229
 
 
 def _git_ls_files() -> list[str]:

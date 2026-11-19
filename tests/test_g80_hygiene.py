@@ -126,7 +126,15 @@ GCM = ROOT / "gcm"
 #   ② ui/power_guard.py +6：电源守卫生命周期（防休眠撤除/睡眠倒计时/托盘提示）
 #   全部 try 包裹——托盘不存在、QTimer 失败、i18n 缺键都不能拖垮批次收尾；
 #   except 路径全部 applog.warn 留痕（非静默），pass-only 净增 0。
-BASELINE_EXCEPT = 787
+# - 2026-11-19（批次①②⑤/S-08 同日）+10（except 787→797 / pass-only 286 不变）：
+#   ① app/power.py +3：电源 API 能力探测失败降级（非 Windows/无 ctypes/无
+#   PowrProf），电源是锦上添花不得影响克隆主流程；
+#   ② ui/power_guard.py +6：电源守卫生命周期（防休眠撤除/睡眠倒计时/托盘提示）
+#   全 try 包裹，失败 applog.warn 留痕；
+#   ③ app/db_executor.py +3：submit 投递失败转原地执行、执行器关停竞态兜底；
+#   ④ engine._on_result 抽 _persist_guarded +1：落库失败留痕语义平移。
+#   全部有 applog 可观测出口，无 pass-only 新增。
+BASELINE_EXCEPT = 797
 BASELINE_PASS_ONLY = 286
 
 

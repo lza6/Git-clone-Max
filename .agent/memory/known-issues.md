@@ -72,7 +72,7 @@ owner: memory-keeper
 | S-05 `sanitize_name` 污染网络 URL | 未登记 | **已闭环**：URL 保原始段，仅 `folder_name` 清洗（`geocar/con` 不再变成 `con_.git`） |
 | S-06 定时队列窗口内重复启动 | 未登记 | **已闭环**：`already_ran_in_window_today` 闸；真实时钟同窗二次 tick=0 |
 | S-07 `update_status` 读改写分两临界区 | 未登记 | **已闭环**：走 `_rmw`；20 线程并发零丢失 + AST 守卫 |
-| S-08 GUI 线程 38ms/仓 | 未登记 | **部分闭环**：`update_results` 批量 789.6ms→3.0ms（263x）+ 帧缓冲 + 丢帧还原；DB 写仍在 GUI 线程（实测 3ms/仓可接受），后台执行器未做 |
+| S-08 GUI 线程 38ms/仓 | 未登记 | **已闭环（Rev19，2026-11-19）**：帧缓冲聚合保留；结果落库（upsert/history/profile）迁 `gcm/app/db_executor.py` 单线程后台执行器（保序、discard/shutdown 冲刷、降级原地执行）；守卫 `tests/test_db_executor.py`（含 discard 冲刷后落库断言） |
 | S-09 看门狗一次派发失败即永久失效 | 未登记 | **已闭环**：派发闸门 TTL 300s 自动复位 |
 | S-10 错误分类两处误判 | 未登记 | **已闭环**：publickey→auth；状态码需 HTTP 语境词 |
 | R-01 结论条就绪态（Rev11-C，悬空 4 轮） | 开放 | **已闭环**：`start_all` → `plan_batch` → `set_ready`；假注释已删；守卫 4 例 |

@@ -91,3 +91,47 @@ def mark_finished(path: Path, spec: RepoSpec, result: dict[str, Any]) -> None:
         write_text_atomic(
             path, json.dumps(data, ensure_ascii=False, indent=2),
             lock=False, label="progress.json")
+
+
+def load_progress_with_revision(path: Path) -> tuple[dict[str, Any], int]:
+    """批次⑤（matterloop CAS 蓝本）：读取进度文件并返回 `(data, revision)`。
+
+    revision 是单调递增的写版本号（文件顶部 `_revision` 字段；缺失按 0）。
+    与 `save_progress_cas` 配对使用：写回时带上读到的 revision，若期间被
+    其它进程/线程改过则 CAS 失败（返回 False，不覆盖对方写入）。
+
+    兼容性：普通 `load_progress()` 忽略 `_revision` 附加键，旧文件无痛升级。
+    """
+    data = load_progress(path)
+    rev = 0
+    try:
+        rev = int(data.get("_revision", 0) or 0)
+    except (TypeError, ValueError):
+        rev = 0
+    return data, rev
+
+
+def save_progress_cas(path: Path, data: dict[str, Any],
+                      expected_revision: int) -> bool:
+    """CAS 写：仅在文件当前 revision == expected_revision 时写入。
+
+    - 写入前把 `_revision` 自增（matterloop 的 checkpoint revision 语义）；
+    - 返回 False = 期间有并发修改（调用方应重读重试或放弃，**绝不覆盖**）；
+    - 全程持 `progress_guard` 跨进程锁，原子写复用 `write_text_atomic`。
+    """
+    with progress_guard(path):
+        current = 0
+        if path.exists():
+            try:
+                with open(path, encoding="utf-8") as f:
+                    current = int(json.load(f).get("_revision", 0) or 0)
+            except Exception:
+                current = 0
+        if current != int(expected_revision):
+            return False
+        payload = dict(data)
+        payload["_revision"] = int(expected_revision) + 1
+        write_text_atomic(
+            path, json.dumps(payload, ensure_ascii=False, indent=2),
+            lock=False, label="progress.json")
+        return True

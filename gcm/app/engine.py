@@ -131,6 +131,13 @@ class SyncEngine(QObject):
         self._batch_counts: dict[str, int] = {}
         # G71-8：批次状态机（转换校验 + 计数唯一来源）
         self._batch_state = BatchState()
+        # 批次②：感知调度组件（纯逻辑，见 app/adaptive.py；失败只降级不抛）
+        from .adaptive import HostBackoffTable, SlowWorkerMonitor
+        self._slow_monitor = SlowWorkerMonitor()
+        self._host_backoff = HostBackoffTable()
+        # S-08：结果落库后台执行器（单线程保序；discard/shutdown 时冲刷）
+        from .db_executor import DbWriteExecutor
+        self._db_executor = DbWriteExecutor()
 
         self.fetch_timeout = fetch_timeout
         self.clone_timeout = clone_timeout
@@ -1379,8 +1386,10 @@ class SyncEngine(QObject):
         # G80-B7-2：任务到终态 → 清掉 in-flight 记账（不再参与卡死判定）
         self.forget_inflight(res.spec.folder_name)
         # 引擎统一落库（worker 不再写 DB，避免并发写同一 SQLite 连接）
+        # S-08 后台执行器：DB 写提交到单线程 executor（保序、关停时冲刷），
+        # GUI 线程只做入队。executor 不可用时降级为原地执行（行为同旧版）。
         if self.db is not None:
-            try:
+            def _persist_result():
                 repo_id = self.db.upsert_repo(
                     res.spec, res.path,
                     # 审查 C-2 根因：原来盲回落 "github.com"，会把 gitlab/gitee 仓库
@@ -1403,13 +1412,43 @@ class SyncEngine(QObject):
                         from . import applog
                         applog.warn(
                             f"仓库画像落库失败（{res.spec.folder_name}）：{e}")
-            except Exception as e:  # noqa: BLE001 - 落库失败不能打断整批，但必须留痕
-                # G80-B2：原注释称「通过日志暴露」，实际什么都没记（app.log 里查不到）。
-                # 落库失败 = 这条结果不会进历史/报表/统计，事后无法追溯，必须记下来。
+
+            def _on_persist_error(e: Exception) -> None:
+                # G80-B2：落库失败 = 这条结果不会进历史/报表/统计，必须留痕。
                 from . import applog
                 applog.error(f"结果落库失败（{res.spec.folder_name}）：{e}")
+
+            def _persist_guarded():
+                try:
+                    _persist_result()
+                except Exception as e:  # noqa: BLE001
+                    _on_persist_error(e)
+
+            submitted = False
+            try:
+                self._db_executor.submit(_persist_guarded)
+                submitted = True
+            except Exception as e:  # noqa: BLE001 - 投递失败原地执行
+                from . import applog
+                applog.warn(f"DB 写投递异常，转原地执行：{e}")
+            if not submitted:
+                _persist_guarded()
         # 进度内存态登记
         self._mark_done(f"{res.spec.owner}/{res.spec.repo}", res.status, res.message)
+        # 批次②：感知调度——成功清零该 host 退避；失败抬升退避并登记耗时样本
+        # （慢 worker 判定用中位数比，不改变重试判据——classify_error 仍是唯一来源）
+        try:
+            _host = self._host_for(res.spec)
+            if res.status == SyncStatus.FAILED:
+                self._host_backoff.on_failure(_host)
+            else:
+                self._host_backoff.on_success(_host)
+            if getattr(res, "duration_ms", 0):
+                self._slow_monitor.record(res.spec.folder_name,
+                                          res.duration_ms / 1000.0)
+        except Exception as e:  # noqa: BLE001 - 调度感知失败不影响结果主链路
+            from . import applog
+            applog.warn(f"感知调度记账失败（{res.spec.folder_name}）：{e}")
         # G52-1：网络类失败入自动重试队列；成功/跳过/冲突移除
         if res.status == SyncStatus.FAILED:
             self._record_retry_failure(res)
@@ -1657,6 +1696,12 @@ class SyncEngine(QObject):
             self.pool.waitForDone(5000)   # 阻塞式收敛：不泵事件、不死锁
         except Exception:
             pass
+        # S-08：worker 全部收敛后冲刷 DB 写执行器（保证最后几条结果落库）
+        try:
+            self._db_executor.shutdown(wait=True)
+        except Exception as e:  # noqa: BLE001 - 执行器关停失败不影响收敛
+            from . import applog
+            applog.warn(f"DB 写执行器关停失败：{e}")
         try:
             self.pool.clear()
         except Exception:
@@ -1716,6 +1761,12 @@ class SyncEngine(QObject):
         self.flush_progress()
         self.flush_all_buffers()  # G43-1②/G43-5：关闭前送达残留缓冲
         self._stop_buffers()
+        # S-08：窗口关闭前把 DB 写执行器队列冲刷完（不丢最后几条结果）
+        try:
+            self._db_executor.shutdown(wait=True)
+        except Exception as e:  # noqa: BLE001 - 执行器关停失败不影响关窗
+            from . import applog
+            applog.warn(f"DB 写执行器关停失败：{e}")
         try:
             self.pool.clear()
         except Exception:
