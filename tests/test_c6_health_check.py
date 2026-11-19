@@ -58,15 +58,27 @@ class TestHealthCheckButton(unittest.TestCase):
             self.assertIn("健康", text)
 
     def test_health_check_reports_broken(self):
-        """破坏对象库 → fsck 报错（真实坏仓检测）。"""
+        """破坏 commit 对象 → fsck 报错（真实坏仓检测）。
+
+        必须破坏 **commit/tree** 而不是 blob：`fsck --connectivity-only`
+        把 blob 当不透明对象跳过解析（新版 git 在 ubuntu CI 上因此测不出
+        blob 损坏，历史偶发假绿）；commit 任何版本都会被解析。
+        """
         with tempfile.TemporaryDirectory() as td:
             repo = _make_repo(Path(td))
-            # 损坏一个松散对象（fsck --connectivity-only 会发现）；
-            # 松散对象是只读的，先去写保护再写。
-            obj = next((repo / ".git/objects").glob("[0-9a-f][0-9a-f]/*"))
             import stat
-            obj.chmod(stat.S_IWRITE | stat.S_IREAD)
-            obj.write_bytes(b"corrupted")
+            import subprocess as _sp
+            corrupted = False
+            for obj in (repo / ".git/objects").glob("[0-9a-f][0-9a-f]/*"):
+                oid = obj.parent.name + obj.name
+                t = _sp.run(["git", "-C", str(repo), "cat-file", "-t", oid],
+                            capture_output=True, text=True).stdout.strip()
+                if t == "commit":
+                    obj.chmod(stat.S_IWRITE | stat.S_IREAD)
+                    obj.write_bytes(b"corrupted")
+                    corrupted = True
+                    break
+            self.assertTrue(corrupted, "测试仓里必须存在 commit 对象")
             dlg = self._dialog(repo)
             text = dlg._compute_health_text()
             self.assertIn("异常", text)
