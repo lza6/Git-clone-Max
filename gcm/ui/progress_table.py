@@ -628,6 +628,14 @@ class ProgressTable(QWidget):
         st.setToolTip(_tip)
         act = self.table.item(row, 3)
         action_label = _action_text(res.action, res.commits)
+        # Rev19：取数通道/降级链从"仅 tooltip"升级为「本次」列**可见后缀** ——
+        # 悬停才能看到的信息等于不可见（known-issues #9 遗留口径收口）。
+        # 后缀放动作列而非新列：600 行表格列宽敏感，且两者互斥（镜像与降级
+        # 不会同时出现），一行内不会挤爆。
+        if _mu:
+            action_label += tr(" · 镜像")
+        elif _dp:
+            action_label += tr(" · 降级")
         if act is not None:
             act.setText(action_label)
             act.setForeground(QColor(color))
@@ -712,6 +720,9 @@ class ProgressTable(QWidget):
                     skip += 1
         self.owner.busy = False
         self._reset_buttons()
+        # 批次③：撤"批次期间防休眠"；若开启"完成后睡眠"则起倒计时（可取消）。
+        from .power_guard import batch_sleep_guard_end
+        batch_sleep_guard_end(self.owner)
         try:
             if getattr(self.owner, "tray", None) is not None:
                 self.owner.tray.update_counts(reset=True)  # 空闲态 tooltip（G22-4）

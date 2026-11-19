@@ -119,7 +119,14 @@ GCM = ROOT / "gcm"
 #   ② __main__._warn_diag_without_cli +1：applog 不可用时 stderr 直出告警
 #   （告警通道自身失败不得影响启动），带 1 个 pass-only（applog 抛则放弃留痕，
 #   stderr 通道仍送达——双通道设计的关键就是两条独立）。
-BASELINE_EXCEPT = 778
+# - 2026-11-19（批次③ 桌面集成）+9（except 778→787 / pass-only 286→287）：
+#   ① app/power.py +3：电源 API（SetThreadExecutionState/SetSuspendState）在
+#   非 Windows/无 ctypes/无 PowrProf 时安全退化——电源是锦上添花，任何失败
+#   都不得影响克隆主流程；request_sleep 的 LoadLibrary 失败属能力探测。
+#   ② ui/power_guard.py +6：电源守卫生命周期（防休眠撤除/睡眠倒计时/托盘提示）
+#   全部 try 包裹——托盘不存在、QTimer 失败、i18n 缺键都不能拖垮批次收尾；
+#   except 路径全部 applog.warn 留痕（非静默），pass-only 净增 0。
+BASELINE_EXCEPT = 787
 BASELINE_PASS_ONLY = 286
 
 

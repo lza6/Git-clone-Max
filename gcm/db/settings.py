@@ -334,6 +334,9 @@ class Settings:
     font_scale: float = 1.0           # G10-1 字号缩放（0.8 ~ 1.6）
     rate_limit_kbps: int = 0          # G04-4 下载限速 KiB/s（0=不限）
     start_minimized: bool = False      # G49-6 启动时最小化到托盘（需托盘可用；自启命令追加 --minimized）
+    prevent_sleep_during_batch: bool = False  # 批次③：批次进行期间阻止系统休眠（Windows SetThreadExecutionState；默认关）
+    sleep_after_batch: bool = False    # 批次③：批次完成后让系统睡眠（默认关；仅睡眠不关机）
+    sleep_after_batch_seconds: int = 60  # 批次③：完成后延迟秒数（10~3600，倒计时可取消）
     notify_webhook_enabled: bool = False  # G49-7 完成通知 Webhook 显式开关（与 URL 非空共同决定是否发送）
     notify_webhook_url: str = ""       # G49-7 完成通知 Webhook URL（仅显式开启且非空才发送）
     notify_webhook_token: str = ""     # G49-7 Webhook Token（可选；落盘前加密）

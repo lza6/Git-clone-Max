@@ -78,6 +78,18 @@ class SettingsWiring(QObject):
         """关窗是否收进托盘（读侧 `MainWindow.closeEvent`，此前无写入点）。"""
         self._save_field("minimize_to_tray", bool(checked))
 
+    def save_prevent_sleep_during_batch(self, checked):
+        """批次③：批次期间阻止系统休眠（默认关）。"""
+        self._save_field("prevent_sleep_during_batch", bool(checked))
+
+    def save_sleep_after_batch(self, checked):
+        """批次③：批次完成后让系统睡眠（默认关）。"""
+        self._save_field("sleep_after_batch", bool(checked))
+
+    def save_sleep_after_seconds(self, value):
+        """批次③：睡眠倒计时秒数（10~3600）。"""
+        self._save_field("sleep_after_batch_seconds", int(value))
+
     def save_clone_timeout(self, value):
         """单次 clone 超时（`engine_factory` 读它决定 CloneWorker 超时）。"""
         self._save_field("clone_timeout", int(value))

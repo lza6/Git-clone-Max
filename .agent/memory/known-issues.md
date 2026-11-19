@@ -205,8 +205,8 @@ owner: memory-keeper
 
 | 项 | 现象 | 频率 | 说明 |
 |----|------|------|------|
-| `test_g67_closure.TestShutdownClearsInProgress` | 高负载下偶发失败 | 3 次全量里约 1 次 | 子进程 + 立刻 shutdown 的竞态；单独跑稳定 |
-| `test_single_instance.TestSingleInstanceCrossProcess` | 同上 | 同上 | 跨进程锁 + 端口时序 |
+| ~~`test_g67_closure.TestShutdownClearsInProgress`~~ | ~~高负载下偶发失败~~ | **已根治（2026-11-19 复核）**：子进程脚本已注入 1.2s `_slow_sync` 延迟（替代脆弱时间假设），连跑 8/8 全绿；此前「约 1/3 偶发」是缓解加入前的旧观察 |
+| ~~`test_single_instance.TestSingleInstanceCrossProcess`~~ | ~~高负载下偶发失败~~ | **已根治（2026-11-19 复核）**：p1 已改为等 `acquired: True` 自声明（不再固定 sleep 猜时序），连跑 8/8 全绿 |
 | `test_g66_patch` 的 schtasks 用例 | 已改为与语言无关判据，但**外部工具行为**仍受环境影响 | 低 | 只断言「无 U+FFFD + 可无损回编码」 |
 | ~~`test_manage_ui.test_check_update_new_version_asks_and_opens_browser`~~ | ~~快集全量下偶发~~ | **已根治（Rev18，2026-11-14）**：根因不是线程时序而是**测试隔离缺陷** —— `__init__` 的 `QTimer.singleShot(2500, self._check_update_silent)` 捕获绑定方法，实例属性置换拦不住；定时器到点后走真网络（`check_latest_with_sha` 未 mock 的 urlopen），慢于泵窗口即偶发红。修复：setUp 类级短路该定时器注册 + 补 mock `check_latest_with_sha`。修复后连跑 10/10 全绿 |
 

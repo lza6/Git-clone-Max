@@ -150,8 +150,12 @@ def _build_group_startup(owner: MainWindow, settings: Settings):
     owner.ck_minimize_to_tray.stateChanged.connect(
         owner.settings_panel.wiring.save_minimize_to_tray)
     l1.addWidget(owner.ck_minimize_to_tray, 3, 0, 1, 2)
+    # 批次③（对标"桌面集成"）：防休眠 + 完成后睡眠。**全部默认关**，
+    # 由用户在设置页手动开启（用户已拍板的默认值口径）。
+    from .settings_power import add_power_rows
+    _next_row = add_power_rows(owner, settings, l1, start_row=4)
     # G76：数据目录私密性 + 迁移入口（实现在 settings_actions，本文件已贴近 800 行上限）
-    add_data_dir_section(owner, l1, 4)
+    add_data_dir_section(owner, l1, _next_row)
     return g1
 
 def _build_group_network(owner: MainWindow, settings: Settings):

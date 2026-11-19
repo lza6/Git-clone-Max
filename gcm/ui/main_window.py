@@ -2443,6 +2443,14 @@ class MainWindow(QMainWindow):
             single_branch = ui_mode or bool(
                 getattr(self.settings, "single_branch", False))
         self.busy = True
+        # 批次③：新批次启动 → 撤销待执行的"完成后睡眠"（有任务在跑就不该睡）。
+        from .power_guard import cancel_pending_sleep
+        cancel_pending_sleep(self)
+        # 批次③：批次进行期间阻止系统休眠（设置默认关；失败静默——电源能力缺失
+        # 不该阻塞克隆）。撤除在 `_on_engine_finished` 收尾链里。
+        if bool(getattr(self.settings, "prevent_sleep_during_batch", False)):
+            from .power_guard import batch_sleep_guard_start
+            batch_sleep_guard_start(self)
         # Rev14 V4：跳过计数按**批次**统计 —— 不清零的话，第一批跳过 3 个、
         # 第二批全成功时状态栏/托盘/Webhook 仍会报「跳过 3」（审查实测复现）。
         self._skipped_count = 0

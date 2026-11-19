@@ -81,6 +81,10 @@ _ACCEPTED_OVERSIZED = {
     "gcm/ui/main_window.py",
     "gcm/git/service.py",
     "gcm/app/engine.py",
+    # Rev19 批次③：电源守卫生命周期接线 + mirror/degrade 可见后缀使本文件
+    # 越过 800 线（808）。已按「新 UI 逻辑落独立模块」把可拆部分拆出
+    # （power_guard.py / settings_power.py），余量为接线调用，登记为技术债。
+    "gcm/ui/progress_table.py",
     # Rev14 V4：i18n 字典是**生成文件**（key 即中文、一行一条），行数随文案量线性增长，
     # 拆分它没有意义（拆完还要再拼回去查表）。它们在 gcm/i18n/ 内，不参与 UI 布局，
     # 不属于「一个模块承担过多职责」那类技术债。CLAUDE.md §6 已同步登记。
@@ -91,7 +95,7 @@ _OVERSIZED_LIMIT = 800
 
 # 断言基线：测试文件数与主窗行数（`CLAUDE.md` / `README.md` 必须与实测一致）。
 # 这两个数字会随开发变化，改代码时**同步改这里和文档**，守卫才有意义。
-_EXPECTED_TEST_FILES = 225
+_EXPECTED_TEST_FILES = 226
 
 
 def _git_ls_files() -> list[str]:

@@ -74,10 +74,10 @@
 
 | 模块 | 行数 | 职责 |
 |------|------|------|
-| `gcm/ui/main_window.py` | 3588 | 主窗编排（已登记技术债；引擎构造在 `engine_factory.py`、顶栏齿条在 `status_strip.py`、批次结论条在 `batch_conclusion.py`） |
+| `gcm/ui/main_window.py` | 3597 | 主窗编排（已登记技术债；引擎构造在 `engine_factory.py`、顶栏齿条在 `status_strip.py`、批次结论条在 `batch_conclusion.py`） |
 | `gcm/git/service.py` | 2024 | Git 操作全链路（`_update` 已拆为 `_update_bare_mirror`/`_fetch_remote`/`_merge_remote`） |
 | `gcm/app/engine.py` | 1723 | 调度/并发/进度/重试/会话/事件发布 |
-| `gcm/ui/progress_table.py` | 797 | 进度表（delegate→`progress_delegate.py`、批次总览→`batch_overview.py`、结果文案→`result_labels.py`、行动效→`row_anim.py`、左缘刻度→`edge_ruler.py`） |
+| `gcm/ui/progress_table.py` | 808 | 进度表（delegate→`progress_delegate.py`、批次总览→`batch_overview.py`、结果文案→`result_labels.py`、行动效→`row_anim.py`、左缘刻度→`edge_ruler.py`） |
 | `gcm/db/repo_db.py` | 766 | SQLite 数据层 |
 | `gcm/ui/settings_panel.py` | 746 | 设置 UI（分组构建器在 `settings_groups.py`） |
 | `gcm/ui/settings_groups.py` | 790 | 设置分组构建器（7 个组） |
@@ -89,7 +89,7 @@
 | `gcm/ui/status_pill.py` | 165 | 状态形状编码 + 表格 pill delegate |
 | `gcm/ui/batch_overview.py` | 74 | 批次完成度条（与齿条职责分离） |
 | `gcm/ui/result_labels.py` | 82 | 状态/动作/耗时用户可见文案（唯一来源，走 tr） |
-| `gcm/ui/settings_actions.py` | 334 | 设置页动作型回调（字段写入 wiring / 钩子确认 / 数据目录迁移） |
+| `gcm/ui/settings_actions.py` | 347 | 设置页动作型回调（字段写入 wiring / 钩子确认 / 数据目录迁移） |
 | `gcm/ui/update_flow.py` | 205 | 更新检查三段（手动/结果槽/启动静默）+ 唯一 patch 点约定 |
 | `gcm/ui/settings_workspace.py` | 237 | 设置页 72/28 分割 + 窄窗分组下拉（Rev15 R15-03/04） |
 | `gcm/ui/log_panel.py` | 62 | 黑匣子日志组构建（Rev15 R15-00 从 settings_panel 迁出） |
