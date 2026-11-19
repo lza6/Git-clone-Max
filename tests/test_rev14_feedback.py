@@ -367,6 +367,11 @@ class TestFastMsCopyFeedback(unittest.TestCase):
     守卫三件事：① `motion.FAST_MS` 有生产消费点（token 无死键的动效版）；
     ② 反馈文案走 tr()（中英字典同步）；③ reduced-motion / offscreen 下降级为
     QTimer 恢复（语义一致、不建动画对象）。
+
+    测试纪律（原生崩溃教训）：**绝不泵事件循环**。`processEvents()` 会把此前
+    用例 `deleteLater()` 的延迟析构与到期的 singleShot 一起派发，跨用例触碰
+    已释放的 C++ 对象（rc=127，A/B 实测）。回弹断言改为**直调恢复回调**
+    （`_restore_text`），不依赖事件派发。
     """
 
     @classmethod
@@ -389,25 +394,32 @@ class TestFastMsCopyFeedback(unittest.TestCase):
             p.deleteLater()
 
     def test_feedback_recovers_after_fast_ms(self):
-
+        """回弹语义：恢复回调把文案还原；按钮已销毁时静默跳过（weakref）。"""
         from gcm.i18n import tr
+        from gcm.ui.event_panel import _restore_text
+        import weakref
         p = self._panel()
         try:
             original = p.btn_copy.text()
             p.copy_json()
             self.assertEqual(p.btn_copy.text(), tr("已复制"))
-            # FAST_MS + 余量后应恢复原文案（offscreen 走 QTimer.singleShot 路径）。
-            # 用 processEvents 轮询驱动定时器；不嵌套 QEventLoop.exec() ——
-            # 嵌套 loop 会让上一用例 deleteLater 的析构落进本用例的事件处理，
-            # 实测触发原生崩溃（RC=127）。
-            deadline = time.monotonic() + 2.0
-            while time.monotonic() < deadline and p.btn_copy.text() != original:
-                self._app.processEvents()
+            # 直调恢复回调（不泵事件循环）——按钮存活，必须还原
+            _restore_text(weakref.ref(p.btn_copy), original)
             self.assertEqual(p.btn_copy.text(), original,
                              "微反馈必须回弹，不能把按钮文案永久改掉")
         finally:
             p.deleteLater()
-            self._app.processEvents()
+
+    def test_restore_text_on_destroyed_button_is_silent(self):
+        """按钮从面板上摘除（parent 链销毁）：恢复回调必须静默跳过。"""
+        from gcm.ui.event_panel import _restore_text
+        import weakref
+        p = self._panel()
+        btn = p.btn_copy
+        btn.setParent(None)   # 脱离面板；不泵事件循环（纪律见类 docstring）
+        btn.deleteLater()
+        ref = weakref.ref(btn)
+        _restore_text(ref, "任意文案")   # 不得抛（崩了测试自然红）
 
     def test_reduced_motion_skips_animation_object(self):
         p = self._panel()

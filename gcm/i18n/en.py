@@ -438,6 +438,8 @@ EN = {
     '暂停自动刷新': 'Pause auto refresh',
     '复制 JSON': 'Copy JSON',
     '显示 {n} 条': 'Showing {n} event(s)',
+    '事件快照读取失败（事件总线已销毁）：{e}': 'Event snapshot read failed (event bus destroyed): {e}',
+    '事件流定时器停止失败（面板已销毁）：{e}': 'Event-stream timer stop failed (panel destroyed): {e}',
     '事件流表格': 'Event stream table',
     '事件流（黑匣子执行轨迹）': 'Event stream (black-box trace)',
     '🧾 事件流': '🧾 Event stream',

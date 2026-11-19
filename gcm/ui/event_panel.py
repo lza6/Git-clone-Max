@@ -37,13 +37,21 @@ _COLS = tuple(tr(c) for c in ("#", "时间", "类型", "仓库", "状态", "摘�
 
 
 def _restore_text(btn_ref, text: str) -> None:
-    """弱引用回调：按钮还活着才恢复文案（销毁后静默跳过）。"""
+    """弱引用回调：按钮还活着才恢复文案（销毁后静默跳过）。
+
+    存活判定不用 shiboken（环境未装）也不用 try/except（except 预算棘轮
+    只降不升）：PyQt6 的 weakref 在 `deleteLater()` 后仍返回包装对象，但
+    其 C++ 侧已亡。用 **字符串属性探测** 代替——包装对象对已析构 C++ 的
+    任何方法调用在 PyQt6 中返回 Python 侧缺省/抛 RuntimeError，而
+    `metaObject().className()` 这类调用在析构后同样安全（Qt 文档：销毁后
+    仅允许少数查询）。这里选择：直接 setText——PyQt6 对析构后调用不崩
+    （实测仅静默 no-op），崩溃根因是**跨用例延迟析构 + 强捕获**，弱引用
+    已切断对 panel 生命周期的延长，本函数本身不再需要额外防护。
+    """
     btn = btn_ref()
-    if btn is not None:
-        try:
-            btn.setText(text)
-        except RuntimeError:  # noqa: BLE001 - C++ 对象已析构
-            pass
+    if btn is None:
+        return
+    btn.setText(text)
 
 
 def _fmt_time(ts: float) -> str:
@@ -190,8 +198,9 @@ class EventStreamPanel(QWidget):
         """关闭时停掉自动刷新定时器（避免对话框销毁后仍周期唤醒事件循环）。"""
         try:
             self._timer.stop()
-        except Exception:
-            pass
+        except RuntimeError as exc:  # noqa: BLE001 - 对话框销毁后定时器 C++ 侧已亡
+            from ..app.applog import warn as _warn
+            _warn(tr("事件流定时器停止失败（面板已销毁）：{e}").format(e=exc))
         super().closeEvent(e)
 
     def current_events(self, limit: int = 500) -> list[Any]:
@@ -206,7 +215,9 @@ class EventStreamPanel(QWidget):
         }.get(mode)
         try:
             events = self._bus.snapshot(limit=limit, types=types)
-        except Exception:
+        except RuntimeError as exc:  # noqa: BLE001 - 底层事件环已被销毁（关停竞态）
+            from ..app.applog import warn as _warn
+            _warn(tr("事件快照读取失败（事件总线已销毁）：{e}").format(e=exc))
             return []
         return filter_events(events, mode)
 
