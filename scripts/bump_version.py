@@ -229,7 +229,7 @@ def verify(new: str) -> int:
     rc = subprocess.run(
         [sys.executable, "-m", "unittest",
          "tests.test_g66_patch.TestPackagingVersionSync",
-         "tests.test_g84_bump_version"],
+         "tests.test_g81_changelog"],
         cwd=ROOT, text=True, encoding="utf-8", errors="replace", env=env).returncode
     if rc != 0:
         print("✗ 版本守卫未通过（见上）")
