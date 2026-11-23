@@ -1,0 +1,2 @@
+{'events': 5000, 'seconds': 0.034, 'events_per_sec': 148919, 'published': 5000}
+{'subscriber_received': 1000}

@@ -1,0 +1,37 @@
+[
+  {
+    "repos": 1000,
+    "insert_ms": 1666.0,
+    "list_repos_ms": 5.86,
+    "list_repos_rows": 1000,
+    "list_repos_page50_ms": 0.58,
+    "list_repos_page_total": 1000,
+    "search_like_ms": 4.7,
+    "search_like_hits": 1,
+    "dir_stats_miss_ms": 0.58,
+    "dir_stats_hit_ms": 1.27,
+    "dir_stats_hit_count": 1000,
+    "model_set_rows_ms": 1.34,
+    "table_first_paint_ms": 0.13
+  },
+  {
+    "repos": 3000,
+    "insert_ms": 4528.3,
+    "list_repos_ms": 13.76,
+    "list_repos_rows": 3000,
+    "list_repos_page50_ms": 0.6,
+    "list_repos_page_total": 3000,
+    "search_like_ms": 4.56,
+    "search_like_hits": 11,
+    "dir_stats_miss_ms": 1.56,
+    "dir_stats_hit_ms": 4.08,
+    "dir_stats_hit_count": 3000,
+    "model_set_rows_ms": 4.36,
+    "table_first_paint_ms": 0.05
+  },
+  {
+    "history_rows": 100000,
+    "prune_ms": 190.6,
+    "prune_deleted": 99800
+  }
+]

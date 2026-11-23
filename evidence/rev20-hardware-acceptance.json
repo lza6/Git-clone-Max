@@ -1,0 +1,56 @@
+{
+  "task_id": "rev20-hardware-acceptance",
+  "status": "partial",
+  "timestamp": "2026-11-24T06:05:00+08:00",
+  "environment": {
+    "displays": [
+      {"index": 0, "device": "\\\\.\\DISPLAY1", "resolution": "2560x1600", "scale": 1.5, "primary": true},
+      {"index": 1, "device": "\\\\.\\DISPLAY2", "resolution": "1920x1080", "scale": 1.0, "primary": false}
+    ],
+    "touch_enabled": false,
+    "nvda_installed": false
+  },
+  "commands_executed": [
+    {
+      "cmd": "DisplayInventory",
+      "exit_code": 0,
+      "raw_output_tail": "DISPLAY1 2560x1600 scale=1.5; DISPLAY2 1920x1080 scale=1.0",
+      "output_file": null
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m unittest tests.test_r15_auto_theme tests.test_r15_touch tests.test_rev14_a11y",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 14 tests in 0.380s OK",
+      "output_file": null
+    },
+    {
+      "cmd": "real GUI: move main window from DISPLAY1 to DISPLAY2 (Win+Shift+Right), open settings and background jobs panel",
+      "exit_code": 0,
+      "raw_output_tail": "Window 1239x601 visible on DISPLAY2; queue buttons visible and clickable; no clipping",
+      "output_file": null
+    }
+  ],
+  "files_changed": [],
+  "tests": [
+    {"name": "tests.test_r15_auto_theme / test_r15_touch / test_rev14_a11y", "type": "unit", "status": "passed", "evidence": "14 tests OK"},
+    {"name": "dual display cross-screen geometry", "type": "manual-desktop", "status": "passed", "evidence": "window moved to DISPLAY2; UI tree accessible; no clipping"},
+    {"name": "queue panel new buttons", "type": "manual-desktop", "status": "passed", "evidence": "编辑时间窗/删除所选队列 visible; selecting summary row gives guard prompt"}
+  ],
+  "coverage_summary": {"lines": null, "branches": null, "functions": null, "statements": null},
+  "seams_touched": ["S53 屏幕增删与最小尺寸重算", "S67 队列时间窗 UI"],
+  "mock_scenarios_covered": [],
+  "browser_validation": {"performed": false, "paths": [], "screenshots": []},
+  "verified_checklist_items": {
+    "part1": ["1 双屏跨屏（反向 DPI 方向）"],
+    "part2": ["确认类弹窗默认 No、prune 三态/黑名单/undoable=0 已由 test_a54_destructive_confirm/test_r01_prune 自动覆盖；真人删除未执行"],
+    "part3": ["静态 a11y 14 项通过；真人 NVDA 未执行"],
+    "part4": ["1 health_check started_ok=true smoke_ms=1803", "2 e2e_smoke 本地真克隆 PASS", "3 --diag 单独使用告警有自动守卫"]
+  },
+  "limitations": [
+    "本机主屏 150% / 副屏 100%，与清单第 1 项 100%/150% 方向相反；仅验证反向混合 DPI。",
+    "拔屏/贴靠四方向真人操作、900x480 极限窗未执行。",
+    "无触摸屏，C5 44px/34px 真机项维持待验证。",
+    "NVDA 未安装，屏幕阅读器真人流程未执行。",
+    "prune 破坏性真人删除未执行，避免改动用户数据。"
+  ]
+}
