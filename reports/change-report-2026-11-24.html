@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rev20 交付报告</title>
+<style>
+:root{--ink:#171717;--muted:#5f6368;--line:#d8d8d8;--accent:#0b6b5b;--bg:#f7f6f2;--card:#fff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.7 system-ui,-apple-system,"Microsoft YaHei",sans-serif}
+main{max-width:920px;margin:0 auto;padding:42px 22px 80px}h1{font-size:34px;line-height:1.2;margin:0 0 8px}h2{font-size:21px;margin:36px 0 12px;border-bottom:1px solid var(--line);padding-bottom:8px}
+p{margin:9px 0}.lead{color:var(--muted);font-size:17px}.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:14px 0}
+code{font-family:ui-monospace,Consolas,monospace;background:#eee;border-radius:4px;padding:2px 5px;font-size:13px}
+table{border-collapse:collapse;width:100%;margin:10px 0}td,th{border-bottom:1px solid var(--line);padding:9px 8px;text-align:left;vertical-align:top}th{color:var(--muted);font-weight:600}
+.pass{color:var(--accent);font-weight:700}.open{color:#9a5b00;font-weight:700}.small{font-size:13px;color:var(--muted)}
+</style>
+</head>
+<body><main>
+<h1>Git-clone-Max Rev20 交付报告</h1>
+<p class="lead">2026-11-24 · v9.22.0 · 感知调度生效、队列可达性补齐、文档与发布收口</p>
+
+<div class="card">
+<p><strong>上下文。</strong>Rev19 已建好 per-host 退避表和慢 worker 判据，但引擎并未消费；定时队列只能靠手改 SQLite 设置时间窗；单仓失败率阈值硬编码。<code>计划书/下一步改进指南.md</code> 把这些问题列为 Rev20 施工图。本轮按图施工、发布，并做四轨验收与计划文档归档。</p>
+<p><strong>取舍。</strong>退避只拦“尚未开始”的待发项，不取消在跑 worker；慢 worker 只报告不自动降并发；时间窗编辑落在既有后台任务面板，不新增设置页分类。三项都避免扩大并发模型与回归面。</p>
+</div>
+
+<h2>实际交付</h2>
+<div class="card"><table>
+<tr><th>范围</th><th>结果</th></tr>
+<tr><td>感知调度</td><td>退避 host 的待发项保留在队尾并跳过投放，到期或成功后恢复；慢仓库发布 <code>task_slow</code>；批次终态带 <code>stop_reason</code>。</td></tr>
+<tr><td>定时队列</td><td>队列行可视化；周几/起止时刻/补跑策略编辑；二次确认删除 + oplog 破坏性登记。</td></tr>
+<tr><td>告警与诊断</td><td>单仓失败率阈值用户可调并传到扫描器；GitHub API 401/403/429 降级为环境性 warn。</td></tr>
+<tr><td>发布</td><td>版本 9.22.0，tag v9.22.0，Release 双资产上传并服务端 sha256 校验通过。</td></tr>
+</table></div>
+
+<h2>链路图</h2>
+<div class="card"><p class="small">
+结果回调 → 退避/慢记账 → 投放前查询 delay_for → 跳过/恢复<br>
+失败结果 → classify_error（唯一重试判据）→ 重试队列 / 事件流<br>
+设置页 spinbox → SettingsStore → startup_wiring → scan_alerts(repo_fail_rate_pct)<br>
+后台任务面板 → QueueStore.update_queue/delete_queue → QueueRunner 每 tick 重读
+</p></div>
+
+<h2>验证证据</h2>
+<div class="card"><table>
+<tr><th>轨</th><th>命令/方式</th><th>结果</th></tr>
+<tr><td>快集</td><td><code>coverage run --source=gcm scripts/ci_run_fast.py</code></td><td class="pass">2378 tests · 0 failures · 4 skips · 81%</td></tr>
+<tr><td>静态</td><td><code>ruff check gcm</code> · <code>mypy gcm</code> · i18n · doc_drift · export_contract</td><td class="pass">全绿 / DRIFT 0 / CONTRACT OK</td></tr>
+<tr><td>UI 截图</td><td><code>ui_screenshot_audit.py reports/ui-v9220</code> + pixel_diff</td><td class="pass">34 张 · regressions=[] · ok=True</td></tr>
+<tr><td>真实调用</td><td><code>realcalls_rev17.py</code></td><td class="pass">VERDICT: PASS</td></tr>
+<tr><td>真实 E2E</td><td><code>e2e_smoke.py</code></td><td class="pass">E2E_SMOKE_RESULT: PASS</td></tr>
+<tr><td>独立复审</td><td>契约/事件 66 例 + 扩大回归 189 例 + CI</td><td class="pass">OK / run 45261302271 success</td></tr>
+<tr><td>真机</td><td>双屏 2560x1600@150% + 1920x1080@100%；跨屏、设置页与后台面板点击</td><td class="pass">无裁切；新按钮可见可达</td></tr>
+</table></div>
+
+<h2>风险与回滚</h2>
+<div class="card">
+<p>发布前回滚点：<code>4d4454d</code>。失败时可通过 revert 版本提交、删除 tag/Release 恢复；winget 清单与 health 证据随版本提交一起回退。本轮未发生生产数据迁移。</p>
+<p class="open">仍开放：拔屏/贴靠、读屏器、真机触摸屏 44px/34px（beads 13k/cuz）。本机无触摸屏，相关项不因文档归档标完成。</p>
+</div>
+
+<h2>测验</h2>
+<div class="card">
+<p><strong>1（单选）</strong>退避窗口内的待发项应如何处理？<br>A 丢弃  B 立即合成失败  C 放回队尾等下次补投  D 转交给其他 host</p>
+<p><strong>2（判断）</strong>慢 worker 事件会直接降低该 worker 并发。答：错；本版只可观测。</p>
+<p><strong>3（简答）</strong>为什么删除队列要写 <code>oplog(undoable=False)</code>？答：破坏性操作需留痕，且没有可恢复旧值的撤销动作。</p>
+<p><strong>答案与标准</strong>：1=C，2=错，3=同时命中“破坏性留痕”和“不可撤销”。本轮自测 3/3 通过（100%）。</p>
+</div>
+</main></body></html>

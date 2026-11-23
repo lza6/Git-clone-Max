@@ -1,6 +1,6 @@
 ---
 topic: verified-scope
-updated: 2026-11-03
+updated: 2026-11-24
 owner: Verifier
 ---
 # 已验证范围（verified-scope）
@@ -90,3 +90,8 @@ owner: Verifier
 | SSE E2E + 压测 | 真实订阅 + 18 并发 | Last-Event-ID/replay 200；16 上限精确 503 |
 | 自适应间隔全周期 | 真实 MainWindow 5 轮 | 2→3→5→7 退避曲线 + 变更恢复 2 · FULL_CYCLE_OK |
 | 对抗审查 | 迟到 finished/空库 tick/引擎替换 | 语义正确，无误结算 |
+
+## 2026-11-24 · Rev20 已验证边界
+- 已验证：退避投放、慢 worker 事件、批次终态原因、队列时间窗 CRUD/UI、失败率阈值设置、diag 限流降级、版本单源/changelog、契约、MCP stdio、E2E、双资产 sha256、双屏跨屏与混合 DPI 主窗几何。
+- 未验证：拔屏/贴靠触摸目标、读屏器真人流程、真机触摸屏 44px/34px（本机无触摸屏，保留 beads）。
+- 注意：UI 截图基线目录 `ui-v9200-audit2` 缺全部 34 张，pixel_diff 的 `added` 是新增基线文件而非回归；`regressions=[]`。

@@ -1,6 +1,6 @@
 ---
 topic: change-index
-updated: 2026-11-03
+updated: 2026-11-24
 owner: memory-keeper
 ---
 # 变更索引（change-index）
@@ -124,3 +124,15 @@ owner: memory-keeper
 | `scripts/zero_assert_scan.py` | **新增**：零断言测试 AST 扫描（源自 `_gcm_audit`）+ 守卫 `tests/test_g83_zero_assert.py` | v9.17.0 | 新测试文件若零断言会被拦 |
 | `scripts/memory_check.py` | **新增**：`.agent/memory/` 治理校验（frontmatter/180 天过期/路径有效性） | v9.17.0 | 改记忆文件必须带 topic/updated/owner frontmatter |
 | `docs/agent-contract.md` | 新增 §10 工具风险分级与治理（Tier/隔离区词汇） | v9.17.0 | 纯文档；`test_g80_contract` 若锁章节结构需同步 |
+
+## Rev20（v9.22.0，2026-11-24）
+| 文件/模块 | 变化 | 版本 | 连带影响 |
+|---|---|---|---|
+| `gcm/app/engine.py` | `_top_up_pending` 消费 host backoff；`_on_result` 发 TASK_SLOW；`BATCH_FINISHED.stop_reason` | 9.22.0 | 改补投/事件负载必跑 `test_r20_backoff_dispatch` + g43/g52/g71 |
+| `gcm/app/event_bus.py` | `EventType.TASK_SLOW` 加入 ALL | 9.22.0 | SSE/事件面板自动可见；契约文档同步 |
+| `gcm/db/queue_db.py` | `update_queue`/`delete_queue` + 单事务 helper | 9.22.0 | 校验非法 hhmm/on_missed；DELETE 幂等 |
+| `gcm/ui/background_jobs_panel.py` | 队列行渲染 + 编辑时间窗/删除按钮 + oplog | 9.22.0 | 按钮依赖选中队列行；无队列时给提示 |
+| `gcm/db/settings.py` 等 | `g53_alerts_fail_rate_pct` 设置页→scan_alerts | 9.22.0 | 写入侧与消费侧同时接线 |
+| `gcm/app/diag.py` | HTTP 401/403/429 降级 warn | 9.22.0 | 其它网络错误仍 err |
+| `scripts/bump_version.py` | verify 不再递归跑自身守卫测试 | 9.22.0 | 避免发版后版本树自证误报 |
+| 计划文档 | `计划书/*.md` 归档到 `docs/archive/plans/20261124/` | 9.22.0 | manifest 记录 C5/硬件开放项去处 |

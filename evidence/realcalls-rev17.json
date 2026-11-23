@@ -4,7 +4,7 @@
     {
       "name": "initialize handshake",
       "ok": true,
-      "detail": "v9.21.1"
+      "detail": "v9.22.0"
     },
     {
       "name": "tools >= 7 (含 job_status/job_cancel)",
@@ -29,7 +29,7 @@
     {
       "name": "clone_batch(dry_run) 带 preview_id（32 hex）",
       "ok": true,
-      "detail": "c328ea62…"
+      "detail": "aff28903…"
     },
     {
       "name": "plan.counts 齐全",

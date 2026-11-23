@@ -1,6 +1,6 @@
 ---
 topic: tested-scope
-updated: 2026-11-03
+updated: 2026-11-24
 owner: Verifier
 ---
 # 已测试范围（tested-scope）
@@ -391,3 +391,10 @@ EPIPE 还是 ECONNRESET 是 OS 内核时序决定的，同一平台都会变。�
 （except 预算）+ `tests.test_g67_docs_freshness`（版本漂移）——这三族是
 「文档/基线与代码同步」的守卫，本地绿 CI 才可能绿。
 （S3 轮两次 CI 红：一次版本残留、一次行数+except 基线漏同步。）
+
+## 2026-11-24 · Rev20 / v9.22.0
+- 快集：`coverage run --source=gcm scripts/ci_run_fast.py` → 2378 tests, failures=0, errors=0, skipped=4, TOTAL 81%。
+- 扩大回归：13 个受影响模块 189 tests OK；版本/契约/changelog 13 tests OK。
+- 四轨：UI 截图 34 张（`reports/ui-v9220/`，pixel_diff vs `ui-v9200-audit2` ok=True 无回归）；`realcalls_rev17.py` PASS；`e2e_smoke.py` PASS；`test_g56_contract/test_g84_mcp_resources/test_g71_event_stream` 66 tests OK。
+- 真机：双屏 2560x1600@150% + 1920x1080@100%；主窗跨屏到副屏无裁切；设置页“单仓失败率(%)”可见；后台任务面板新按钮可见可达。拔屏/贴靠/读屏器/触摸屏未实测，归 beads 13k/cuz。
+- 发布：CI run 45261302271 全绿；tag v9.22.0；Release id 455946026；exe/zip 双资产服务端 sha256 一致。
