@@ -1,0 +1,19 @@
+{
+  "task_id": "rev20-prune-undo-e2e",
+  "status": "passed",
+  "checks": [
+    {
+      "name": "prune no-clean only reports",
+      "passed": true
+    },
+    {
+      "name": "prune removes db keeps dir",
+      "passed": true
+    },
+    {
+      "name": "undo restores deleted repo row",
+      "passed": true
+    }
+  ],
+  "all_passed": true
+}

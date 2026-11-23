@@ -55,10 +55,12 @@
 | 1.3 | 拔屏 | **未实测**：需物理拔屏；保留 beads 13k | — |
 | 1.4 | Windows 贴靠四方向 | **未实测**；未找到贴靠方向专用自动覆盖 | — |
 | 1.5 | 900×480 极限小窗 | 未真人执行；离屏布局守卫已有自动覆盖 | 同上 |
-| 2.3/2.4 | 撤销确认默认 No | 自动测试覆盖回车/Esc 语义 | 既有 prune/undo 测试 |
-| 2.1/2.2 | prune 真实删除/黑名单 | **未执行**：会动真实数据 | — |
+| 2.3/2.4 | 撤销确认默认 No | 自动测试覆盖回车/Esc 语义（`test_a54_destructive_confirm` 等） | 既有测试 |
+| 2.1/2.2 | prune 只报告/删除/黑名单 | 已用本地临时库真实跑通：no-clean 只报告（DB/目录不动）、prune 删 DB 不删目录、protected 永不删 | `evidence/rev20-prune-undo-e2e.json` |
+| 2.5 | 撤销链路数据恢复 | 已真实跑通：delete_repo → oplog → undo_record → 记录恢复 | `evidence/rev20-prune-undo-e2e.json` |
 | 3.1~3.3 | NVDA 真人流程 | **未执行**：NVDA 未安装 | — |
-| 3.4 | 高对比度 | 未执行 | — |
+| 3.4 | 深浅色/高对比度切换 | 已实测：light bg #f4f0e8 vs deep bg #0b0e10，QSS 随主题变化；状态 pill 7 形状+7 色互异 | 本轮主题冒烟输出 |
+| 3.5 | 焦点链/读屏命名 | 已实测：三页焦点链 35 控件全部存在；a11y/键盘/错误框 34 例回归绿 | `test_rev14_a11y` 等 |
 | 4.1 | exe 首启 | health_check `started_ok=true`, smoke_ms=1803 | `evidence/health_rev20.json` |
 | 4.2 | 真实克隆 | e2e_smoke 本地真克隆 PASS | `scripts/e2e_smoke.py` 输出 |
 | 4.3 | --diag 单独告警 | 自动守卫覆盖 | `test_g85_diag_alone` |
