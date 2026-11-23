@@ -162,7 +162,8 @@ class BackgroundJobsDialog(QDialog):
                     str(name).strip(),
                     [{"owner": sp.owner, "repo": sp.repo,
                       "url_https": sp.url_https,
-                      "folder_name": sp.folder_name} for sp in specs]),
+                      "folder_name": sp.folder_name,
+                      "ref": getattr(sp, "ref", "") or ""} for sp in specs]),
                 tr("创建同步队列"), tr("创建失败")):
             return
         self.refresh()
@@ -242,6 +243,9 @@ class BackgroundJobsDialog(QDialog):
             if parsed and len(parsed) == 2:
                 edit.setTime(QTime(int(parsed[0]), int(parsed[1])))
         unlimited = QCheckBox(tr("不限起止时刻（清空时间窗）"), dlg)
+        # 当前队列无时间窗（每天随时）时默认勾选：直接保存不得把空窗写成 00:00
+        # （00:00–00:00 是空窗口，会让队列从此永不运行）。
+        unlimited.setChecked(not (q.get("start_time") or q.get("end_time")))
         form.addRow(unlimited)
         form.addRow(tr("开始："), start_edit)
         form.addRow(tr("结束："), end_edit)
@@ -305,7 +309,6 @@ class BackgroundJobsDialog(QDialog):
             QMessageBox.information(self, tr("提示"), tr("请先在表中选中一行"))
             return
         jobs = registry().snapshot()
-        row = self.table.currentRow()
         if row >= len(jobs):
             picked = self._queue_from_row(row - len(jobs))
             if picked is None:
@@ -314,25 +317,7 @@ class BackgroundJobsDialog(QDialog):
             db.queue.set_enabled(int(q["id"]), not bool(q.get("enabled")))
             self.refresh()
             return
-        if row < 0 or jobs[row].key != "sync_queue":
-            QMessageBox.information(self, tr("提示"), tr("请选中「定时同步队列」这一行"))
-            return
-        owner = self._owner_ref() if callable(self._owner_ref) else self._owner_ref
-        db = getattr(owner, "db", None) if owner is not None else None
-        if db is None or not hasattr(db, "queue"):
-            QMessageBox.warning(self, tr("无法操作"), tr("当前没有数据库连接"))
-            return
-        queues = db.queue.list_queues()
-        if not queues:
-            QMessageBox.information(self, tr("提示"),
-                                   tr("还没有创建任何同步队列（可通过数据库 sync_queue 表添加）"))
-            return
-        # 多个队列时操作全部取反过于激进：只切换第一个未处理的（与面板单行选中一致，
-        # 这里选择「把所有队列统一翻转到与当前状态相反」——对单队列用户即直觉行为）。
-        any_enabled = any(q.get("enabled") for q in queues)
-        for q in queues:
-            db.queue.set_enabled(int(q["id"]), not any_enabled)
-        self.refresh()
+        QMessageBox.information(self, tr("提示"), tr("请选中「定时同步队列」这一行"))
 
     def refresh(self) -> None:
         """读一次登记表快照并重绘（不持锁、不触发任何调度）。"""

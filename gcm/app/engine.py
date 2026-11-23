@@ -362,6 +362,10 @@ class SyncEngine(QObject):
         `_replenish()` 是它的别名（每完成一个任务调用一次 → 补满到当前上限）。
         `cancel_all()` 为待发项合成终态时**不会**走 `_start_worker`，因此那里的
         `_on_worker_done(count_running=False)` 不递减在跑计数。
+
+        Rev20 R20-1：退避只拦「尚未 start 的待发项」；被跳过的**原位保留**，
+        立即返回并武装单次定时器，到期自动重入补投（否则最后一个 worker 结束后
+        没有任何机制唤醒，批次会永久停摆）。在跑 worker 不受影响。
         """
         if getattr(self, "_cancelled", False) or getattr(self, "_paused", False):
             return
@@ -369,18 +373,42 @@ class SyncEngine(QObject):
         if not queue:
             return
         limit = self.batch_start_limit()
+        skipped = 0
         while queue and self._running_count() < limit:
-            index, spec, flag = queue.pop(0)
-            # Rev20 R20-1：退避只拦「尚未 start 的待发项」；被跳过的原样放回
-            # 队尾，等下一个 worker 完成触发补投或退避窗口自然过期，不启动定时器。
-            # 在跑 worker 不受影响（那是 cancel 语义，不是退避语义）。
+            index, spec, flag = queue[0]
             host = self._host_for(spec)
             if self._host_backoff.delay_for(host) > 0:
-                queue.append((index, spec, flag))
-                if len(queue) == 1:
-                    break  # 整队都是退避 host，本轮不投，避免空转
+                # 退避项保留在队首，跳到下一个不同 host 的条目继续投放；
+                # 整队都在退避时武装定时器到期自动重入（否则批次停摆）。
+                skipped += 1
+                if skipped >= len(queue):
+                    self._arm_backoff_timer(self._host_backoff.delay_for(host))
+                    return
+                queue.append(queue.pop(0))
                 continue
+            queue.pop(0)
             self._start_worker(index, spec, flag)
+
+    def _arm_backoff_timer(self, delay: float) -> None:
+        """武装（或重置）退避到期定时器。delay<=0 时不等，立即重试补投。"""
+        delay = max(0.0, float(delay))
+        timer = getattr(self, "_backoff_timer", None)
+        if timer is None:
+            from PyQt6.QtCore import QTimer as _QTimer
+            timer = _QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(self._on_backoff_timer)
+            self._backoff_timer = timer
+        # 已在跑的定时器重置为更早的到期时刻即可（多个 host 各自退避时取最短）
+        if timer.isActive() and timer.remainingTime() <= int(delay * 1000):
+            return
+        timer.start(int(delay * 1000) if delay > 0 else 0)
+
+    def _on_backoff_timer(self) -> None:
+        """退避到期：重新尝试补投（仍处退避的 host 会再次武装更晚的定时器）。"""
+        if getattr(self, "_cancelled", False) or getattr(self, "_paused", False):
+            return
+        self._top_up_pending()
 
     def _running_count(self) -> int:
         """当前真正在跑的 worker 数（用于流控补投判定）。"""

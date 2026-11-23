@@ -124,6 +124,41 @@ class TestHostBackoffGatesDispatch(_EngineHarness):
         self._complete(0)
         self.assertEqual(len(self.started), before + 1, "成功清零后照常补投")
 
+    def test_whole_queue_backoff_returns_promptly_and_arms_timer(self):
+        """整队同 host 退避：补投必须立即返回（不得忙等到退避过期），并武装定时器。"""
+        a1, a2, a3 = _spec(1), _spec(2), _spec(3)
+        self.eng.launch([a1, a2, a3], check_existing=False)
+        armed = []
+        self.eng._arm_backoff_timer = lambda delay: armed.append(delay)
+        self._feed(a1, SyncStatus.FAILED)
+        self._feed(a2, SyncStatus.FAILED)
+        started_before = len(self.started)
+        self.eng._running = 0
+        t0 = time.monotonic()
+        self.eng._replenish()
+        elapsed = time.monotonic() - t0
+        self.assertLess(elapsed, 1.0,
+                        f"整队退避时补投阻塞了 {elapsed:.1f}s（忙等空转）")
+        self.assertEqual(len(self.started), started_before,
+                         "退避窗口内不得投放")
+        self.assertGreaterEqual(len(self.eng._pending_queue), 2,
+                                "退避项必须保留在待发队列")
+        self.assertTrue(armed, "必须武装退避定时器以便到期自动恢复")
+
+    def test_single_pending_backoff_resumes_via_timer(self):
+        """最后一个待发项退避时：定时器到期后必须自动恢复投放，不靠手工补投。"""
+        a1, a2 = _spec(1), _spec(2)
+        self.eng.launch([a1, a2], check_existing=False)
+        self._feed(a1, SyncStatus.FAILED)
+        self._complete(0)
+        self.assertEqual(len(self.eng._pending_queue), 1)
+        # 模拟退避窗口已过（真实路径由 _backoff_timer 到期触发同一槽）
+        from gcm.app.adaptive import HostBackoffTable
+        self.eng._host_backoff = HostBackoffTable()
+        self.eng._on_backoff_timer()
+        self.assertEqual(len(self.started), 2, "定时器到期后必须自动补投")
+        self.assertEqual(len(self.eng._pending_queue), 0)
+
 
 class TestSlowWorkerEvent(_EngineHarness):
     def test_slow_repo_publishes_task_slow_event(self):

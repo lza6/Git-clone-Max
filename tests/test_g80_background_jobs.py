@@ -204,11 +204,8 @@ class TestPanelAndWiring(unittest.TestCase):
             parent = QWidget()
             parent.db = db
             dlg = BackgroundJobsDialog(parent)
-            # 选中队列行
-            for r in range(dlg.table.rowCount()):
-                if dlg.table.item(r, 0).text() == "定时同步队列":
-                    dlg.table.selectRow(r)
-                    break
+            # 注册表有 1 行汇总 + 1 行队列数据 → 队列数据行是 1
+            dlg.table.selectRow(1)
             with mock.patch.object(QMessageBox, "information", return_value=None),                     mock.patch.object(QMessageBox, "warning", return_value=None):
                 enabled_before = {q["id"]: q["enabled"] for q in db.queue.list_queues()}
                 dlg._toggle_selected_queue()
@@ -242,7 +239,7 @@ class TestPanelAndWiring(unittest.TestCase):
                 dlg._edit_selected_queue()
             row = db.queue.get_queue(qid)
             self.assertEqual(row["days_set"], [1, 2, 3, 4, 5, 6, 7])
-            self.assertEqual(row["start_time"], "00:00")
+            self.assertEqual(row["start_time"], "")
 
             with mock.patch.object(QMessageBox, "question",
                                    return_value=QMessageBox.StandardButton.No):
@@ -253,6 +250,70 @@ class TestPanelAndWiring(unittest.TestCase):
                                    return_value=QMessageBox.StandardButton.Yes):
                 dlg._delete_selected_queue()
             self.assertEqual(db.queue.list_queues(), [])
+            dlg.close()
+            parent.close()
+            db.close()
+
+    def test_queue_edit_preserves_always_run_and_ref(self):
+        """R20-4 复审：无时间窗队列编辑后仍每天随时；创建队列保留 @ref。"""
+        from PyQt6.QtWidgets import QInputDialog, QMessageBox
+
+        from gcm.db.repo_db import Database
+        from gcm.ui.background_jobs_panel import BackgroundJobsDialog
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db = Database(Path(td) / "repos.db")
+            qid = db.queue.add_queue("随时", [{"owner": "a", "repo": "b"}])
+            parent = QWidget()
+            parent.db = db
+            dlg = BackgroundJobsDialog(parent)
+            dlg.table.selectRow(0)
+            # 默认打开即保存（无窗队列 → 必须仍无窗，不得写成 00:00 永不运行）
+            with mock.patch.object(QDialog, "exec", return_value=QDialog.DialogCode.Accepted):
+                dlg._edit_selected_queue()
+            row = db.queue.get_queue(qid)
+            self.assertEqual(row["start_time"], "")
+            self.assertEqual(row["end_time"], "")
+            dlg.close()
+            parent.close()
+            db.close()
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db = Database(Path(td) / "repos.db")
+            parent = QWidget()
+            parent.db = db
+            dlg = BackgroundJobsDialog(parent)
+            urls = "https://github.com/aa/bb@v1.2.0\n"
+            with mock.patch.object(QInputDialog, "getText",
+                                   return_value=("带tag", True)),                 mock.patch.object(QDialog, "exec",
+                                      return_value=QDialog.DialogCode.Accepted),                 mock.patch("PyQt6.QtWidgets.QPlainTextEdit.toPlainText",
+                               return_value=urls),                 mock.patch.object(QMessageBox, "information", return_value=None):
+                dlg._create_queue()
+            specs = db.queue.list_queues()[0]["specs"]
+            self.assertEqual(specs[0].get("ref"), "v1.2.0",
+                             "创建队列必须保留 @tag 的 ref 语义")
+            dlg.close()
+            parent.close()
+            db.close()
+
+    def test_queue_toggle_only_affects_selected_row(self):
+        """多队列时启停按钮只翻转选中那条，不得误翻全部。"""
+        from gcm.db.repo_db import Database
+        from gcm.ui.background_jobs_panel import BackgroundJobsDialog
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db = Database(Path(td) / "repos.db")
+            db.queue.add_queue("A", [{"owner": "a", "repo": "b"}])
+            db.queue.add_queue("B", [{"owner": "c", "repo": "d"}])
+            parent = QWidget()
+            parent.db = db
+            dlg = BackgroundJobsDialog(parent)
+            # jobs=0（未登记）→ 队列 A 是表行 0，队列 B 是表行 1
+            dlg.table.selectRow(0)
+            dlg._toggle_selected_queue()
+            states = {q["name"]: q["enabled"] for q in db.queue.list_queues()}
+            self.assertEqual(states["A"], 0, "选中的 A 应被停用")
+            self.assertEqual(states["B"], 1, "未选中的 B 不得被牵连")
             dlg.close()
             parent.close()
             db.close()
