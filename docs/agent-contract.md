@@ -336,10 +336,12 @@ data: {"type":"task_result","seq":42,"ts":1760000000.0,"batch_id":"20261019-..."
 | `task_progress` | `index,key,percent,detail` | 100ms 心跳批量发布（可能缺省 percent/detail） |
 | `task_result` | `index,key,status,action,message,detail,commits,duration_ms,path,head_sha,remote_sha,mirror_used,degrade_path` | 终态结果（后两个为 **G81 新增加性字段**，`""` = 直连源站 / 常规克隆；老消费者按多余键忽略） |
 | `task_error` | `category,code,title,cause,action,retryable,http_status,raw` | 失败时的三段式结构化错误（§3 之外的新 schema） |
+| `task_slow` | `key,folder_name,elapsed_ms,median_ms` | 慢 worker 可观测事件（中位耗时 1/0.3 倍判据；只报告不调度） |
+| `task_stuck` | `key,elapsed_ms,threshold_ms,message` | 疑似卡死（只报告，不回收 worker 槽位） |
 | `retry_queued` | `key,folder_name,attempts,next_retry_at,category,code,title` | 进入自动重试队列 |
 | `retry_dropped` | 同上 + `reason` | 超过最大重试次数而放弃 |
 | `retry_started` | `count,keys[]` | 引擎到期重投 |
-| `batch_finished` | `total,cancelled,counts,state,net_fail` | 一批结束（`state` 含状态机计数） |
+| `batch_finished` | `total,cancelled,counts,state,net_fail,stop_reason` | 一批结束（`state` 含状态机计数；`stop_reason` 为 completed/cancelled/failed 加性字段） |
 | `system` | `message` | 预留的系统消息 |
 
 错误 schema 扩展：`task_error` 的 `category` 取值

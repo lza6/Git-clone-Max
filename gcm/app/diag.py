@@ -9,6 +9,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+from ..i18n import tr
+
 
 def probe_git() -> dict:
     try:
@@ -36,9 +38,20 @@ def probe_github_api() -> dict:
         with urllib.request.urlopen(req, timeout=8) as resp:
             lat = time.monotonic() - t0
             return {"name": "GitHub API", "status": "ok" if lat < 3 else "warn",
-                    "detail": f"HTTP {resp.status} · 延迟 {lat:.1f}s"}
+                    "detail": tr("HTTP {code} · 延迟 {lat:.1f}s").format(code=resp.status, lat=lat)}
     except Exception as e:
-        return {"name": "GitHub API", "status": "err", "detail": f"请求失败：{str(e)[:80]}"}
+        code = getattr(e, "code", None)
+        if code in (401, 403, 429):
+            detail = tr(
+                "HTTP {code}（匿名限流/代理出口共享配额，环境性限制；"
+                "不影响克隆，可忽略或配置 token）").format(code=code)
+            return {"name": "GitHub API", "status": "warn", "detail": detail}
+        if code is not None:
+            detail = tr("HTTP {code}：{error}").format(
+                code=code, error=str(e)[:80])
+        else:
+            detail = tr("请求失败：{error}").format(error=str(e)[:80])
+        return {"name": "GitHub API", "status": "err", "detail": detail}
 
 
 def run_diagnostics(proxy: str = "", host: str = "github.com",

@@ -249,6 +249,7 @@ class TestSettingsCallbacks(_WindowCase):
         sp._save_alert_im()
         sp._save_g53_stale_days(30)
         sp._save_g53_disk_min(5)
+        sp._save_g53_fail_rate(20)
         sp._save_concurrency(4)
         sp._save_fetch_timeout(300)
         sp._save_retries(2)
@@ -281,6 +282,7 @@ class TestSettingsCallbacks(_WindowCase):
         self.assertEqual(saved.retry_max, 3)
         self.assertEqual(saved.concurrency, 4)
         self.assertEqual(saved.g53_alerts_stale_days, 30)
+        self.assertEqual(saved.g53_alerts_fail_rate_pct, 20)
 
     def test_detect_proxy_both_branches(self):
         from gcm.app import proxy as _proxy

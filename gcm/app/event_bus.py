@@ -55,6 +55,9 @@ class EventType:
     # G80-B7-2：单任务疑似卡死（超过 clone_timeout + 余量仍未收敛）。
     # 只报告不回收槽位 —— 回收会临时超过并发上限，必须用户显式选择，本版不做。
     TASK_STUCK = "task_stuck"
+    # Rev20 R20-2：慢 worker 可观测事件（判据来自 SlowWorkerMonitor.is_slow）。
+    # 只报告，不参与调度决策；负载含 elapsed_ms / median_ms / folder_name。
+    TASK_SLOW = "task_slow"
     RETRY_QUEUED = "retry_queued"
     RETRY_STARTED = "retry_started"
     RETRY_DROPPED = "retry_dropped"
@@ -69,8 +72,8 @@ class EventType:
 
     ALL: frozenset[str] = frozenset({
         BATCH_STARTED, TASK_QUEUED, TASK_STARTED, TASK_PROGRESS,
-        TASK_RESULT, TASK_ERROR, TASK_STUCK, RETRY_QUEUED, RETRY_STARTED,
-        RETRY_DROPPED, BATCH_FINISHED, BATCH_PAUSED, BATCH_RESUMED,
+        TASK_RESULT, TASK_ERROR, TASK_STUCK, TASK_SLOW, RETRY_QUEUED,
+        RETRY_STARTED, RETRY_DROPPED, BATCH_FINISHED, BATCH_PAUSED, BATCH_RESUMED,
         JOB_STARTED, JOB_FINISHED, SYSTEM,
     })
 

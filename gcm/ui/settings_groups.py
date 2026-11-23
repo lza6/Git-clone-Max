@@ -590,7 +590,6 @@ def _add_alert_section(owner, l7, row: int) -> int:
         int(getattr(owner.settings, "g53_alerts_interval_min", 60) or 60))
     owner.spin_g53_interval.valueChanged.connect(owner.settings_panel._save_g53_interval)
     l7.addWidget(owner.spin_g53_interval, row + 1, 1)
-    # G69-18：补齐告警判定口径（此前字段有、UI 无 → 用户无法调整）
     l7.addWidget(QLabel(tr("陈旧告警阈值(天)：")), row + 2, 0)
     owner.spin_g53_stale = QSpinBox()
     owner.spin_g53_stale.setRange(1, 3650)
@@ -598,14 +597,21 @@ def _add_alert_section(owner, l7, row: int) -> int:
         int(getattr(owner.settings, "g53_alerts_stale_days", 30) or 30))
     owner.spin_g53_stale.valueChanged.connect(owner.settings_panel._save_g53_stale_days)
     l7.addWidget(owner.spin_g53_stale, row + 2, 1)
-    l7.addWidget(QLabel(tr("磁盘水位阈值(GB)：")), row + 3, 0)
+    owner.spin_g53_fail_rate = QSpinBox()
+    owner.spin_g53_fail_rate.setRange(10, 100)
+    owner.spin_g53_fail_rate.setValue(
+        int(getattr(owner.settings, "g53_alerts_fail_rate_pct", 50) or 50))
+    owner.spin_g53_fail_rate.valueChanged.connect(owner.settings_panel._save_g53_fail_rate)
+    l7.addWidget(QLabel(tr("单仓失败率(%)：")), row + 3, 0)
+    l7.addWidget(owner.spin_g53_fail_rate, row + 3, 1)
+    l7.addWidget(QLabel(tr("磁盘水位阈值(GB)：")), row + 4, 0)
     owner.spin_g53_disk = QSpinBox()
     owner.spin_g53_disk.setRange(1, 100000)
     owner.spin_g53_disk.setValue(
         int(getattr(owner.settings, "g53_alerts_disk_min_gb", 5) or 5))
     owner.spin_g53_disk.valueChanged.connect(owner.settings_panel._save_g53_disk_min)
-    l7.addWidget(owner.spin_g53_disk, row + 3, 1)
-    return row + 4
+    l7.addWidget(owner.spin_g53_disk, row + 4, 1)
+    return row + 5
 
 
 def _add_history_section(owner, l7, row: int) -> int:

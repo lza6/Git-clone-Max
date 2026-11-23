@@ -5,7 +5,7 @@
 > 这边是**跑了证明什么**（接缝 ↔ 用例 ↔ 最后结果）。
 > 只记录本轮真实运行过的结果；引用历史结果必须标日期。
 
-**最后更新**：2026-11-19（v9.21.1：Rev13 新增 S50–S51 两条适配接缝；Rev11 于 2026-11-04 新增 S47–S49）。各接缝的**引入版本**写在下表 S 行的括号里 —— 这里不再堆版本沿革（堆一行会让每次发版都撞版本守卫，且读者也读不出哪条是什么时候加的）。
+**最后更新**：2026-11-24（Rev20 新增 S66–S68：感知调度投放、队列时间窗 UI、告警阈值设置）。各接缝的**引入版本**写在下表 S 行的括号里 —— 这里不再堆版本沿革（堆一行会让每次发版都撞版本守卫，且读者也读不出哪条是什么时候加的）。
 
 ---
 
@@ -86,6 +86,9 @@
 | S63 | **触屏 → 主操作 44px**（Rev15 / R15-08） | `palettes.TOKENS["control"]["touch"]` | `main_window._apply_wide_layout()` | ①触屏主操作 ≥44、行 34；②桌面仍 38/28；③离屏平台不误判触屏；④token 有生产消费点 | `tests/test_r15_touch`（2）· `tests/test_rev14_feedback`（token 守卫） |
 | S64 | **失败弹窗 → 三段式对话框**（Rev18 B1 / U-18 收口） | `ui/error_dialog.show_error`（异常载荷）/ `show_error_message`（str 载荷，分类走 `app/errors.classify_error`） | `main_window.start_all`（mkdir）· `settings_actions.backup_database` / `migrate_data_dir_flow` · `local_repos_dialog._on_scan_failed` · `halfclone_actions.repair_halfcloned_row` | ①6 处迁移点真实触发断言 ErrorInfo 三段非空；②AST 守卫禁新增 `QMessageBox.critical/warning(<异常文本>)`（白名单 error_dialog 兜底，反向自检证明扫描器有效）；③确认类弹窗默认 No 语义不变（R15-06） | `tests/test_g85_error_dialog`（11）+ `test_local_dialog`（24）升级 1 例 |
 | S65 | **单独 --diag → 双通道告警**（Rev18 B3-1 / known-issues #13） | `__main__._warn_diag_without_cli(flags)` | `main()` GUI 分支（CLI 分支不告警） | ①单独 --diag 必 applog WARN + stderr；②`--cli --diag` 不告警；③help 文案含「需配 --cli」防漂移；④文案走 tr()（zh/en 同步） | `tests/test_g85_diag_alone`（4）|
+| S66 | **失败事实 → 投放决策**（Rev20 / R20-1~R20-3） | `app/adaptive.HostBackoffTable` + `SlowWorkerMonitor` | `app/engine._top_up_pending` / `_on_result` / `BATCH_FINISHED` | ①退避 host 的待发项保留在队尾且不投放，其他 host 照常；②退避到期或成功后自动恢复；③慢仓库发 `task_slow`（含 elapsed/median）；④批次终态带 `stop_reason` | `tests/test_r20_backoff_dispatch`（9）· `tests/test_adaptive` · `tests/test_g71_event_stream` |
+| S67 | **队列时间窗 UI → SQLite → runner**（Rev20 / R20-4） | `ui/background_jobs_panel` 的编辑/删除按钮 | `db/queue_db.update_queue` / `delete_queue` → `app/queue_runner.due_queues` | ①非法 hhmm / on_missed 被拒且事务回滚；②编辑后 `list_queues()` 立即读到新窗；③删除默认 No 不执行、Yes 才删且写 oplog；④DELETE 幂等 | `tests/test_g80_queue`（+2）· `tests/test_g80_background_jobs`（+1） |
+| S68 | **告警阈值控件 → 扫描消费**（Rev20 / R20-5） | `ui/settings_groups` 失败率 spinbox + `settings_panel._save_g53_fail_rate` | `db/settings.g53_alerts_fail_rate_pct` → `ui/startup_wiring._scan_repos` → `app/alerts.scan_alerts` | ①控件改动真实落盘；②消费方把值传给 scan_alerts；③30% 失败率在阈值 20 时触发告警；④设置项写入侧与消费侧同时接线 | `tests/test_g69_wiring_gaps` · `tests/test_g53_scorecards` |
 
 ---
 

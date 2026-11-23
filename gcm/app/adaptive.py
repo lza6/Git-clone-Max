@@ -51,6 +51,13 @@ class SlowWorkerMonitor:
             return float(vals[mid])
         return (vals[mid - 1] + vals[mid]) / 2.0
 
+    def threshold(self) -> float:
+        """当前判慢阈值（中位数/0.3 与 floor 取大）；无基准返回 0。"""
+        med = self.median()
+        if med <= 0:
+            return 0.0
+        return max(med / self._ratio, self._floor)
+
     def is_slow(self, key: str, seconds: float) -> bool:
         med = self.median()
         if med <= 0:

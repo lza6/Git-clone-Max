@@ -13,9 +13,12 @@ from __future__ import annotations
 
 import datetime
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTime
 from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
     QDialog,
+    QFormLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -23,7 +26,9 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
+    QTimeEdit,
     QVBoxLayout,
+    QWidget,
 )
 
 from ..app.background_jobs import registry
@@ -89,6 +94,14 @@ class BackgroundJobsDialog(QDialog):
         self.btn_toggle_queue.setToolTip(tr("仅对「定时同步队列」行生效；立即写入数据库"))
         self.btn_toggle_queue.clicked.connect(self._toggle_selected_queue)
         row.addWidget(self.btn_toggle_queue)
+        self.btn_edit_queue = QPushButton(tr("编辑时间窗…"))
+        self.btn_edit_queue.setToolTip(tr("修改所选定时队列的周几、起止时刻与补跑策略"))
+        self.btn_edit_queue.clicked.connect(self._edit_selected_queue)
+        row.addWidget(self.btn_edit_queue)
+        self.btn_delete_queue = QPushButton(tr("删除所选队列"))
+        self.btn_delete_queue.setToolTip(tr("删除后不可撤销；会二次确认"))
+        self.btn_delete_queue.clicked.connect(self._delete_selected_queue)
+        row.addWidget(self.btn_delete_queue)
         row.addStretch(1)
         self.btn_close = QPushButton(tr("关闭"))
         self.btn_close.clicked.connect(self.accept)
@@ -144,19 +157,146 @@ class BackgroundJobsDialog(QDialog):
             QMessageBox.warning(self, tr("创建失败"),
                                 tr("没有可识别的仓库地址（{} 行无效）").format(len(invalid)))
             return
-        try:
-            db.queue.add_queue(str(name).strip(),
-                               [{"owner": sp.owner, "repo": sp.repo,
-                                 "url_https": sp.url_https,
-                                 "folder_name": sp.folder_name} for sp in specs])
-        except ValueError as e:
-            from .error_dialog import show_error  # U-18：三段式 + 动作
-            show_error(self, e, context=tr("创建同步队列"), title=tr("创建失败"))
+        if not self._queue_write(
+                lambda: db.queue.add_queue(
+                    str(name).strip(),
+                    [{"owner": sp.owner, "repo": sp.repo,
+                      "url_https": sp.url_https,
+                      "folder_name": sp.folder_name} for sp in specs]),
+                tr("创建同步队列"), tr("创建失败")):
             return
         self.refresh()
         QMessageBox.information(self, tr("已创建"),
                                 tr("队列「{}」已创建（{} 个仓库，默认每天随时可跑；"
-                                   "时间窗可在数据库调整）").format(name, len(specs)))
+                                   "可点「编辑时间窗…」设置周几与起止时刻）").format(name, len(specs)))
+
+    @staticmethod
+    def _queue_hhmm(edit: QTimeEdit) -> str:
+        t = edit.time()
+        return f"{t.hour():02d}:{t.minute():02d}" if t.isValid() else ""
+
+    def _show_write_error(self, e: ValueError, context: str, title: str) -> None:
+        from .error_dialog import show_error
+        show_error(self, e, context=context, title=title)
+
+    def _queue_write(self, action, context: str, title: str) -> bool:
+        """队列写操作的统一错误处理（复用同一个 except，不扩异常预算）。"""
+        try:
+            action()
+            return True
+        except ValueError as e:
+            self._show_write_error(e, context, title)
+            return False
+
+    def _selected_queue(self):
+        """当前行若是队列，返回 (db, queue row)；否则给提示并返回 None。"""
+        row = self.table.currentRow()
+        if row < 0:
+            QMessageBox.information(self, tr("提示"), tr("请先在表中选中一行"))
+            return None
+        jobs = registry().snapshot()
+        if row >= len(jobs):
+            return self._queue_from_row(row - len(jobs))
+        QMessageBox.information(self, tr("提示"), tr("请选中「定时同步队列」这一行"))
+        return None
+
+    def _queue_from_row(self, idx: int):
+        owner = self._owner_ref() if callable(self._owner_ref) else self._owner_ref
+        db = getattr(owner, "db", None) if owner is not None else None
+        if db is None or not hasattr(db, "queue"):
+            QMessageBox.warning(self, tr("无法操作"), tr("当前没有数据库连接"))
+            return None
+        queues = db.queue.list_queues()
+        if not (0 <= idx < len(queues)):
+            QMessageBox.information(self, tr("提示"), tr("该队列已不存在，请刷新"))
+            return None
+        return db, queues[idx]
+
+    def _edit_selected_queue(self) -> None:
+        picked = self._selected_queue()
+        if picked is None:
+            return
+        db, q = picked
+        dlg = QDialog(self)
+        dlg.setWindowTitle(tr("编辑队列时间窗"))
+        form = QFormLayout(dlg)
+        days_row = QWidget(dlg)
+        days_lay = QHBoxLayout(days_row)
+        days_lay.setContentsMargins(0, 0, 0, 0)
+        labels = (tr("一"), tr("二"), tr("三"), tr("四"), tr("五"), tr("六"), tr("日"))
+        boxes = []
+        current = set(q.get("days_set") or [])
+        for i, label in enumerate(labels, start=1):
+            box = QCheckBox(label, days_row)
+            box.setChecked(i in current)
+            boxes.append(box)
+            days_lay.addWidget(box)
+        form.addRow(tr("运行日："), days_row)
+        start_edit = QTimeEdit(dlg)
+        start_edit.setDisplayFormat("HH:mm")
+        end_edit = QTimeEdit(dlg)
+        end_edit.setDisplayFormat("HH:mm")
+        for edit, raw in ((start_edit, q.get("start_time") or ""),
+                          (end_edit, q.get("end_time") or "")):
+            parsed = raw.split(":") if raw else None
+            if parsed and len(parsed) == 2:
+                edit.setTime(QTime(int(parsed[0]), int(parsed[1])))
+        unlimited = QCheckBox(tr("不限起止时刻（清空时间窗）"), dlg)
+        form.addRow(unlimited)
+        form.addRow(tr("开始："), start_edit)
+        form.addRow(tr("结束："), end_edit)
+        missed = QComboBox(dlg)
+        missed.addItem(tr("跳过"), "skip")
+        missed.addItem(tr("补跑一次"), "run_once")
+        idx = missed.findData(q.get("on_missed") or "skip")
+        missed.setCurrentIndex(max(0, idx))
+        form.addRow(tr("错过窗口："), missed)
+        btns = QHBoxLayout()
+        ok_btn = QPushButton(tr("保存"))
+        cancel_btn = QPushButton(tr("取消"))
+        cancel_btn.clicked.connect(dlg.reject)
+        ok_btn.clicked.connect(dlg.accept)
+        btns.addStretch(1)
+        btns.addWidget(cancel_btn)
+        btns.addWidget(ok_btn)
+        form.addRow(btns)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        days = ",".join(str(i) for i, b in enumerate(boxes, start=1)
+                        if b.isChecked())
+        start, end = ("", "") if unlimited.isChecked() else (
+            self._queue_hhmm(start_edit), self._queue_hhmm(end_edit))
+        if not self._queue_write(
+                lambda: db.queue.update_queue(
+                    int(q["id"]), days=days, start=start,
+                    end=end, on_missed=missed.currentData()),
+                tr("编辑同步队列时间窗"), tr("保存失败")):
+            return
+        self.refresh()
+
+    def _delete_selected_queue(self) -> None:
+        picked = self._selected_queue()
+        if picked is None:
+            return
+        db, q = picked
+        answer = QMessageBox.question(
+            self, tr("删除定时队列"),
+            tr("确定删除队列「{}」？该操作不可撤销。").format(q["name"]),
+            QMessageBox.StandardButton.No | QMessageBox.StandardButton.Yes,
+            QMessageBox.StandardButton.No)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        db.queue.delete_queue(int(q["id"]))
+        owner = self._owner_ref() if callable(self._owner_ref) else self._owner_ref
+        oplog = getattr(owner, "oplog", None)
+        if oplog is not None and hasattr(oplog, "record"):
+            oplog.record("queue_delete", str(q["name"]),
+                         summary=tr("删除定时同步队列 {}").format(q["name"]),
+                         before={"id": q["id"], "days": q.get("days_of_week", ""),
+                                 "start": q.get("start_time", ""),
+                                 "end": q.get("end_time", "")},
+                         undoable=False)
+        self.refresh()
 
     def _toggle_selected_queue(self) -> None:
         """启停选中的定时同步队列（写库立即生效；非队列行给出提示）。"""
@@ -165,7 +305,16 @@ class BackgroundJobsDialog(QDialog):
             QMessageBox.information(self, tr("提示"), tr("请先在表中选中一行"))
             return
         jobs = registry().snapshot()
-        if row >= len(jobs) or jobs[row].key != "sync_queue":
+        row = self.table.currentRow()
+        if row >= len(jobs):
+            picked = self._queue_from_row(row - len(jobs))
+            if picked is None:
+                return
+            db, q = picked
+            db.queue.set_enabled(int(q["id"]), not bool(q.get("enabled")))
+            self.refresh()
+            return
+        if row < 0 or jobs[row].key != "sync_queue":
             QMessageBox.information(self, tr("提示"), tr("请选中「定时同步队列」这一行"))
             return
         owner = self._owner_ref() if callable(self._owner_ref) else self._owner_ref
@@ -188,7 +337,11 @@ class BackgroundJobsDialog(QDialog):
     def refresh(self) -> None:
         """读一次登记表快照并重绘（不持锁、不触发任何调度）。"""
         jobs = registry().snapshot()
-        self.table.setRowCount(len(jobs))
+        owner = self._owner_ref() if callable(self._owner_ref) else self._owner_ref
+        db = getattr(owner, "db", None) if owner is not None else None
+        queues = db.queue.list_queues() if db is not None and hasattr(db, "queue") else []
+        total = len(jobs) + len(queues)
+        self.table.setRowCount(max(1, total))
         for i, job in enumerate(jobs):
             if not job.enabled:
                 status = tr("已关闭")
@@ -205,7 +358,17 @@ class BackgroundJobsDialog(QDialog):
                 if col == 5 and job.last_error:
                     item.setToolTip(str(job.last_error))
                 self.table.setItem(i, col, item)
-        if not jobs:
+        for offset, q in enumerate(queues):
+            days = q.get("days_set") or []
+            window = (f"{q.get('start_time') or '00:00'}–{q.get('end_time') or '24:00'}"
+                      if q.get("start_time") or q.get("end_time") else tr("每天随时"))
+            status = tr("已启用") if q.get("enabled") else tr("已关闭")
+            cells = (tr("定时同步队列：{}").format(q["name"]), status,
+                     tr("周 {} · {}").format(",".join(map(str, days)), window),
+                     q.get("last_run_at") or "—", "—", q.get("last_status") or "—")
+            for col, text in enumerate(cells):
+                self.table.setItem(len(jobs) + offset, col, QTableWidgetItem(str(text)))
+        if not total:
             self.table.setRowCount(1)
             item = QTableWidgetItem(tr("（还没有登记任何后台任务）"))
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)

@@ -222,6 +222,41 @@ class TestPanelAndWiring(unittest.TestCase):
             parent.close()
             db.close()
 
+    def test_queue_edit_and_delete_round_trip(self):
+        """R20-4：时间窗编辑与删除经 UI 真实写库；删除默认不确认则保留。"""
+        from PyQt6.QtWidgets import QMessageBox
+
+        from gcm.db.repo_db import Database
+        from gcm.ui.background_jobs_panel import BackgroundJobsDialog
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db = Database(Path(td) / "repos.db")
+            qid = db.queue.add_queue("夜间", [{"owner": "a", "repo": "b"}])
+            parent = QWidget()
+            parent.db = db
+            dlg = BackgroundJobsDialog(parent)
+            self.assertEqual(dlg.table.rowCount(), 1)
+            dlg.table.selectRow(0)
+
+            with mock.patch.object(QDialog, "exec", return_value=QDialog.DialogCode.Accepted):
+                dlg._edit_selected_queue()
+            row = db.queue.get_queue(qid)
+            self.assertEqual(row["days_set"], [1, 2, 3, 4, 5, 6, 7])
+            self.assertEqual(row["start_time"], "00:00")
+
+            with mock.patch.object(QMessageBox, "question",
+                                   return_value=QMessageBox.StandardButton.No):
+                dlg._delete_selected_queue()
+            self.assertEqual(len(db.queue.list_queues()), 1, "默认 No 不得删除")
+
+            with mock.patch.object(QMessageBox, "question",
+                                   return_value=QMessageBox.StandardButton.Yes):
+                dlg._delete_selected_queue()
+            self.assertEqual(db.queue.list_queues(), [])
+            dlg.close()
+            parent.close()
+            db.close()
+
     def test_create_queue_round_trip(self):
         """S4 创建队列：真实 parse_urls → add_queue → 面板刷新可见。"""
         from PyQt6.QtWidgets import QInputDialog, QMessageBox

@@ -65,6 +65,8 @@ def wire_background_services(owner: MainWindow) -> None:
                 # 注意：这里也必须走 `me` —— 写成 self 会把 self 重新捕获进闭包，
                 # 环就又回来了（本轮实测抓到的最后一处）。
                 stale_days=int(getattr(me.settings, "g53_alerts_stale_days", 30) or 30),
+                repo_fail_rate_pct=int(getattr(
+                    me.settings, "g53_alerts_fail_rate_pct", 50) or 50),
                 disk_min_gb=int(getattr(me.settings, "g53_alerts_disk_min_gb", 5) or 5))
 
         owner.alert_scanner = AlertScanner(

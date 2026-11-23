@@ -138,6 +138,29 @@ class TestQueueStoreCRUD(unittest.TestCase):
         self.assertEqual(row["last_status"], "success")
         self.assertNotEqual(row["last_run_at"], "", "mark_run 必须记录「跑过」")
 
+    def test_update_queue_window_and_validation(self):
+        qid = self.db.queue.add_queue("q", [{"owner": "a", "repo": "b"}])
+        self.db.queue.update_queue(qid, days="1,3,5", start="02:00",
+                                   end="06:00", on_missed="run_once")
+        row = self.db.queue.get_queue(qid)
+        self.assertEqual(row["days_set"], [1, 3, 5])
+        self.assertEqual(row["start_time"], "02:00")
+        self.assertEqual(row["end_time"], "06:00")
+        self.assertEqual(row["on_missed"], "run_once")
+        with self.assertRaises(ValueError):
+            self.db.queue.update_queue(qid, start="25:99")
+        with self.assertRaises(ValueError):
+            self.db.queue.update_queue(qid, on_missed="retry_forever")
+        self.assertEqual(self.db.queue.get_queue(qid)["start_time"], "02:00",
+                         "非法更新必须整条回滚，不得改坏已有窗口")
+
+    def test_delete_queue_is_idempotent(self):
+        qid = self.db.queue.add_queue("q", [{"owner": "a", "repo": "b"}])
+        self.db.queue.delete_queue(qid)
+        self.assertEqual(self.db.queue.list_queues(), [])
+        self.db.queue.delete_queue(qid)  # 再删一次不抛
+        self.assertIsNone(self.db.queue.get_queue(qid))
+
 
 class TestSchedulerPureFunctions(unittest.TestCase):
     def setUp(self):

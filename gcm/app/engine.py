@@ -27,7 +27,7 @@ from ..db.repo_db import Database, load_progress, save_progress
 from ..git.service import GitService
 from ..models import RepoSpec, SyncAction, SyncResult, SyncStatus
 from ..util.redact import redact
-from .batch_state import BatchState
+from .batch_state import BatchState, StopReason
 from .errors import classify_error
 from .event_bus import EventBus, EventType
 from .mirrors import normalize_mirror_prefix
@@ -371,6 +371,15 @@ class SyncEngine(QObject):
         limit = self.batch_start_limit()
         while queue and self._running_count() < limit:
             index, spec, flag = queue.pop(0)
+            # Rev20 R20-1：退避只拦「尚未 start 的待发项」；被跳过的原样放回
+            # 队尾，等下一个 worker 完成触发补投或退避窗口自然过期，不启动定时器。
+            # 在跑 worker 不受影响（那是 cancel 语义，不是退避语义）。
+            host = self._host_for(spec)
+            if self._host_backoff.delay_for(host) > 0:
+                queue.append((index, spec, flag))
+                if len(queue) == 1:
+                    break  # 整队都是退避 host，本轮不投，避免空转
+                continue
             self._start_worker(index, spec, flag)
 
     def _running_count(self) -> int:
@@ -1444,11 +1453,31 @@ class SyncEngine(QObject):
             else:
                 self._host_backoff.on_success(_host)
             if getattr(res, "duration_ms", 0):
-                self._slow_monitor.record(res.spec.folder_name,
-                                          res.duration_ms / 1000.0)
+                elapsed = res.duration_ms / 1000.0
+                self._slow_monitor.record(res.spec.folder_name, elapsed)
+                if self._slow_monitor.is_slow(res.spec.folder_name, elapsed):
+                    med_ms = int(self._slow_monitor.median() * 1000)
+                    from ..i18n import tr
+                    from . import applog
+                    msg = tr(
+                        "慢 worker：{name} 本次 {elapsed:.1f}s"
+                        "（中位 {median:.1f}s，阈值 {threshold:.1f}s）")
+                    applog.warn(msg.format(
+                        name=res.spec.folder_name, elapsed=elapsed,
+                        median=med_ms / 1000,
+                        threshold=self._slow_monitor.threshold()))
+                    self._publish(
+                        EventType.TASK_SLOW,
+                        key=f"{res.spec.owner}/{res.spec.repo}",
+                        folder_name=res.spec.folder_name,
+                        elapsed_ms=int(res.duration_ms),
+                        median_ms=med_ms,
+                    )
         except Exception as e:  # noqa: BLE001 - 调度感知失败不影响结果主链路
+            from ..i18n import tr
             from . import applog
-            applog.warn(f"感知调度记账失败（{res.spec.folder_name}）：{e}")
+            applog.warn(tr("感知调度记账失败（{name}）：{e}").format(
+                name=res.spec.folder_name, e=e))
         # G52-1：网络类失败入自动重试队列；成功/跳过/冲突移除
         if res.status == SyncStatus.FAILED:
             self._record_retry_failure(res)
@@ -1580,13 +1609,21 @@ class SyncEngine(QObject):
                     pass
                 self._persist_concurrency_state()
             # G71-1：批次终态事件（含各状态计数与是否取消），供 SSE/诊断包收尾
+            counts = dict(self._batch_counts)
+            if self._cancelled:
+                reason = StopReason.CANCELLED
+            elif counts.get("failed", 0) > 0 and counts.get("success", 0) == 0:
+                reason = StopReason.FAILED
+            else:
+                reason = StopReason.COMPLETED
             self._publish(
                 EventType.BATCH_FINISHED,
                 total=int(self._batch_total),
                 cancelled=bool(self._cancelled),
-                counts=dict(self._batch_counts),
+                counts=counts,
                 state=self._batch_state.summary(),
                 net_fail=int(self._batch_net_fail),
+                stop_reason=reason.value,
             )
             self._batch_id = ""
             self.finished.emit()

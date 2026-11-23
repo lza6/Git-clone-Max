@@ -261,6 +261,10 @@ class SettingsPanel(QWidget):
         except Exception:
             pass
 
+    def _save_g53_fail_rate(self, value):
+        self.owner.settings.g53_alerts_fail_rate_pct = int(value)
+        self.owner.settings_store.save(self.owner.settings)
+
     def _save_g53_disk_min(self, value):
         self.owner.settings.g53_alerts_disk_min_gb = int(value)
         self.owner.settings_store.save(self.owner.settings)

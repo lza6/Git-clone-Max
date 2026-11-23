@@ -350,6 +350,7 @@ class Settings:
     g53_alerts_enabled: bool = False          # G53-2 阈值告警开关
     g53_alerts_interval_min: int = 60        # G53-2 告警扫描间隔（分钟）
     g53_alerts_stale_days: int = 30          # G53-2 陈旧阈值（天）
+    g53_alerts_fail_rate_pct: int = 50       # Rev20 R20-5 单仓失败率告警阈值（%）
     g53_alerts_disk_min_gb: int = 5          # G53-2 磁盘水位阈值（GB）
     history_retention_days: int = 90         # G53-4 历史保留天数（默认 90）
     sched_report_enabled: bool = False       # G53-5 定时报表开关

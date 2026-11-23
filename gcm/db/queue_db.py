@@ -14,6 +14,8 @@ import sqlite3
 import threading
 from typing import Any
 
+from ..i18n import tr
+
 _QUEUE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS sync_queue (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,6 +76,18 @@ class QueueStore:
         self._lock = lock
 
     # ---------------------------------------------------------------- 写
+    def _write_txn(self, sql: str, args: tuple) -> int:
+        """队列写事务（沿用 repo_db 的锁 + BEGIN IMMEDIATE + 回滚纪律）。"""
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                cur = self._conn.execute(sql, args)
+                self._conn.commit()
+                return int(cur.lastrowid or 0)
+            except Exception:
+                self._conn.rollback()
+                raise
+
     def add_queue(self, name: str, specs: list[dict[str, Any]], *,
                   days: str = "", start: str = "", end: str = "",
                   on_missed: str = "skip") -> int:
@@ -84,26 +98,41 @@ class QueueStore:
         if not isinstance(specs, list) or not specs:
             raise ValueError("specs 必须是非空列表")
         if on_missed not in _ON_MISSED_VALUES:
-            raise ValueError(f"on_missed 只支持 {'/'.join(_ON_MISSED_VALUES)}")
+            raise ValueError(tr("on_missed 只支持 {}").format("/".join(_ON_MISSED_VALUES)))
         if parse_hhmm(start) is None and start:
-            raise ValueError(f"start_time 非法：{start!r}")
+            raise ValueError(tr("start_time 非法：{}").format(repr(start)))
         if parse_hhmm(end) is None and end:
-            raise ValueError(f"end_time 非法：{end!r}")
-        with self._lock:
-            self._conn.execute("BEGIN IMMEDIATE")
-            try:
-                cur = self._conn.execute(
-                    "INSERT INTO sync_queue (name, specs_json, days_of_week, start_time,"
-                    " end_time, enabled, on_missed, created_at, updated_at)"
-                    " VALUES (?, ?, ?, ?, ?, 1, ?, datetime('now','localtime'),"
-                    " datetime('now','localtime'))",
-                    (name, json.dumps(specs, ensure_ascii=False),
-                     str(days or ""), str(start or ""), str(end or ""), on_missed))
-                self._conn.commit()
-                return int(cur.lastrowid or 0)
-            except Exception:
-                self._conn.rollback()
-                raise
+            raise ValueError(tr("end_time 非法：{}").format(repr(end)))
+        sql = (
+            "INSERT INTO sync_queue (name, specs_json, days_of_week, start_time,"
+            " end_time, enabled, on_missed, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, 1, ?, datetime('now','localtime'),"
+            " datetime('now','localtime'))")
+        return self._write_txn(sql, (
+            name, json.dumps(specs, ensure_ascii=False),
+            str(days or ""), str(start or ""), str(end or ""), on_missed))
+
+    def update_queue(self, queue_id: int, *, days: str = "", start: str = "",
+                     end: str = "", on_missed: str = "skip") -> None:
+        """更新队列时间窗；非法参数抛 ValueError 且整条回滚。
+
+        参数语义与 `add_queue` 一致：days 空串 = 每天；start/end 空串 = 不限。
+        """
+        if on_missed not in _ON_MISSED_VALUES:
+            raise ValueError(tr("on_missed 只支持 {}").format("/".join(_ON_MISSED_VALUES)))
+        if start and parse_hhmm(start) is None:
+            raise ValueError(tr("start_time 非法：{}").format(repr(start)))
+        if end and parse_hhmm(end) is None:
+            raise ValueError(tr("end_time 非法：{}").format(repr(end)))
+        sql = (
+            "UPDATE sync_queue SET days_of_week=?, start_time=?, end_time=?,"
+            " on_missed=?, updated_at=datetime('now','localtime') WHERE id=?")
+        self._write_txn(sql, (str(days or ""), str(start or ""), str(end or ""),
+                              on_missed, int(queue_id)))
+
+    def delete_queue(self, queue_id: int) -> None:
+        """删除队列（幂等）。"""
+        self._write_txn("DELETE FROM sync_queue WHERE id=?", (int(queue_id),))
 
     def set_enabled(self, queue_id: int, enabled: bool) -> None:
         with self._lock:

@@ -37,6 +37,18 @@ class TestDiagProbes(unittest.TestCase):
             r = probe_github_api()
             self.assertEqual(r["status"], "err")
 
+    def test_api_rate_limit_is_warn_not_err(self):
+        import urllib.error
+
+        from gcm.app.diag import probe_github_api
+        for code in (401, 403, 429):
+            err = urllib.error.HTTPError(
+                "https://api.github.com/zen", code, "rate limit", {}, None)
+            with mock.patch("urllib.request.urlopen", side_effect=err):
+                r = probe_github_api()
+            self.assertEqual(r["status"], "warn", f"HTTP {code} 是环境性限流")
+            self.assertIn(f"HTTP {code}", r["detail"])
+
     def test_run_diagnostics_with_proxy(self):
         from gcm.app.diag import run_diagnostics
         with mock.patch("gcm.app.diag.probe_git",
