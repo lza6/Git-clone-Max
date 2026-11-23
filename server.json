@@ -2,7 +2,7 @@
   "$schema": "https://cdn.jsdelivr.net/npm/@modelcontextprotocol/sdk@latest/config/schema.json",
   "name": "gcm",
   "displayName": "Git-clone-Max",
-  "version": "9.21.1",
+  "version": "9.22.0",
   "description": "GitHub/GitLab/Gitee/Codeberg/Bitbucket/自建主机 批量并行克隆 + 增量更新 + 入库追踪（本地只读 MCP；写操作需 --allow-mutate）",
   "author": {
     "name": "lza6",
