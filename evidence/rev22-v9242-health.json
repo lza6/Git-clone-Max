@@ -1,0 +1,14 @@
+{
+  "version": "9.24.2",
+  "archive_version": "9.24.2",
+  "exe_sha256": "c292798c5204a341551a6a67a22bca4aea16899dd24f759935170dac72ec3c72",
+  "zip_sha256": "5a4373c1668b07b6ee558e21e7191b24ba1ff97ca1cdbaa8ecb882b3273edca9",
+  "exe_size": 43299678,
+  "zip_size": 82927429,
+  "started_ok": true,
+  "repos_db_created": true,
+  "smoke_ms": 2306,
+  "elapsed_ms": 5172,
+  "checked_at": "2026-11-26T05:20:52+08:00",
+  "artifacts_exist": true
+}
