@@ -1,0 +1,28 @@
+{
+  "task_id": "rev22-stats-dialog-repro",
+  "status": "passed",
+  "timestamp": "2026-11-26T~05:05+08:00",
+  "commands_executed": [
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen python -u %TEMP%/gcm_stats_repro.py (修复后)",
+      "exit_code": 0,
+      "raw_output_tail": "wrapper deleted before close: True\nclose ok in 0.000s\nsecond dialog close ok\ndone"
+    },
+    {
+      "cmd": "同一脚本（修复前）",
+      "exit_code": -1073740791,
+      "raw_output_tail": "RuntimeError: wrapped C/C++ object of type _Aggregator has been deleted (closeEvent 内；PyQt6 abort 0xC0000409)"
+    }
+  ],
+  "files_changed": [
+    "gcm/ui/statistics_dialog.py",
+    "tests/test_rev22_fixes.py"
+  ],
+  "tests": [
+    {"name": "tests.test_rev22_fixes (glyph guard / header i18n / dialog lifecycle)", "type": "unit", "status": "passed", "evidence": "5 cases; wrapper-deleted precondition asserted"}
+  ],
+  "browser_validation": {"performed": false, "paths": [], "screenshots": []},
+  "limitations": [
+    "修复前退出码 -1073740791 = 0xC0000409 (STATUS_STACK_BUFFER_OVERRUN) 实为 PyQt6 未捕获槽/虚函数异常触发的 fail-fast，非栈溢出"
+  ]
+}

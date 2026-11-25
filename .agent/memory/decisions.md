@@ -18,6 +18,20 @@ owner: memory-keeper
 然后**移除 `gc.disable()`**。恢复正常 GC 后 CI 三平台全绿。
 **关键教训**：守卫必须覆盖**生产路径**（`show()`），不能只覆盖方便测试的路径。
 
+## D-22 deleteLater 之后的 QThread wrapper：close 路径必须过 sip.isdeleted
+
+**背景**：统计中心对话框（`StatisticsDialog`）聚合完成后关闭即闪退（0xC0000409）。
+**根因**：`_Aggregator.finished → deleteLater` 执行后 C++ 对象已删、Python wrapper
+仍在 `self._agg_thread`；`closeEvent → t.isRunning()` 对已删 wrapper 抛 RuntimeError，
+PyQt6 在虚函数里把未捕获异常升级为 abort。`_run_scorecard_async` 的 `old.isRunning()`
+是第二入口（周期切换路径）。
+**证据链**：截图审计脚本固定在 `dialog_statistics` 后中止、后 4 个对话框从未被截到
+——"产出 34 张图"掩盖了这一点，与「只存图不断言」是同一种假绿。
+**决策**：生命周期判断统一 `sip.isdeleted(t)` 先行；`wait()` 去上限（运行中析构 =
+进程硬崩，宁可关闭时等一次聚合）。守卫 `tests/test_rev22_fixes.py`。
+**教训**：`deleteLater` 是"对象会消失"的承诺——任何持有 wrapper 的出口
+（closeEvent / 周期切换 / 析构）都必须先问 `sip.isdeleted`。
+
 ## D-02 Webhook 审计只记 `scheme://host`
 
 `redact(url)` 只按**已知参数名**打码，而 Webhook 密钥常在**路径**里

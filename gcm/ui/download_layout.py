@@ -202,7 +202,11 @@ def build_download_top(owner) -> QWidget:
     from PyQt6.QtWidgets import QMenu as _QMenu
     from PyQt6.QtWidgets import QToolButton
     owner.btn_recent = QToolButton()
-    owner.btn_recent.setText(tr("历史 ▾"))
+    # U+25BE（▾）在微软雅黑无字形（Geometric Shapes 小三角区段整体缺失，
+    # 与 build_more_tools_button 的 U+25B8 实测同根因，2026-11-26 离屏截图
+    # 渲染为 tofu）。方向语义由 InstantPopup 的按下态承担，不加字符不加箭头
+    # （arrow 抬 1px sizeHint，见同文件「更多」按钮注释）。
+    owner.btn_recent.setText(tr("历史"))
     owner.btn_recent.setToolTip(tr("最近同步过的地址（也可在输入框里右键打开）"))
     owner.btn_recent.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
     owner.btn_recent.setObjectName("ghost")

@@ -39,5 +39,5 @@
   ],
   "title": "gcm CLI --json top-level contract",
   "type": "object",
-  "version": "9.24.0"
+  "version": "9.24.1"
 }

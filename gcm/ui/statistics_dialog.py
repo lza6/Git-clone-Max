@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+from PyQt6 import sip
 from PyQt6.QtCore import QRectF, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import (
@@ -137,12 +138,20 @@ class StatisticsDialog(QDialog):
 
         注意：QDialog 的 accept()/reject()（关闭按钮路径）**不触发 closeEvent**，
         必须同时挂 finished 信号 —— macOS CI 实测 close-only 仍崩（ca86ce3）。
+
+        wrapper 已删（finished→deleteLater 已执行）时必须跳过：对已删对象调
+        isRunning()/wait() 抛 RuntimeError，在 closeEvent 里等于进程 abort
+        （0xC0000409，2026-11-26 截图审计实测复现：统计对话框关闭即闪退）。
         """
         t = getattr(self, "_agg_thread", None)
-        if t is not None and t.isRunning():
-            # 不 disconnect（Qt 无连接时抛 TypeError，且 except 预算红线）；
-            # 过期轮次由渲染槽用代际令牌丢弃（见 _on_scorecard_ready）。
-            t.wait(3000)
+        if t is None or sip.isdeleted(t):
+            self._agg_thread = None
+            return
+        if t.isRunning():
+            # 无超时：仍在跑的 QThread 随对话框析构 = 进程硬崩；聚合是纯本地
+            # SQLite + os.walk，代价是关闭时最多等一次聚合完成。
+            t.wait()
+        self._agg_thread = None
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt 命名
         self._shutdown_agg_thread()
@@ -331,13 +340,13 @@ class StatisticsDialog(QDialog):
         """评分卡 + 存储看板在后台线程计算，结果回 GUI 线程渲染。
 
         C-2 生命周期守卫：旧线程先 wait 再替换引用（QThread 运行中被析构 =
-        本项目 CI SIGSEGV 的同型根因，CLAUDE.md §6 已登记）。wait 有上限，
-        超时的旧线程设为 daemon 式放任（Qt 会打警告但不崩）。
+        本项目 CI SIGSEGV 的同型根因，CLAUDE.md §6 已登记）。wrapper 已删时
+        必须跳过（见 `_shutdown_agg_thread` 的 0xC0000409 说明）。
         """
         old = getattr(self, "_agg_thread", None)
-        if old is not None and old.isRunning():
+        if old is not None and not sip.isdeleted(old) and old.isRunning():
             old.disconnect()  # 断开信号：结果不再回渲染（丢弃过期轮次）
-            old.wait(2000)
+            old.wait()
         db = self.db
         data_dir = getattr(self, "data_dir", None) or getattr(db, "path", None)
 

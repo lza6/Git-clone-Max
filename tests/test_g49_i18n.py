@@ -39,5 +39,7 @@ class TestI18n(unittest.TestCase):
         for k in ZH:
             self.assertIn(k, EN, f"EN 缺键：{k!r}")
             if k != "English":  # 语言名保持原文（中文/English 各自显示）
+                if k == "HEAD":  # git 固定术语：英文界面同样是 HEAD，大小写不可改
+                    continue
                 self.assertNotEqual(EN[k], k, f"EN 键未翻译（仍是中文）：{k!r}")
         self.assertGreaterEqual(len(ZH), 140)

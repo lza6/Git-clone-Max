@@ -108,6 +108,21 @@
 | 日志 | `Cascadia Mono` 12px；最多 4000 block；过滤只影响显示层 |
 | 状态 pill | 7 种几何形状；颜色 + 形状双编码；不使用字符 |
 
+### 6.1 已知例外（合法登记，审计时不重复立项）
+
+- **内联 `setStyleSheet` 动态状态着色**（Qt 无 CSS 类，状态色无法走 QSS 静态规则）：
+  下载页「仓库地址」校验提示、`checklist.py` 暗色提示行、`status_strip.py` 失败计数。
+  颜色值仍须来自 `current_palette()`；兜底路径用中性灰度，不得写死品牌色
+  （`sparkline.py` 的旧兜底 `#4cc2ff` 已清除，见 `.agent/memory/change-index.md`）。
+- **行内进度条极小百分比退化为圆点**（`progress_delegate.py`）：进度条宽度不足以
+  画条时画实心圆点，属小尺寸降级，不是缺状态。
+- **非 ASCII 装饰字符禁令**：UI 可见字符串不得使用 Geometric Shapes 三角
+  （U+25B2–25BF / U+25C0–25C4）——微软雅黑无字形（实测 U+25B8「更多 ▸」与
+  U+25BE「历史 ▾」均渲染为 tofu）。方向语义用 `setArrowType` 或 InstantPopup
+  按下态表达。守卫 `tests/test_rev22_fixes.py`。
+- **`status_strip._palette()` 无 QApplication 兜底色**：不可达路径（widget 必先有
+  app），保留色值语义防止 `color: None` 产生无效样式；已标 `pragma: no cover`。
+
 **状态 pill 七形状语义表**（唯一来源 `gcm/ui/status_pill.py`，形状间两两几何可辨 = 色盲可辨）：
 
 | 状态 | 形状 | 绘法 | 色板键 |

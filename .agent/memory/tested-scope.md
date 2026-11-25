@@ -4,7 +4,24 @@ updated: 2026-11-24
 owner: Verifier
 ---
 # 已测试范围（tested-scope）
-## 0. 最新一次真实运行（2026-11-06 · Rev14 收尾轮）
+## 0. 最新一次真实运行（2026-11-26 · Rev22 终极审计轮，基线 v9.24.0）
+
+| 项 | 命令 | 结果（实测） |
+|---|---|---|
+| 质量闸 | `ruff check gcm` / `mypy gcm` | All checks passed / Success（**161** 源文件） |
+| 文档漂移 / i18n | `doc_drift_check.py` / `i18n_coverage.py` | `DRIFT 0` / `I18N OK` |
+| 发布台账 | `changelog.py check` | 94 条历史 / 0 条待发布碎片（修复轮新增 4 条碎片） |
+| 基线快集 | `coverage run --source=gcm scripts/ci_run_fast.py`（修复前） | 2438 例 · failures=1（winget 清单 sha 漂移）· skipped=5 · 覆盖率 81% |
+| 产物健康 | `health_check.py --json`（v9.24.0 dist） | `started_ok=true` · smoke 1803ms · 版本/sha 一致 |
+| 截图审计 | `ui_screenshot_audit.py`（离屏，修复后） | **38 张 · exit 0（历史首次）**：此前固定在 dialog_statistics 后 0xC0000409，后 4 个对话框从未被截到 |
+| 定向回归 | `test_rev22_fixes` + g43_stats_slow + g37_stats + c6_sparkline + g78_quick_scroll + i18n_coverage + g79 + g67 | 62 例 OK |
+| winget | `gen_winget_manifest.py --check` | exit 0（重生成后） |
+| 统计对话框生命周期 | 临时最小复现脚本（wrapper 已删 → close → 周期切换） | exit 0（修复前：RuntimeError → abort） |
+
+> **别再重复跑**：本轮口径覆盖质量闸/审计脚本/统计对话框/历史按钮。改 `statistics_dialog.py`
+> 只须重跑 `test_rev22_fixes` + `test_g43_stats_slow`；改 ui 可见字符串重跑 `test_rev22_fixes` 字形守卫。
+
+## 历史：Rev14 收尾轮（2026-11-06）
 
 | 项 | 命令 | 结果（实测） |
 |---|---|---|

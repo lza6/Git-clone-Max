@@ -23,6 +23,11 @@ owner: memory-keeper
 | `gcm/ui/download_tools.py` | **预览勾选契约闭环**：accept 后同链 start_all() + WA_DeleteOnClose；「已跳过（预览未勾选）：{n} 个」播报 | v9.20.0 | test_s11 列号联动；对话框 C++ 侧随 close 释放 |
 | `gcm/app/engine.py` | **C1 批 7 处**：删 `_host_concurrency=4` 硬编码；`discard()` 停全定时器；`set_concurrency(by_user=)` 同步天花板并补满待发队列；新增 `batch_start_limit()/_top_up_pending()/_running_count()`；并发记忆恢复不再被 retry_queue 短路；删死常量 `_FLUSH_INTERVAL`；批次收尾 `_maybe_checkpoint_wal()` | v9.12.0 | ①改并发语义前先看 `set_concurrency` docstring（`by_user` 两种语义）；②`_running` 必须与 `_on_worker_done` 严格配对，否则补投停摆/超发；③流控上限现由池上限派生（并发 3 时首批只 3 个） |
 | `gcm/ui/settings_network.py` | **新增**：`host_concurrency` + `time_budget_min` 两行设置（含 0=不限 的说明与提示行） | v9.12.0 | `settings_groups.py` 已 786 行贴 800 上限 → **再加设置项请继续落新模块**；控件上限来自 `db/validators.int_range()` |
+| `gcm/ui/statistics_dialog.py` | **Rev22 崩溃修复**：`_shutdown_agg_thread` / `_run_scorecard_async` 先 `sip.isdeleted` 再碰 wrapper；`wait()` 去上限 | v9.24.1 | 0xC0000409（wrapper 被 deleteLater 删后 `isRunning()` 抛 RuntimeError）；改线程生命周期必跑 `test_rev22_fixes` + `test_g43_stats_slow` |
+| `gcm/ui/download_layout.py` | **Rev22**：`历史 ▾` → `历史`（U+25BE 雅黑无字形 tofu） | v9.24.1 | 按钮尺寸不变；字形守卫 `test_rev22_fixes` 扫 gcm 非 docstring 常量禁 Geometric Shapes 三角 |
+| `gcm/i18n/{zh,en}.py` | **Rev22**：+4 键（作者/仓库、上次同步、HEAD、历史），删孤儿 `历史 ▾` | v9.24.1 | `manage_model._HEADERS` 的 `tr(变量)` 是 i18n 守卫声明的盲区，`test_rev22_fixes` 专门钉列头键；新增 `tr(变量)` 模式务必手查字典 |
+| `gcm/ui/sparkline.py` | **Rev22**：主题兜底改中性灰，删 `#4cc2ff` 品牌色第二来源 | v9.24.1 | 正常路径 `pal["accent"]`（四主题键集合有守卫）；`test_c6_sparkline` |
+| `packaging/winget/` | **Rev22**：按 v9.24.0 产物重生成（sha256 漂移） | v9.24.1 | **每次发版构建产物后必须重跑** `gen_winget_manifest.py --out`，否则快集 `test_g80_winget_manifest` 红 |
 | `gcm/db/validators.py` | `_INT_RANGES` 增 `host_concurrency(0..32)` / `time_budget_min(0..720)` | v9.12.0 | UI `setRange` 与后端钳制自动同源；新增字段若忘登记，UI 用 `int_range()` 会 KeyError（故意的） |
 | `gcm/ui/failure_panel.py` | **新增「疑似卡死任务」条** + `btn_cancel_stuck`（`cancel_stuck_tasks` 首个生产调用点） | v9.12.0 | 面板可独立构造（owner=None）→ 所有取引擎的地方都要 hasattr 兜底 |
 | `scripts/doc_drift_check.py` / `scripts/dev_metrics.py` | **新增**：文档数字漂移守卫 + 唯一度量口径 | v9.12.0 | 改模块行数/超长函数/测试文件数/技能包数/版本 → 必须同步文档，否则 `DRIFT n`；`dev_metrics --json` 是守卫与 CI 的公共入口 |

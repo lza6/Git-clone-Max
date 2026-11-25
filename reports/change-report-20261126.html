@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rev22 变更报告 — 终极审计轮（v9.24.1）</title>
+<style>
+  :root { --bg:#0b0e10; --panel:#12171a; --text:#e8e3da; --dim:#9c978e; --accent:#35c8b4; --warn:#d29922; --err:#e06b5c; --line:#242c31; }
+  @media (prefers-color-scheme: light) { :root { --bg:#f4f0e8; --panel:#fffdf8; --text:#16191b; --dim:#5c574f; --accent:#0f7c70; --warn:#8a6116; --err:#b3402f; --line:#ddd5c8; } }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.65 "Microsoft YaHei UI", system-ui, sans-serif; }
+  main { max-width:920px; margin:0 auto; padding:32px 20px 80px; }
+  h1 { font-size:24px; letter-spacing:.5px; }
+  h2 { font-size:17px; margin-top:40px; border-bottom:1px solid var(--line); padding-bottom:6px; }
+  .meta { color:var(--dim); font-size:12.5px; }
+  table { width:100%; border-collapse:collapse; margin:14px 0; font-size:13px; }
+  th,td { border:1px solid var(--line); padding:7px 10px; text-align:left; vertical-align:top; }
+  th { background:var(--panel); font-weight:600; }
+  code { font:12px "Cascadia Mono", Consolas, monospace; background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:1px 5px; }
+  .ok { color:var(--accent); font-weight:600; }
+  .risk { color:var(--warn); font-weight:600; }
+  .bad { color:var(--err); font-weight:600; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin:14px 0; }
+  details { margin:10px 0; }
+  summary { cursor:pointer; color:var(--accent); }
+  pre { overflow:auto; background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:12px; font:12px "Cascadia Mono", Consolas, monospace; }
+  ol.q li { margin:8px 0; }
+</style>
+</head>
+<body>
+<main>
+<h1>Rev22 变更报告 — 终极审计轮</h1>
+<p class="meta">2026-11-26 · 基线 v9.24.0（HEAD <code>a203e04</code>）→ 交付 v9.24.1 · 证据标签：已验证（本轮实际运行）/ 静态确认（读代码）</p>
+
+<h2>1. 为什么做这次变更</h2>
+<p>v9.24.0 是今晨刚发布的版本，但项目记忆与验证台账停在 Rev20，快集在干净工作树上出现 1 例失败，且截图审计脚本长期以 <code>0xC0000409</code> 异常退出、后 4 个对话框从未被成功截取。本轮以「即将交付给真实用户」的standard重新审计全项目，目标是：验证基线、修掉真实缺陷、恢复发布链绿灯、把计划文档按纪律归档。</p>
+
+<h2>2. 关键决策与取舍</h2>
+<table>
+<tr><th>决策</th><th>取舍与理由</th></tr>
+<tr><td>统计对话框线程收尾 <code>wait()</code> 去上限</td><td>运行中析构 = 进程硬崩（qFatal）；聚合是纯本地 SQLite + os.walk，宁可关闭时等一次聚合完成，也不保留一个会 abort 的超时。</td></tr>
+<tr><td>用 <code>sip.isdeleted</code> 而非 try/except 防 wrapper 已删</td><td>项目 except 预算棘轮只降不升；<code>isdeleted</code> 是 PyQt6 官方原语、零分支成本。</td></tr>
+<tr><td>历史按钮改纯文本而非加箭头图标</td><td>与同文件「更多」按钮的既有裁决完全一致：arrow 会把 sizeHint 抬 1px 并在矮窗被裁；弹出示意由 InstantPopup 按下态承担。</td></tr>
+<tr><td>计划文档归档而非保留</td><td>按 <code>plan-doc-audit.md</code>：P21-1..4 已随 v9.24.0 交付、P21-5 本轮补做，无未闭环项；归档目录 + manifest 留证，未入库文件可直接复制恢复。</td></tr>
+</table>
+
+<h2>3. 做了什么</h2>
+<table>
+<tr><th>#</th><th>变更</th><th>文件</th><th>验证</th></tr>
+<tr><td>F1</td><td>统计中心关闭闪退（0xC0000409）：wrapper 被 <code>deleteLater</code> 删除后 <code>closeEvent</code> 调 <code>isRunning()</code> 抛 RuntimeError → PyQt6 abort。两条入口（close / 周期切换）均加 <code>sip.isdeleted</code> 防御</td><td><code>gcm/ui/statistics_dialog.py</code></td><td class="ok">已验证：最小复现脚本 exit 0；<code>test_rev22_fixes</code> 5 例；截图审计首跑完整 38 张 exit 0</td></tr>
+<tr><td>F2</td><td>「历史 ▾」tofu（U+25BE 雅黑无字形）→ 纯文本；管理表 4 列头 i18n 键双缺（作者/仓库、上次同步、HEAD、历史）→ 补键、删孤儿 <code>历史 ▾</code></td><td><code>download_layout.py</code>、<code>gcm/i18n/{zh,en}.py</code></td><td class="ok">已验证：字形 AST 守卫（含反向自检）+ 列头键守卫 + 离屏截图目检</td></tr>
+<tr><td>F3</td><td>winget 清单 sha256 与 v9.24.0 产物漂移（快集唯一红）→ 按产物重生成 3 份 YAML</td><td><code>packaging/winget/</code></td><td class="ok">已验证：<code>gen_winget_manifest.py --check</code> exit 0</td></tr>
+<tr><td>F4</td><td>sparkline 主题兜底写死旧品牌色 <code>#4cc2ff</code> → 中性灰（正常路径走 <code>pal["accent"]</code>）</td><td><code>gcm/ui/sparkline.py</code></td><td class="ok">已验证：<code>test_c6_sparkline</code> + ruff/mypy</td></tr>
+<tr><td>D1</td><td>docs/plans 三份计划归档（Rev21 结项）；weekly/workflow_status/tested-scope/decisions/change-index 回填</td><td><code>docs/archive/plans/20261126/</code> 等</td><td class="ok">已验证：manifest 逐条状态表；beads <code>93d</code> 关闭</td></tr>
+</table>
+
+<h2>4. 验证证据（本轮实际执行）</h2>
+<table>
+<tr><th>项</th><th>命令</th><th>结果</th></tr>
+<tr><td>质量闸</td><td><code>ruff check gcm</code> / <code>mypy gcm</code></td><td class="ok">All checks passed / Success（161 源文件）</td></tr>
+<tr><td>文档漂移 / i18n / 台账</td><td><code>doc_drift_check.py</code> / <code>i18n_coverage.py</code> / <code>changelog.py check</code></td><td class="ok">DRIFT 0 / I18N OK / 台账一致</td></tr>
+<tr><td>基线快集（修复前）</td><td><code>coverage run --source=gcm scripts/ci_run_fast.py</code></td><td>2438 例 · 1 失败（F3）· 覆盖率 81%</td></tr>
+<tr><td>产物健康</td><td><code>health_check.py --json</code></td><td class="ok">started_ok · smoke 1803ms · 版本/sha 一致</td></tr>
+<tr><td>截图审计（修复后）</td><td><code>ui_screenshot_audit.py</code>（离屏）</td><td class="ok">38 张 · exit 0（历史首次；4 个此前不可达对话框首次入库）</td></tr>
+<tr><td>定向回归</td><td><code>unittest tests.test_rev22_fixes tests.test_g43_stats_slow …</code></td><td class="ok">62 例 OK</td></tr>
+<tr><td>统计对话框生命周期</td><td>最小复现（wrapper 已删 → close → 周期切换）</td><td class="ok">exit 0（修复前 RuntimeError → abort）</td></tr>
+</table>
+
+<h2>5. 风险与回滚</h2>
+<ul>
+<li><span class="risk">行为变化</span>：统计对话框关闭时若聚合仍在跑，最多等待一次聚合完成（此前 3 秒后放任 → 崩）。聚合 > 3s 的大库场景是本次的收益面。</li>
+<li><span class="risk">i18n 行为</span>：英文模式管理表列头由中文变为英文；「历史」按钮在英文下显示 History。</li>
+<li>回滚：<code>git revert &lt;提交&gt;</code> 单提交回滚全部；winget 清单可重新生成；归档文件未入库，从 <code>docs/archive/plans/20261126/</code> 复制回原路径即可恢复。</li>
+</ul>
+
+<h2>6. 已知限制</h2>
+<ul>
+<li>真机触摸屏/读屏器/多显示器仍为开放 beads（<code>13k</code>/<code>cuz</code>），非发布阻塞。</li>
+<li>截图审计的 38 张为离屏渲染；真机 DirectWrite 回退链差异不影响层级结论（tofu 判定以字体覆盖事实 + 离屏实测双重支撑）。</li>
+<li>CI 三平台本轮未重跑（本地 Windows 全绿）；CI 绿 ≠ 本机 exe 可启动，两者都需下一次推送后确认。</li>
+</ul>
+
+<h2>7. 测验（自测记录）</h2>
+<ol class="q">
+<li>（判断）统计对话框的崩溃发生在聚合线程运行中析构。<br><b>答：错。</b>崩溃发生在聚合完成后：<code>finished→deleteLater</code> 删掉了 C++ 对象，wrapper 仍被引用，<code>isRunning()</code> 抛 RuntimeError 被 PyQt6 升级为 abort。</li>
+<li>（选择）为什么用 <code>sip.isdeleted</code> 而不是 <code>try: t.isRunning() except RuntimeError</code>？<br>A. 性能 B. 项目 except 预算棘轮只降不升，新增 except 分支会破守卫 C. sip 是标准库<br><b>答：B。</b></li>
+<li>（选择）「历史 ▾」的 tofu 根因是？<br>A. emoji 未转义 B. 微软雅黑缺 U+25BE 字形（Geometric Shapes 小三角区段整体缺失） C. QSS 未设字体<br><b>答：B。同文件「更多 ▸」(U+25B8) 早已实测同根因。</b></li>
+<li>（判断）字形守卫扫描注释也能抓到问题。<br><b>答：错。</b>守卫只扫 AST 字符串常量（注释不在 AST）；docstring 按节点形态豁免（含历史说明文本）。</li>
+<li>（简答）为什么 <code>manage_model._HEADERS</code> 的 i18n 缺失逃过了既有守卫？<br><b>答：</b><code>test_i18n_coverage</code> 只静态检查 <code>tr("字面量")</code>；<code>tr(变量)</code> 是它 docstring 里声明的盲区，而 <code>_HEADERS</code> 正是 <code>tuple(tr(h) for h in (...))</code> 模式。本轮新增列头键守卫专钉这个盲区。</li>
+<li>（简答）winget 清单为什么会漂移？<br><b>答：</b>清单里的 sha256 是构建产物哈希；v9.24.0 发布链中产物重建后没有重跑 <code>gen_winget_manifest.py</code>。已把「每次发版后必须重跑」写进 change-index。</li>
+<li>（判断）截图审计的「34 张图齐全」曾经掩盖了崩溃。<br><b>答：对。</b>崩溃在 <code>dialog_statistics</code> 之后，前 34 张已落盘，脚本以非 0 退出但产出目录看起来完整——与「只存图不断言」是同一种假绿。</li>
+<li>（简答）回滚本轮 i18n 修复的方式？<br><b>答：</b><code>git revert</code> 对应提交；恢复 <code>历史 ▾</code> 键与按钮文本即可，无数据迁移。</li>
+</ol>
+<p class="meta">自测：8/8 通过（通过标准 100%，最低 80%）。</p>
+</main>
+</body>
+</html>

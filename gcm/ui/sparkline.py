@@ -75,10 +75,10 @@ class Sparkline(QWidget):
         try:
             from .theme import current_palette
             pal = current_palette()
-            line = QColor(pal.get("accent", "#4cc2ff"))
-            dim = QColor(pal.get("border", "#444"))
-        except Exception:  # noqa: BLE001 - 主题不可用退化为中性色
-            line, dim = QColor("#4cc2ff"), QColor("#444")
+            line = QColor(str(pal["accent"]))
+            dim = QColor(str(pal["border"]))
+        except Exception:  # noqa: BLE001 - 主题不可用退化为中性灰度，不冒充品牌色
+            line, dim = QColor("#8a8a8a"), QColor("#444")
         p = QPainter(self)
         try:
             p.setRenderHint(QPainter.RenderHint.Antialiasing)

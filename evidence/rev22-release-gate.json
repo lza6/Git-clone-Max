@@ -1,0 +1,26 @@
+{
+  "task_id": "rev22-release-gate",
+  "status": "passed",
+  "timestamp": "2026-11-26T04:40+08:00",
+  "commands_executed": [
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen python -m coverage run --source=gcm scripts/ci_run_fast.py",
+      "exit_code": 0,
+      "raw_output_tail": "[ci_run_fast] 进程退出，最后进入的模块：<全部完成>\nRELEASE_FAST_EXIT=0"
+    },
+    {
+      "cmd": "coverage report --include=gcm/*",
+      "exit_code": 0,
+      "raw_output_tail": "TOTAL 21549 3619 5520 971 81%"
+    }
+  ],
+  "files_changed": [],
+  "tests": [
+    {"name": "ci_run_fast full suite (v9.24.1 final tree)", "type": "e2e", "status": "passed", "evidence": "2444 tests, failures=0 errors=0 skipped=5, coverage 81% (gate: Win 81 / POSIX 80)"}
+  ],
+  "browser_validation": {"performed": false, "paths": [], "screenshots": []},
+  "limitations": [
+    "CI 三平台未重跑（本地 Windows 全绿）；推送后由 CI 复核",
+    "慢集不在本门禁口径内（按项目约定 CI 只在 Linux 跑慢集）"
+  ]
+}

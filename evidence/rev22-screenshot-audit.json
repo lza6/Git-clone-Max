@@ -1,0 +1,21 @@
+{
+  "task_id": "rev22-screenshot-audit",
+  "status": "passed",
+  "timestamp": "2026-11-26T~05:10+08:00",
+  "commands_executed": [
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen python -u scripts/ui_screenshot_audit.py %TEMP%/gcm_ui_r22_fixed",
+      "exit_code": 0,
+      "raw_output_tail": "OUT: C:\\Users\\ADMINI~1.DES\\AppData\\Local\\Temp\\gcm_ui_r22_fixed\nAUDIT_EXIT=0\nfiles: 38"
+    }
+  ],
+  "files_changed": [],
+  "tests": [
+    {"name": "offscreen screenshot audit (4 themes x 5 resolutions + 3 tabs + 8 dialogs)", "type": "e2e", "status": "passed", "evidence": "38 files; first clean exit in audit history"}
+  ],
+  "browser_validation": {"performed": false, "paths": [], "screenshots": []},
+  "limitations": [
+    "修复前基线：同一命令固定在 dialog_statistics 之后 0xC0000409 退出，前 34 张已落盘但 help/checklist/repo_detail/local_repos 四张从未产出",
+    "离屏渲染与真机 DirectWrite 字体回退链存在差异；本结论以字形覆盖事实+离屏实测双重支撑"
+  ]
+}
