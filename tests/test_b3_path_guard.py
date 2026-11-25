@@ -55,6 +55,21 @@ class TestDeletionRefusal(unittest.TestCase):
         self.assertIsNotNone(deletion_refusal("/usr"))
         self.assertIsNotNone(deletion_refusal("/etc"))
 
+    def test_resolved_private_symlink_still_refused(self):
+        """macOS 的 /etc、/tmp、/var 指向 /private/*：resolve 后也必须拒绝。
+
+        2026-11-26 CI macOS 实测：只看 resolve 结果时 `/etc → /private/etc`
+        变成两级路径，顶层系统目录被放行（test_posix_toplevel_refused 红）。
+        用 mock 模拟该语义，Windows 本地也能验证这条修复。
+        """
+        from unittest import mock
+        with mock.patch.object(Path, "resolve",
+                               return_value=Path("/private/etc")):
+            self.assertIsNotNone(deletion_refusal("/etc"))
+        with mock.patch.object(Path, "resolve",
+                               return_value=Path("/private/tmp")):
+            self.assertIsNotNone(deletion_refusal("/tmp"))
+
     def test_normal_clone_dir_allowed(self):
         d = Path(tempfile.mkdtemp(prefix="gcm-guard-"))
         self.assertIsNone(deletion_refusal(d), "普通临时仓库目录必须放行")

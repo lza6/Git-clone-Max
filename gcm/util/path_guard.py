@@ -67,11 +67,15 @@ def deletion_refusal(path: str | Path | None) -> str | None:
             rp = p
         if len(rp.parts) <= 1:
             return tr("盘符根目录/文件系统根")
-        comps = [_norm(x) for x in rp.parts[1:]]
-        if comps and comps[0] in _FORBIDDEN_COMPONENTS:
-            return tr("系统目录（{}）").format(comps[0])
-        if os.name != "nt" and len(comps) == 1 and comps[0] in _POSIX_TOPLEVEL:
-            return tr("系统目录（{}）").format("/" + comps[0])
+        # 原始路径与 resolve 结果都要过一遍：macOS 的 /etc、/tmp、/var 是指向
+        # /private/* 的符号链接，只看 resolve 结果会把顶层系统目录放行
+        # （CI macOS 实测 test_posix_toplevel_refused 红，2026-11-26）。
+        for cand in (p, rp):
+            comps = [_norm(x) for x in cand.parts[1:]]
+            if comps and comps[0] in _FORBIDDEN_COMPONENTS:
+                return tr("系统目录（{}）").format(comps[0])
+            if os.name != "nt" and len(comps) == 1 and comps[0] in _POSIX_TOPLEVEL:
+                return tr("系统目录（{}）").format("/" + comps[0])
         home = Path.home()
         try:
             rh = home.resolve()
