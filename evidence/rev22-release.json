@@ -1,0 +1,31 @@
+{
+  "task_id": "rev22-release",
+  "status": "passed",
+  "timestamp": "2026-11-26T04:50+08:00",
+  "commands_executed": [
+    {
+      "cmd": "git push origin main && git push origin v9.24.1",
+      "exit_code": 0,
+      "raw_output_tail": "a203e04..dc9ad12  main -> main\n * [new tag]         v9.24.1 -> v9.24.1"
+    },
+    {
+      "cmd": "python scripts/publish_release.py",
+      "exit_code": 0,
+      "raw_output_tail": "[OK] 服务端 sha256=3622ded78f819985… 一致\n[INFO] Release 页面：https://github.com/lza6/Git-clone-Max/releases/tag/v9.24.1"
+    }
+  ],
+  "files_changed": [],
+  "tests": [],
+  "artifacts": {
+    "exe_bytes": 43298821,
+    "exe_sha256": "3622ded78f81…（服务端复验一致）",
+    "portable_zip_bytes": 82924996,
+    "release_url": "https://github.com/lza6/Git-clone-Max/releases/tag/v9.24.1",
+    "commit": "dc9ad12",
+    "tag": "v9.24.1"
+  },
+  "browser_validation": {"performed": false, "paths": [], "screenshots": []},
+  "limitations": [
+    "CI 三平台结果以推送后 run 为准（本地 Windows 快集 2444 例 0 失败/81% 已绿）"
+  ]
+}
