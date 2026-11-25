@@ -1,12 +1,15 @@
-"""G06-3 全局异常兜底：sys.excepthook 捕获 + Qt 消息拦截 → data/error.log。
+"""G06-3 全局异常兜底：sys.excepthook + threading.excepthook 捕获 + Qt 消息拦截 → data/error.log。
 
 - 未捕获异常：写 traceback + 环境信息到 data/error.log，不白屏静默。
+- 线程内未捕获异常同样落盘：windowed 打包（无控制台）时默认 hook 的 stderr
+  输出不可见，线程里逃逸的异常等于无声消失（2026-11-26 排查 0xC0000409 时确认的盲区）。
 - Qt qInstallMessageHandler：Qt 层致命/警告也归档。
 - 幂等：重复安装不覆盖已装的 hook。
 """
 from __future__ import annotations
 
 import sys
+import threading
 import time
 import traceback
 from pathlib import Path
@@ -66,11 +69,15 @@ _installed = {"hook": False}
 
 
 def install_excepthook(log_path: Optional[Path] = None) -> None:
-    """安装全局 sys.excepthook（幂等）。log_path 默认 data/error.log 同级由调用方决定。"""
+    """安装全局 sys.excepthook + threading.excepthook（幂等）。
+
+    log_path 默认 data/error.log 同级由调用方决定。
+    """
     if _installed["hook"]:
         return
     target = log_path or Path("error.log")
     _prev = sys.excepthook
+    _prev_thread = threading.excepthook
 
     def _hook(etype, value, tb):
         try:
@@ -86,5 +93,16 @@ def install_excepthook(log_path: Optional[Path] = None) -> None:
         else:
             sys.__excepthook__(etype, value, tb)
 
+    def _thread_hook(args):
+        """线程内未捕获异常 → 同一 error.log（附线程名），再交还原 hook。
+
+        不额外包 try：write_error_log 自身绝不抛；若链上的原 hook 抛异常，
+        CPython 会按官方语义转交 sys.excepthook —— 即上面的 _hook，链路闭环。
+        """
+        write_error_log(target, args.exc_value,
+                        context={"thread": getattr(args.thread, "name", "?")})
+        _prev_thread(args)
+
     sys.excepthook = _hook
+    threading.excepthook = _thread_hook
     _installed["hook"] = True

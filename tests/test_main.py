@@ -126,6 +126,14 @@ class _MainSmokeBase(unittest.TestCase):
         self.single_mod = _mock_module(
             "gcm.app.single_instance",
             SingleInstanceLock=mock.MagicMock(side_effect=_lock_cls))
+        # B 批起 __main__ 在第二实例分支懒导入 instance_bus（唤醒首实例）。
+        # 不注入 fake 时，单跑本模块会首次触发 instance_bus 的模块级
+        # `from .single_instance import _pid_alive`，撞到上面的 fake 模块
+        # 缺属性 → ImportError；快集里因先 import 过真模块而假绿（顺序依赖，
+        # 2026-11-26 Rev22 轮单跑抓出）。注入 fake 彻底隔离 IPC。
+        self.instance_bus_mod = _mock_module(
+            "gcm.app.instance_bus",
+            request_wake=mock.MagicMock(return_value=False))
 
         self.exc_mod = _mock_module(
             "gcm.app.exc_dump",
@@ -161,6 +169,7 @@ class _MainSmokeBase(unittest.TestCase):
             "PyQt6.QtCore": self.qt_core,
             "PyQt6.QtWidgets": self.qwidgets,
             "gcm.app.single_instance": self.single_mod,
+            "gcm.app.instance_bus": self.instance_bus_mod,
             "gcm.app.exc_dump": self.exc_mod,
             "gcm.db.repo_db": self.db_mod,
             "gcm.db.settings": self.settings_mod,
