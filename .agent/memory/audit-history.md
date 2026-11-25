@@ -217,3 +217,18 @@ owner: Auditor
 - 产出：`docs/验收与缺口盘点-2026-11-05.md` · `docs/验证记录-2026-11-05-Rev14.md`（§8 三段）·
   `evidence/rev14.json` / `rev14-dpi.json` / `rev14-quiz.json` ·
   `reports/change-report-2026-11-06-rev14.html`（含 10 题测验，10/10）。
+
+## 2026-11-26 · Rev22 发布后补审计两轮（HEAD 671938f → efc4155 → +2 修复）
+- **第一轮（补审计）**：ruff/mypy/DRIFT/快集 2447/截图 38/CLI 契约全绿；计划文档 4 份保留零删除；产物 commit `efc4155` 已推。
+- **第二轮（挂机收菜）**：对抗审查发布后唯一生产变更 `exc_dump`，抓 2 真问题并修——
+  ① 线程 hook 把 SystemExit 记成未捕获异常（违背 CPython「silently ignored」语义）；
+  ② 「Qt 消息已归档」是文档谎（从未安装 handler）→ 注入式 `install_qt_message_handler`（qFatal 遗言；
+  G80 边界不破；文件+控制台同文案打码）。快集红→绿两跳：vulture 死参数 + test_main fake 缺符号，
+  均自查引入当轮修复；终态 **2451 例 0 失败 / 81%**。
+- **教训**：① 新增跨模块导入行 = 触发所有 sys.modules fake 注入点的契约（test_main fake 必须同步，
+  与 671938f 的 instance_bus 是同类第二例）；② vulture ≥80 门禁会抓「接收但未使用」的参数，
+  删参数/删符号前先本地跑 `test_g84_quality_gates`；③ GUI 入口层改动用「临时数据目录真实执行
+  main() + 自动 quit」冒烟，比断言调用形状更可信（本轮真实捕获了 QFontDatabase 警告）。
+- 产出：`evidence/rev22-head-audit.json`、`evidence/rev23-harvest.json`、
+  `docs/验证记录-2026-11-26-Rev22-补审计.md`（两轮）、
+  `reports/change-report-20261126-harvest.html`（9 题测验 9/9）、backlog §8、beads `q0j`/`b1j`/`7bo`。

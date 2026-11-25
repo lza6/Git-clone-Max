@@ -104,7 +104,9 @@ class _MainSmokeBase(unittest.TestCase):
         self.exec_result = 7
         self.lock_result = True
 
-        self.qt_core = _mock_module("PyQt6.QtCore", Qt=mock.MagicMock())
+        self.qt_core = _mock_module(
+            "PyQt6.QtCore", Qt=mock.MagicMock(),
+            qInstallMessageHandler=mock.MagicMock())
         self.app = mock.MagicMock()
         self.app.exec.side_effect = lambda: (
             self.events.append("app.exec") or self.exec_result)
@@ -138,7 +140,10 @@ class _MainSmokeBase(unittest.TestCase):
         self.exc_mod = _mock_module(
             "gcm.app.exc_dump",
             install_excepthook=mock.MagicMock(
-                side_effect=lambda *a: self.events.append("install_excepthook")))
+                side_effect=lambda *a: self.events.append("install_excepthook")),
+            install_qt_message_handler=mock.MagicMock(
+                side_effect=lambda *a: self.events.append(
+                    "install_qt_message_handler")))
 
         self.db = mock.MagicMock()
         self.settings = mock.MagicMock()
@@ -187,6 +192,7 @@ class _MainSmokeBase(unittest.TestCase):
     def _assert_success_flow(self):
         self.assertEqual(self.events, [
             "SingleInstanceLock", "try_acquire", "install_excepthook",
+            "install_qt_message_handler",
             "QApplication", "Database", "SettingsStore", "MainWindow",
             "win.show", "app.exec", "release",
         ])

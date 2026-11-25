@@ -110,3 +110,30 @@
 ## 7. 本轮未覆盖的方向（下轮可选）
 
 Qt 6 新 API 的实际收益（未取到证据，不臆测）、PyInstaller 之外的签名/公证流程细节、结构化日志的字段规范（项目已有 `applog` + 打码管线，改动收益不明）、多显示器/高 DPI 验收（需要真机，不是文档能解决的问题）。
+
+## 8. 第二轮（2026-11-26 · Rev22 挂机收菜轮）
+
+> 采集：预算 10 次用满，全部为 WebFetch（10/10 返回有效内容；WebSearch 因第 1 轮全空直接跳过）。证据全为一手文档
+> （Qt 6.12.1 文档 / GitHub Docs / SignPath / Certum / OTel Logs Data Model / Python 文档）。仍无社区二手证据。
+
+### 8.1 候选与裁决
+
+| ID | 候选 | 来源 | 关键已确认事实 | 裁决 |
+|---|---|---|---|---|
+| Q1 | `qInstallMessageHandler` 把 Qt 消息接进 error.log | doc.qt.io/qt-6/qtlogging.html | handler 必须可重入；qFatal「aborts immediately after handling that message」；Qt 不剥离 CR/LF/NUL | **已采纳并落地（本轮）**：`exc_dump.install_qt_message_handler`（注入式，G80 边界；文件+控制台同文案打码；子进程守卫证明 qFatal 先落盘后 abort）。同时修掉 `exc_dump` 顶部「已归档 Qt 消息」的文档谎 |
+| Q2 | `QSaveFile` 替换 `util/atomic_io` | doc.qt.io/qt-6/qsavefile.html | 原子 rename；全文未承诺 fsync；`setDirectWriteFallback(true)` 丢原子性 | 不适用（现有 atomic_io 更严格：唯一 tmp + fsync；不引入第二写盘范式） |
+| Q3 | `QSettings` 原子 sync | doc.qt.io/qt-6/qsettings.html | Windows 走注册表；INI 才有锁+合并 | 不适用（破坏便携语义与 settings.json 加密/迁移链；并发写已由 cross_process_lock 覆盖） |
+| Q4 | `QFileSystemWatcher` 监听配置外改 | doc.qt.io/qt-6/qfilesystemwatcher.html | rename 后停止监控该路径；短时多变更可能丢信号 | 暂缓 P3（本项目正是原子 rename 写盘；单实例锁下外部写者≈手工编辑） |
+| Q5 | `QLockFile` 替换单实例锁 | doc.qt.io/qt-6/qlockfile.html | PID 探活；跨主机需等 staleLockTime | 不适用（现有文件锁 + PID 探活 + 唤醒通道已闭环，跨进程 E2E 在跑） |
+| S1 | SignPath Foundation（OSS 免费 Authenticode） | signpath.org | 开源项目免费；密钥在 HSM；构建来源可验证；「免安装警告」是营销语需信誉累积 | **P2 登记**：需用户账号流程 + 先确认 PyInstaller 单文件 exe 的格式支持（未确认） |
+| S2 | Certum 云签名 | certum.eu | OSS from €25 / OV €139 / EV €329；EV 仅公司 | 暂缓 P3（S1 免费覆盖同需求；页面 ©2022 可能过期） |
+| L1 | 按 OTel Logs Data Model 补 app.log 字段 | opentelemetry.io/docs/specs/otel/logs/data-model/ | 字段清单 Stable；SeverityNumber 6 段 | P3：只借「版本号 + 线程名」两个字段（error.log 已有 app=/thread=，app.log 没有），一行 Filter；改动触碰日志格式守卫，单独立项 |
+| R1 | GitHub Immutable Releases | docs.github.com …/immutable-releases | 发布后 tag/资产不可改；自动生成 release attestation；标题说明仍可编辑 | **P2 登记**：属仓库设置一次动作（用户点击）+ RELEASE_CHECKLIST 一行；取舍：发错资产只能 bump 补丁版重发，不能替换 |
+
+### 8.2 未确认（不得据此下结论）
+
+① PyQt6 对 `qInstallMessageHandler` 的注入签名在 6.11.0 与本机实测可用（本轮已实测暴露 + 3 例守卫），但 Qt 官方文档按 6.12.1 抓取；② SignPath 是否支持 PyInstaller 单文件 exe 与签名格式；③ Certum 云签名 HSM 细节与页面时效；④ GitHub immutable releases 的 GA 日期与组织级策略；⑤ Qt 官方在库崩溃报告组件（未取到一手页面，且与已暂缓的 WER LocalDumps 重复，不再开线）；⑥ Windows CRT `abort()`→`0xC0000409` 归因需本机 5 行程序实测。
+
+### 8.3 停止判定
+
+第二轮高价值项已全部收敛为裁决（1 条落地、2 条 P2 待用户动作/设置、2 条 P3、4 条不适用/暂缓），无未评估新增项——本轮 Agent 管理 Agent 循环到此收敛，不再开第三轮。

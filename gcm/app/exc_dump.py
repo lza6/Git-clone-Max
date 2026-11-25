@@ -3,17 +3,20 @@
 - 未捕获异常：写 traceback + 环境信息到 data/error.log，不白屏静默。
 - 线程内未捕获异常同样落盘：windowed 打包（无控制台）时默认 hook 的 stderr
   输出不可见，线程里逃逸的异常等于无声消失（2026-11-26 排查 0xC0000409 时确认的盲区）。
-- Qt qInstallMessageHandler：Qt 层致命/警告也归档。
+- Qt 消息（qWarning/qCritical/qFatal）经注入式 `install_qt_message_handler`
+  写入同一 error.log：`gcm/app` 不 import Qt（G80 边界），Qt 顶层函数由
+  GUI 入口注入（见 `gcm/__main__.py` 安装点）。
 - 幂等：重复安装不覆盖已装的 hook。
 """
 from __future__ import annotations
 
+import contextlib
 import sys
 import threading
 import time
 import traceback
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 
 def _fmt_env() -> str:
@@ -96,9 +99,14 @@ def install_excepthook(log_path: Optional[Path] = None) -> None:
     def _thread_hook(args):
         """线程内未捕获异常 → 同一 error.log（附线程名），再交还原 hook。
 
+        SystemExit 按 CPython 官方默认语义**静默忽略**（`threading.excepthook`
+        文档：「If exc_type is SystemExit, the exception is silently ignored」）——
+        正常线程退出不该在 error.log 里伪装成错误噪音。
         不额外包 try：write_error_log 自身绝不抛；若链上的原 hook 抛异常，
         CPython 会按官方语义转交 sys.excepthook —— 即上面的 _hook，链路闭环。
         """
+        if args.exc_type is SystemExit:
+            return
         write_error_log(target, args.exc_value,
                         context={"thread": getattr(args.thread, "name", "?")})
         _prev_thread(args)
@@ -106,3 +114,49 @@ def install_excepthook(log_path: Optional[Path] = None) -> None:
     sys.excepthook = _hook
     threading.excepthook = _thread_hook
     _installed["hook"] = True
+
+
+#: QtMsgType 成员名 → 日志级别标签（跨 Qt 版本按名字取，不硬依赖枚举值）。
+_QT_LEVEL_NAMES = {
+    "QtDebugMsg": "DEBUG",
+    "QtInfoMsg": "INFO",
+    "QtWarningMsg": "WARN",
+    "QtCriticalMsg": "CRITICAL",
+    "QtFatalMsg": "FATAL",
+}
+
+
+def install_qt_message_handler(q_install: Any,
+                               log_path: Optional[Path] = None) -> None:
+    """把 Qt 层消息（qWarning/qCritical/qFatal）接进 error.log（幂等）。
+
+    **G80 边界**：`gcm/app` 不 import Qt —— `qInstallMessageHandler`
+    由 GUI 入口注入（见 `gcm/__main__.py` 安装点）。
+
+    windowed 打包没有控制台，Qt 默认 handler 的输出全部不可见；而 `qFatal`
+    在 handler 返回后**立即 abort** —— 本条日志就是 0xC0000409 类闪退唯一
+    能留下的「遗言」。handler 必须可重入（Qt 文档要求，可能被多线程并行
+    调用；逐条独立 open/append 满足）；内部异常一律吞掉，观测不拖垮进程。
+    文件内容过 `redact`（Qt 消息天然带用户路径）；控制台存在时同文案双写。
+    """
+    if _installed.get("qt"):
+        return
+    target = log_path or Path("error.log")
+    prev = q_install(None)   # Qt 语义：传 None 摘回默认 handler 并返回旧 handler
+
+    def _handler(mode: Any, _context: Any, message: str) -> None:
+        level = _QT_LEVEL_NAMES.get(getattr(mode, "name", ""), "OTHER")
+        with contextlib.suppress(Exception):
+            # 文件与控制台共用同一份打码文本（出站即打码，Qt 消息天然带用户路径）
+            line = _redact_text(f"qt[{level}] {message}".replace("\x00", ""))
+            with open(target, "a", encoding="utf-8") as f:
+                f.write("\n" + "=" * 60 + "\n" + _fmt_env() + "\n" + line + "\n")
+            # 控制台开发时保留可见性（windowed 打包下 sys.stderr 为 None）
+            if sys.stderr is not None:
+                print(line, file=sys.stderr)
+        if prev is not None:
+            with contextlib.suppress(Exception):
+                prev(mode, _context, message)
+
+    q_install(_handler)
+    _installed["qt"] = True

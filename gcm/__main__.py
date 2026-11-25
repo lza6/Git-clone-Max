@@ -203,8 +203,12 @@ def main(argv=None) -> int:
         return 0
 
     # G06-3 全局异常兜底：未捕获异常写 data/error.log
-    from gcm.app.exc_dump import install_excepthook
+    from gcm.app.exc_dump import install_excepthook, install_qt_message_handler
     install_excepthook(data_dir / "error.log")
+    # Qt 消息（qWarning/qCritical/qFatal）进同一 error.log；Qt 符号在此注入，
+    # gcm/app 层不 import Qt（G80 边界）。qFatal 的「遗言」即 0xC0000409 证据。
+    from PyQt6.QtCore import qInstallMessageHandler as _qInstallMsg
+    install_qt_message_handler(_qInstallMsg, data_dir / "error.log")
 
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)

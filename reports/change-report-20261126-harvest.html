@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>挂机收菜轮变更报告 — Qt 消息归档 + SystemExit 语义修复</title>
+<style>
+  :root { --bg:#0b0e10; --panel:#12171a; --text:#e8e3da; --dim:#9c978e; --accent:#35c8b4; --warn:#d29922; --err:#e06b5c; --line:#242c31; }
+  @media (prefers-color-scheme: light) { :root { --bg:#f4f0e8; --panel:#fffdf8; --text:#16191b; --dim:#5c574f; --accent:#0f7c70; --warn:#8a6116; --err:#b3402f; --line:#ddd5c8; } }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.65 "Microsoft YaHei UI", system-ui, sans-serif; }
+  main { max-width:920px; margin:0 auto; padding:32px 20px 80px; }
+  h1 { font-size:24px; letter-spacing:.5px; }
+  h2 { font-size:17px; margin-top:40px; border-bottom:1px solid var(--line); padding-bottom:6px; }
+  .meta { color:var(--dim); font-size:12.5px; }
+  table { width:100%; border-collapse:collapse; margin:14px 0; font-size:13px; }
+  th,td { border:1px solid var(--line); padding:7px 10px; text-align:left; vertical-align:top; }
+  th { background:var(--panel); font-weight:600; }
+  code { font:12px "Cascadia Mono", Consolas, monospace; background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:1px 5px; }
+  .ok { color:var(--accent); font-weight:600; }
+  .risk { color:var(--warn); font-weight:600; }
+  .bad { color:var(--err); font-weight:600; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin:14px 0; }
+  details { margin:10px 0; }
+  summary { cursor:pointer; color:var(--accent); }
+  pre { overflow:auto; background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:12px; font:12px "Cascadia Mono", Consolas, monospace; }
+  ol.q li { margin:8px 0; }
+</style>
+</head>
+<body>
+<main>
+<h1>挂机收菜轮变更报告 — Rev22 发布后深审计第二轮 + Qt 消息归档</h1>
+<p class="meta">2026-11-26 · 基线 v9.24.2（HEAD <code>efc4155</code>）· 本轮 2 个生产修复随下个版本发版 · 证据标签：已验证（本轮实际运行）/ 静态确认（读代码）· 原始证据 <code>evidence/rev23-harvest.json</code></p>
+
+<h2>1. 为什么做这次变更</h2>
+<p>用户以「挂机收菜模式」终极提示词要求补齐上一轮（Rev22 发布后补审计）显式跳过的项目：覆盖率口径实测、HTML 变更报告+测验、第二轮 Agent 管理 Agent 外部扫描、独立对抗审查。对发布后唯一生产代码变更 <code>gcm/app/exc_dump.py</code> 做对抗审查时抓到两个真问题：</p>
+<ul>
+<li><b>SystemExit 语义错误</b>：线程 hook 会把正常线程退出的 <code>SystemExit</code> 记成「未捕获异常」写进 error.log — 违背 CPython 官方「silently ignored」语义，给 0xC0000409 排查制造假错误噪音。</li>
+<li><b>文档谎</b>：模块顶部 docstring 声称「Qt qInstallMessageHandler：Qt 层致命/警告也归档」，但全库代码从未安装该 handler（外部扫描 Q1 交叉确认）。而 <code>qFatal</code> 在 abort 前的「遗言」正是两次闪退（0xC0000409）排查都缺的证据面。</li>
+</ul>
+
+<h2>2. 关键决策与取舍</h2>
+<table>
+<tr><th>决策</th><th>取舍与理由</th></tr>
+<tr><td>修 SystemExit（短路跳过）而非记录它</td><td>CPython 文档语义是静默忽略；error.log 是错误面，正常退出写进去就是假错误——正是闪退排查最怕的噪音。5 行短路 + 子进程负向守卫（正常退出不得留痕）。</td></tr>
+<tr><td>文档谎选择「补齐能力」而非「删承诺」</td><td>Qt 消息（尤其 qFatal 遗言）是真实观测缺口；实现约 40 行，且用<b>注入式</b>设计（Qt 顶层函数由 <code>__main__</code> 传入）不破坏 G80「gcm/app 不 import Qt」冻结边界。</td></tr>
+<tr><td>控制台与文件同文案打码</td><td>「出站即打码」纪律；Qt 消息天然带用户路径。handler 向 stderr 双写保留开发可见性，但内容是脱敏后的同一行。</td></tr>
+<tr><td>覆盖率必须用快集口径重测</td><td>发版放行证据（2444 例）早于两个提交；项目门禁定义即快集口径（Windows 81 / POSIX 80）。第三次快集 2451 例 / 81%，红→绿全过程留档。</td></tr>
+<tr><td>HTML 报告走 <code>reports/</code> 已跟踪惯例目录</td><td>目录内已有 15 份 change-report 先例（tracked），与 Rev22 轮 <code>change-report-20261126.html</code> 并列。</td></tr>
+</table>
+
+<h2>3. 做了什么</h2>
+<table>
+<tr><th>#</th><th>变更</th><th>文件</th><th>验证</th></tr>
+<tr><td>F1</td><td>线程 hook 按 CPython 语义静默忽略 <code>SystemExit</code>（正常线程退出不再写 error.log）</td><td><code>gcm/app/exc_dump.py</code>、<code>tests/test_exc_dump.py</code></td><td class="ok">已验证：子进程负向守卫 <code>test_thread_systemexit_is_ignored</code>；模块 10 例 OK</td></tr>
+<tr><td>F2</td><td>Qt 消息归档：<code>install_qt_message_handler(q_install, log_path)</code> 注入式安装（文件+控制台同文案打码，可重入，内部异常吞掉，幂等），<code>__main__</code> GUI 路径在 QApplication 创建前接线——qFatal 遗言留盘</td><td><code>gcm/app/exc_dump.py</code>、<code>gcm/__main__.py</code>、<code>tests/test_exc_dump.py</code></td><td class="ok">已验证：qWarning 落盘+打码 / qFatal 子进程「先落盘后 abort」/ 幂等 3 例；GUI 启动路径冒烟 <code>MAIN_RC=0</code> 且真实捕获 QFontDatabase 警告写入 error.log</td></tr>
+<tr><td>F3</td><td>vulture 门禁红→绿：自查引入的死参数 <code>qt_msg_type</code> 移除（改为运行时按 <code>mode.name</code> 取级别）</td><td><code>gcm/app/exc_dump.py</code></td><td class="ok">已验证：<code>test_g84_quality_gates.TestVultureGate</code> exit 0</td></tr>
+<tr><td>F4</td><td><code>test_main</code> fake 模块同步：<code>exc_dump</code> fake 补 <code>install_qt_message_handler</code> + 事件链断言更新；fake <code>PyQt6.QtCore</code> 补 <code>qInstallMessageHandler</code></td><td><code>tests/test_main.py</code></td><td class="ok">已验证：<code>test_main</code> 6 例 OK（顺序依赖同类第二例，fake 注入同步修复）</td></tr>
+<tr><td>A1</td><td>第二轮 Agent 管理 Agent 外部扫描（10 次一手 WebFetch）：Q1 直接落地；S1 SignPath（P2 登记 beads <code>q0j</code>）、R1 Immutable Releases（P2 登记 <code>b1j</code>）、L1 app.log 字段（P3 登记 <code>7bo</code>）、其余 4 条不适用/暂缓</td><td><code>docs/plans/agent-backlog-20261126.md</code> §8</td><td class="ok">已验证：候选表含来源 URL 与原文事实；未确认项单列</td></tr>
+<tr><td>D1</td><td>计划文档审计：weeky / agent-backlog / 审查计划（B4/B5 待决）/ 可用性规范（活文档）四份全保留，零删除</td><td>—</td><td class="ok">静态确认（删除条件无一满足）</td></tr>
+</table>
+
+<h2>4. 架构与链路</h2>
+<pre>异常观测链（本轮后）：
+  主线程未捕获 → sys.excepthook → write_error_log(redact) → data/error.log
+  线程未捕获   → threading.excepthook → [SystemExit 短路] → 同文件（附 thread=）
+  Qt 消息      → 注入式 handler → redact → data/error.log + stderr（已打码）
+  qFatal      → handler 先落盘 → Qt abort → 进程退出（遗言已留存）
+
+发布门禁链（未变）：
+  bump __version__ → changelog build → ruff/mypy/DRIFT → 快集+coverage(81%)
+  → PyInstaller/health_check → winget --check → tag/Release</pre>
+
+<h2>5. 验证证据（本轮实际执行）</h2>
+<table>
+<tr><th>项</th><th>命令</th><th>结果</th></tr>
+<tr><td>静态门禁</td><td><code>ruff check gcm</code> / <code>mypy gcm</code> / <code>doc_drift_check.py</code></td><td class="ok">All checks passed / Success（161 文件）/ DRIFT 0</td></tr>
+<tr><td>定向回归</td><td><code>unittest tests.test_g84_quality_gates test_main test_exc_dump test_g80_boundaries test_g80_hygiene test_g85_diag_alone test_g84_exc_redact</code></td><td class="ok">51 例 OK</td></tr>
+<tr><td>快集 #1（SystemExit 修复后）</td><td><code>coverage run --source=gcm scripts/ci_run_fast.py</code></td><td>Ran 2448 · 0 失败 · 81%</td></tr>
+<tr><td>快集 #2（Qt handler 后）</td><td>同上</td><td class="bad">Ran 2451 · failures=1 errors=1 —— vulture 死参数 + test_main fake 缺符号；均为本轮自查引入，当轮修复</td></tr>
+<tr><td>快集 #3（终态）</td><td>同上</td><td class="ok">Ran 2451 · failures=0 errors=0 skipped=6 · 覆盖率 81%（21580 stmts / 3619 miss）</td></tr>
+<tr><td>GUI 启动路径冒烟</td><td>临时数据目录真实执行 <code>main()</code> GUI 分支（锁→hook→Qt handler→窗口→事件循环→quit）</td><td class="ok">MAIN_RC=0；真实 Qt 警告 <code>qt[WARN] QFontDatabase…</code> 写入 error.log（handler 在真实路径生效）</td></tr>
+<tr><td>CLI 契约冒烟</td><td><code>python -m gcm --cli --json</code>（无效输入）</td><td class="ok">exit 2 + 结构化 JSON（version/ok/invalid），符合 agent-contract</td></tr>
+<tr><td>截图审计</td><td><code>ui_screenshot_audit.py</code>（离屏）</td><td class="ok">本日 38 张 exit 0；其后 UI 层零改动，<code>__main__</code> 启动面由 GUI 冒烟覆盖</td></tr>
+</table>
+
+<h2>6. 风险与回滚</h2>
+<ul>
+<li><span class="risk">行为变化</span>：error.log 新增 <code>qt[LEVEL]</code> 行；线程内 SystemExit 不再留痕（回归 CPython 语义）。</li>
+<li><span class="risk">控制台行为</span>：开发控制台里 Qt 警告改由本 handler 输出（同内容、已打码），不再是 Qt 默认格式。</li>
+<li>回滚：<code>git revert</code> 本轮提交即可（两处生产代码 + 测试 + 2 条 changelog 碎片）；无数据/配置迁移；碎片未聚合进版本前 revert 无历史负担。</li>
+<li>观察点：qFatal 场景下 error.log 的增量（预期极低频）；qt[WARN] 若在用户机器刷屏，按需加节流（当前不加，避免防御性脚手架）。</li>
+</ul>
+
+<h2>7. 已知限制</h2>
+<ul>
+<li>真机触摸屏/读屏器/多显示器仍为开放 beads（<code>13k</code>/<code>cuz</code>），非发布阻塞。</li>
+<li><code>qFatal → 0xC0000409</code> 的退出码归因需本机 5 行 <code>abort()</code> 程序实测，本轮未做（外部扫描明确标「未确认」）。</li>
+<li>S1 SignPath 资格判定与 R1 Immutable Releases 开关属用户账号/仓库动作（已建 beads <code>q0j</code>/<code>b1j</code>）。</li>
+<li>slow 集与全量 discover 未重跑：本轮变更集中在 app 观测层与入口，快集已覆盖全部触碰模块；push 后 CI 三平台做最终确认。</li>
+</ul>
+
+<h2>8. 测验（自测记录）</h2>
+<ol class="q">
+<li>（判断）线程内 <code>SystemExit</code> 现在会写进 error.log。<br><b>答：错。</b>按 CPython 官方语义静默忽略；修复前会把正常退出误记成未捕获异常。</li>
+<li>（选择）qFatal 的「遗言」为什么能留存？<br>A. handler 内重抛 B. Qt 文档语义：handler 返回后才 abort，我们在 handler 里先落盘 C. qFatal 不 abort D. 依赖 WER LocalDumps<br><b>答：B。</b>子进程守卫实测：进程异常终止且日志已含 boom-fatal。</li>
+<li>（判断）<code>gcm/app/exc_dump.py</code> 直接 import 了 PyQt6。<br><b>答：错。</b>注入式：Qt 顶层函数由 <code>__main__</code> 传入；G80 边界守卫（<code>test_g80_boundaries</code>）在跑。</li>
+<li>（选择）第二次快集红在哪？<br>A. UI 截图 B. vulture 死参数 + test_main fake 缺符号 C. 覆盖率低于门禁 D. 网络超时<br><b>答：B。</b>两次红均为本轮自查引入（死参数、fake 未同步新符号），当轮修复，第三次全绿。</li>
+<li>（简答）为什么控制台双写也要打码？<br><b>答：</b>出站即打码纪律；Qt 消息天然带用户路径/凭据，stderr 与文件输出同一份脱敏文本。</li>
+<li>（判断）覆盖率门禁口径是「全量 discover 用例的 80%」。<br><b>答：错。</b>快集口径，Windows 81 / POSIX 80；本轮 81%（21580 stmts）。</li>
+<li>（简答）本轮外部扫描哪条被直接采纳落地？为什么？<br><b>答：</b>Q1 Qt 消息归档：文档谎必须闭环；qFatal 遗言补上 0xC0000409 最缺的证据面；注入式实现 40 行内且不破边界。</li>
+<li>（简答）回滚本轮修复的方式？<br><b>答：</b><code>git revert</code> 对应提交（exc_dump / __main__ / 两个测试文件 / 2 条 changelog 碎片），无数据与配置迁移。</li>
+<li>（判断）38 张截图审计等价于真机交互验收。<br><b>答：错。</b>离屏渲染验证布局与渲染路径；真机点击/读屏器/触摸在 beads 13k/cuz。</li>
+</ol>
+<p class="meta">自测：9/9 通过（通过标准 100%，最低 80%）。</p>
+</main>
+</body>
+</html>

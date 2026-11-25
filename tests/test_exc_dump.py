@@ -104,6 +104,101 @@ class TestThreadExcepthook(unittest.TestCase):
         self.assertFalse(log.exists(), "对照组竟然生成了日志——正例断言不可信")
         self.assertIn("ZeroDivisionError", proc.stderr)
 
+    def test_thread_systemexit_is_ignored(self):
+        """CPython 默认语义：线程内 SystemExit 被静默忽略，不得写进 error.log。
+
+        若把正常线程退出记成「未捕获异常」，error.log 会出现吓人的假错误，
+        用户与排障都会被噪音误导。子进程跑真实 install 路径，断言文件不存在。
+        """
+        d = Path(tempfile.mkdtemp())
+        log = d / "error.log"
+        script = (
+            "import sys, threading, time\n"
+            "sys.path.insert(0, r'{root}')\n"
+            "from pathlib import Path\n"
+            "from gcm.app.exc_dump import install_excepthook\n"
+            "install_excepthook(Path(sys.argv[1]))\n"
+            "t = threading.Thread(target=lambda: sys.exit(0), name='exit-worker')\n"
+            "t.start(); t.join(); time.sleep(0.1)\n"
+        )
+        import subprocess
+        proc = subprocess.run(
+            [sys.executable, "-c", script.format(root=str(ROOT)), str(log)],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=60,
+        )
+        self.assertEqual(proc.returncode, 0, f"子进程失败：{proc.stderr[-400:]}")
+        self.assertFalse(
+            log.exists(),
+            "SystemExit 不应写入 error.log（CPython 默认语义为静默忽略）")
+
+
+class TestQtMessageHandler(unittest.TestCase):
+    """Qt 消息归档：qWarning 落盘（打码）、qFatal 先落盘后 abort（0xC0000409 的「遗言」）。
+
+    注入式安装：`gcm/app` 不 import Qt（G80 边界），Qt 顶层函数由调用方传入。
+    """
+
+    def _fresh_install(self, log: Path):
+        from PyQt6.QtCore import qInstallMessageHandler
+
+        from gcm.app import exc_dump
+        patcher = mock.patch.dict(exc_dump._installed, {"qt": False})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(qInstallMessageHandler, None)   # 恢复默认 handler，避免污染其它 Qt 测试
+        exc_dump.install_qt_message_handler(qInstallMessageHandler, log)
+
+    def test_qwarning_lands_redacted(self):
+        from PyQt6.QtCore import qWarning
+        d = Path(tempfile.mkdtemp())
+        log = d / "error.log"
+        self._fresh_install(log)
+        qWarning("boom-qt https://user:secret@example.com/x")
+        self.assertTrue(log.exists(), "qWarning 未落盘（Qt handler 未生效）")
+        text = log.read_text(encoding="utf-8")
+        self.assertIn("boom-qt", text)
+        self.assertIn("qt[WARN]", text)
+        self.assertNotIn("secret", text, "Qt 消息里的 URL 凭据未打码")
+
+    def test_qfatal_writes_before_abort(self):
+        """qFatal：handler 落盘后 Qt 才 abort —— 闪退必须留下最后一行证据。"""
+        d = Path(tempfile.mkdtemp())
+        log = d / "error.log"
+        script = (
+            "import sys\n"
+            "sys.path.insert(0, r'{root}')\n"
+            "from pathlib import Path\n"
+            "from PyQt6.QtCore import qInstallMessageHandler, qFatal\n"
+            "from gcm.app.exc_dump import install_qt_message_handler\n"
+            "install_qt_message_handler(qInstallMessageHandler, Path(sys.argv[1]))\n"
+            "qFatal('boom-fatal')\n"
+        )
+        import subprocess
+        proc = subprocess.run(
+            [sys.executable, "-c", script.format(root=str(ROOT)), str(log)],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=60,
+        )
+        self.assertNotEqual(proc.returncode, 0, "qFatal 必须导致进程异常终止")
+        self.assertTrue(log.exists(), "qFatal 在 abort 前未落盘 —— 遗言丢失")
+        text = log.read_text(encoding="utf-8")
+        self.assertIn("boom-fatal", text)
+        self.assertIn("qt[FATAL]", text)
+
+    def test_install_idempotent(self):
+        """重复安装不得再次替换 handler（否则链式 prev 会无限嵌套）。"""
+        from PyQt6.QtCore import qInstallMessageHandler
+
+        from gcm.app import exc_dump
+        d = Path(tempfile.mkdtemp())
+        self._fresh_install(d / "error.log")
+        current = qInstallMessageHandler(None)      # 摘下我们装的 handler
+        exc_dump.install_qt_message_handler(         # 闸门已置位 → 必须是 no-op
+            qInstallMessageHandler, d / "error.log")
+        restored = qInstallMessageHandler(current)   # 放回并读回当时安装的 handler
+        self.assertIsNone(restored, "第二次安装不应再替换 handler")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -424,3 +424,8 @@ EPIPE 还是 ECONNRESET 是 OS 内核时序决定的，同一平台都会变。�
 - 契约冒烟：`--cli --json` 无效输入 → exit 2 + 结构化 JSON（version/ok/invalid 齐全）。
 - 静态：gcm/ 无 TODO/FIXME（「占位」均为骨架/SQL/去重语义）；无生产代码改动，未跑 reviewer。
 - 结论：无 P0/P1；发版与 B4/B5 仍为待用户决策项。证据 `evidence/rev22-head-audit.json`。
+
+## 2026-11-26 · 挂机收菜轮（HEAD efc4155 + SystemExit/Qt-handler 修复）
+- 快集三次：2448 绿 → 2451 红（vulture 死参数 + test_main fake 缺符号，自查引入当轮修复）→ **2451 绿 / 81%**（21580 stmts）。
+- 定向 51 例 OK；GUI main() 路径冒烟 `MAIN_RC=0`（真实 Qt 警告落盘）；CLI --json 契约 OK。
+- 教训：新增跨模块导入行必须同步 `test_main` 的 sys.modules fake（同类顺序依赖第二例，第一例是 671938f 的 instance_bus）；vulture 门禁在快集内，删参数/删符号前先本地跑 `tests.test_g84_quality_gates`。

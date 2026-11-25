@@ -1,0 +1,94 @@
+{
+  "task_id": "rev23-harvest-20261126",
+  "status": "passed",
+  "timestamp": "2026-11-26",
+  "baseline": {
+    "version": "9.24.2",
+    "head": "efc4155（本轮在其上新增 2 个生产修复，未发版）",
+    "branch": "main"
+  },
+  "commands_executed": [
+    {
+      "cmd": ".venv\\Scripts\\python.exe -m ruff check gcm",
+      "exit_code": 0,
+      "raw_output_tail": "All checks passed!"
+    },
+    {
+      "cmd": ".venv\\Scripts\\python.exe -m mypy gcm",
+      "exit_code": 0,
+      "raw_output_tail": "Success: no issues found in 161 source files"
+    },
+    {
+      "cmd": ".venv\\Scripts\\python.exe scripts/doc_drift_check.py",
+      "exit_code": 0,
+      "raw_output_tail": "DRIFT 0"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen .venv\\Scripts\\python.exe -m unittest tests.test_g84_quality_gates tests.test_main tests.test_exc_dump tests.test_g80_boundaries tests.test_g80_hygiene tests.test_g85_diag_alone tests.test_g84_exc_redact",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 51 tests in 11.742s\n\nOK"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen .venv\\Scripts\\python.exe -m coverage run --source=gcm scripts/ci_run_fast.py（第 1 次，SystemExit 修复后 / Qt handler 前）",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 2448 tests · failures=0 errors=0 skipped=6 · TOTAL 81%"
+    },
+    {
+      "cmd": "同上（第 2 次，Qt handler 后）",
+      "exit_code": 1,
+      "raw_output_tail": "Ran 2451 tests · failures=1 errors=1 skipped=6；FAIL: test_g84_quality_gates.TestVultureGate.test_vulture_reports_nothing_at_80（gcm\\app\\exc_dump.py:129 unused variable 'qt_msg_type'）；ERROR: test_main.TestMainSmoke.test_main_success_flow（ImportError: cannot import name 'install_qt_message_handler' — fake 模块未同步）",
+      "note": "两次红均为本轮自查引入（死参数、test_main fake 注入未同步新符号），当轮修复"
+    },
+    {
+      "cmd": "同上（第 3 次，全部修复后，终态门禁）",
+      "exit_code": 0,
+      "raw_output_tail": "[ci_run_fast] 合计：Ran 2451 tests · failures=0 errors=0 skipped=6\nTOTAL 21580 3619 5530 975 81%"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen .venv\\Scripts\\python.exe <TEMP>\\claude\\gui_path_smoke.py（临时数据目录真实执行 main() GUI 分支：锁→hook→Qt handler→窗口→事件循环→quit）",
+      "exit_code": 0,
+      "raw_output_tail": "MAIN_RC=0\nerror.log tail:\n  platform=win32\n  qt[WARN] QFontDatabase: Cannot find font directory …（真实 Qt 警告经注入 handler 落盘，证明接线在真实启动路径生效）"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen .venv\\Scripts\\python.exe -m gcm --cli --json <invalid-urls>",
+      "exit_code": 2,
+      "raw_output_tail": "{\"version\": \"9.24.2\", \"ok\": false, …}",
+      "note": "结构化 JSON 语义正确（exit 2 = 无有效地址，agent-contract 口径；round 1 已实测退出码）"
+    }
+  ],
+  "files_changed": [
+    "gcm/app/exc_dump.py（SystemExit 短路 + 注入式 install_qt_message_handler + 文档修正）",
+    "gcm/__main__.py（GUI 路径接线 Qt handler）",
+    "tests/test_exc_dump.py（SystemExit 负向守卫 + TestQtMessageHandler 3 例）",
+    "tests/test_main.py（fake 模块同步 + 事件链断言）",
+    "changelog.d/threadhook-systemexit.fixed.md、changelog.d/qt-message-handler.added.md",
+    "docs/plans/agent-backlog-20261126.md（§8 第二轮）",
+    "reports/change-report-20261126-harvest.html（9 题测验，自测 9/9）",
+    "docs/验证记录-2026-11-26-Rev22-补审计.md（第二轮追加）",
+    ".agent/memory/audit-history.md、tested-scope.md（追加）"
+  ],
+  "tests": [
+    {"name": "快集终态（含 vulture/边界/预算/CLI 不告警全部守卫）", "type": "unit+integration", "status": "passed", "evidence": "Ran 2451 · 0 failed · 0 errors · skipped=6 · 覆盖率 81%"},
+    {"name": "定向 51 例", "type": "unit", "status": "passed", "evidence": "Ran 51 tests OK（含两次红用例的复验）"},
+    {"name": "GUI 启动路径冒烟", "type": "e2e", "status": "passed", "evidence": "MAIN_RC=0；qt[WARN] 真实落盘"},
+    {"name": "CLI 契约冒烟", "type": "smoke", "status": "passed", "evidence": "结构化 JSON + exit 2 语义"}
+  ],
+  "coverage_summary": {
+    "lines": "81%",
+    "branches": null,
+    "functions": null,
+    "statements": 21580
+  },
+  "seams_touched": ["__main__ → gcm.app.exc_dump（新增导入 install_qt_message_handler）", "Qt 顶层 → 注入 handler"],
+  "browser_validation": {
+    "performed": false,
+    "paths": [],
+    "screenshots": ["reports/ui-audit/（本日 38 张 exit 0；其后 UI 层零改动，__main__ 启动面由 GUI 冒烟覆盖）"]
+  },
+  "limitations": [
+    "slow 集与全量 discover 未重跑：push 后由 CI 三平台补位",
+    "qFatal→0xC0000409 退出码归因需本机 abort 程序实测（外部扫描标未确认）",
+    "真机触摸/读屏器/多显示器仍为 beads 13k/cuz",
+    "S1 SignPath 资格与 R1 Immutable Releases 开关为用户动作（beads q0j/b1j 登记）"
+  ]
+}
