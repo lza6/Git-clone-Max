@@ -153,11 +153,18 @@ class TestStatisticsDialogLifecycle(unittest.TestCase):
         dlg.show()
         return dlg, db, sip
 
-    def test_close_after_aggregation_finished_is_safe(self):
+    def _wait_deleted(self, sip, dlg, timeout_ms: int = 4000) -> None:
+        """轮询等待 deleteLater 真正执行（比固定 qWait 稳，慢机不假红）。"""
         from PyQt6.QtTest import QTest
+        waited = 0
+        while waited < timeout_ms and not sip.isdeleted(dlg._agg_thread):
+            QTest.qWait(50)
+            waited += 50
+
+    def test_close_after_aggregation_finished_is_safe(self):
         dlg, db, sip = self._make_dialog()
         try:
-            QTest.qWait(400)  # 空库聚合应已完成 → finished→deleteLater 执行
+            self._wait_deleted(sip, dlg)  # 空库聚合应已完成 → deleteLater 执行
             self.assertTrue(sip.isdeleted(dlg._agg_thread),
                             "前置不成立：聚合线程未被 deleteLater 删除，"
                             "此时测不到 wrapper-deleted 崩溃路径")
@@ -169,7 +176,7 @@ class TestStatisticsDialogLifecycle(unittest.TestCase):
         from PyQt6.QtTest import QTest
         dlg, db, sip = self._make_dialog()
         try:
-            QTest.qWait(400)
+            self._wait_deleted(sip, dlg)
             self.assertTrue(sip.isdeleted(dlg._agg_thread))
             dlg._run_scorecard_async()  # 修复前：old.isRunning() 抛 RuntimeError
             QTest.qWait(300)

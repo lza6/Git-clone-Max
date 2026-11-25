@@ -114,8 +114,9 @@
   下载页「仓库地址」校验提示、`checklist.py` 暗色提示行、`status_strip.py` 失败计数。
   颜色值仍须来自 `current_palette()`；兜底路径用中性灰度，不得写死品牌色
   （`sparkline.py` 的旧兜底 `#4cc2ff` 已清除，见 `.agent/memory/change-index.md`）。
-- **行内进度条极小百分比退化为圆点**（`progress_delegate.py`）：进度条宽度不足以
-  画条时画实心圆点，属小尺寸降级，不是缺状态。
+- **行内进度条极小百分比收敛为最小 4px 宽的圆角条**
+  （`progress_delegate.py`：`max(4, width)` + `drawRoundedRect`），属小尺寸降级，
+  不是缺状态；不绘制圆点。
 - **非 ASCII 装饰字符禁令**：UI 可见字符串不得使用 Geometric Shapes 三角
   （U+25B2–25BF / U+25C0–25C4）——微软雅黑无字形（实测 U+25B8「更多 ▸」与
   U+25BE「历史 ▾」均渲染为 tofu）。方向语义用 `setArrowType` 或 InstantPopup

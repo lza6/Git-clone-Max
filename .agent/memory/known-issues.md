@@ -26,6 +26,14 @@ owner: memory-keeper
 | 12 | `requirements.txt` 未锁版本；CI 裸装 ruff/mypy | **已闭环**：`PyQt6==6.11.0`；CI 改读 `requirements-build.txt`；`TestDependencyPinning`（4 例） |
 | 13 | **启动路径漏接线**：`MainWindow.__init__` 手写第二份 settings→engine 列表，漏 `host_concurrency`/`time_budget`/`concurrency_state_path` → 改设置重启后引擎仍读默认值（控件回填却是对的） | **已闭环**：启动期改走 `build_sync_engine`（唯一映射点），`TestStartupEngineReflectsSettings`（4 例）；空闲引擎 `enable_retry_queue=False` 防启动即自动重投污染 host 列 |
 
+## Rev22 审查记录（2026-11-26，独立 reviewer 结论 Request Changes→已闭环）
+
+| # | 事项 | 状态 |
+|---|------|------|
+| 14 | `statistics_dialog` 的 `t.wait()` 无超时：`local_path` 位于网络盘/断连共享盘时，关闭统计对话框或切周期会在 GUI 线程阻塞到聚合完成 | **刻意取舍**（用「关闭时卡一下」换「不崩」；worker 为本地 SQLite + os.walk 跳 symlink，无死锁） |
+| 15 | `path_guard._FORBIDDEN_COMPONENTS` 按「盘符根下一级」匹配：`D:\windows\repo`、`D:\boot\myrepo` 这类合法路径被保守拒绝（`D:\work\boot\repo` 正常） | **已知保守行为**（122bf2a 前既有；欲放宽需改口径为「系统盘符」并补守卫） |
+| 16 | `_on_scorecard_ready` 在 `_agg_thread is None` 时跳过代际令牌、无条件渲染一次；生产入口 `exec()` 生命周期下无实际危害 | **不改**（2026-11-26 reviewer 登记；如未来出现非 exec 入口再补 `if t is None: return`） |
+
 ## v9.12.1 已收口（2026-11-01）
 
 | 项 | 原问题 | 结论 |

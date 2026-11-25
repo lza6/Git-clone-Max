@@ -55,20 +55,33 @@ class TestDeletionRefusal(unittest.TestCase):
         self.assertIsNotNone(deletion_refusal("/usr"))
         self.assertIsNotNone(deletion_refusal("/etc"))
 
+    @unittest.skipIf(os.name == "nt",
+                     "POSIX 语义：Windows 上 /etc 不是绝对路径，判定在 resolve 之前早退")
     def test_resolved_private_symlink_still_refused(self):
         """macOS 的 /etc、/tmp、/var 指向 /private/*：resolve 后也必须拒绝。
 
         2026-11-26 CI macOS 实测：只看 resolve 结果时 `/etc → /private/etc`
         变成两级路径，顶层系统目录被放行（test_posix_toplevel_refused 红）。
-        用 mock 模拟该语义，Windows 本地也能验证这条修复。
+
+        按路径选择性 mock resolve（只重定向这两个顶层目录，其余走真实逻辑），
+        并断言拒绝原因是「系统目录」——回退修复（只查 resolve 结果）时本用例
+        必红（rp=/private/etc 两级、home 判定也不命中 → 返回 None）。
+        早先「全局 mock 返回固定值」的写法对回退修复同样绿，是空守卫，已废弃。
         """
         from unittest import mock
-        with mock.patch.object(Path, "resolve",
-                               return_value=Path("/private/etc")):
-            self.assertIsNotNone(deletion_refusal("/etc"))
-        with mock.patch.object(Path, "resolve",
-                               return_value=Path("/private/tmp")):
-            self.assertIsNotNone(deletion_refusal("/tmp"))
+        real_resolve = Path.resolve
+
+        def fake_resolve(self_path, *args, **kwargs):
+            s = str(self_path)
+            if s in ("/etc", "/tmp"):
+                return Path("/private" + s)
+            return real_resolve(self_path, *args, **kwargs)
+
+        with mock.patch.object(Path, "resolve", fake_resolve):
+            for p in ("/etc", "/tmp"):
+                reason = deletion_refusal(p)
+                self.assertIsNotNone(reason, f"{p} 必须被拒绝")
+                self.assertIn("系统目录", reason, f"{p} 应以系统目录拒绝，实际：{reason}")
 
     def test_normal_clone_dir_allowed(self):
         d = Path(tempfile.mkdtemp(prefix="gcm-guard-"))
