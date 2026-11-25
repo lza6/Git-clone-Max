@@ -35,3 +35,8 @@
   - 内容：`path_guard` macOS 符号链接顶层目录缺口（`/etc`、`/tmp`、`/var` → `/private/*`）+ `bump` 守卫 `docs/plans/` 前缀豁免；随后独立审查整改（空守卫重写为 POSIX-only + 选择性 resolve + 精确断言；design-system 措辞勘误；known-issues 三条登记）。
   - CI：`45701084407`（修复推送）三平台绿；`45705622275`（审查整改后 HEAD `49d6287`）七 job 全绿。
   - 发布：commit `602eebc` · tag `v9.24.2` · Release 双资产 sha256（`c292798c…`）复验一致（`https://github.com/lza6/Git-clone-Max/releases/tag/v9.24.2`）；本地全量 discover 2574 例 2573 绿（1 例为打包并发伪失败，串行复跑 OK）；health started_ok smoke 2306ms（`evidence/rev22-release-9242.json`）。
+
+- **2026-11-26 · Rev22 发布后补审计两轮 + 挂机收菜修复**
+  - 第一轮（commit `efc4155`）：HEAD 全闸门复验（快集 2447 / 截图 38 / DRIFT 0）；计划文档 4 份保留零删除；开放项仍为 beads `13k`/`cuz` + B4/B5。
+  - 第二轮（commit `0e9f148`，CI `45721180075` 三平台绿）：修 2 个发布后真问题——线程 hook 违背 CPython 语义误记 SystemExit；`exc_dump`「Qt 消息归档」文档谎 → 注入式 `install_qt_message_handler`（qFatal 遗言在 abort 前落盘）。终态快集 **2451 例 0 失败 / 81%**；GUI 启动冒烟 `MAIN_RC=0`（qt[WARN] 真实落盘）。`changelog.d/` 4 条碎片待下个版本聚合。
+  - 外部扫描第二轮：Q1 落地；S1 SignPath → beads `q0j`、R1 Immutable Releases → `b1j`、L1 app.log 字段 → `7bo`。

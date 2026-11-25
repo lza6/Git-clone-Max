@@ -54,6 +54,12 @@
       "exit_code": 2,
       "raw_output_tail": "{\"version\": \"9.24.2\", \"ok\": false, …}",
       "note": "结构化 JSON 语义正确（exit 2 = 无有效地址，agent-contract 口径；round 1 已实测退出码）"
+    },
+    {
+      "cmd": "gh run list --commit 0e9f148 --limit 3 --json databaseId,workflowName,status,conclusion",
+      "exit_code": 0,
+      "raw_output_tail": "[{\"conclusion\":\"success\",\"databaseId\":45721180075,\"status\":\"completed\",\"workflowName\":\"CI\"}]",
+      "note": "推送后三平台 CI 成功（test 矩阵 + lint/type + 打包 job 按触发条件）"
     }
   ],
   "files_changed": [
@@ -86,7 +92,7 @@
     "screenshots": ["reports/ui-audit/（本日 38 张 exit 0；其后 UI 层零改动，__main__ 启动面由 GUI 冒烟覆盖）"]
   },
   "limitations": [
-    "slow 集与全量 discover 未重跑：push 后由 CI 三平台补位",
+    "slow 集与全量 discover：本地未重跑；CI 已补位（run 45721180075 success，0e9f148，Linux 慢集在 CI 内）",
     "qFatal→0xC0000409 退出码归因需本机 abort 程序实测（外部扫描标未确认）",
     "真机触摸/读屏器/多显示器仍为 beads 13k/cuz",
     "S1 SignPath 资格与 R1 Immutable Releases 开关为用户动作（beads q0j/b1j 登记）"
