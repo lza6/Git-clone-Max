@@ -106,6 +106,8 @@ def install_excepthook(log_path: Optional[Path] = None) -> None:
         CPython 会按官方语义转交 sys.excepthook —— 即上面的 _hook，链路闭环。
         """
         if args.exc_type is SystemExit:
+            # 只跳过落盘；下级 hook 照常通知（CPython 默认实现同样静默忽略 SystemExit）
+            _prev_thread(args)
             return
         write_error_log(target, args.exc_value,
                         context={"thread": getattr(args.thread, "name", "?")})
@@ -138,25 +140,29 @@ def install_qt_message_handler(q_install: Any,
     能留下的「遗言」。handler 必须可重入（Qt 文档要求，可能被多线程并行
     调用；逐条独立 open/append 满足）；内部异常一律吞掉，观测不拖垮进程。
     文件内容过 `redact`（Qt 消息天然带用户路径）；控制台存在时同文案双写。
+    error.log 只收 WARN 及以上——DEBUG/INFO（如 `QT_LOGGING_RULES=*.debug=true`
+    的排障开关）只进控制台，不把错误日志灌成流水账。
     """
     if _installed.get("qt"):
         return
     target = log_path or Path("error.log")
-    prev = q_install(None)   # Qt 语义：传 None 摘回默认 handler 并返回旧 handler
+    q_install(None)   # 卸掉旧 handler；默认 handler 的 stderr 输出由下面的双写承担
 
     def _handler(mode: Any, _context: Any, message: str) -> None:
         level = _QT_LEVEL_NAMES.get(getattr(mode, "name", ""), "OTHER")
         with contextlib.suppress(Exception):
             # 文件与控制台共用同一份打码文本（出站即打码，Qt 消息天然带用户路径）
             line = _redact_text(f"qt[{level}] {message}".replace("\x00", ""))
-            with open(target, "a", encoding="utf-8") as f:
-                f.write("\n" + "=" * 60 + "\n" + _fmt_env() + "\n" + line + "\n")
+            if level in ("WARN", "CRITICAL", "FATAL"):
+                # 环境头只在进程首次落盘时写一次；每条消息重复写会淹没告警本身
+                head = ("" if _installed.get("qt_head")
+                        else "\n" + "=" * 60 + "\n" + _fmt_env() + "\n")
+                with open(target, "a", encoding="utf-8") as f:
+                    f.write(head + line + "\n")
+                _installed["qt_head"] = True
             # 控制台开发时保留可见性（windowed 打包下 sys.stderr 为 None）
             if sys.stderr is not None:
                 print(line, file=sys.stderr)
-        if prev is not None:
-            with contextlib.suppress(Exception):
-                prev(mode, _context, message)
 
     q_install(_handler)
     _installed["qt"] = True

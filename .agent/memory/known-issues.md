@@ -256,3 +256,9 @@ owner: memory-keeper
 2. **更新检查的 `urllib` 直连路径在本机无法实测**：本机 TLS 代理会打断 Python `urllib`
    与 git schannel（`SSL: UNEXPECTED_EOF_WHILE_READING`），而 `requests`/PyGithub 正常。
    验证改用 `requests` 取真实 Release JSON 再喂生产解析逻辑（只换传输层）。换机器/CI 网络可直测。
+3. **`write_error_log` 与 Qt handler 的跨线程 append 非原子（仅记录，不加锁）**：UCRT `_O_APPEND`
+   是 `_lseeki64` + `WriteFile`，不同句柄间无共享锁，两条消息同一瞬间落盘理论上可互相覆盖尾部。
+   触发前提是多线程同时产生 Qt 告警/未捕获异常——本项目自身不发 qWarning、告警基本在 GUI 线程，
+   **当前不可达**；若将来真出现多线程高频告警，加一把模块级 `threading.Lock` 即可（2026-11-26 独立审查记录）。
+4. **Qt 消息的 CR/LF 原样保留（有意放行，非遗漏）**：NUL 已剥、换行保留——Qt 告警不来自外部输入；
+   若未来把外部文本转发进 qWarning，需先转义换行，防日志行伪造。
