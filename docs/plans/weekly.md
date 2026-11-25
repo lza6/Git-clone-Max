@@ -30,3 +30,8 @@
   - 验证：定向 62 例 OK；截图审计**首跑完整 38 张 exit 0**（4 个此前不可达对话框首次入库）；`health_check` v9.24.0 产物 started_ok/smoke 1803ms。
   - 计划文档：`docs/plans` 三份按 plan-doc-audit 归档至 `docs/archive/plans/20261126/`；`计划书/UIUX与前端架构审查计划-20261126.md` 的 B1–B3 执行完毕，B4/B5 待产品决策。
   - 发布：commit `dc9ad12` · tag `v9.24.1` · Release 双资产上传且服务端 sha256 复验一致（`https://github.com/lza6/Git-clone-Max/releases/tag/v9.24.1`）；放行快集 2444 例 0 失败 / 覆盖率 81%（`evidence/rev22-release-gate.json`）。
+
+- **2026-11-26 · v9.24.2（CI 红修复批）**
+  - 内容：`path_guard` macOS 符号链接顶层目录缺口（`/etc`、`/tmp`、`/var` → `/private/*`）+ `bump` 守卫 `docs/plans/` 前缀豁免；随后独立审查整改（空守卫重写为 POSIX-only + 选择性 resolve + 精确断言；design-system 措辞勘误；known-issues 三条登记）。
+  - CI：`45701084407`（修复推送）三平台绿；`45705622275`（审查整改后 HEAD `49d6287`）七 job 全绿。
+  - 发布：commit `602eebc` · tag `v9.24.2` · Release 双资产 sha256（`c292798c…`）复验一致（`https://github.com/lza6/Git-clone-Max/releases/tag/v9.24.2`）；本地全量 discover 2574 例 2573 绿（1 例为打包并发伪失败，串行复跑 OK）；health started_ok smoke 2306ms（`evidence/rev22-release-9242.json`）。

@@ -1,0 +1,36 @@
+{
+  "task_id": "rev22-release-9242",
+  "status": "passed",
+  "timestamp": "2026-11-26T21:45+08:00",
+  "commands_executed": [
+    {
+      "cmd": "git push origin main && git push origin v9.24.2",
+      "exit_code": 0,
+      "raw_output_tail": "2845c9a..602eebc  main -> main\n * [new tag]         v9.24.2 -> v9.24.2"
+    },
+    {
+      "cmd": "python scripts/publish_release.py",
+      "exit_code": 0,
+      "raw_output_tail": "[OK] 服务端 sha256=c292798c5204a341… 一致\n[INFO] Release 页面：https://github.com/lza6/Git-clone-Max/releases/tag/v9.24.2"
+    }
+  ],
+  "files_changed": [],
+  "tests": [
+    {"name": "CI run 45705622275 (49d6287, 三平台 + slow + e2e + smoke + perf)", "type": "e2e", "status": "passed", "evidence": "7/7 jobs green; macOS validated rewritten POSIX path-guard guard"},
+    {"name": "local full discover (2574 tests)", "type": "unit", "status": "passed", "evidence": "2573 green; 1 concurrent-build false failure re-run OK (tests.test_update_auto 6 cases)"}
+  ],
+  "artifacts": {
+    "exe_bytes": 43299678,
+    "exe_sha256": "c292798c5204a341…",
+    "portable_zip_bytes": 82927429,
+    "release_url": "https://github.com/lza6/Git-clone-Max/releases/tag/v9.24.2",
+    "commit": "602eebc",
+    "review_remediation_commit": "49d6287",
+    "tag": "v9.24.2"
+  },
+  "browser_validation": {"performed": false, "paths": [], "screenshots": []},
+  "limitations": [
+    "49d6287（审查整改：测试与文档）在 tag 之后合入 main；不含 gcm/ 产品代码变更，与已发布 exe 内容一致",
+    "tag 未触发独立 CI run（与 v9.24.0 同现象）；打包验证以本地 PyInstaller + health_check（started_ok smoke 2306ms）为准（项目口径：本地为准）"
+  ]
+}
