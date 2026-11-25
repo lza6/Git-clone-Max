@@ -415,3 +415,12 @@ EPIPE 还是 ECONNRESET 是 OS 内核时序决定的，同一平台都会变。�
 - 四轨：UI 截图 34 张（`reports/ui-v9220/`，pixel_diff vs `ui-v9200-audit2` ok=True 无回归）；`realcalls_rev17.py` PASS；`e2e_smoke.py` PASS；`test_g56_contract/test_g84_mcp_resources/test_g71_event_stream` 66 tests OK。
 - 真机：双屏 2560x1600@150% + 1920x1080@100%；主窗跨屏到副屏无裁切；设置页“单仓失败率(%)”可见；后台任务面板新按钮可见可达。拔屏/贴靠/读屏器/触摸屏未实测，归 beads 13k/cuz。
 - 发布：CI run 45261302271 全绿；tag v9.22.0；Release id 455946026；exe/zip 双资产服务端 sha256 一致。
+
+## 2026-11-26 · Rev22 发布后增量补审计（HEAD 671938f，v9.24.2）
+- 触发：v9.24.2 发版放行证据（2444 例）早于 HEAD 两个提交（1ba9637 / 671938f），补验当前事实源。
+- 闸门：ruff 0 · mypy 161 文件 Success · doc_drift DRIFT 0 · 快集 **2447 例 0 失败 0 错误 skipped=6**（=2444+新守卫 3）。
+- 定向：test_exc_dump / test_main / test_b2_instance_bus 24 例 OK（覆盖 threading.excepthook 与单跑顺序修复）。
+- 截图：ui_screenshot_audit 38 张 exit 0；输出目录 reports/ui-audit/（.gitignore 的 `reports/ui-*/` 已覆盖，不入库）。
+- 契约冒烟：`--cli --json` 无效输入 → exit 2 + 结构化 JSON（version/ok/invalid 齐全）。
+- 静态：gcm/ 无 TODO/FIXME（「占位」均为骨架/SQL/去重语义）；无生产代码改动，未跑 reviewer。
+- 结论：无 P0/P1；发版与 B4/B5 仍为待用户决策项。证据 `evidence/rev22-head-audit.json`。

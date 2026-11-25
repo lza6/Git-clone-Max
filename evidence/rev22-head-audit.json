@@ -1,0 +1,86 @@
+{
+  "task_id": "rev22-head-audit-20261126",
+  "status": "passed",
+  "timestamp": "2026-11-26",
+  "baseline": {
+    "version": "9.24.2",
+    "head": "671938f",
+    "branch": "main",
+    "workspace": "tracked-clean（仅根级 计划书/ 未跟踪草稿，按约定不入库）"
+  },
+  "commands_executed": [
+    {
+      "cmd": ".venv\\Scripts\\python.exe -m ruff check gcm",
+      "exit_code": 0,
+      "raw_output_tail": "All checks passed!"
+    },
+    {
+      "cmd": ".venv\\Scripts\\python.exe -m mypy gcm",
+      "exit_code": 0,
+      "raw_output_tail": "Success: no issues found in 161 source files"
+    },
+    {
+      "cmd": ".venv\\Scripts\\python.exe scripts/doc_drift_check.py",
+      "exit_code": 0,
+      "raw_output_tail": "DRIFT 0"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen .venv\\Scripts\\python.exe scripts/ci_run_fast.py",
+      "exit_code": 0,
+      "raw_output_tail": "[ci_run_fast] 合计：Ran 2447 tests · failures=0 errors=0 skipped=6"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen .venv\\Scripts\\python.exe -m unittest tests.test_exc_dump tests.test_main tests.test_b2_instance_bus -v",
+      "exit_code": 0,
+      "raw_output_tail": "Ran 24 tests in 1.745s\n\nOK"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen .venv\\Scripts\\python.exe scripts/ui_screenshot_audit.py",
+      "exit_code": 0,
+      "raw_output_tail": "OUT: <repo>\\reports\\ui-audit（38 张 PNG 全部 OK）"
+    },
+    {
+      "cmd": "QT_QPA_PLATFORM=offscreen .venv\\Scripts\\python.exe -m gcm --cli --json <invalid-urls.txt>",
+      "exit_code": 2,
+      "raw_output_tail": "{\"version\": \"9.24.2\", \"ok\": false, ..., \"invalid\": [{\"code\": 2, \"message\": \"无有效仓库地址\", ...}]}",
+      "note": "退出码 2 = agent-contract 语义（无有效地址）；结构化 JSON 输出正常，非缺陷"
+    },
+    {
+      "cmd": ".venv\\Scripts\\python.exe scripts/dev_metrics.py",
+      "exit_code": 0,
+      "raw_output_tail": "version 9.24.2 · 162 gcm files / 41,186 lines · 6 oversized 与登记集合一致 True · tests 236 files / 44,995 lines"
+    }
+  ],
+  "files_changed": [
+    "workflow_status.md（追加 Rev22 补审计节）",
+    ".agent/memory/tested-scope.md（追加本轮验证范围）",
+    "docs/验证记录-2026-11-26-Rev22-补审计.md（新增）",
+    "evidence/rev22-head-audit.json（本文件）",
+    "计划书/UI可用性设计规范-尼尔森十原则-20261126.md（未跟踪草稿：基线/缺口状态同步至 HEAD）"
+  ],
+  "seams_touched": [],
+  "mock_scenarios_covered": [],
+  "tests": [
+    {"name": "ci_run_fast（全快集）", "type": "unit+integration", "status": "passed", "evidence": "Ran 2447 · 0 failed · 0 errors · skipped=6"},
+    {"name": "test_exc_dump/test_main/test_b2_instance_bus（发布后新提交定向）", "type": "unit", "status": "passed", "evidence": "Ran 24 tests OK"},
+    {"name": "ui_screenshot_audit（离屏真实渲染 38 张）", "type": "e2e", "status": "passed", "evidence": "exit 0，38 PNG"},
+    {"name": "CLI --json 契约冒烟", "type": "smoke", "status": "passed", "evidence": "exit 2 + 结构化 JSON（无效输入语义）"}
+  ],
+  "coverage_summary": {
+    "lines": null,
+    "branches": null,
+    "functions": null,
+    "statements": null
+  },
+  "browser_validation": {
+    "performed": false,
+    "paths": [],
+    "screenshots": ["reports/ui-audit/（38 张，离屏 Qt 真实渲染）"]
+  },
+  "limitations": [
+    "覆盖率未重算，沿用 Rev22 发布口径 81%（快集口径）",
+    "slow 集与全量 discover 未在本轮重跑（CI 与发版流程覆盖；本轮无代码变更）",
+    "真机触摸/读屏器/多显示器仍为开放 beads 13k/cuz",
+    "本轮无生产代码改动，未启动独立 reviewer 循环（无可审 diff）"
+  ]
+}
