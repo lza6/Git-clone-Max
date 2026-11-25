@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-26T02:56:17",
+  "generated_at": "2026-11-26T03:43:54",
   "root": "<repo>",
   "ok": true,
   "segments": [
@@ -24,11 +24,11 @@
     },
     {
       "name": "http_sse",
-      "command": "<repo>\\.venv\\Scripts\\python.exe -m gcm --cli --serve 127.0.0.1:18935",
+      "command": "<repo>\\.venv\\Scripts\\python.exe -m gcm --cli --serve 127.0.0.1:62032",
       "exit_code": 1,
       "ok": true,
       "expected": "/version 返回 JSON；/api/events 返回 SSE 帧",
-      "version_tail": "{\"version\": \"9.22.0\", \"readonly\": true}",
+      "version_tail": "{\"version\": \"9.24.0\", \"readonly\": true}",
       "sse_head": "retry: 3000\n\n: connected"
     }
   ]
