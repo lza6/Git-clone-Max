@@ -29,9 +29,14 @@ from __future__ import annotations
 import pathlib
 import re
 import subprocess
+import sys
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+# 超限登记集合的**唯一事实源**在 scripts/dev_metrics.py（tests 引用 scripts 已有
+# 5 处先例）。两侧各存一份曾漂移出「progress_table 只登在测试侧」的假绿。
+sys.path.insert(0, str(ROOT / "scripts"))
+import dev_metrics  # noqa: E402  (路径注入必须在 import 前)
 
 # 允许入库的截图目录（README 展示图，体积小且被文档直接引用）
 _SCREENSHOT_WHITELIST = ("docs/screenshots/",)
@@ -79,26 +84,15 @@ _ROOT_WHITELIST = {
 }
 
 # 被显式接受的超 800 行模块（`CLAUDE.md` §6 登记的技术债）。
-# 新增成员必须同时更新 `CLAUDE.md`，否则这条断言会红 —— 这是故意的。
-_ACCEPTED_OVERSIZED = {
-    "gcm/ui/main_window.py",
-    "gcm/git/service.py",
-    "gcm/app/engine.py",
-    # Rev19 批次③：电源守卫生命周期接线 + mirror/degrade 可见后缀使本文件
-    # 越过 800 线（808）。已按「新 UI 逻辑落独立模块」把可拆部分拆出
-    # （power_guard.py / settings_power.py），余量为接线调用，登记为技术债。
-    "gcm/ui/progress_table.py",
-    # Rev14 V4：i18n 字典是**生成文件**（key 即中文、一行一条），行数随文案量线性增长，
-    # 拆分它没有意义（拆完还要再拼回去查表）。它们在 gcm/i18n/ 内，不参与 UI 布局，
-    # 不属于「一个模块承担过多职责」那类技术债。CLAUDE.md §6 已同步登记。
-    "gcm/i18n/zh.py",
-    "gcm/i18n/en.py",
-}
-_OVERSIZED_LIMIT = 800
+# 登记集合与判定阈值都从 scripts/dev_metrics.py 导入（单一事实源）——
+# 两侧各存一份曾在 2026-11 漂移出「progress_table 只在测试侧登记」的口径分裂。
+# 新增成员必须同时更新 `CLAUDE.md` 与 dev_metrics，否则这条断言会红 —— 这是故意的。
+_ACCEPTED_OVERSIZED = dev_metrics.ACCEPTED_OVERSIZED
+_OVERSIZED_LIMIT = dev_metrics.OVERSIZED_LIMIT
 
 # 断言基线：测试文件数与主窗行数（`CLAUDE.md` / `README.md` 必须与实测一致）。
 # 这两个数字会随开发变化，改代码时**同步改这里和文档**，守卫才有意义。
-_EXPECTED_TEST_FILES = 230
+_EXPECTED_TEST_FILES = 235
 
 
 def _git_ls_files() -> list[str]:
@@ -173,6 +167,16 @@ class TestNoNewOversizedModules(unittest.TestCase):
             f"{sorted(actual - _ACCEPTED_OVERSIZED)}\n"
             f"已消失的（应在 CLAUDE.md 与本守卫里移除）：{sorted(_ACCEPTED_OVERSIZED - actual)}",
         )
+
+    def test_dev_metrics_registry_in_sync(self) -> None:
+        """度量工具自报的「与登记集合一致」必须为 True（Rev21 P21-1）。
+
+        这条是「口径工具的谎言比文档的谎言更贵」的守卫：dev_metrics 是
+        doc_drift_check 的上游，它自称一致而实际不一致时，所有下游数字都不可信。
+        """
+        self.assertTrue(
+            dev_metrics.collect()["oversized_set_matches"],
+            "scripts/dev_metrics.py 的 ACCEPTED_OVERSIZED 与实测超限集合不一致")
 
     def test_registry_really_exceeds_limit(self) -> None:
         """登记的每个文件必须真的超限 —— 防止白登记一个「豁免」。"""

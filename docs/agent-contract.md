@@ -104,6 +104,7 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
   "pruned": 1,
   "dir_removed": 0,
   "skipped_protected": 0,
+  "skipped_dangerous": 0,
   "reported": 0,
   "items": [{"folder": "o__r", "url": "https://github.com/o/r",
              "remote_gone": true, "protected": false,
@@ -116,6 +117,8 @@ Git-clone-Max 提供三类 agent 可调用入口，全部**默认只读**：
   `--prune`（删 DB 记录，不删本地目录）、`--prune-untouched`（删 DB 记录 + 删本地目录）。
 - `mode` 字段是判别位，消费方必须先判 `mode` 再读计数。
 - ⚠️ `--prune-untouched` **会删除本地目录**（不可恢复，不进回收站）。
+  删除前过系统路径护栏（B3）：盘根 / 系统目录 / 用户主目录及其受保护子目录 /
+  UNC / 相对路径一律拒绝；拒绝项计入 `skipped_dangerous` 且**保留 DB 记录**。
   agent 必须显式告知用户后才可调用。
 - 三重护栏（服务端强制，不是建议）：`protected`（excluded 标记）的仓库
   **任何模式都不删**；只处理 `remote_gone`（最近一次同步失败且报
@@ -157,6 +160,19 @@ python -m gcm --cli --fetch-release OWNER/REPO [--out <目录>] [--json]
 
 失败：`{"ok": false, "error": "…"}`（无匹配资产时附 `assets` 名单与 `tag`）。
 token 取自 git credential manager（与检查更新同源），只发给 api/github.com。
+
+### 2.1f `--export-catalog`（B5 新增：仓库编目的文件出口）
+
+```bash
+python -m gcm --cli --export-catalog <目录> [--json]
+```
+
+把 `repos.db` 里的全部仓库导出为 `catalog.json` + `catalog.md`：
+每仓一行，含 host/owner/repo、`profile`（语言/形态/CI/测试/摘要/lang 分布）与
+`profile_status`（`probed` / `not_probed`）。**只读数据源**：零网络、零 LLM，
+不写库；画像为空的仓显式标 `not_probed`（探测不到 ≠ 没有）。
+`--json` 形态：`{"ok": true, "mode": "catalog", "count": N, "json": "...", "markdown": "..."}`。
+同一份数据也可经 MCP 资源 `gcm://catalog` 读取（见 §4.2）。
 
 ### 2.2 退出码
 
@@ -247,6 +263,7 @@ token 取自 git credential manager（与检查更新同源），只发给 api/g
 | `gcm://repos` | application/json | 仓库清单（剔敏感列 + 打码） |
 | `gcm://report/markdown` | text/markdown | 内存生成的报表（不写盘） |
 | `gcm://history` | application/json | 全库最近 50 条同步记录（JOIN owner/repo；agent 判断「上次跑成没成」） |
+| `gcm://catalog` | application/json | 仓库编目（B5：全部本地仓库的确定性画像清单，零 LLM；未探测的仓标 `not_probed`） |
 
 | 提示词 | 参数 | 用途 |
 |--------|------|------|

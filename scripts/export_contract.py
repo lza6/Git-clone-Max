@@ -20,6 +20,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+# 文档约定的调用方式是 `python scripts/export_contract.py --check`（cwd=仓库根）。
+# 此时 sys.path[0] 是 scripts/ 而非仓库根 → `import gcm` 会 ModuleNotFoundError。
+# 自举仓库根，保证文档命令在裸解释器下也能跑（与其它 scripts 的先例一致）。
+sys.path.insert(0, str(ROOT))
 
 
 def export_mcp_tools() -> dict:

@@ -90,12 +90,12 @@ class TestQueueRunner(unittest.TestCase):
              end="01:00", on_missed="run_once")
         r = self._runner()
         self.assertEqual(len(r.due_queues()), 1)
-        # 跑过后当天不再补（mark_run 落 DB 真实时钟，与注入假时钟错位，
-        # 故直接写 last_run_at 为假时钟今天 —— 判定只看日期前缀）
+        # 跑过后当天不再补：R2 起「已跑」= 在窗口实例 [start,end) 内跑过
+        # （mark_run 落 DB 真实时钟，与注入假时钟错位，故直接写窗口内时刻）
         with self.store._lock:
             self.store._conn.execute(
                 "UPDATE sync_queue SET last_run_at=? WHERE id=?",
-                (self.now.strftime("%Y-%m-%d %H:%M"), 1))
+                (self.now.strftime("%Y-%m-%d") + " 00:30", 1))
             self.store._conn.commit()
         self.assertEqual(r.due_queues(), [])
 

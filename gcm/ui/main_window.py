@@ -119,6 +119,9 @@ class MainWindow(QMainWindow):
     starred_fetched = pyqtSignal(list, str)
     # G58-2：镜像测速结束（results, sample_url）—— 探测在 worker 线程。
     mirror_probe_done = pyqtSignal(list, str)
+    # B2：第二实例唤醒（payload JSON：{"argv": [...]}）—— socket 线程只 emit，
+    # 槽在 GUI 线程执行（显示窗口 + 参数填入输入区）。
+    wake_requested = pyqtSignal(str)
 
     def __init__(self, data_dir: str | Path, db: Database | None = None,
                  settings: SettingsStore | None = None,
@@ -131,6 +134,8 @@ class MainWindow(QMainWindow):
         self.db = db or Database(self.data_dir / "repos.db")
         self.settings_store = settings or SettingsStore(self.data_dir / "settings.json")
         self.settings = self.settings_store.load()
+        # B2：绑定方法连接（不捕获 self 的 lambda —— 会重新成环，守卫会红）
+        self.wake_requested.connect(self._on_wake_requested)
         self.progress_path = self.data_dir / "progress.json"
         # C4-2：启动时若全文索引与 repos 行数不一致则重建（首次升级后会跑一次）
         try:
@@ -1769,6 +1774,28 @@ class MainWindow(QMainWindow):
         except Exception as e:  # noqa: BLE001 - 定时器槽不能把线程带崩
             from ..app.applog import warn as _warn
             _warn(f"定时队列 tick 失败：{e}")
+
+    def _on_wake_requested(self, payload_json: str) -> None:
+        """B2：第二实例唤醒 —— 显示主窗；非旗标参数去重后填入输入区。"""
+        import json as _json
+
+        try:
+            payload = _json.loads(payload_json or "{}")
+        except ValueError:
+            payload = {}
+        from ..app.instance_bus import url_args
+        items = url_args(payload.get("argv") if isinstance(payload, dict) else [])
+        if items:
+            current = self.repo_input.toPlainText().splitlines()
+            seen = {ln.strip() for ln in current if ln.strip()}
+            added = [x for x in items if x not in seen]
+            if added:
+                text = self.repo_input.toPlainText().rstrip()
+                self.repo_input.setPlainText(
+                    (text + "\n" if text else "") + "\n".join(added))
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
 
     def show_background_jobs(self):
         """G80-B7-1：打开「后台任务」面板（4 个定时器的 next-run / 上次结果）。"""

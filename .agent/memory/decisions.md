@@ -1,6 +1,6 @@
 ---
 topic: decisions
-updated: 2026-11-03
+updated: 2026-11-26
 owner: memory-keeper
 ---
 # 关键决策与理由（decisions）
@@ -263,3 +263,34 @@ AST 只统计 `Attribute` / `Name` / `getattr(obj, "名字")`，注释与字符�
 **纪律**：①批量改写前先枚举目标调用的**参数个数分布**，只包单参或已知安全的位置；
 ②改完立刻加一条 AST 守卫（`tr()` 只能有 1 个位置参数），让下一次同类迁移直接红；
 ③「只在错误路径上炸」的缺陷必须**主动制造失败**去验（如让文件被占用、目录只读）。
+
+## B 批（2026-11-26，用户批准；v9.24 候选池）
+
+- **D45 调度去重从「结果反推」升级为「账本抢占」**：`last_run_at` 是展示状态，
+  不是调度账本 —— 手工运行会污染判断，注入时钟跨天时 `mark_run` 写真实日期会让
+  `already_ran` 恒 False（`test_catchup_claims_single_slot_across_ticks` 实测复现）。
+  决策：`scheduled_runs(queue_id, slot_key)` 主键 + `INSERT OR IGNORE` 抢占；
+  slot_key 由 `window_slot` 确定性生成（窗口日期 + 起止，跨零点凌晨归前一日窗口）；
+  启动失败**保留槽位、本窗口不再重试**（审查 MAJOR-3：`mark_run("error: …")` 已把
+  本窗口计为「今天跑过」，若同时 `release_slot` 放行重试，会变成每 60s 一次的失败
+  风暴；失败原因从 `last_status` 与日志读取，槽位记录保留可审计；`release_slot`
+  只留作测试/人工修复）。`already_ran` 保留为展示兜底，但边界与 `is_due`
+  统一为半开区间（旧 `<= en` 会把恰在 end 的启动算作本窗已跑）。
+  **R2 补充（窗口实例身份）**：跨零点窗的「身份」按 `[start_dt, end_dt)` 实例算，
+  唯一来源 `queue_scheduler._window_bounds` —— 槽位日期、周几归属、补跑宽限、
+  `already_ran` 全部由它推导。此前按「时刻」判断，07:00 的补跑被记成当晚 22:00
+  的槽位，把整个夜间窗口静默跳过；凌晨 01:00 跑过又误拦当晚 22:00。`days_of_week`
+  一律指窗口的开始日（周五夜熬到周六凌晨仍属周五）。
+- **D46 补跑必须有上界**：`on_missed=run_once` 旧语义「窗后任意时刻补一次」——
+  桌面软件几天不开机时会补一个陈旧窗口。决策：窗口结束 6 小时内才允许补
+  （`CATCHUP_GRACE_HOURS`，参考 dagu catchup_window）；未传 `end` 的旧调用保持原语义。
+- **D47 静默清理用 `contextlib.suppress`，不写 `except ...: pass`**：B 批新增恢复/防呆
+  模块后 except 总数 797→821（一次性登记，CLAUDE.md §3），但 pass-only 必须不涨 ——
+  对端断开、残留文件清理这类「失败无补救意义」的分支改用 `suppress(OSError)` 并注释；
+  路径护栏内的失败方向已显式区分：home 受保护子目录判定失败 → 不额外拒绝
+  （误拒会挡住正常清理），**整体判定异常 → 保守拒绝**（升级为删除事故更贵）。
+- **D48 B5 编目的定位是「确定性事实出口」，不是「知识索引产品」**：用户 Rev21 D3 曾
+  暂缓 3a，本次经拍板重启，但边界收死：只读 DB、零 LLM、零网络；画像为空显式
+  `not_probed`（探测不到 ≠ 没有）；不做摘要生成、不做向量、不做技能生成。
+  未来任何「接 LLM」提议都必须先过付费 API 红线（policy.md §1）与 repo-to-skill
+  自评（主流工具 95.5% vs 100%，增益不成立）两道反证。

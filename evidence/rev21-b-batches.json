@@ -1,0 +1,103 @@
+{
+  "batch": "Rev21 P21-1..3 + B1-B5 (v9.24.0 candidate)",
+  "date": "2026-11-26",
+  "baseline": {
+    "version_before": "9.22.0",
+    "head_before": "14806f4"
+  },
+  "gates": {
+    "ruff": {
+      "command": "python -m ruff check gcm",
+      "result": "All checks passed"
+    },
+    "mypy": {
+      "command": "python -m mypy gcm",
+      "result": "Success: no issues found in 161 source files"
+    },
+    "doc_drift": {
+      "command": "python scripts/doc_drift_check.py",
+      "result": "DRIFT 0"
+    },
+    "i18n": {
+      "command": "python scripts/i18n_coverage.py",
+      "result": "I18N OK"
+    },
+    "contract": {
+      "command": "python scripts/export_contract.py --out docs/contract --check",
+      "result": "CONTRACT OK"
+    },
+    "memory_check": {
+      "command": "python scripts/memory_check.py",
+      "result": "0 个问题，全部通过"
+    },
+    "quickstart_realcalls": {
+      "command": "python scripts/realcalls_quickstart.py",
+      "result": "exit 0; CLI/MCP-SSE 三段全 OK; evidence/rev21-quickstart.json"
+    }
+  },
+  "fast_suite_final": {
+    "command": "coverage run --source=gcm scripts/ci_run_fast.py",
+    "result": "Ran 2425 tests, failures=0, errors=0, skipped=5",
+    "coverage": "81% (Windows gate 81)",
+    "note": "第一遍曾红 4 failures + 1 error（test_g80_boundaries/startup_recovery startfile、test_g80_hygiene except 预算、test_s03 FTS 降级条件），修复后第二遍全绿。"
+  },
+  "targeted": {
+    "b1_b2_b3_b4_b5_plus_regressions": "129 tests OK (skipped=1)",
+    "queue_family": "test_b1_scheduler_ledger + test_s06 + test_a14 + test_g80_queue = 41 OK",
+    "contract_family": "test_g56_contract + test_g84_mcp_resources + test_c5_agent_contract + test_i18n_coverage + test_g67_docs_freshness = 124 OK",
+    "entry_family": "test_b4 + test_b2 + test_single_instance + test_g85_diag_alone + test_g80_contract + test_g69_regressions = 117 OK"
+  },
+  "key_behaviors_verified": [
+    "调度账本：注入时钟跨天时旧 last_run_at 反推会误判，claim_slot 仍正确拦截重复启动（test_catchup_claims_single_slot_across_ticks）",
+    "补跑宽限：窗口结束 2h 内允许、13h 后拒绝（test_missed_run_grace_upper_bound）",
+    "迁移：v8 FTS 降级后继续推进 v9；中途失败不强推 user_version（test_s03_migration_atomic）",
+    "护栏：危险路径拒绝时 DB 记录保留；普通临时目标准确删除（test_b3_path_guard）",
+    "唤醒：真实 loopback 往返、错误 token 无回调、死 PID/坏信息降级 False（test_b2_instance_bus）",
+    "catalog：未探测画像 not_probed、URL 凭据打码、CLI/MCP 同源（test_b5_catalog + CLI 冒烟 exit 0）",
+    "启动恢复：诊断包对 token 参数与 URL 内嵌凭据均 redact（test_b4_startup_recovery）"
+  ],
+  "review_round1": {
+    "verdict": "Request Changes",
+    "majors_fixed": [
+      "instance_bus: 非ASCII token TypeError 杀死监听线程 → bytes 比较 + 单连接 except-continue + 后续合法唤醒回归测试",
+      "instance_bus: read_info pid 容器值静默变 0 → {} / [] / \"1.5\" 判信息损坏返回 None",
+      "queue_runner: 失败 release_slot 与 mark_run 互斥（假重试/真风暴）→ 方案B：保留槽位+mark_run(error)+不重试；测试改真实时钟语义"
+    ],
+    "required_fixed": [
+      "path_guard 系统目录仅匹配盘符根一级 + Windows.old/Windows10Upgrade/$GetCurrent",
+      "cli --export-catalog 只读连接优先（OperationalError 才可写建表一次）",
+      "__main__ 抽 _build_gui_shell + 失败路径 try/finally 释放单实例锁 + B4 接线测试",
+      "文档: agent-contract skipped_dangerous / README 5 资源 / data-model instance.json+v9语义 / repo_fts 注释 ==7 / ledger 计数与语义 / changelog 计数 / function-size 注释 / CLAUDE i18n 1321/1325",
+      "doc_drift_check 正则允许全路径（堵住全路径条目被静默跳过的盲区）",
+      "quickstart 证据去个人化（<repo> 占位，0 处绝对路径）",
+      "decisions D45/D47 措辞与代码实际方向一致"
+    ]
+  },
+  "gates_after_review_fix": {
+    "ruff": "All checks passed (gcm)",
+    "mypy": "Success: no issues found in 161 source files",
+    "doc_drift": "DRIFT 0",
+    "i18n": "I18N OK（queue_runner 新 warn 走 tr；2 新键 zh/en）",
+    "targeted": "12 个受影响模块 130 tests OK",
+    "fast_suite": "Ran 2438 tests / failures=0 / errors=0 / skipped=5 / 81%（R2 修复后复跑）"
+  },
+  "review_round2": {
+    "verdict": "Request Changes",
+    "pass": "10/11 项复核 PASS（R1 的 3 MAJOR 修复经在作用例/变异实证确认真实关闭）",
+    "major_fixed": "跨零点窗口身份只按时刻算：07:00 补跑把槽位记成当晚窗口，22:00/01:00 被主键挡掉（整窗静默跳过）；凌晨 01:00 跑过误拦当晚 22:00。修复：queue_scheduler._window_bounds 统一窗口实例 [start,end)，跨零点按开始日归属；window_slot/missed_run_allowed/already_ran/is_due 四处同源；days_of_week 明确指开始日；_parse_ts 兼容秒/分精度；回归 4 条（槽位归昨、场景A端到端、场景B、周几归属）",
+    "minors_fixed": [
+      "b2 非 dict 载荷 b'[1,2]' 覆盖（监听线程存活断言内）",
+      "pid 缺失/null→0 的未知语义用例",
+      "test_b1 失败用例 docstring 改为如实声明「拦截机制=槽位主键，mark_run 与注入时钟不同源」",
+      "doc_drift 反向自检锚定全路径条目（gcm/... 改坏必须报）"
+    ],
+    "nits_fixed": [
+      "instance_bus._serve 局部 sock 引用（消除 stop() 竞态）",
+      "is_due 死分支随重写删除",
+      "queue_runner 登记失败独立 try（不把已启动记 error，warn 走 tr 新键）",
+      "cli 编目导出失败一行提示 + exit 1（新 tr 键）"
+    ],
+    "budget": "except 同批登记 823（pass-only 286 未涨）",
+    "review_round3": "进行中"
+  }
+}

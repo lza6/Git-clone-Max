@@ -12,6 +12,9 @@
 1. `protected=True`（excluded 标记）任何模式不删；
 2. 删除走 plan 预览（本模块产出 plan 行，UI/CLI 复用）；
 3. 删除写 oplog（undoable=0，UI 明示「不可撤销」）。
+B3 追加第 4 道：`prune-untouched` 删目录前过 `util/path_guard.deletion_refusal`
+（盘根 / 系统目录 / 用户主目录及其受保护子目录 / UNC / 相对路径一律拒绝；
+拒绝时**连 DB 记录也不删** —— 保留记录才能保住排查线索）。
 
 `remote_gone` 判定：最近一次 sync_history 失败 message 含
 "repository not found"（大小写不敏感）。
@@ -23,7 +26,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ..i18n import tr
 from ..util.oplog import OpLog
+from ..util.path_guard import deletion_refusal
 
 _REMOTE_GONE_MARKERS = ("repository not found", "remote: not found")
 
@@ -84,12 +89,12 @@ def execute_prune(db: Any, items: list[PruneItem], mode: str, *,
     """按模式执行清理。mode ∈ {"no-clean", "prune", "prune-untouched"}。
 
     返回计数：`pruned`（删了 DB 记录）/ `dir_removed` / `skipped_protected` /
-    `reported`（no-clean 只报告）。
+    `skipped_dangerous`（路径护栏拒绝）/ `reported`（no-clean 只报告）。
     """
     if mode not in ("no-clean", "prune", "prune-untouched"):
         raise ValueError(f"未知 prune 模式：{mode}")
     counts = {"pruned": 0, "dir_removed": 0, "skipped_protected": 0,
-              "reported": 0}
+              "skipped_dangerous": 0, "reported": 0}
     for it in items:
         if not it.remote_gone:
             continue
@@ -101,6 +106,13 @@ def execute_prune(db: Any, items: list[PruneItem], mode: str, *,
             it.skipped_reason = "no-clean 模式只报告"
             counts["reported"] += 1
             continue
+        # B3 护栏④：删目录前先过路径判定；拒绝则整条跳过（DB 记录也保留）
+        if mode == "prune-untouched" and str(it.local_path or "").strip():
+            refusal = deletion_refusal(it.local_path)
+            if refusal:
+                it.skipped_reason = tr("路径护栏拒绝删除：{}").format(refusal)
+                counts["skipped_dangerous"] += 1
+                continue
         # prune / prune-untouched：删 DB 记录
         try:
             db.delete_repo(it.repo_id)

@@ -12,7 +12,7 @@ from ..models import RepoSpec, SyncAction, SyncStatus
 from .backup import BackupMixin
 from .dir_stats import DirStatsMixin, migrate_to_v6
 from .history_prune import HistoryPruneMixin
-from .queue_db import QueueStore, migrate_to_v4
+from .queue_db import QueueStore, migrate_to_v4, migrate_to_v9
 from .repo_fts import RepoFtsMixin, migrate_to_v8
 from .repo_profile import RepoProfileMixin, migrate_to_v5
 from .repo_search import SearchMixin
@@ -58,7 +58,7 @@ CREATE INDEX IF NOT EXISTS idx_sync_history_repo ON sync_history(repo_id, starte
 _BUSY_TIMEOUT_MS = 30000  # SQLite 写锁竞争等待上限，避免高并发直接抛 database is locked
 
 # 数据库 schema 版本（PRAGMA user_version）。每次结构变更，递增此值并补一段迁移。
-_SCHEMA_VERSION = 8
+_SCHEMA_VERSION = 9
 
 
 def _migrate(conn):
@@ -96,6 +96,8 @@ def _migrate(conn):
     if v < 8:  # v8：全文索引虚表（C4-1）；FTS5/trigram 不可用时由调用方降级为 LIKE
         migrate_to_v8(conn)
         conn.execute("PRAGMA user_version=8")
+    if v < 9:  # v9：调度账本 scheduled_runs（B1），只新增表（实现在 queue_db.py）
+        migrate_to_v9(conn)
     if v < _SCHEMA_VERSION:
         conn.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
     conn.commit()
@@ -144,17 +146,20 @@ class Database(BackupMixin, SshKeyMixin, SearchMixin, RepoProfileMixin,
                     _migrate(self._conn)
                 except sqlite3.OperationalError as e:
                     self._conn.rollback()
-                    # 区分降级与真失败：回滚后 user_version 若仍是旧值，
-                    # 说明迁移没走到 v8 之前就挂了（或挂在 v8 之前的某步）——
-                    # 对 v8 专属的 FTS 建表失败，这里补一次单独尝试并降级。
+                    # 区分降级与真失败：v8 的契约是「成功后写 8、失败时停在 7」——
+                    # 回滚后 user_version 恰为 7 说明挂的正是 v8（FTS 建表）。
+                    # 停在 8 = 挂在 v9（或更后）→ 必须上抛；在 8 之前的其它步骤
+                    # 失败同样上抛（半迁移不得被固化）。
                     v_now = self._conn.execute("PRAGMA user_version").fetchone()[0]
-                    if v_now >= _SCHEMA_VERSION - 1:  # 迁移推进到了 v8 这一步
+                    if v_now == 7:  # v8 前置版本：只有 FTS 这一步允许降级
                         self._fts_ready = False
                         from ..app.applog import warn as _warn
                         _warn(f"FTS5/trigram 不可用，全文搜索降级为 LIKE：{e}")
                         from .repo_fts import _mark_v8_degraded
-                        _mark_v8_degraded(self._conn)
+                        _mark_v8_degraded(self._conn)  # 写 user_version=8
                         self._conn.commit()
+                        # v8 之后的迁移（v9+）不能被降级吞掉：从 8 继续推进。
+                        _migrate(self._conn)
                     else:
                         raise
         if not hasattr(self, "_fts_ready"):

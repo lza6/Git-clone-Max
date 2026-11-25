@@ -1,0 +1,35 @@
+{
+  "generated_at": "2026-11-26T02:56:17",
+  "root": "<repo>",
+  "ok": true,
+  "segments": [
+    {
+      "name": "cli_dry_run",
+      "command": "<repo>\\.venv\\Scripts\\python.exe -m gcm --cli --json --dry-run -",
+      "exit_code": 0,
+      "ok": true,
+      "expected": "exit 0 且 stdout 为单个 JSON（mode=dry_run, ok=true）",
+      "stdout_tail": "duplicate\": 0,\n      \"invalid\": 0\n    },\n    \"writable\": 1,\n    \"rows\": [\n      {\n        \"url\": \"https://github.com/octocat/Hello-World.git\",\n        \"folder\": \"octocat__Hello-World\",\n        \"target\": \"<repo>\\\\clones\\\\octocat__hello-world\",\n        \"action\": \"clone\",\n        \"reason\": \"目标目录不存在\"\n      }\n    ],\n    \"limits\": \"本预览只做本地判定：不说『已是最新』（需远端 ls-remote）；`replace` 会**删除**目标目录后重克隆；不预判网络/权限错误；clone 与 update 都是**将要尝试**的动作\"\n  }\n}",
+      "stderr_tail": ""
+    },
+    {
+      "name": "mcp_handshake",
+      "command": "<repo>\\.venv\\Scripts\\python.exe -m gcm.mcp_server",
+      "exit_code": 0,
+      "ok": true,
+      "tool_count": 5,
+      "expected": "exit 0；initialize 有响应；tools/list 至少 5 个只读工具（7 个含 --allow-mutate 的写工具）",
+      "stdout_tail": ": true, \"openWorldHint\": false}, \"description\": \"读取全局统计概览（仓库数/同步次数/成功失败，只读）\", \"inputSchema\": {\"type\": \"object\", \"properties\": {}}}, {\"name\": \"job_status\", \"annotations\": {\"readOnlyHint\": true, \"destructiveHint\": false, \"idempotentHint\": true, \"openWorldHint\": false}, \"description\": \"查询 clone_batch(async=true) 启动作业的进度/结果（只读）。未完成时 finished=false；完成后 result 与同步版返回同形。\", \"inputSchema\": {\"type\": \"object\", \"properties\": {\"job_id\": {\"type\": \"string\", \"description\": \"作业 ID\"}}, \"required\": [\"job_id\"]}}]}}",
+      "stderr_tail": ""
+    },
+    {
+      "name": "http_sse",
+      "command": "<repo>\\.venv\\Scripts\\python.exe -m gcm --cli --serve 127.0.0.1:18935",
+      "exit_code": 1,
+      "ok": true,
+      "expected": "/version 返回 JSON；/api/events 返回 SSE 帧",
+      "version_tail": "{\"version\": \"9.22.0\", \"readonly\": true}",
+      "sse_head": "retry: 3000\n\n: connected"
+    }
+  ]
+}

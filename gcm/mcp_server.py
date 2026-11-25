@@ -182,6 +182,15 @@ _RESOURCES: list[dict[str, Any]] = [
             "全库最近同步记录（时间/仓库/状态/动作/耗时），agent 判断「上次跑成没成」用"),
         "mimeType": "application/json",
     },
+    {
+        # B5：画像的 agent 可寻址出口 —— 一次读完"这几百个仓都是什么"。
+        "uri": "gcm://catalog",
+        "name": tr("仓库编目"),
+        "description": tr(
+            "全部本地仓库的确定性画像清单（语言/形态/CI/测试/摘要，零 LLM），"
+            "agent 一次看懂仓库库；未探测画像的仓标 not_probed"),
+        "mimeType": "application/json",
+    },
 ]
 
 #: MCP 提示词（G84-23）：把「怎么用这个服务」写进协议，而不是让人去翻文档。
@@ -230,6 +239,11 @@ def _resource_read(uri: str, data_dir: Path) -> dict[str, Any]:
             rows = db.recent_syncs(limit=50)
             payload = json.dumps({"history": rows, "count": len(rows)},
                                  ensure_ascii=False, indent=2)
+            return {"uri": uri, "mimeType": "application/json",
+                    "text": redact(payload)}
+        if uri == "gcm://catalog":
+            from .app.catalog import build_catalog
+            payload = json.dumps(build_catalog(db), ensure_ascii=False, indent=2)
             return {"uri": uri, "mimeType": "application/json",
                     "text": redact(payload)}
         if uri == "gcm://report/markdown":

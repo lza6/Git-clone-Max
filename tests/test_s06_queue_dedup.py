@@ -14,13 +14,14 @@ from pathlib import Path
 
 from gcm.app.queue_runner import QueueRunner
 from gcm.app.queue_scheduler import already_ran_in_window_today
-from gcm.db.queue_db import QueueStore, migrate_to_v4
+from gcm.db.queue_db import QueueStore, migrate_to_v4, migrate_to_v9
 
 
 def _mkstore(tmp: Path) -> tuple[QueueStore, sqlite3.Connection]:
     conn = sqlite3.connect(tmp / "q.db")
     conn.row_factory = sqlite3.Row
     migrate_to_v4(conn)
+    migrate_to_v9(conn)  # B1 调度账本（tick 启动前要 claim_slot）
     return QueueStore(conn, threading.RLock()), conn
 
 
@@ -33,6 +34,16 @@ class _StoreShim:
 
     def mark_run(self, *a, **k):
         self.store.mark_run(*a, **k)
+
+    # B1：tick 现在先抢占计划槽位；shim 原样委托给真实 store。
+    def claim_slot(self, *a, **k):
+        return self.store.claim_slot(*a, **k)
+
+    def release_slot(self, *a, **k):
+        self.store.release_slot(*a, **k)
+
+    def set_slot_state(self, *a, **k):
+        self.store.set_slot_state(*a, **k)
 
 
 class TestNoDoubleLaunch(unittest.TestCase):

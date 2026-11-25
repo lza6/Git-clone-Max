@@ -210,6 +210,12 @@
       "mimeType": "application/json",
       "name": "同步历史（最近 50 条）",
       "uri": "gcm://history"
+    },
+    {
+      "description": "全部本地仓库的确定性画像清单（语言/形态/CI/测试/摘要，零 LLM），agent 一次看懂仓库库；未探测画像的仓标 not_probed",
+      "mimeType": "application/json",
+      "name": "仓库编目",
+      "uri": "gcm://catalog"
     }
   ],
   "title": "gcm MCP surface"

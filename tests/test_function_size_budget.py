@@ -47,8 +47,9 @@ _REGISTERED: frozenset[tuple[str, str]] = frozenset({
     ("gcm/ui/progress_table.py", "_on_worker_result"),  # 103 表格回填
     ("gcm/db/settings.py", "_mask_token"),          # 103 掩码
     ("gcm/ui/statistics_dialog.py", "_build_ui"),   # 101 统计页控件
-    ("gcm/cli.py", "main"),                         # 101 CLI 主入口
+    ("gcm/cli.py", "main"),                         # 248 CLI 主入口（B5 编目分支后增长）
     ("gcm/app/retry_queue.py", "record_failure_ex"),  # 101 失败入队
+    ("gcm/__main__.py", "main"),                    # 101 GUI 入口（B4 拆出 _build_gui_shell）
 })
 
 

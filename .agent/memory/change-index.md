@@ -1,6 +1,6 @@
 ---
 topic: change-index
-updated: 2026-11-24
+updated: 2026-11-26
 owner: memory-keeper
 ---
 # 变更索引（change-index）
@@ -136,3 +136,17 @@ owner: memory-keeper
 | `gcm/app/diag.py` | HTTP 401/403/429 降级 warn | 9.22.0 | 其它网络错误仍 err |
 | `scripts/bump_version.py` | verify 不再递归跑自身守卫测试 | 9.22.0 | 避免发版后版本树自证误报 |
 | 计划文档 | `计划书/*.md` 归档到 `docs/archive/plans/20261124/` | 9.22.0 | manifest 记录 C5/硬件开放项去处 |
+
+## B 批（2026-11-26，v9.24 候选；含 Rev21 P21-1..3）
+| 文件/模块 | 变化 | 批次 | 连带影响 |
+|---|---|---|---|
+| `gcm/app/queue_runner.py` | tick 先 `window_slot`→`claim_slot` 再启动；失败保留槽位+`mark_run("error:…")` 不重试（防 tick 风暴）；成功 `set_slot_state(done)`；due 行带 `_due_path` | B1 | 改 tick 语义必跑 `test_b1_scheduler_ledger`+`test_s06`+`test_a14`+`test_g80_queue` |
+| `gcm/app/queue_scheduler.py` | `already_ran` 边界改半开；`missed_run_allowed(end=, grace_hours=)` 6h 宽限；新增 `window_slot` | B1 | 纯函数；旧调用（不传 end）语义不变 |
+| `gcm/db/queue_db.py` / `repo_db.py` | `scheduled_runs` 表 + `migrate_to_v9` + `claim_slot`/`set_slot_state`/`list_slots`；`_SCHEMA_VERSION=9`；FTS 降级后继续推进 v9 | B1 | docs/data-model.md 同步；`test_s03_migration_atomic` 覆盖降级推进 |
+| `gcm/app/instance_bus.py`（新）/ `__main__.py` / `main_window.py` | 唤醒通道（127.0.0.1+token）+ `wake_requested` 信号 + 锁失败分支先唤醒后打印 | B2 | 纯 socket；`gcm/app` 不得引 Qt（边界守卫）；引用环敏感区已过 g69 |
+| `gcm/util/path_guard.py`（新）/ `prune.py` / `cli.py` | `deletion_refusal` 第 4 道护栏；拒绝计 `skipped_dangerous` 且保留 DB 记录 | B3 | `test_r01_prune` 同步；拒绝原因走 tr（新键 zh/en） |
+| `gcm/ui/startup_recovery.py`（新）/ `__main__.py` | 主窗构建 try/except→恢复对话框（打开目录必须走 util/openfolder）；重置设置改名备份 | B4 | 恢复路径禁读 settings/DB/主题；except 预算 +22 已登记 |
+| `gcm/app/catalog.py`（新）/ `cli.py` / `mcp_server.py` | `build_catalog` + `--export-catalog` + `gcm://catalog` | B5 | 契约 docs/agent-contract §2.1f/§4.2；改资源必跑 `test_b5_catalog`+`test_g84_mcp_resources` |
+| `scripts/dev_metrics.py` / `tests/test_g79_repo_hygiene.py` | 超限登记单一来源（tests 导入 scripts）；新增同步守卫 | Rev21 | 改登记集合只改 dev_metrics 一处 |
+| 文档/台账 | README 功能表 4 处、data-model v9、test_ledger S69–S74、CLAUDE 规模数字、`docs/agent-quickstart.md`、`scripts/realcalls_quickstart.py` | Rev21/B | `doc_drift_check` DRIFT 0；`i18n_coverage` I18N OK |
+| 测试 | 新增 `test_b1_scheduler_ledger` / `test_b2_instance_bus` / `test_b3_path_guard` / `test_b4_startup_recovery` / `test_b5_catalog`；测试文件 230→235 | B 批 | `_EXPECTED_TEST_FILES` 已同步 235 |

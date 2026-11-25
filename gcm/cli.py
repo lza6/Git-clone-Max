@@ -377,6 +377,8 @@ def _print_help() -> int:
         "                  下载该仓库最新 Release 中匹配本机平台的附件（断点续传）\n"
         "  --prune         删除远端已删仓库的数据库记录（不删本地目录；需 --yes）\n"
         "  --prune-untouched  连本地目录一起删（不可恢复；需 --yes；黑名单仓永不删）\n"
+        "  --export-catalog <目录>\n"
+        "                  导出仓库编目 catalog.json + catalog.md（只读数据源，零联网）\n"
         "  --help, -h      显示本帮助\n"
         "\n"
         "输入：<urls.txt> 为地址清单文件；`-` 表示 stdin（每行一个，`#` 开头忽略）。\n"
@@ -451,6 +453,16 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         fetch_out = args[_oi + 1]
         del args[_oi:_oi + 2]
+    # B5：--export-catalog <目录> 导出仓库编目（只读数据源；不消耗 urls 输入）
+    export_catalog: str | None = None
+    if "--export-catalog" in args:
+        _ci = args.index("--export-catalog")
+        if _ci + 1 >= len(args):
+            from gcm.i18n import tr
+            print(tr("[CLI] --export-catalog 缺少目录参数"))
+            return 2
+        export_catalog = args[_ci + 1]
+        del args[_ci:_ci + 2]
     # R-01 prune 三态（互斥；默认 no-clean 只报告不删）
     prune_mode = None
     for flag, m in (("--prune", "prune"),
@@ -477,6 +489,42 @@ def main(argv: list[str] | None = None) -> int:
         return _diag_main(root, json_mode)
     if fetch_repo is not None:
         return _fetch_release_main(fetch_repo, fetch_out, json_mode)
+    if export_catalog is not None:
+        # B5：编目导出 —— 纯本地只读数据源，不联网。
+        # 审查修正：以只读连接打开（mode=ro，无写锁、无建表）；首次运行/旧库
+        # 才用可写连接幂等建表一次，随后立刻回到只读（与 mcp_server._open_db 同构）。
+        # R2 NIT-4：导出失败（目录不可写/库损坏）给一行可读提示，不甩栈。
+        import sqlite3
+
+        from gcm.__main__ import get_data_dir
+        from gcm.app.catalog import write_catalog
+        from gcm.db.repo_db import Database
+        from gcm.i18n import tr
+        try:
+            db_path = get_data_dir() / "repos.db"
+            try:
+                db = Database(db_path, readonly=True)
+            except sqlite3.OperationalError:
+                Database(db_path).close()
+                db = Database(db_path, readonly=True)
+            try:
+                paths = write_catalog(db, export_catalog)
+            finally:
+                db.close()
+        except (OSError, sqlite3.Error) as e:
+            print(tr("[CLI] 编目导出失败：{}").format(e))
+            return 1
+        if json_mode:
+            print(json.dumps({"version": __version__, "ok": True,
+                              "mode": "catalog", "count": paths["count"],
+                              "json": paths["json"],
+                              "markdown": paths["markdown"]},
+                             ensure_ascii=False, indent=2))
+        else:
+            from gcm.i18n import tr
+            print(tr("[CLI] 已导出仓库编目 {} 个 → {} / {}").format(
+                paths["count"], paths["json"], paths["markdown"]))
+        return 0
     if prune_mode is not None:
         # R-01：prune 扫描全库并按模式清理；不消耗 urls 输入，执行完即返回。
         # 审查 P1：--dry-run 与 prune 同用时，删除模式必须强制降为只报告 ——
@@ -513,6 +561,7 @@ def main(argv: list[str] | None = None) -> int:
                               "pruned": counts["pruned"],
                               "dir_removed": counts["dir_removed"],
                               "skipped_protected": counts["skipped_protected"],
+                              "skipped_dangerous": counts["skipped_dangerous"],
                               "reported": counts["reported"],
                               "items": [{"folder": it.folder_name, "url": it.url,
                                          "remote_gone": it.remote_gone,
@@ -523,9 +572,12 @@ def main(argv: list[str] | None = None) -> int:
                                         for it in items]},
                              ensure_ascii=False, indent=2))
         else:
-            print(f"[CLI] prune（{prune_mode}）：清库 {counts['pruned']} · "
-                  f"删目录 {counts['dir_removed']} · 保护跳过 "
-                  f"{counts['skipped_protected']} · 仅报告 {counts['reported']}")
+            from gcm.i18n import tr
+            print(tr("[CLI] prune（{}）：清库 {} · 删目录 {} · 保护跳过 {} · "
+                     "护栏跳过 {} · 仅报告 {}").format(
+                prune_mode, counts["pruned"], counts["dir_removed"],
+                counts["skipped_protected"], counts["skipped_dangerous"],
+                counts["reported"]))
         return 0
     src = args[0] if args else "-"
     try:

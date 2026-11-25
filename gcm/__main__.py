@@ -128,6 +128,40 @@ def _warn_diag_without_cli(flags: dict) -> None:
     print(f"[WARN] {msg}", file=sys.stderr)
 
 
+def _build_gui_shell(app, data_dir: Path, flags: dict):
+    """构造 GUI 依赖（Database/SettingsStore/语言/MainWindow）并返回主窗口。
+
+    独立成函数是 B4 的接缝：启动期任何步骤失败都会落到 `main()` 的恢复路径，
+    `tests/test_b4_startup_recovery.py` 通过替换本函数验证该接线。
+    """
+    from gcm.db.repo_db import Database
+    from gcm.db.settings import SettingsStore
+    from gcm.ui.main_window import MainWindow
+
+    db = Database(data_dir / "repos.db")
+    settings = SettingsStore(data_dir / "settings.json")
+    # G49-1：按 settings.language 初始化 i18n（设置页切换后重启生效）
+    # 注意：`load()` 必须在这一步就发生 —— 下面的"凭据解不开"告警依赖它记账
+    # （审查发现：先问 `undecryptable_fields()` 再 `load()`，恒为空 → 永不告警）。
+    try:
+        from gcm.i18n import set_language
+        lang = str(getattr(settings.load(), "language", "zh") or "zh")
+        set_language(lang)
+        # 启动后如实告知"有凭据解不开"（换机器/DPAPI 后端缺失）：用户需要知道
+        # 自己要重填哪个字段，而不是等到某个私有仓克隆失败才猜。
+        unreadable = settings.undecryptable_fields()
+        if unreadable:
+            from gcm.app.applog import warn as _warn
+            _warn("以下设置项的密文无法解密，已按原值保留（不会覆盖）："
+                  + "、".join(unreadable))
+    except Exception:
+        pass
+
+    # G49-6：--minimized 启动时若托盘可用则隐入托盘（不 show 主窗）
+    return MainWindow(data_dir=data_dir, db=db, settings=settings,
+                      start_hidden=bool(flags["minimized"]))
+
+
 def main(argv=None) -> int:
     flags = _parse_flags(argv)
 
@@ -154,11 +188,18 @@ def main(argv=None) -> int:
     from PyQt6.QtWidgets import QApplication
 
     data_dir = get_data_dir(portable=flags["portable"])
-    # G06-2 single-instance：第二个实例被拦截并聚焦首个窗口
+    # G06-2 single-instance：第二个实例被拦截；B2 起改为**唤醒首实例**并把
+    # 参数（如 URL）转交过去，而不是只打印后退出（本注释此前与实现相悖）。
     from gcm.app.single_instance import SingleInstanceLock
     lock = SingleInstanceLock(data_dir / ".instance.lock")
     if not lock.try_acquire():
-        print("Git-clone-Max 已在运行，本实例将退出。")
+        from gcm.app.instance_bus import request_wake
+        from gcm.i18n import tr
+        raw_argv = list(sys.argv[1:] if argv is None else argv)
+        if request_wake(data_dir, raw_argv):
+            print(tr("Git-clone-Max 已在运行，已唤醒首个窗口。"))
+        else:
+            print(tr("Git-clone-Max 已在运行，本实例将退出。"))
         return 0
 
     # G06-3 全局异常兜底：未捕获异常写 data/error.log
@@ -170,32 +211,43 @@ def main(argv=None) -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Git-clone-Max")
 
-    from gcm.db.repo_db import Database
-    from gcm.db.settings import SettingsStore
-    from gcm.ui.main_window import MainWindow
-
-    db = Database(data_dir / "repos.db")
-    settings = SettingsStore(data_dir / "settings.json")
-    # G49-1：按 settings.language 初始化 i18n（设置页切换后重启生效）
-    # 注意：`load()` 必须在这一步就发生 —— 下面的"凭据解不开"告警依赖它记账
-    # （审查发现：先问 `undecryptable_fields()` 再 `load()`，恒为空 → 永不告警）。
     try:
-        from gcm.i18n import set_language
-        lang = str(getattr(settings.load(), "language", "zh") or "zh")
-        set_language(lang)
-        # 启动后如实告知"有凭据解不开"（换机器/DPAPI 后端缺失）：用户需要知道
-        # 自己要重填哪个字段，而不是等到某个私有仓克隆失败才猜。
-        unreadable = settings.undecryptable_fields()
-        if unreadable:
-            from gcm.app.applog import warn as _warn
-            _warn("以下设置项的密文无法解密，已按原值保留（不会覆盖）："
-                  + "、".join(unreadable))
-    except Exception:
-        pass
+        win = _build_gui_shell(app, data_dir, flags)
+    except Exception:  # noqa: BLE001 —— B4：启动失败必须给用户可执行的恢复动作
+        import traceback
+        detail = traceback.format_exc()
+        try:
+            from gcm.app.applog import error as _log_error
+            _log_error("GUI 启动失败：" + detail)
+        except Exception:
+            pass
+        try:
+            from gcm.ui.startup_recovery import run_recovery_dialog
+            run_recovery_dialog(app, data_dir, detail)
+        finally:
+            # 恢复对话框自身也可能失败（极端环境）：单实例锁无论如何要释放，
+            # 否则用户重开程序会被自己的锁挡住。
+            lock.release()
+        return 1
+    # B2：唤醒通道在窗口构造成功后启动（失败不拖垮启动 —— 退回旧行为：
+    # 第二实例只能打印后退出）。回调经信号跨线程投递到 GUI 线程。
+    wake_server = None
+    try:
+        import json as _json
 
-    # G49-6：--minimized 启动时若托盘可用则隐入托盘（不 show 主窗）
-    win = MainWindow(data_dir=data_dir, db=db, settings=settings,
-                     start_hidden=bool(flags["minimized"]))
+        from gcm.app.instance_bus import WakeServer
+        wake_server = WakeServer(
+            data_dir,
+            on_wake=lambda payload: win.wake_requested.emit(
+                _json.dumps(payload, ensure_ascii=False)))
+        wake_server.start()
+        app.aboutToQuit.connect(wake_server.stop)
+    except Exception as e:  # noqa: BLE001 —— 唤醒增强失败不得影响启动
+        from contextlib import suppress
+        with suppress(Exception):  # 日志系统早期不可用时放弃提示，不拖垮启动
+            from gcm.app.applog import warn as _warn
+            from gcm.i18n import tr
+            _warn(tr("实例唤醒通道启动失败（第二实例将仅提示已运行）：{}").format(e))
     if not win.should_auto_hide():
         win.show()
         # G52-2：真实启动且窗口可见 → 调度续跑检测（测试/隐藏启动不弹）

@@ -35,10 +35,36 @@ CREATE TABLE IF NOT EXISTS sync_queue (
 
 _ON_MISSED_VALUES = ("skip", "run_once")
 
+#: B1 调度账本：每个「队列 × 计划槽位」只允许被抢占一次（INSERT OR IGNORE）。
+#: slot_key 由 `queue_scheduler.window_slot` 确定性生成（含窗口日期与起止时刻），
+#: 因此同一窗口内的多次 tick / 补跑都落到同一行 —— 幂等由主键保证，不再依赖
+#: `last_run_at` 字符串反推。**抢占只由 `app/queue_runner.tick` 发起**：手动批次
+#: 走既有 `_launch` 路径，不经过本表。失败不释放槽位（见 queue_runner 内的定案）。
+_SCHEDULED_RUNS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS scheduled_runs (
+    queue_id      INTEGER NOT NULL,
+    slot_key      TEXT NOT NULL,
+    scheduled_for TEXT NOT NULL DEFAULT '',
+    trigger       TEXT NOT NULL DEFAULT '',
+    state         TEXT NOT NULL DEFAULT 'claimed',
+    run_id        TEXT NOT NULL DEFAULT '',
+    created_at    TEXT,
+    PRIMARY KEY (queue_id, slot_key)
+);
+"""
+
 
 def migrate_to_v4(conn: sqlite3.Connection) -> None:
     """schema v3 → v4：新增 sync_queue 表（幂等，旧数据零影响）。"""
     conn.executescript(_QUEUE_SCHEMA)
+
+
+def migrate_to_v9(conn: sqlite3.Connection) -> None:
+    """schema v8 → v9：新增 scheduled_runs 调度账本表（B1，幂等只增表）。
+
+    只新增表、不动既有列：老版本打开新库会忽略未知表，回滚只需删代码。
+    """
+    conn.executescript(_SCHEDULED_RUNS_SCHEMA)
 
 
 def parse_days(raw: str) -> set[int]:
@@ -159,6 +185,55 @@ class QueueStore:
             except Exception:
                 self._conn.rollback()
                 raise
+
+    # ------------------------------------------------------ B1 调度账本
+    def claim_slot(self, queue_id: int, slot_key: str, scheduled_for: str,
+                   trigger: str, run_id: str = "") -> bool:
+        """抢占一个计划槽位；同一 (queue_id, slot_key) 只有第一次返回 True。
+
+        `INSERT OR IGNORE` + 主键冲突天然幂等：窗口内反复 tick、补跑与手动触发
+        共用同一 slot_key，不会重复启动同一计划。
+        """
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                cur = self._conn.execute(
+                    "INSERT OR IGNORE INTO scheduled_runs"
+                    " (queue_id, slot_key, scheduled_for, trigger, state, run_id,"
+                    "  created_at) VALUES (?, ?, ?, ?, 'claimed', ?,"
+                    "  datetime('now','localtime'))",
+                    (int(queue_id), str(slot_key), str(scheduled_for or ""),
+                     str(trigger or ""), str(run_id or "")))
+                self._conn.commit()
+                return int(cur.rowcount or 0) > 0
+            except Exception:
+                self._conn.rollback()
+                raise
+
+    def release_slot(self, queue_id: int, slot_key: str) -> None:
+        """释放抢占（仅测试/人工修复用；runner 在启动失败时**不**调用）。
+
+        B1 审查定案（MAJOR-3）：失败路径保留槽位 + mark_run 计「今天已跑」，
+        防止 60s 重试风暴；本方法只留作测试与未来人工修复入口。
+        """
+        self._write_txn(
+            "DELETE FROM scheduled_runs WHERE queue_id=? AND slot_key=?",
+            (int(queue_id), str(slot_key)))
+
+    def set_slot_state(self, queue_id: int, slot_key: str, state: str) -> None:
+        """推进槽位状态（claimed → done）；不存在时静默（幂等）。"""
+        self._write_txn(
+            "UPDATE scheduled_runs SET state=? WHERE queue_id=? AND slot_key=?",
+            (str(state or ""), int(queue_id), str(slot_key)))
+
+    def list_slots(self, queue_id: int, limit: int = 20) -> list[dict[str, Any]]:
+        """最近的槽位记录（审计/测试用）。"""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM scheduled_runs WHERE queue_id=?"
+                " ORDER BY created_at DESC LIMIT ?",
+                (int(queue_id), int(limit))).fetchall()
+        return [dict(r) for r in rows]
 
     # ---------------------------------------------------------------- 读
     def list_queues(self) -> list[dict[str, Any]]:

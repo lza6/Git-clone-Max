@@ -75,7 +75,11 @@ def _resolve(name: str, actual: dict[str, int]) -> tuple[str | None, str]:
 
 
 def check_claude_md(actual: dict[str, int]) -> list[str]:
-    """CLAUDE.md §6：`文件名` **N** 形式声明的行数。"""
+    """CLAUDE.md §6：`文件名` **N** 形式声明的行数。
+
+    正则允许带路径前缀（`gcm/i18n/zh.py` **1321**）—— 早先只匹配裸文件名，
+    写全路径的条目会被静默跳过（审查实测：i18n 两行声明已漂移 54 行而不报）。
+    """
     problems: list[str] = []
     text = _read("CLAUDE.md")
     start = text.find(_CLAUDE_SECTION_START)
@@ -83,7 +87,8 @@ def check_claude_md(actual: dict[str, int]) -> list[str]:
         return ["CLAUDE.md 找不到「## 6. 已知边界」章节（脚本需同步）"]
     section = text[start:]
     seen = 0
-    for m in re.finditer(r"`([A-Za-z0-9_]+\.py)`\s*\*\*(\d+)\*\*", section):
+    for m in re.finditer(
+            r"`((?:[A-Za-z0-9_]+/)*[A-Za-z0-9_]+\.py)`\s*\*\*(\d+)\*\*", section):
         name, claimed = m.group(1), int(m.group(2))
         path, problem = _resolve(name, actual)
         if problem:

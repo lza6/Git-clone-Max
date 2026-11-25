@@ -57,6 +57,15 @@ GCM = ROOT / "gcm"
 #   **全部有可观测出口**（日志或 UI 兜底），因此只上调总数、不上调 pass-only。
 # - v9.12.0 审查轮 +1（except 622 / **pass-only 282，比基线还降 1**）：
 #   engine._host_for 的 url 解析失败兜底（→ warn + 回落 github.com）
+# - B 批（2026-11-26，用户批准的 v9.24 候选批）+22（except 797→819；
+#   **pass-only 未涨，仍 286**）：
+#     app/instance_bus.py（第二启动唤醒通道：对端断开/残留清理走 contextlib.suppress，
+#       不产生裸吞；协议错误一律「视为无效请求」返回）
+#     util/path_guard.py（删除护栏：主目录判定失败只跳过该检查，方向安全）
+#     ui/startup_recovery.py（启动恢复：三动作失败都有 UI 提示；stderr 兜底用 suppress）
+#     db/repo_db.py（FTS 降级后继续推进 v9；失败分支全部有 warn/上抛出口）
+#   全部带可观测出口或安全降级；重复出现的静默清理已重构为 suppress/显式标志，
+#   因此只上调总数、不上调 pass-only。CLAUDE.md §3 已登记（同日）。
 #   同一轮把 `_refresh_stuck` 的静默赋值改成 warn 后，pass-only 反而少了一个。
 # - v9.12.1 +1（except 623 / pass-only 282 不变）：
 #   main_window._apply_layout_mode 里「动作区高度同步失败」的兜底（→ emit_log，有出口）
@@ -134,7 +143,16 @@ GCM = ROOT / "gcm"
 #   ③ app/db_executor.py +3：submit 投递失败转原地执行、执行器关停竞态兜底；
 #   ④ engine._on_result 抽 _persist_guarded +1：落库失败留痕语义平移。
 #   全部有 applog 可观测出口，无 pass-only 新增。
-BASELINE_EXCEPT = 797
+# B 批审查修正再 +5（登记随本批收口，非新增功能）：
+#   ⑤ app/instance_bus._serve +1：单连接级坏请求（MAJOR-1 实测可杀死监听线程）
+#   必须 continue 而不是终结线程；finally 仍负责关连接；
+#   ⑥ cli --export-catalog +1：只读打开失败（首次运行/旧库）回退可写建表一次；
+#   ⑦ queue_runner 登记失败兜底 +1：启动成功后的 mark_run/set_slot_state 失败
+#   只降级日志，不得把已发生的启动记成 error（R2 NIT-3）；
+#   ⑧ cli 编目导出失败 +1：目录不可写/库损坏给一行提示而非甩栈（R2 NIT-4）；
+#   ⑨ queue_scheduler `_parse_ts` +1：last_run_at 兼容秒/分精度解析
+#   （补跑/已跑判定共用，解析失败按宽限已做上界的宽容路径处理）。
+BASELINE_EXCEPT = 823
 BASELINE_PASS_ONLY = 286
 
 

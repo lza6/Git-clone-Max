@@ -83,6 +83,25 @@ class TestGuardCatchesDrift(unittest.TestCase):
             "docs/architecture.md", ddc.check_architecture_md)
         self.assertTrue(problems, "architecture.md 行数被改坏后未报出任何问题")
 
+    def test_catches_full_path_entry_drift_in_claude_md(self):
+        """R2 MINOR-4：全路径条目（`gcm/i18n/zh.py` **N**）也必须被守。
+
+        旧正则只认裸文件名，全路径写法会被静默跳过（实测 i18n 两行漂移
+        54 行不报）；本用例把一条全路径声明改坏，锁住这个盲区不复发。
+        """
+        import re as _re
+        text = self._orig_read("CLAUDE.md")
+        m = _re.search(r"`(gcm/[A-Za-z0-9_/]+\.py)`\s*\*\*(\d+)\*\*", text)
+        self.assertIsNotNone(m, "CLAUDE.md 没有全路径行数条目了？本用例必须同步")
+        name, num = m.group(1), m.group(2)
+        bogus = str(int(num) + 111)
+        broken = text.replace(m.group(0), m.group(0).replace(num, bogus), 1)
+        self.assertNotEqual(text, broken)
+        self._fake({"CLAUDE.md": broken})
+        problems = ddc.check_claude_md(ddc._actual_lines())
+        self.assertTrue(any(name in p and bogus in p for p in problems),
+                        f"全路径条目 {name} 被改坏后未报出：{problems}")
+
     def test_catches_long_function_count_drift(self):
         import re as _re
         text = self._orig_read("CLAUDE.md")

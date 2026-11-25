@@ -40,6 +40,7 @@
 | 还没做的（已知边界/技术债） | 本文件 §6 + 代码里的 `G##` 注释 |
 | 跑过哪些验证、改哪块必跑哪些测试 | `docs/验证记录-*.md`（**改前先看，避免重复跑同一批验证**） |
 | 慢测定位与提速 | `docs/慢测定位.md` |
+| 当前迭代计划（草稿，执行完按 `plan-doc-audit.md` 归档） | `docs/plans/` |
 | 发布流程 | `docs/RELEASE_CHECKLIST.md` |
 | 产品定位与增长 | `docs/product-brief.md` |
 | 并发/可观测边界 | `docs/perf-observability.md` |
@@ -83,7 +84,7 @@ gcm/util/    跨层工具：redact（脱敏）/ filelock（跨进程文件锁）
 gcm/i18n/    文案字典 zh/en（key 即中文，缺失回退中文）
 skills/      agent 技能包（SKILL.md + scripts/），每个必须自包含验收步骤
 scripts/     运维/CI/基准脚本（不参与打包）
-tests/       测试（230 文件）；**新增测试文件默认落在 CI 快集**（scripts/ci_run_fast.py 用黑名单，不是白名单）。G80 起新增 `test_g80_contract` / `test_g80_hygiene` 两个守卫，改契约或删符号前先看它们。
+tests/       测试（235 文件）；**新增测试文件默认落在 CI 快集**（scripts/ci_run_fast.py 用黑名单，不是白名单）。G80 起新增 `test_g80_contract` / `test_g80_hygiene` 两个守卫，改契约或删符号前先看它们。
 docs/reports/ 历次审计报告（HTML，只读快照）
 docs/        工程/产品/契约文档
 ```
@@ -104,6 +105,8 @@ docs/        工程/产品/契约文档
   `token` / `host_tokens` / `ssh_key` / URL 内嵌凭据一律打码。
 - **SQL**：只允许参数化查询；`f-string` 只能用于 PRAGMA 常量（现状已如此）。DB 写入单线程 + `BEGIN IMMEDIATE` + `busy_timeout=30000`。
 - **异常**：不要裸 `except:`；`except Exception` 必须要么记日志要么给出可操作提示，**禁止静默吞**（`# noqa: BLE001` 需附理由注释）。
+  B 批（2026-11-26）新增 instance_bus / path_guard / startup_recovery / catalog 等恢复与防呆模块，
+  except 预算 797→823 一次性登记（恢复路径不允许抛；pass-only 未涨，静默清理已重构为 `contextlib.suppress`；审查修正 +5：唤醒监听单连接兜底、编目只读回退、失败队列登记兜底、编目导出友好错误、last_run_at 双精度解析）。此后该预算只降不升。
 - **资源**：文件/DB 连接/QThread/子进程都要有确定释放路径；Qt 对象注意父对象与线程亲和性。
 - **不可变优先**：优先返回新对象而非就地改传入结构。
 - **测试隔离铁律**：任何直接构造 `MainWindow`/`QWidget` 的测试，模块级先 `QApplication.instance() or QApplication([])`。
@@ -243,13 +246,13 @@ docs/        工程/产品/契约文档
   `mypy==2.4.1`, `coverage==7.16.2`）。旧文档写的"裸装 ruff/mypy、CI 版本不锁"
   **已在 C1-12 修掉**，是过期描述；G84 又把 ci.yml 里残留的两行 `coverage==7.16.0`
   （会被下一行覆盖的冗余钉版）删了。别再照旧文档行事。
-- **代码规模现状（2026-11-24 Rev20 实测，`python scripts/dev_metrics.py` 可一键复测）**：仍为 **6 个**文件超 800 行 —— `main_window.py` **3597**、
-  `service.py` **2024**、`engine.py` **1839**、`gcm/i18n/zh.py` **1267**、`gcm/i18n/en.py` **1269**（后两个是**生成字典**，一行一条文案，拆分无意义，已在 `_ACCEPTED_OVERSIZED` 登记）、`progress_table.py` **808** 已越过并被登记（`repo_db.py` **766**、
+- **代码规模现状（2026-11-26 B 批实测，`python scripts/dev_metrics.py` 可一键复测）**：仍为 **6 个**文件超 800 行 —— `main_window.py` **3624**、
+  `service.py` **2024**、`engine.py` **1839**、`gcm/i18n/zh.py` **1322**、`gcm/i18n/en.py` **1326**（后两个是**生成字典**，一行一条文案，拆分无意义，已在 `_ACCEPTED_OVERSIZED` 登记）、`progress_table.py` **808** 已越过并被登记（`repo_db.py` **771**、
   `settings_panel.py` **750**、`settings_groups.py` **800** 均在 800 线内；
   G76 新增 `settings_actions.py`（G84 后 326，设置页动作型回调）就是为了让这两个设置模块不越线；G77 把更新检查三段抽到 `update_flow.py`（205），主窗从 2750 降到 2658；G78 修 chip 裁切时 +7 行 → 2665；G79b 给紧凑布局补注释 +5 行 → 2670；G80 新增回调+后台任务接线后 2765；G82 A5-4 确认范式 +25 行 → 2790；上一版 C1 批 +1 行 → 2791；本版（X-4 布局修复）+3 行 → **2794**。**超 800 行集合现在有守卫**（`tests/test_g79_repo_hygiene::TestNoNewOversizedModules` 用集合相等断言），新增第 7 个超限文件会直接红。
   G75 把 `theme.py` 从 598 拆到 **347**（色板→`palettes`、字排→`typography`、QSS→`qss_build`），
   并把批次总览/结果文案/齿条/pill 各自成模块；
-  **19 个**函数超 100 行（Rev17 T4 拆分后最大 `qss_build._build_qss` 262 行，`MainWindow.__init__` 已降至 185）。这两条数字（模块行数表 + 超长函数数）
+  **20 个**函数超 100 行（Rev17 T4 拆分后最大 `qss_build._build_qss` 262 行，`MainWindow.__init__` 已降至 187）。这两条数字（模块行数表 + 超长函数数）
   现已由 `scripts/doc_drift_check.py` 守住：改了代码没同步文档 → `DRIFT n` 非 0 退出。
   G71 已完成的长函数拆分：`service._update` **337→105**（拆出 `_update_bare_mirror` /
   `_fetch_remote` / `_merge_remote`）、`MainWindow._launch` **153→129**（参数映射拆到

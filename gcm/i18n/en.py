@@ -1268,4 +1268,61 @@ EN = {
 
     '编辑同步队列时间窗': 'Edit scheduled sync queue time window',
 
+    # B5 repo catalog (catalog export / gcm://catalog)
+    '本地仓库编目': 'Local repo catalog',
+    '共 {} 个仓库 · 生成于 {}': '{} repos · generated at {}',
+    '语言': 'Language',
+    '形态': 'Kind',
+    '未探测': 'not probed',
+    '有': 'yes',
+    '无': 'no',
+    '仓库编目': 'Repo catalog',
+    '全部本地仓库的确定性画像清单（语言/形态/CI/测试/摘要，零 LLM），agent 一次看懂仓库库；未探测画像的仓标 not_probed':
+        'Deterministic profile catalog of all local repos (language/kind/CI/tests/summary, zero LLM); repos without a profile are marked not_probed',
+
+    # B3 path guard / B5 CLI & instance wake
+    '路径为空或含空字节': 'empty path or NUL byte',
+    '不是绝对路径': 'not an absolute path',
+    'UNC/网络共享路径': 'UNC/network share path',
+    '盘符根目录/文件系统根': 'drive root / filesystem root',
+    '系统目录（{}）': 'system directory ({})',
+    '用户主目录': 'user home directory',
+    '用户主目录的上级目录': 'parent of the user home directory',
+    '用户受保护文件夹': 'protected user folder',
+    '路径判定失败（保守拒绝）': 'path check failed (conservative refusal)',
+    '路径护栏拒绝删除：{}': 'refused by path guard: {}',
+    '[CLI] --export-catalog 缺少目录参数': '[CLI] --export-catalog requires a directory argument',
+    '[CLI] 已导出仓库编目 {} 个 → {} / {}': '[CLI] exported {0} repos to {1} / {2}',
+    '[CLI] 编目导出失败：{}': '[CLI] catalog export failed: {0}',
+    '定时队列「{}」已启动但登记失败：{}':
+        'scheduled queue "{0}" launched but bookkeeping failed: {1}',
+    '[CLI] prune（{}）：清库 {} · 删目录 {} · 保护跳过 {} · 护栏跳过 {} · 仅报告 {}':
+        '[CLI] prune ({0}): db {1} · dirs {2} · protected {3} · guard {4} · reported {5}',
+    'Git-clone-Max 已在运行，已唤醒首个窗口。':
+        'Git-clone-Max is already running; the first window was brought to front.',
+    'Git-clone-Max 已在运行，本实例将退出。':
+        'Git-clone-Max is already running; this instance will exit.',
+    '实例唤醒通道启动失败（第二实例将仅提示已运行）：{}':
+        'Instance wake channel failed to start (second instance will only report already-running): {}',
+
+    # B4 startup recovery
+    '启动失败': 'Startup failed',
+    'Git-clone-Max 启动时遇到错误。你可以先尝试下面的恢复动作，或导出诊断包反馈问题。':
+        'Git-clone-Max hit an error during startup. Try a recovery action below, or export a diagnostics bundle.',
+    '版本：{}': 'Version: {}',
+    '数据目录：{}': 'Data directory: {}',
+    '日志：{}': 'Logs: {}',
+    '错误摘要（可复制）：': 'Error summary (copyable):',
+    '重置设置（先备份）': 'Reset settings (backup first)',
+    '打开失败': 'Open failed',
+    '操作失败：{}': 'Action failed: {}',
+    '已导出诊断包': 'Diagnostics bundle exported',
+    '已导出：{}': 'Exported: {}',
+    '重置失败': 'Reset failed',
+    '无需重置': 'Nothing to reset',
+    '没有可重置的 settings.json。': 'No settings.json to reset.',
+    '已重置': 'Settings reset',
+    '设置已备份到：{}': 'Settings backed up to: {}',
+    '重置后请重新启动应用。': 'Please restart the application after resetting.',
+
 }

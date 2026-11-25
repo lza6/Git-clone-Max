@@ -29,7 +29,7 @@ SQLite，文件 `data/repos.db`，WAL 模式。
 | 锁等待 | `PRAGMA busy_timeout=30000` | `_BUSY_TIMEOUT_MS` |
 | 外键 | `PRAGMA foreign_keys=ON` | `Database.__init__` |
 | 连接 | `check_same_thread=False` + 进程内 `RLock`（**单写者**：DB 写入只在引擎主线程） | `Database.__init__` |
-| schema 版本 | `PRAGMA user_version` = **8**（v4 `sync_queue` / v5 `repos.profile_json` / v6 `dir_stats` / v7 `sync_history.stage_json` / v8 `repo_fts`；实现分别落在 `db/repo_profile.py`、`db/dir_stats.py`、`db/repo_fts.py`（v7 只是加列，在 `_migrate` 内）——`repo_db.py` 贴着 800 行红线，迁移实现一律落新模块） | `_SCHEMA_VERSION` |
+| schema 版本 | `PRAGMA user_version` = **9**（v4 `sync_queue` / v5 `repos.profile_json` / v6 `dir_stats` / v7 `sync_history.stage_json` / v8 `repo_fts` / v9 `scheduled_runs`；实现分别落在 `db/repo_profile.py`、`db/dir_stats.py`、`db/repo_fts.py`、`db/queue_db.py`（v7 只是加列，在 `_migrate` 内）——`repo_db.py` 贴着 800 行红线，迁移实现一律落新模块） | `_SCHEMA_VERSION` |
 
 ### 1.1 迁移链（`_migrate`，幂等）
 
@@ -44,6 +44,7 @@ SQLite，文件 `data/repos.db`，WAL 模式。
 | 6 | 新增 `dir_stats` 表（目录大小缓存，默认 30 分钟 TTL） | C3-1（`db/dir_stats.migrate_to_v6`） |
 | 7 | `sync_history` + `stage_json`（分阶段耗时：precheck/transfer/checkout/hook） | C3-4 |
 | 8 | 新增 `repo_fts` 虚表（FTS5 **trigram** 外部内容表，索引 `owner/repo/folder_name/tags/note`） | C4-1（`db/repo_fts.migrate_to_v8`） |
+| 9 | 新增 `scheduled_runs` 表（调度账本：`(queue_id, slot_key)` 主键，`INSERT OR IGNORE` 幂等抢占；`state` 从 `claimed` 推进到 `done`，失败停在 `claimed` 不重试；`run_id` = `slot_key:trigger` 供审计定位；仅 `queue_runner.tick` 写本表） | B1（`db/queue_db.migrate_to_v9`） |
 
 > 每条迁移先 `PRAGMA table_info` 判列存在（幂等），最后统一 `PRAGMA user_version=N` + commit。
 > 新增列请递增 `_SCHEMA_VERSION` **并**补一段 `if v < N:`，不要直接改 `_SCHEMA` 里的 `CREATE TABLE`
@@ -108,6 +109,7 @@ SQLite，文件 `data/repos.db`，WAL 模式。
 | `session_runtime.json` | 跨会话续跑清单 + 看门狗心跳 | — |
 | `retry_queue.json` | 失败重试队列（持久化 + 退避 + 三段式错误） | 引擎按批次读写；见 §3.1 |
 | `.instance.lock` | 单实例锁 | 崩溃残留清理 |
+| `instance.json` | B2 唤醒通道信息（`port`/`token`/`pid`，原子写；POSIX 权限 0600） | 首实例退出时删除；残留由 PID 存活判定降级，损坏视为无首实例（`read_info` → None） |
 | `error.log` / `app.log` | 结构化日志 | `RotatingFileHandler` 5MB×3；出站 `redact` |
 
 ## 3. 跨进程写锁（`gcm/util/filelock.cross_process_lock`）
