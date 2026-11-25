@@ -99,5 +99,30 @@
     ],
     "budget": "except 同批登记 823（pass-only 286 未涨）",
     "review_round3": "进行中"
+  },
+  "review_round3": {
+    "verdict": "APPROVE",
+    "verified": "两场景复现消失（07:00 补跑记昨夜；22:00/01:00 同实例只发一次；01:00 跑过不挡当晚；窗内 10 tick 只发 1 次）；_window_bounds 边界推演 21:59/22:00/05:59/06:00/07:00/12:00 与同日窗全对；6/8/9 代码与 2/3/4/5 测试逐条核实非空转",
+    "required_after": [
+      "tick() docstring 改为「不释放槽位、不重试」",
+      "CLAUDE except 预算 821→823 并补齐 5 条理由"
+    ],
+    "nits_after": [
+      "queue_scheduler 模块 docstring missed_today→missed_run_allowed",
+      "b1 changelog 碎片补「跨零点按开始日」"
+    ]
+  },
+  "release": {
+    "version": "9.24.0",
+    "commits": [
+      "0117ef9 feat 特性",
+      "3a1f64f release 发版"
+    ],
+    "tag": "v9.24.0",
+    "release_url": "https://github.com/lza6/Git-clone-Max/releases/tag/v9.24.0",
+    "exe_bytes": 43297614,
+    "zip_bytes": 82922677,
+    "server_sha256_match": true,
+    "health_check": "7 项全 OK → evidence/health-9.24.0.json"
   }
 }
