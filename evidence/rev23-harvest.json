@@ -60,6 +60,12 @@
       "exit_code": 0,
       "raw_output_tail": "[{\"conclusion\":\"success\",\"databaseId\":45721180075,\"status\":\"completed\",\"workflowName\":\"CI\"}]",
       "note": "推送后三平台 CI 成功（test 矩阵 + lint/type + 打包 job 按触发条件）"
+    },
+    {
+      "cmd": "gh run list --commit f104899 --limit 3 --json databaseId,workflowName,status,conclusion（审查收口后的最终代码提交）",
+      "exit_code": 0,
+      "raw_output_tail": "[{\"conclusion\":\"success\",\"databaseId\":45723959289,\"status\":\"completed\",\"workflowName\":\"CI\"}]",
+      "note": "最终代码状态三平台 CI 成功"
     }
   ],
   "files_changed": [
@@ -79,6 +85,24 @@
     {"name": "GUI 启动路径冒烟", "type": "e2e", "status": "passed", "evidence": "MAIN_RC=0；qt[WARN] 真实落盘"},
     {"name": "CLI 契约冒烟", "type": "smoke", "status": "passed", "evidence": "结构化 JSON + exit 2 语义"}
   ],
+  "independent_review": {
+    "reviewer": "只读子代理（对抗视角，§9 输出格式）",
+    "baseline_diff": "efc4155..0e9f148",
+    "verdict": "Approve",
+    "blocking": 0,
+    "adopted_suggestions": [
+      "删除恒不可达的 prev 链（若执行会把未打码原文转发给默认 handler，与出站打码红线相抵）",
+      "SystemExit 短路改为照常通知下级 hook（保留宿主自定义 hook 语义）",
+      "error.log 只收 WARN+（QT_LOGGING_RULES=*.debug 排障开关不再灌爆错误日志）",
+      "环境头仅进程首次落盘写一次（此前每条消息重复 4 行环境噪声）"
+    ],
+    "recorded_only": [
+      "跨线程 append 非原子（当前不可达 → known-issues 登记，不加锁）",
+      "Qt 消息 CR/LF 有意放行（已知边界，外部文本转发前需转义）"
+    ],
+    "followup_commit": "f104899",
+    "followup_ci_run": 45723959289
+  },
   "coverage_summary": {
     "lines": "81%",
     "branches": null,
@@ -92,8 +116,8 @@
     "screenshots": ["reports/ui-audit/（本日 38 张 exit 0；其后 UI 层零改动，__main__ 启动面由 GUI 冒烟覆盖）"]
   },
   "limitations": [
-    "slow 集与全量 discover：本地未重跑；CI 已补位（run 45721180075 success，0e9f148，Linux 慢集在 CI 内）",
-    "qFatal→0xC0000409 退出码归因需本机 abort 程序实测（外部扫描标未确认）",
+    "slow 集与全量 discover：本地未重跑；CI 已补位（最终代码 commit f104899 → run 45723959289 success；前序 0e9f148 → run 45721180075 亦绿；Linux 慢集在 CI 内）",
+    "qFatal→0xC0000409 退出码归因需本机 abort 程序实测（外部扫描标未确认；reviewer 子进程探针实测值为 3221226505=0xC0000409，正例方向一致）",
     "真机触摸/读屏器/多显示器仍为 beads 13k/cuz",
     "S1 SignPath 资格与 R1 Immutable Releases 开关为用户动作（beads q0j/b1j 登记）"
   ]
