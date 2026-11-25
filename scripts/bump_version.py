@@ -116,8 +116,10 @@ ALLOWED_HISTORICAL = {
     ".beads/issues.jsonl": "议题标题里的版本是历史记录",
 }
 #: 目录前缀排除（历史归档、验证记录、证据、工作流状态文件）。
+#: docs/plans/ 是计划草稿目录（test_g67_docs_freshness 同口径整目录排除）：
+#: 周报与计划按定义引用「已发布/目标」版本号，属历史记录，不是载体。
 ALLOWED_PREFIXES = (
-    "docs/验证记录-", "docs/archive/", "docs/reports/", "evidence/",
+    "docs/验证记录-", "docs/archive/", "docs/reports/", "docs/plans/", "evidence/",
     ".agent/", ".beads/", "dist/", "build/", "out/", "reports/",
 )
 
